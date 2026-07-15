@@ -1,0 +1,12 @@
+{
+  "name": "mlx-agent",
+  "version": "0.1.0",
+  "description": "Discover, verify, and wire local MLX-optimized models on Apple Silicon: a HuggingFace discovery skill, /mlx-scout and /mlx-adopt commands, and a fan-out adoption workflow.",
+  "author": {
+    "name": "Sasan Sotoodehfar"
+  },
+  "homepage": "https://github.com/sasan1200/mlx-agent",
+  "repository": "https://github.com/sasan1200/mlx-agent",
+  "license": "MIT",
+  "keywords": ["mlx", "apple-silicon", "local-llm", "huggingface", "ollama", "lm-studio", "model-discovery"]
+}

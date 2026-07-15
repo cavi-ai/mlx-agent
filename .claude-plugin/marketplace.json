@@ -1,0 +1,19 @@
+{
+  "name": "mlx-agent",
+  "description": "Local MLX model discovery and adoption for Apple Silicon agents.",
+  "owner": {
+    "name": "Sasan Sotoodehfar"
+  },
+  "plugins": [
+    {
+      "name": "mlx-agent",
+      "description": "Discover, verify, and wire local MLX-optimized models on Apple Silicon.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Sasan Sotoodehfar"
+      },
+      "source": ".",
+      "category": "development"
+    }
+  ]
+}

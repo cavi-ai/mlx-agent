@@ -1,0 +1,96 @@
+# mlx-agent 🍏
+
+> Discover, verify, and **wire** local MLX-optimized models on Apple Silicon — for your coding agent.
+
+![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
+![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)
+![Platform: Apple Silicon](https://img.shields.io/badge/platform-Apple%20Silicon-black.svg)
+![Deps: none](https://img.shields.io/badge/runtime%20deps-none%20(stdlib)-brightgreen.svg)
+
+The MLX model landscape moves weekly. `mlx-agent` queries the HuggingFace Hub live, matches models to your machine's memory and installed runtimes, tells you which are reasoning models (so you don't put one in a fast/cheap slot), and emits the exact config to wire a pick into your agent.
+
+Most tools do **one** of: *run* a model (Ollama, mlx-knife), *calculate* if it fits (VRAM calculators), or *serve* it (mlx_lm). `mlx-agent` is the only headless, agent-native tool that does the whole loop: **discover → verify → wire**.
+
+## What's inside
+
+| Component | What it does |
+| --- | --- |
+| **`/mlx-scout`** command | Discovery: MLX models on HuggingFace bucketed by role for this host. |
+| **`/mlx-adopt`** command | Adoption **workflow** — discover → verify (test-generate) → recommend a per-role routing config. |
+| **`/mlx-wire`** command | Pull a chosen model and wire it into your agent config for a runtime target (confirmation-gated). |
+| **`mlx-scout`** skill | Auto-activates on "which local model?"; wraps the discovery script + runtime reference. |
+| **`mlx-advisor`** agent | On-demand expert for picking + wiring a local model for a role. |
+| **`scout.py`** | The stdlib-only discovery/wiring core — runs standalone, too. |
+
+## Install (Claude Code)
+
+```bash
+claude plugin marketplace add sasan1200/mlx-agent
+claude plugin install mlx-agent
+```
+
+Then use `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, or just ask *"what local model should I use for coding?"*
+
+## Quick look
+
+```console
+$ python3 skills/mlx-scout/scripts/scout.py --role reasoning --limit 3
+
+Host: Apple M-series · 128GB · Ollama ✓ · LM Studio ✗
+
+## Reasoning
+| model                                   | RAM      | reasoning       | fits | license    |
+|-----------------------------------------|----------|-----------------|------|------------|
+| mlx-community/gpt-oss-20b-MXFP4-Q8 ⭐    | 12.1GB*  | ⚠ chat_template | ✓    | apache-2.0 |
+| mlx-community/Qwen3.6-40B-…-Thinking-8bit ⭐ | 41.5GB* | ⚠ name       | ✓    | apache-2.0 |
+| unsloth/Qwen3.6-35B-A3B-UD-MLX-4bit ⭐   | 21.6GB*  | ⚠ name          | ✓    | apache-2.0 |
+
+* = real download size from the HuggingFace tree API (not a guess).
+```
+
+## Usage
+
+```bash
+python3 skills/mlx-scout/scripts/scout.py                 # all roles
+python3 skills/mlx-scout/scripts/scout.py --role coding   # one role
+python3 skills/mlx-scout/scripts/scout.py --new           # what changed on HF
+python3 skills/mlx-scout/scripts/scout.py --fast          # skip enrichment (faster, name heuristics)
+python3 skills/mlx-scout/scripts/scout.py --json          # machine-readable
+
+# emit setup + a ready config block for a chosen model:
+python3 skills/mlx-scout/scripts/scout.py --wire <repo> --target mlx_lm|lmstudio|mlx-vlm|ollama|litellm
+```
+
+Roles: `general`, `coding`, `reasoning`, `vision`, `embedding`. `--limit N` sets results per role.
+
+## How it works
+
+- **Real sizing** — pulls actual quantized byte size from the HF tree API, not a name guess.
+- **Reasoning detection** — reads the model's `chat_template` and tags (catches `reasoning_effort` / `<think>`), falling back to a name heuristic. Reasoning models emit hidden thinking, so `mlx-agent` keeps them out of fast/cheap roles.
+- **Quant dedup** — rolls `…-4bit / -8bit / -bf16` up to one logical model and picks the best quant that fits your RAM.
+- **License / gated** — surfaces the license and flags gated repos before you try to pull.
+- **Verify-before-recommend** — `/mlx-adopt` test-generates a candidate against your local runtime to confirm behavior before wiring it.
+
+## Use anywhere (OpenClaw / Hermes / any agent)
+
+`skills/mlx-scout/` is a self-contained [AgentSkills](https://agentskills.io) skill — drop it into any compatible agent's skills path, or just run `scout.py`. No install, no dependencies beyond Python 3.9+.
+
+## Requirements
+
+- macOS on Apple Silicon (for host/RAM/runtime detection; the HF query itself works anywhere)
+- Python 3.9+ (standard library only — zero pip installs)
+- Optional runtimes it detects & wires: [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai) (MLX), [`mlx_lm`](https://github.com/ml-explore/mlx-lm), [`mlx-vlm`](https://github.com/Blaizzy/mlx-vlm) — see [`skills/mlx-scout/references/runtimes.md`](skills/mlx-scout/references/runtimes.md).
+
+## Roadmap
+
+- Tokens/sec-by-chip speed signal in ranking
+- Quality/benchmark score beyond download counts
+- One-shot fleet setup (wire an entire per-role routing config in one pass)
+
+## Contributing
+
+Issues and PRs welcome. The core is a single dependency-free Python file — easy to read, easy to extend (add a role, a runtime target, or a better heuristic).
+
+## License
+
+[MIT](LICENSE) © Sasan Sotoodehfar

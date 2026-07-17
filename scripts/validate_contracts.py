@@ -1,48 +1,82 @@
 """Focused standard-library validation for the canonical MLX agent contracts."""
 
 import json
+import re
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterable, List
 
 
 SCHEMA_VERSION = "1.0"
 CAPABILITIES = ("scout", "adopt", "wire")
 NATIVE_PROVIDERS = ("claude", "codex", "gemini", "opencode")
 PROVIDERS = NATIVE_PROVIDERS + ("agentskills",)
+DATE_TIME_PATTERN = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"
+)
 
 
 def _is_dict(value: Any) -> bool:
     return isinstance(value, dict)
 
 
-def _require_mapping_values(
-    value: Dict[str, Any],
-    keys: List[str],
-    prefix: str,
-    errors: List[str],
+def _unexpected_keys(
+    value: Dict[str, Any], allowed: Iterable[str], prefix: str, errors: List[str]
+) -> None:
+    unexpected = sorted(set(value) - set(allowed))
+    if unexpected:
+        errors.append("{0} has unexpected keys: {1}".format(prefix, unexpected))
+
+
+def _require_keys(
+    value: Dict[str, Any], keys: Iterable[str], prefix: str, errors: List[str]
 ) -> None:
     for key in keys:
         if key not in value:
             errors.append("{0}.{1} is required".format(prefix, key))
 
 
-def _require_string(value: Dict[str, Any], key: str, prefix: str, errors: List[str]) -> None:
-    if key not in value:
+def _require_string(
+    value: Dict[str, Any], key: str, prefix: str, errors: List[str]
+) -> None:
+    item = value.get(key)
+    if not isinstance(item, str):
         errors.append("{0}.{1} must be a string".format(prefix, key))
-    elif not isinstance(value[key], str):
-        errors.append("{0}.{1} must be a string".format(prefix, key))
+    elif not item:
+        errors.append("{0}.{1} must not be empty".format(prefix, key))
+
+
+def _validate_date_time(value: Any, prefix: str, errors: List[str]) -> None:
+    if not isinstance(value, str) or not DATE_TIME_PATTERN.match(value):
+        errors.append("{0} must be an ISO-8601 date-time".format(prefix))
+        return
+    normalized = "{0}+00:00".format(value[:-1]) if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        errors.append("{0} must be an ISO-8601 date-time".format(prefix))
+        return
+    if parsed.tzinfo is None:
+        errors.append("{0} must be an ISO-8601 date-time".format(prefix))
+
+
+def _validate_warning(value: Any, prefix: str, errors: List[str]) -> None:
+    if not _is_dict(value) or not all(isinstance(item, str) for item in value.values()):
+        errors.append("{0} must be an object of strings".format(prefix))
 
 
 def validate_result(value: dict) -> List[str]:
     """Return contract errors for a serialized ResultEnvelope, if any."""
-    errors: List[str] = []
     if not _is_dict(value):
         return ["result must be an object"]
 
-    required = ["schema_version", "generated_at", "operation", "status", "data", "warnings"]
-    _require_mapping_values(value, required, "result", errors)
-    for key in ("schema_version", "generated_at", "operation"):
-        _require_string(value, key, "result", errors)
+    errors: List[str] = []
+    required = ("schema_version", "generated_at", "operation", "status", "data", "warnings")
+    _require_keys(value, required, "result", errors)
+    _unexpected_keys(value, required + ("error",), "result", errors)
+    _require_string(value, "schema_version", "result", errors)
+    _require_string(value, "operation", "result", errors)
+    _validate_date_time(value.get("generated_at"), "result.generated_at", errors)
 
     if value.get("schema_version") != SCHEMA_VERSION:
         errors.append("schema_version must equal '1.0'")
@@ -54,21 +88,19 @@ def validate_result(value: dict) -> List[str]:
         errors.append("warnings must be an array")
     elif isinstance(value.get("warnings"), list):
         for index, warning in enumerate(value["warnings"]):
-            if not _is_dict(warning) or not all(
-                isinstance(item, str) for item in warning.values()
-            ):
-                errors.append("warnings[{0}] must be an object of strings".format(index))
+            _validate_warning(warning, "warnings[{0}]".format(index), errors)
 
     if value.get("status") == "error":
         error = value.get("error")
         if not _is_dict(error):
             errors.append("error must be an object")
         else:
+            error_keys = ("code", "message", "remediation", "retryable")
+            _require_keys(error, error_keys, "error", errors)
+            _unexpected_keys(error, error_keys, "error", errors)
             for key in ("code", "message", "remediation"):
                 _require_string(error, key, "error", errors)
-            if "retryable" not in error:
-                errors.append("error.retryable is required")
-            elif not isinstance(error["retryable"], bool):
+            if not isinstance(error.get("retryable"), bool):
                 errors.append("error.retryable must be a boolean")
     elif "error" in value:
         errors.append("error is only allowed when status is 'error'")
@@ -80,11 +112,57 @@ def _validate_argument(value: Any, prefix: str, errors: List[str]) -> None:
     if not _is_dict(value):
         errors.append("{0} must be an object".format(prefix))
         return
+    keys = ("name", "type", "required")
+    _require_keys(value, keys, prefix, errors)
+    _unexpected_keys(value, keys, prefix, errors)
     _require_string(value, "name", prefix, errors)
     if value.get("type") not in ("string", "integer", "boolean"):
         errors.append("{0}.type must be one of ['string', 'integer', 'boolean']".format(prefix))
     if not isinstance(value.get("required"), bool):
         errors.append("{0}.required must be a boolean".format(prefix))
+
+
+def _validate_capability(value: Any, name: str, errors: List[str]) -> None:
+    prefix = "capabilities.{0}".format(name)
+    if not _is_dict(value):
+        errors.append("{0} must be an object".format(prefix))
+        return
+    keys = ("command", "description", "arguments")
+    _require_keys(value, keys, prefix, errors)
+    _unexpected_keys(value, keys, prefix, errors)
+    if value.get("command") != "mlx-{0}".format(name):
+        errors.append("{0}.command must equal 'mlx-{1}'".format(prefix, name))
+    _require_string(value, "description", prefix, errors)
+    arguments = value.get("arguments")
+    if not isinstance(arguments, list):
+        errors.append("{0}.arguments must be an array".format(prefix))
+        return
+    for index, argument in enumerate(arguments):
+        _validate_argument(argument, "{0}.arguments[{1}]".format(prefix, index), errors)
+
+
+def _validate_provider(
+    value: Any, name: str, expected_commands: List[str], errors: List[str]
+) -> None:
+    prefix = "providers.{0}".format(name)
+    if not _is_dict(value):
+        errors.append("{0} must be an object".format(prefix))
+        return
+    keys = ("native", "capabilities", "commands")
+    _require_keys(value, keys, prefix, errors)
+    _unexpected_keys(value, keys, prefix, errors)
+    if value.get("capabilities") != list(CAPABILITIES):
+        errors.append("{0}.capabilities must equal ['scout', 'adopt', 'wire']".format(prefix))
+    if name in NATIVE_PROVIDERS:
+        if value.get("native") is not True:
+            errors.append("{0}.native must be true".format(prefix))
+        if value.get("commands") != expected_commands:
+            errors.append("{0}.commands must equal {1}".format(prefix, expected_commands))
+    else:
+        if value.get("native") is not False:
+            errors.append("{0}.native must be false".format(prefix))
+        if value.get("commands") != []:
+            errors.append("{0}.commands must equal []".format(prefix))
 
 
 def validate_manifest(path: Path) -> List[str]:
@@ -93,85 +171,80 @@ def validate_manifest(path: Path) -> List[str]:
         value = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as error:
         return ["could not read manifest: {0}".format(error)]
-
-    errors: List[str] = []
     if not _is_dict(value):
         return ["manifest must be an object"]
 
-    _require_mapping_values(
-        value,
-        ["$schema", "schema_version", "identity", "scopes", "requirements", "safety", "capabilities", "providers"],
-        "manifest",
-        errors,
+    errors: List[str] = []
+    manifest_keys = (
+        "$schema",
+        "schema_version",
+        "identity",
+        "scopes",
+        "requirements",
+        "safety",
+        "capabilities",
+        "providers",
     )
+    _require_keys(value, manifest_keys, "manifest", errors)
+    _unexpected_keys(value, manifest_keys, "manifest", errors)
+    _require_string(value, "$schema", "manifest", errors)
+    _require_string(value, "schema_version", "manifest", errors)
+    _require_string(value, "identity", "manifest", errors)
     if value.get("schema_version") != SCHEMA_VERSION:
         errors.append("schema_version must equal '1.0'")
     if value.get("identity") != "mlx-agent":
         errors.append("identity must equal 'mlx-agent'")
-    if set(value.get("scopes", [])) != {"user", "project"}:
+
+    scopes = value.get("scopes")
+    if not isinstance(scopes, list):
+        errors.append("scopes must be an array")
+    elif len(scopes) != 2 or not all(
+        scope in ("user", "project") for scope in scopes
+    ) or scopes[0] == scopes[1]:
         errors.append("scopes must equal ['user', 'project']")
 
     requirements = value.get("requirements")
     if not _is_dict(requirements):
         errors.append("requirements must be an object")
-    elif requirements.get("python3") != ">=3.9":
-        errors.append("requirements.python3 must equal '>=3.9'")
+    else:
+        _require_keys(requirements, ("python3",), "requirements", errors)
+        _unexpected_keys(requirements, ("python3",), "requirements", errors)
+        if requirements.get("python3") != ">=3.9":
+            errors.append("requirements.python3 must equal '>=3.9'")
 
     safety = value.get("safety")
+    safety_keys = ("auto_install_provider_cli", "auto_download_model", "persist_secrets")
     if not _is_dict(safety):
         errors.append("safety must be an object")
     else:
-        for key in ("auto_install_provider_cli", "auto_download_model", "persist_secrets"):
+        _require_keys(safety, safety_keys, "safety", errors)
+        _unexpected_keys(safety, safety_keys, "safety", errors)
+        for key in safety_keys:
             if safety.get(key) is not False:
                 errors.append("safety.{0} must be false".format(key))
 
     capabilities = value.get("capabilities")
     if not _is_dict(capabilities):
         errors.append("capabilities must be an object")
-    elif set(capabilities) != set(CAPABILITIES):
-        errors.append("capabilities must equal ['scout', 'adopt', 'wire']")
     else:
+        if set(capabilities) != set(CAPABILITIES):
+            errors.append("capabilities must equal ['scout', 'adopt', 'wire']")
         for capability in CAPABILITIES:
-            definition = capabilities[capability]
-            prefix = "capabilities.{0}".format(capability)
-            if not _is_dict(definition):
-                errors.append("{0} must be an object".format(prefix))
-                continue
-            if definition.get("command") != "mlx-{0}".format(capability):
-                errors.append("{0}.command must equal 'mlx-{1}'".format(prefix, capability))
-            _require_string(definition, "description", prefix, errors)
-            arguments = definition.get("arguments")
-            if not isinstance(arguments, list):
-                errors.append("{0}.arguments must be an array".format(prefix))
-            else:
-                for index, argument in enumerate(arguments):
-                    _validate_argument(argument, "{0}.arguments[{1}]".format(prefix, index), errors)
+            if capability in capabilities:
+                _validate_capability(capabilities[capability], capability, errors)
 
     expected_commands = ["mlx-{0}".format(capability) for capability in CAPABILITIES]
     providers = value.get("providers")
     if not _is_dict(providers):
         errors.append("providers must be an object")
-    elif set(providers) != set(PROVIDERS):
-        errors.append("providers must equal ['claude', 'codex', 'gemini', 'opencode', 'agentskills']")
     else:
+        if set(providers) != set(PROVIDERS):
+            errors.append(
+                "providers must equal ['claude', 'codex', 'gemini', 'opencode', 'agentskills']"
+            )
         for provider in PROVIDERS:
-            definition = providers[provider]
-            prefix = "providers.{0}".format(provider)
-            if not _is_dict(definition):
-                errors.append("{0} must be an object".format(prefix))
-                continue
-            if definition.get("capabilities") != list(CAPABILITIES):
-                errors.append("{0}.capabilities must equal ['scout', 'adopt', 'wire']".format(prefix))
-            if provider in NATIVE_PROVIDERS:
-                if definition.get("native") is not True:
-                    errors.append("{0}.native must be true".format(prefix))
-                if definition.get("commands") != expected_commands:
-                    errors.append("{0}.commands must equal {1}".format(prefix, expected_commands))
-            else:
-                if definition.get("native") is not False:
-                    errors.append("{0}.native must be false".format(prefix))
-                if definition.get("commands") != []:
-                    errors.append("{0}.commands must equal []".format(prefix))
+            if provider in providers:
+                _validate_provider(providers[provider], provider, expected_commands, errors)
 
     return errors
 

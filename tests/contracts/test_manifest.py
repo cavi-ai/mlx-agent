@@ -35,3 +35,43 @@ class ManifestTests(unittest.TestCase):
             "providers.codex.commands must equal ['mlx-scout', 'mlx-adopt', 'mlx-wire']",
             errors,
         )
+
+    def test_manifest_validator_returns_errors_for_wrong_shaped_sections(self):
+        original = json.loads((ROOT / "plugin.json").read_text())
+        for section in ("scopes", "capabilities", "providers"):
+            with self.subTest(section=section), tempfile.TemporaryDirectory() as directory:
+                manifest = dict(original)
+                manifest[section] = 1
+                path = Path(directory) / "plugin.json"
+                path.write_text(json.dumps(manifest))
+                errors = validate_manifest(path)
+                self.assertTrue(errors)
+                self.assertIn("{0} must be an".format(section), "\n".join(errors))
+
+    def test_manifest_validator_enforces_schema_only_constraints(self):
+        manifest = json.loads((ROOT / "plugin.json").read_text())
+        manifest["$schema"] = 1
+        manifest["unexpected"] = True
+        manifest["requirements"]["unexpected"] = True
+        manifest["safety"]["unexpected"] = True
+        manifest["capabilities"]["scout"]["description"] = ""
+        manifest["capabilities"]["scout"]["unexpected"] = True
+        manifest["capabilities"]["scout"]["arguments"][0]["name"] = ""
+        manifest["capabilities"]["scout"]["arguments"][0]["unexpected"] = True
+        manifest["providers"]["claude"]["unexpected"] = True
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "plugin.json"
+            path.write_text(json.dumps(manifest))
+            errors = validate_manifest(path)
+        self.assertIn("manifest.$schema must be a string", errors)
+        self.assertIn("manifest has unexpected keys: ['unexpected']", errors)
+        self.assertIn("requirements has unexpected keys: ['unexpected']", errors)
+        self.assertIn("safety has unexpected keys: ['unexpected']", errors)
+        self.assertIn("capabilities.scout.description must not be empty", errors)
+        self.assertIn("capabilities.scout has unexpected keys: ['unexpected']", errors)
+        self.assertIn("capabilities.scout.arguments[0].name must not be empty", errors)
+        self.assertIn(
+            "capabilities.scout.arguments[0] has unexpected keys: ['unexpected']",
+            errors,
+        )
+        self.assertIn("providers.claude has unexpected keys: ['unexpected']", errors)

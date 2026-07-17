@@ -230,7 +230,7 @@ class InstallerRoundTripTests(unittest.TestCase):
             installer.execute(removal, confirmed=removal.preview["preview_hash"])
         self.assertEqual("changed after uninstall preflight\n", target.read_text())
 
-    def test_uninstall_failure_restores_completed_provider_removals(self):
+    def test_uninstall_later_failed_child_is_journaled_and_requires_recovery(self):
         install = self.installer.plan("install", ["claude", "codex"], "user", self.project)
         self.installer.execute(install, confirmed=install.preview["preview_hash"])
         removal = self.installer.plan("uninstall", ["claude", "codex"], "user", self.project)
@@ -238,15 +238,40 @@ class InstallerRoundTripTests(unittest.TestCase):
 
         def fail_second_rollback(receipt_path, **kwargs):
             calls.append(receipt_path)
+            result = rollback(receipt_path, **kwargs)
             if len(calls) == 2:
-                return SimpleNamespace(status="rollback_failed")
-            return rollback(receipt_path, **kwargs)
+                result.status = "rollback_failed"
+            return result
 
         installer = Installer(self.registry, project_root=self.project, rollback_func=fail_second_rollback)
-        receipt = installer.execute(removal, confirmed=removal.preview["preview_hash"])
-        self.assertEqual("rolled_back", receipt.status)
+        with self.assertRaises(InstallerConflictError):
+            installer.execute(removal, confirmed=removal.preview["preview_hash"])
         self.assertTrue((self.config / ".claude" / "skills" / "mlx-scout" / "SKILL.md").is_file())
+        self.assertFalse((self.config / ".codex" / "skills" / "mlx-scout" / "SKILL.md").exists())
+        journals = [json.loads(path.read_text()) for path in (self.config / "mlx-agent" / "installer-receipts" / "batches").glob("*/batch.json")]
+        self.assertIn("recovery_required", [item["status"] for item in journals])
+        journal = next(item for item in journals if item["status"] == "recovery_required")
+        self.assertEqual(["rolled_back", "rollback_failed"], [item["status"] for item in journal["children"]])
+
+    def test_uninstall_first_failed_child_is_journaled_and_requires_recovery(self):
+        install = self.installer.plan("install", ["claude", "codex"], "user", self.project)
+        self.installer.execute(install, confirmed=install.preview["preview_hash"])
+        removal = self.installer.plan("uninstall", ["claude", "codex"], "user", self.project)
+
+        def fail_first_rollback(receipt_path, **kwargs):
+            result = rollback(receipt_path, **kwargs)
+            result.status = "recovery_required"
+            return result
+
+        installer = Installer(self.registry, project_root=self.project, rollback_func=fail_first_rollback)
+        with self.assertRaises(InstallerConflictError):
+            installer.execute(removal, confirmed=removal.preview["preview_hash"])
+        self.assertFalse((self.config / ".claude" / "skills" / "mlx-scout" / "SKILL.md").exists())
         self.assertTrue((self.config / ".codex" / "skills" / "mlx-scout" / "SKILL.md").is_file())
+        journals = [json.loads(path.read_text()) for path in (self.config / "mlx-agent" / "installer-receipts" / "batches").glob("*/batch.json")]
+        self.assertIn("recovery_required", [item["status"] for item in journals])
+        journal = next(item for item in journals if item["status"] == "recovery_required")
+        self.assertEqual(["recovery_required"], [item["status"] for item in journal["children"]])
 
     def test_between_receipt_user_change_is_not_clobbered_by_uninstall_compensation(self):
         installer = self._two_artifact_installer()
@@ -337,6 +362,26 @@ class InstallerRoundTripTests(unittest.TestCase):
         self.assertEqual("recovery_required", journal["children"][0]["status"])
         self.assertTrue(journal["remediation"])
 
+    def test_retry_after_compensated_batch_uses_a_new_child_receipt_namespace(self):
+        calls = []
+
+        def transaction_factory(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 4:
+                kwargs["fault_injector"] = lambda point: (_ for _ in ()).throw(RuntimeError("first attempt interrupted")) if point == "before_replace:0" else None
+            return Transaction(**kwargs)
+
+        installer = Installer(self.registry, project_root=self.project, transaction_factory=transaction_factory)
+        plan = installer.plan("install", ["claude", "codex"], "user", self.project)
+        first = installer.execute(plan, confirmed=plan.preview["preview_hash"])
+        self.assertEqual("rolled_back", first.status)
+        retry = installer.execute(plan, confirmed=plan.preview["preview_hash"])
+        self.assertEqual("applied", retry.status)
+        first_batch = json.loads(Path(first.batch_path).read_text())
+        retry_batch = json.loads(Path(retry.batch_path).read_text())
+        self.assertNotEqual(first_batch["batch_id"], retry_batch["batch_id"])
+        self.assertTrue({item["transaction_id"] for item in first_batch["operations"]}.isdisjoint({item["transaction_id"] for item in retry_batch["operations"]}))
+
     def test_uninstall_compensation_does_not_overwrite_user_edit_after_completed_rollback(self):
         install = self.installer.plan("install", ["claude", "codex"], "user", self.project)
         self.installer.execute(install, confirmed=install.preview["preview_hash"])
@@ -358,4 +403,40 @@ class InstallerRoundTripTests(unittest.TestCase):
         journals = [json.loads(path.read_text()) for path in (self.config / "mlx-agent" / "installer-receipts" / "batches").glob("*/batch.json")]
         journal = next(item for item in journals if item["status"] == "recovery_required")
         self.assertEqual("recovery_required", journal["status"])
+        self.assertTrue(any(str(target.resolve()) in item["paths"] for item in journal["remediation"]))
+
+    def test_uninstall_compensation_checks_rollback_state_under_its_mutation_lock(self):
+        install = self.installer.plan("install", ["claude", "codex"], "user", self.project)
+        self.installer.execute(install, confirmed=install.preview["preview_hash"])
+        removal = self.installer.plan("uninstall", ["claude", "codex"], "user", self.project)
+        target = self.config / ".claude" / "skills" / "mlx-scout" / "SKILL.md"
+        factory_calls, expected_states = [], []
+
+        class EditingCompensationTransaction(Transaction):
+            def apply(self, confirmation, expected_current=None):
+                if expected_current is not None:
+                    expected_states.append(expected_current)
+                    target.write_text("user edit between compensation preview and lock\n")
+                return super().apply(confirmation) if expected_current is None else super().apply(confirmation, expected_current=expected_current)
+
+        def transaction_factory(**kwargs):
+            factory_calls.append(kwargs)
+            if len(factory_calls) == 1:
+                return EditingCompensationTransaction(**kwargs)
+            return Transaction(**kwargs)
+
+        calls = []
+
+        def fail_second_rollback(receipt_path, **kwargs):
+            calls.append(receipt_path)
+            if len(calls) == 2:
+                return SimpleNamespace(status="rollback_failed")
+            return rollback(receipt_path, **kwargs)
+
+        installer = Installer(self.registry, project_root=self.project, transaction_factory=transaction_factory, rollback_func=fail_second_rollback)
+        with self.assertRaises(InstallerConflictError):
+            installer.execute(removal, confirmed=removal.preview["preview_hash"])
+        self.assertTrue(expected_states)
+        self.assertEqual("user edit between compensation preview and lock\n", target.read_text())
+        journal = next(json.loads(path.read_text()) for path in (self.config / "mlx-agent" / "installer-receipts" / "batches").glob("*/batch.json") if json.loads(path.read_text())["status"] == "recovery_required")
         self.assertTrue(any(str(target.resolve()) in item["paths"] for item in journal["remediation"]))

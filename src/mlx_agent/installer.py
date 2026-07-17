@@ -12,7 +12,7 @@ from pathlib import Path
 from .providers import detect_providers
 from .transactions import (
     Receipt, Transaction, _assert_safe_directory, _assert_safe_target,
-    _atomic_in_directory, _read_regular, _read_target, _walk_directory, rollback,
+    _atomic_in_directory, _read_regular, _walk_directory, rollback,
 )
 from .wiring import redact_secrets
 
@@ -38,8 +38,9 @@ class _PlannedTransaction:
     changes: tuple
     preview_hash: str
     destinations: tuple
-    transaction_id: str
-    expected_receipt_path: str
+    transaction_id: str = None
+    expected_receipt_path: str = None
+    child_index: int = None
 
 
 @dataclass
@@ -147,12 +148,12 @@ class Installer:
         batch_path = self._create_batch(plan)
         if plan.action == "uninstall":
             return self._execute_uninstall(plan, batch_path)
-        return self._execute_install(plan, batch_path)
+        return self._execute_install(plan, batch_path, self._batch_operations(plan, batch_path))
 
-    def _execute_install(self, plan, batch_path):
+    def _execute_install(self, plan, batch_path, operations):
         successful, all_receipts = [], []
         try:
-            prepared = [(operation, *self._repreview(operation, plan.scope, plan.project_root)) for operation in plan.transactions]
+            prepared = [(operation, *self._repreview(operation, plan.scope, plan.project_root)) for operation in operations]
         except PermissionError as error:
             self._batch_update(batch_path, "rolled_back", successful, error=str(error))
             raise
@@ -176,26 +177,34 @@ class Installer:
             return InstallerReceipt(status, all_receipts, all_receipts[-1].receipt_path if all_receipts else "", [target for item in all_receipts for target in item.targets], str(batch_path))
 
     def _execute_uninstall(self, plan, batch_path):
-        completed = []
+        completed, attempted = [], []
         try:
             for receipt in plan.rollback_receipts:
-                self._batch_update(batch_path, "pending", completed, active={"provider": "uninstall", "transaction_id": receipt.transaction_id, "expected_receipt_path": receipt.receipt_path})
+                self._batch_update(batch_path, "pending", attempted, active={"provider": "uninstall", "transaction_id": receipt.transaction_id, "expected_receipt_path": receipt.receipt_path})
                 result = self.rollback_func(receipt.receipt_path, expected_after_hashes=receipt.after_hashes)
-                if result.status != "rolled_back":
-                    raise InstallerConflictError("uninstall rollback did not complete: {0}".format(result.status))
-                completed.append(result)
-            self._batch_update(batch_path, "complete", completed)
-            return InstallerReceipt("rolled_back", completed, completed[-1].receipt_path if completed else "", [target for item in completed for target in item.targets], str(batch_path))
+                recorded = self._rollback_result(result, receipt, plan.scope, plan.project_root)
+                attempted.append(recorded)
+                self._batch_update(batch_path, "pending", attempted)
+                if recorded.status != "rolled_back":
+                    raise InstallerConflictError("uninstall rollback did not complete: {0}".format(recorded.status))
+                completed.append(recorded)
+            self._batch_update(batch_path, "complete", attempted)
+            return InstallerReceipt("rolled_back", attempted, attempted[-1].receipt_path if attempted else "", [target for item in attempted for target in item.targets], str(batch_path))
         except Exception as error:
+            unresolved_children = [item for item in attempted if item.status != "rolled_back"]
             if not completed:
-                self._batch_update(batch_path, "rolled_back", completed, error=str(error))
-                raise InstallerConflictError("uninstall aborted before mutation: {0}".format(error))
+                status = "recovery_required" if unresolved_children else "rolled_back"
+                remediation = self._unresolved_child_remediation(unresolved_children)
+                self._batch_update(batch_path, status, attempted, error=str(error), remediation=remediation)
+                message = "uninstall recovery is required" if unresolved_children else "uninstall aborted before mutation"
+                raise InstallerConflictError("{0}: {1}".format(message, error))
             recovered, unresolved = self._compensate_uninstall(plan.restore_changes, completed, plan.scope, plan.project_root)
-            status = "rolled_back" if recovered else "recovery_required"
-            self._batch_update(batch_path, status, completed, error=str(error), remediation=unresolved)
-            if not recovered:
+            status = "rolled_back" if recovered and not unresolved_children else "recovery_required"
+            remediation = self._unresolved_child_remediation(unresolved_children) + unresolved
+            self._batch_update(batch_path, status, attempted, error=str(error), remediation=remediation)
+            if status == "recovery_required":
                 raise InstallerConflictError("uninstall recovery is required: {0}".format(error))
-            return InstallerReceipt(status, completed, completed[-1].receipt_path if completed else "", [target for item in completed for target in item.targets], str(batch_path))
+            return InstallerReceipt(status, attempted, attempted[-1].receipt_path if attempted else "", [target for item in attempted for target in item.targets], str(batch_path))
 
     def _install_plan(self, action, selected, definitions, scope, project):
         transactions, summary = [], []
@@ -217,9 +226,7 @@ class Installer:
             if changes:
                 transaction = self._new_transaction(scope, project)
                 preview = transaction.preview(changes)
-                transaction_id = self._operation_transaction_id(action, scope, project, provider_id, preview["preview_hash"])
-                expected = self._receipts_dir(scope, project) / transaction_id / "receipt.json"
-                transactions.append(_PlannedTransaction(provider_id, tuple(changes), preview["preview_hash"], tuple(str(item["path"]) for item in changes), transaction_id, str(expected)))
+                transactions.append(_PlannedTransaction(provider_id, tuple(changes), preview["preview_hash"], tuple(str(item["path"]) for item in changes)))
                 summary.append({"provider": provider_id, "changes": preview["changes"], "diff": preview["diff"]})
         return self._make_plan(action, selected, scope, project, transactions=transactions, summary=summary, definitions=definitions)
 
@@ -315,7 +322,7 @@ class Installer:
         binding = {
             "action": action, "providers": list(selected), "scope": scope, "project": str(project),
             "destinations": destinations,
-            "inner_previews": [{"provider": item.provider_id, "hash": item.preview_hash, "targets": list(item.destinations), "transaction_id": item.transaction_id, "expected_receipt_path": item.expected_receipt_path} for item in transactions],
+            "inner_previews": [{"provider": item.provider_id, "hash": item.preview_hash, "targets": list(item.destinations)} for item in transactions],
             "rollback_chain": [self._receipt_identity(item) for item in rollback_receipts],
         }
         preview = {"changes": sum(item["changes"] for item in summary), "providers": list(selected),
@@ -331,7 +338,7 @@ class Installer:
             "action": plan.action, "providers": list(plan.provider_ids), "scope": plan.scope,
             "project": str(plan.project_root),
             "destinations": [{"provider": provider_id, "targets": [str(definitions[provider_id].destination(plan.scope, plan.project_root) / artifact.destination) for artifact in definitions[provider_id].artifacts]} for provider_id in plan.provider_ids],
-            "inner_previews": [{"provider": item.provider_id, "hash": item.preview_hash, "targets": list(item.destinations), "transaction_id": item.transaction_id, "expected_receipt_path": item.expected_receipt_path} for item in plan.transactions],
+            "inner_previews": [{"provider": item.provider_id, "hash": item.preview_hash, "targets": list(item.destinations)} for item in plan.transactions],
             "rollback_chain": [self._receipt_identity(self._load_receipt(item.receipt_path, plan.scope, plan.project_root)) for item in plan.rollback_receipts],
         }
         if binding != plan.binding or _digest(binding) != plan.preview["preview_hash"]:
@@ -348,9 +355,8 @@ class Installer:
         return self.transaction_factory(receipts_dir=self._receipts_dir(scope, project), create_target_parents=True, transaction_id=transaction_id)
 
     @staticmethod
-    def _operation_transaction_id(action, scope, project, provider_id, preview_hash):
-        key = "mlx-agent:{0}:{1}:{2}:{3}:{4}".format(action, scope, project, provider_id, preview_hash)
-        return str(uuid.uuid5(uuid.NAMESPACE_URL, key))
+    def _operation_transaction_id(batch_id, child_index, provider_id):
+        return str(uuid.uuid5(uuid.UUID(batch_id), "{0}:{1}".format(child_index, provider_id)))
 
     def _artifact_history(self, definition, target, scope, project):
         target_name = str(target)
@@ -384,6 +390,17 @@ class Installer:
                 "targets": list(receipt.targets), "before_hashes": receipt.before_hashes,
                 "after_hashes": receipt.after_hashes, "backup_paths": receipt.backup_paths}
 
+    def _rollback_result(self, result, planned, scope, project):
+        if all(hasattr(result, field) for field in ("transaction_id", "receipt_path", "targets", "before_hashes", "after_hashes", "backup_paths")):
+            return result
+        recorded = self._load_receipt(planned.receipt_path, scope, project)
+        recorded.status = result.status
+        return recorded
+
+    @staticmethod
+    def _unresolved_child_remediation(receipts):
+        return [{"paths": list(receipt.targets), "message": "Rollback child requires manual recovery: {0}".format(receipt.receipt_path)} for receipt in receipts]
+
     def _compensate_install(self, receipts):
         unresolved = []
         for receipt in reversed(receipts):
@@ -402,7 +419,9 @@ class Installer:
         expected = {}
         for receipt in completed:
             for target in receipt.targets:
-                expected[target] = (receipt.before_hashes[target], receipt.backup_paths[target] is not None, receipt.target_modes[target])
+                expected[target] = {"hash": receipt.before_hashes[target],
+                                    "exists": receipt.backup_paths[target] is not None,
+                                    "mode": receipt.target_modes[target]}
         unresolved = []
         try:
             affected = {target for receipt in completed for target in receipt.targets}
@@ -410,16 +429,10 @@ class Installer:
                 provider_changes = [change for change in provider_changes if change["path"] in affected]
                 if not provider_changes:
                     continue
-                for change in provider_changes:
-                    content, exists, mode = _read_target(change["path"])
-                    expected_hash, expected_exists, expected_mode = expected[change["path"]]
-                    if _sha256(content) != expected_hash or exists != expected_exists or mode != expected_mode:
-                        unresolved.append({"paths": [change["path"]], "message": "Target changed after rollback; compensation will not overwrite it."})
-                if unresolved:
-                    continue
+                expected_current = {change["path"]: expected[change["path"]] for change in provider_changes}
                 transaction = self._new_transaction(scope, project)
-                preview = transaction.preview(provider_changes)
-                if transaction.apply(preview["preview_hash"]).status != "applied":
+                preview = transaction.preview(provider_changes, expected_current=expected_current)
+                if transaction.apply(preview["preview_hash"], expected_current=expected_current).status != "applied":
                     unresolved.append({"paths": [change["path"] for change in provider_changes], "message": "Compensation transaction did not apply."})
             return not unresolved, unresolved
         except Exception as error:
@@ -438,11 +451,16 @@ class Installer:
         finally:
             os.close(descriptor)
         path = directory / batch_id / "batch.json"
+        operations = []
+        for index, item in enumerate(plan.transactions):
+            operation = self._active_operation(item, batch_id, index)
+            operation["expected_receipt_path"] = str(self._receipts_dir(plan.scope, plan.project_root) / operation["transaction_id"] / "receipt.json")
+            operations.append(operation)
         immutable = {
-            "schema_version": "1.0", "action": plan.action, "scope": plan.scope,
+            "schema_version": "1.0", "batch_id": batch_id, "action": plan.action, "scope": plan.scope,
             "project_root": str(plan.project_root), "preview_hash": plan.preview["preview_hash"],
             "binding": plan.binding,
-            "operations": [self._active_operation(item) for item in plan.transactions],
+            "operations": operations,
         }
         self._write_batch(path, dict(immutable, status="pending", children=[], active=None, remediation=[]))
         return path
@@ -464,7 +482,7 @@ class Installer:
     def _read_batch(self, path):
         location = _assert_safe_target(path)
         value = json.loads(_read_regular(location).decode("utf-8"))
-        required = {"schema_version", "action", "scope", "project_root", "preview_hash", "binding", "operations", "status", "children", "active", "remediation"}
+        required = {"schema_version", "batch_id", "action", "scope", "project_root", "preview_hash", "binding", "operations", "status", "children", "active", "remediation"}
         if not isinstance(value, dict) or set(value) != required:
             raise ValueError("installer batch journal is malformed")
         return value
@@ -473,8 +491,34 @@ class Installer:
         root = _assert_safe_directory(Path(path).parent)
         _atomic_in_directory(root, "batch.json", (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8"), 0o600)
 
+    def _batch_operations(self, plan, path):
+        batch = self._read_batch(path)
+        operations = batch["operations"]
+        if len(operations) != len(plan.transactions):
+            raise ValueError("installer batch operations do not match the confirmed plan")
+        result = []
+        for index, (planned, operation) in enumerate(zip(plan.transactions, operations)):
+            expected = self._active_operation(planned, batch["batch_id"], index)
+            expected["expected_receipt_path"] = str(self._receipts_dir(plan.scope, plan.project_root) / expected["transaction_id"] / "receipt.json")
+            if operation != expected:
+                raise ValueError("installer batch operation binding is stale")
+            result.append(_PlannedTransaction(planned.provider_id, planned.changes, planned.preview_hash,
+                                               planned.destinations, operation["transaction_id"],
+                                               operation["expected_receipt_path"], operation["child_index"]))
+        return result
+
     @staticmethod
-    def _active_operation(operation):
-        return {"provider": operation.provider_id, "transaction_id": operation.transaction_id,
-                "expected_receipt_path": operation.expected_receipt_path,
+    def _active_operation(operation, batch_id=None, child_index=None):
+        if operation.transaction_id is None:
+            if batch_id is None or child_index is None:
+                raise ValueError("batch operation identity is required")
+            transaction_id = Installer._operation_transaction_id(batch_id, child_index, operation.provider_id)
+            expected_receipt_path = None
+        else:
+            transaction_id = operation.transaction_id
+            expected_receipt_path = operation.expected_receipt_path
+        return {"provider": operation.provider_id,
+                "child_index": operation.child_index if operation.child_index is not None else child_index,
+                "transaction_id": transaction_id,
+                "expected_receipt_path": expected_receipt_path,
                 "preview_hash": operation.preview_hash, "targets": list(operation.destinations)}

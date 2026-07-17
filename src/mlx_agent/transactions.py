@@ -355,8 +355,9 @@ class Transaction:
         self._changes = []
         self._preview = ""
         self._preview_hash = ""
+        self._expected_current = None
 
-    def preview(self, changes):
+    def preview(self, changes, expected_current=None):
         if not isinstance(changes, (list, tuple)) or not changes:
             raise ValueError("changes must be a non-empty list")
         prepared, diffs, binding = [], [], []
@@ -388,15 +389,21 @@ class Transaction:
             binding.append({"path": str(path), "before": _sha256(before), "after": _sha256(after), "exists": existed, "mode": mode, "endpoint": _sha256(str(change.get("endpoint") or "").encode("utf-8"))})
             prepared.append({"path": path, "content": content, "adapter": adapter, "endpoint": change.get("endpoint"), "before_hash": _sha256(before), "existed": existed, "mode": mode})
         self._changes = prepared
+        self._expected_current = self._normalize_expected_current(expected_current)
         self._preview = self._bounded("\n".join(diffs))
         self._preview_hash = _sha256(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode("utf-8"))
         return {"changes": len(prepared), "diff": self._preview, "preview_hash": self._preview_hash, "requires_confirmation": True}
 
-    def apply(self, confirmation):
+    def apply(self, confirmation, expected_current=None):
         if confirmation is not True and confirmation != self._preview_hash:
             raise PermissionError("explicit confirmation for this preview is required")
         if not self._changes:
             raise ValueError("preview changes before applying them")
+        if expected_current is not None:
+            expected_current = self._normalize_expected_current(expected_current)
+            if self._expected_current is not None and expected_current != self._expected_current:
+                raise ValueError("apply expected_current does not match preview")
+            self._expected_current = expected_current
         with self._advisory_lock():
             return self._apply_locked()
 
@@ -409,6 +416,12 @@ class Transaction:
         return [str(path) for path in sorted({change["path"] for change in self._changes}, key=str)]
 
     def _apply_locked(self):
+        if self._expected_current is not None:
+            for change in self._changes:
+                current, exists, mode = _read_target(change["path"], self.path_race_hook)
+                expected = self._expected_current[str(change["path"])]
+                if _sha256(current) != expected["hash"] or exists != expected["exists"] or mode != expected["mode"]:
+                    raise ValueError("expected current target state changed before mutation")
         for change in self._changes:
             current, exists, mode = _read_target(change["path"], self.path_race_hook)
             if _sha256(current) != change["before_hash"] or exists != change["existed"] or mode != change["mode"]:
@@ -449,6 +462,26 @@ class Transaction:
                 return receipt
             self._finish_restore(receipt)
         return receipt
+
+    def _normalize_expected_current(self, expected_current):
+        if expected_current is None:
+            return None
+        if not isinstance(expected_current, dict):
+            raise ValueError("expected_current must map every target to its current state")
+        targets = {str(change["path"]) for change in self._changes}
+        if set(expected_current) != targets:
+            raise ValueError("expected_current targets do not match the preview")
+        normalized = {}
+        for target in sorted(targets):
+            state = expected_current[target]
+            if not isinstance(state, dict) or set(state) != {"hash", "exists", "mode"}:
+                raise ValueError("expected_current state must include hash, exists, and mode")
+            if not isinstance(state["hash"], str) or not _HASH.match(state["hash"]):
+                raise ValueError("expected_current hash is invalid")
+            if not isinstance(state["exists"], bool) or (state["mode"] is not None and not isinstance(state["mode"], int)):
+                raise ValueError("expected_current existence or mode is invalid")
+            normalized[target] = {"hash": state["hash"], "exists": state["exists"], "mode": state["mode"]}
+        return normalized
 
     def rollback(self, receipt_path):
         return rollback(receipt_path)

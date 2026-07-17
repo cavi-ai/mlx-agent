@@ -1,0 +1,117 @@
+{
+  "schema_version": "1.0",
+  "generated_from": "Task 1-10 contracts and smoke evidence",
+  "allowed_evidence_statuses": ["supported", "not-run", "blocked", "static", "fixture"],
+  "providers": {
+    "claude": {
+      "id": "claude",
+      "display_name": "Claude Code",
+      "documentation": "docs/install/claude.md",
+      "minimum_version": "not established",
+      "last_tested_version": "not recorded",
+      "scopes": ["user", "project"],
+      "config_paths": ["~/.claude", "<project>/.claude"],
+      "capabilities": {
+        "scout": {"command": "mlx-scout", "invocation": "/mlx-scout"},
+        "adopt": {"command": "mlx-adopt", "invocation": "/mlx-adopt"},
+        "wire": {"command": "mlx-wire", "invocation": "/mlx-wire"}
+      },
+      "last_smoke_test": {"status": "fixture", "date": "2026-07-17", "summary": "Generated/package contracts and fixture-backed bundled launchers passed; no current Claude CLI smoke was run."},
+      "evidence": {
+        "schema": {"status": "supported", "summary": "Generated Claude package contract is covered by adapter tests."},
+        "install_round_trip": {"status": "fixture", "summary": "Package artifact lifecycle is contract-tested; no live Claude CLI lifecycle claim."},
+        "native_discovery": {"status": "not-run", "summary": "No current Claude CLI discovery smoke."},
+        "bundle_execution": {"status": "supported", "summary": "Bundled launcher executes fixture-backed Scout from an unrelated working directory."},
+        "model_backed_invocation": {"status": "not-run", "summary": "No model-backed Claude invocation was tested."}
+      }
+    },
+    "codex": {
+      "id": "codex",
+      "display_name": "Codex CLI",
+      "documentation": "docs/install/codex.md",
+      "minimum_version": "0.137.0",
+      "last_tested_version": "0.137.0",
+      "scopes": ["user", "project"],
+      "config_paths": ["~/plugins/mlx-agent", "<project>/plugins/mlx-agent", "~/.agents/plugins/marketplace.json", "<project>/.agents/plugins/marketplace.json"],
+      "capabilities": {
+        "scout": {"command": "mlx-scout", "invocation": "$mlx-agent:mlx-scout"},
+        "adopt": {"command": "mlx-adopt", "invocation": "$mlx-agent:mlx-adopt"},
+        "wire": {"command": "mlx-wire", "invocation": "$mlx-agent:mlx-wire"}
+      },
+      "last_smoke_test": {"status": "blocked", "date": "2026-07-17", "summary": "Isolated marketplace registration/install and namespaced-skill injection passed; final model response was DNS-blocked."},
+      "evidence": {
+        "schema": {"status": "supported", "summary": "Native plugin manifest and skills contract are covered by tests."},
+        "install_round_trip": {"status": "supported", "summary": "Codex 0.137.0 marketplace registration and plugin install/remove passed in an isolated home."},
+        "native_discovery": {"status": "supported", "summary": "Codex prompt input exposed all three installed namespaced skills."},
+        "bundle_execution": {"status": "supported", "summary": "Installed bundle ran fixture-backed Scout directly."},
+        "model_backed_invocation": {"status": "blocked", "summary": "Authenticated Codex model response was blocked by DNS policy and is not claimed."}
+      }
+    },
+    "gemini": {
+      "id": "gemini",
+      "display_name": "Gemini CLI",
+      "documentation": "docs/install/gemini.md",
+      "minimum_version": "0.46.0",
+      "last_tested_version": "0.46.0",
+      "scopes": ["user", "project"],
+      "config_paths": ["~/.gemini/extensions/mlx-agent", "<project>/.gemini/extensions/mlx-agent", "<project>/.gemini/commands", "<project>/.gemini/skills"],
+      "capabilities": {
+        "scout": {"command": "mlx-scout", "invocation": "/mlx-scout"},
+        "adopt": {"command": "mlx-adopt", "invocation": "/mlx-adopt"},
+        "wire": {"command": "mlx-wire", "invocation": "/mlx-wire"}
+      },
+      "last_smoke_test": {"status": "supported", "date": "2026-07-17", "summary": "Gemini 0.46.0 validation/install, user and project skill discovery, and cleanup passed; model and command-list routing remain opt-in."},
+      "evidence": {
+        "schema": {"status": "supported", "summary": "Extension, command TOML, and structured transport contracts are covered by tests."},
+        "install_round_trip": {"status": "supported", "summary": "Isolated user extension install/remove and project installer round trip passed."},
+        "native_discovery": {"status": "supported", "summary": "User and project bundled skills were discovered; command-list probing is separate and opt-in."},
+        "bundle_execution": {"status": "supported", "summary": "Installed launcher executed fixture-backed Scout."},
+        "model_backed_invocation": {"status": "not-run", "summary": "No Gemini model-backed slash-command response is claimed."}
+      }
+    },
+    "opencode": {
+      "id": "opencode",
+      "display_name": "OpenCode",
+      "documentation": "docs/install/opencode.md",
+      "minimum_version": "not established",
+      "last_tested_version": "not recorded",
+      "scopes": ["user", "project"],
+      "config_paths": ["~/.config/opencode", "<project>/.opencode"],
+      "capabilities": {
+        "scout": {"command": "mlx-scout", "invocation": "/mlx-scout"},
+        "adopt": {"command": "mlx-adopt", "invocation": "/mlx-adopt"},
+        "wire": {"command": "mlx-wire", "invocation": "/mlx-wire"}
+      },
+      "last_smoke_test": {"status": "fixture", "date": "2026-07-17", "summary": "Static package contracts and equivalent argv/stdin fixture transport passed; OpenCode and Bun were unavailable."},
+      "evidence": {
+        "schema": {"status": "static", "summary": "Generated TypeScript plugin and command contracts are statically validated."},
+        "install_round_trip": {"status": "fixture", "summary": "Receipt-owned install/update/uninstall lifecycle is tested without an OpenCode CLI."},
+        "native_discovery": {"status": "not-run", "summary": "No OpenCode executable was available for native plugin discovery."},
+        "bundle_execution": {"status": "fixture", "summary": "Equivalent no-shell argv/stdin transport reached the bundled executor; shipped TypeScript/Bun plugin was not loaded."},
+        "model_backed_invocation": {"status": "not-run", "summary": "No OpenCode model-backed invocation is claimed."}
+      }
+    },
+    "agentskills": {
+      "id": "agentskills",
+      "display_name": "AgentSkills-compatible hosts",
+      "documentation": "docs/install/index.md",
+      "minimum_version": "not established",
+      "last_tested_version": "not recorded",
+      "scopes": ["user", "project"],
+      "config_paths": ["~/.agents/skills", "<project>/.agents/skills"],
+      "capabilities": {
+        "scout": {"command": "mlx-scout", "invocation": "mlx-scout skill"},
+        "adopt": {"command": "mlx-adopt", "invocation": "mlx-adopt skill"},
+        "wire": {"command": "mlx-wire", "invocation": "mlx-wire skill"}
+      },
+      "last_smoke_test": {"status": "fixture", "date": "2026-07-17", "summary": "Generated portable bundles and fixture-backed launchers passed; host-specific discovery was not run."},
+      "evidence": {
+        "schema": {"status": "supported", "summary": "Portable skill package contract is covered by generated-adapter tests."},
+        "install_round_trip": {"status": "fixture", "summary": "Generated artifact lifecycle is contract-tested."},
+        "native_discovery": {"status": "not-run", "summary": "AgentSkills is a portable format, not one native host."},
+        "bundle_execution": {"status": "supported", "summary": "Portable bundled launchers execute fixture-backed Scout."},
+        "model_backed_invocation": {"status": "not-run", "summary": "No host model invocation is claimed."}
+      }
+    }
+  }
+}

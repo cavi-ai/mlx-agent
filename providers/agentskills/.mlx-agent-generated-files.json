@@ -25,6 +25,10 @@
       "sha256": "ae713724dafc5e8b9a5965abfc915c9fc3bb89f4c060b368f173081bda8657ca"
     },
     {
+      "path": "mlx-adopt/src/mlx_agent/command_executor.py",
+      "sha256": "591d5f8cfd101e91f6b76052da242d8f411128619175b023c1c1daeac5af89b6"
+    },
+    {
       "path": "mlx-adopt/src/mlx_agent/contracts.py",
       "sha256": "f1f7a81810d8e1dbd082a034dc2b76dc2695393de7dcaa17b53b1472c57f7b8c"
     },
@@ -62,7 +66,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/providers.py",
-      "sha256": "287d9878a9ebffecc24632443c360a4efe7be8a1cbff99c5f46a08bcb6fedb71"
+      "sha256": "9518d07901f2b63c69a484ea1fcd7a576b3f92318cb7b6a1c3b53e4d1900e89c"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/resources/adapter-runtime.json",
@@ -105,6 +109,10 @@
       "sha256": "ae713724dafc5e8b9a5965abfc915c9fc3bb89f4c060b368f173081bda8657ca"
     },
     {
+      "path": "mlx-scout/src/mlx_agent/command_executor.py",
+      "sha256": "591d5f8cfd101e91f6b76052da242d8f411128619175b023c1c1daeac5af89b6"
+    },
+    {
       "path": "mlx-scout/src/mlx_agent/contracts.py",
       "sha256": "f1f7a81810d8e1dbd082a034dc2b76dc2695393de7dcaa17b53b1472c57f7b8c"
     },
@@ -142,7 +150,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/providers.py",
-      "sha256": "287d9878a9ebffecc24632443c360a4efe7be8a1cbff99c5f46a08bcb6fedb71"
+      "sha256": "9518d07901f2b63c69a484ea1fcd7a576b3f92318cb7b6a1c3b53e4d1900e89c"
     },
     {
       "path": "mlx-scout/src/mlx_agent/resources/adapter-runtime.json",
@@ -185,6 +193,10 @@
       "sha256": "ae713724dafc5e8b9a5965abfc915c9fc3bb89f4c060b368f173081bda8657ca"
     },
     {
+      "path": "mlx-wire/src/mlx_agent/command_executor.py",
+      "sha256": "591d5f8cfd101e91f6b76052da242d8f411128619175b023c1c1daeac5af89b6"
+    },
+    {
       "path": "mlx-wire/src/mlx_agent/contracts.py",
       "sha256": "f1f7a81810d8e1dbd082a034dc2b76dc2695393de7dcaa17b53b1472c57f7b8c"
     },
@@ -222,7 +234,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/providers.py",
-      "sha256": "287d9878a9ebffecc24632443c360a4efe7be8a1cbff99c5f46a08bcb6fedb71"
+      "sha256": "9518d07901f2b63c69a484ea1fcd7a576b3f92318cb7b6a1c3b53e4d1900e89c"
     },
     {
       "path": "mlx-wire/src/mlx_agent/resources/adapter-runtime.json",

@@ -190,9 +190,12 @@ class ProviderRegistry:
             raise ValueError("provider opencode must install its advisor agent")
         if not any(item.destination == Path("skills/mlx-scout/SKILL.md") for item in artifacts):
             raise ValueError("provider opencode must install native skills")
-        config = [item for item in artifacts if item.destination == Path("opencode.json")]
-        if len(config) != 2 or not any(item.project_destination == Path("opencode.json") for item in config):
-            raise ValueError("provider opencode must map config to global and project locations")
+        if any(item.destination == Path("opencode.json") for item in artifacts):
+            raise ValueError("provider opencode must not mutate global or project config")
+        if not any(item.destination == Path("plugins/mlx-agent-command.ts") for item in artifacts):
+            raise ValueError("provider opencode must install its native custom tool")
+        if not any(item.destination == Path("src/mlx_agent/command_executor.py") for item in artifacts):
+            raise ValueError("provider opencode must install its custom-tool runtime")
 
     def _user_root(self, template, provider_id):
         if not isinstance(template, str) or "{project}" in template:

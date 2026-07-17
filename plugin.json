@@ -181,10 +181,10 @@
       "user_root": "{home}/.config/opencode",
       "project_root": "{project}/.opencode",
       "artifacts": [
-        {"source": "providers/opencode/opencode.json", "destination": "opencode.json", "scope": "user"},
-        {"source": "providers/opencode/opencode.json", "destination": "opencode.json", "project_destination": "opencode.json", "scope": "project"},
         {"source": "providers/opencode/commands", "destination": "commands"},
         {"source": "providers/opencode/agents/mlx-advisor.md", "destination": "agents/mlx-advisor.md"},
+        {"source": "providers/opencode/plugins", "destination": "plugins"},
+        {"source": "providers/opencode/src", "destination": "src"},
         {"source": "providers/opencode/skills/mlx-scout", "destination": "skills/mlx-scout"},
         {"source": "providers/opencode/skills/mlx-adopt", "destination": "skills/mlx-adopt"},
         {"source": "providers/opencode/skills/mlx-wire", "destination": "skills/mlx-wire"}

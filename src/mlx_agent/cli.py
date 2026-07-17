@@ -8,12 +8,12 @@ import urllib.parse
 from pathlib import Path
 
 from .adoption import AdoptionRequest, AdoptionWorkflow
-from .contracts import ResultEnvelope
+from .contracts import ErrorDetail, ResultEnvelope
 from .discovery import DiscoveryRequest, DiscoveryService
 from .host import HostInventory
 from .huggingface import HuggingFaceClient
 from .models import ROLES, render_md, wire
-from .transactions import Receipt, Transaction, rollback
+from .transactions import Receipt, Transaction, _assert_safe_target, rollback
 from .verification import Verifier
 from .wiring import ConfigAdapter
 
@@ -286,10 +286,15 @@ def _receipt_data(receipt):
     return value
 
 
+def _wire_failure(operation, code, message, remediation, data=None):
+    return ResultEnvelope(
+        operation=operation, status="error", data=data or {},
+        error=ErrorDetail(code, message, remediation),
+    )
+
+
 def _wire_render(arguments):
-    path = Path(arguments.path)
-    if path.is_symlink():
-        raise ValueError("refusing symlink target: {0}".format(path))
+    path = _assert_safe_target(arguments.path)
     existing = path.read_text(encoding="utf-8") if path.exists() else ""
     adapter = ConfigAdapter.detect(path, runtime=arguments.target)
     content = adapter.render(arguments.model, arguments.target, existing)
@@ -308,14 +313,14 @@ def _run_wire(arguments):
             return _emit_wire_result(ResultEnvelope.ok(operation, {"receipt": _receipt_data(receipt)}), arguments.json)
         if arguments.wire_command == "rollback":
             if not arguments.confirm:
-                return _emit_wire_result(ResultEnvelope.fail(
+                return _emit_wire_result(_wire_failure(
                     operation, "confirmation_required", "Rollback was not started without --confirm.",
                     "Review the receipt with 'wire status RECEIPT', then run 'wire rollback RECEIPT --confirm'.",
                 ), arguments.json)
             receipt = rollback(arguments.receipt)
-            result = ResultEnvelope.ok(operation, {"receipt": _receipt_data(receipt)}) if receipt.status == "rolled_back" else ResultEnvelope.fail(
-                operation, "rollback_failed", "Rollback did not complete.",
-                "Inspect the receipt validations and restore the affected backup manually.",
+            result = ResultEnvelope.ok(operation, {"receipt": _receipt_data(receipt)}) if receipt.status == "rolled_back" else _wire_failure(
+                operation, receipt.status, "Rollback did not complete; receipt status is {0}.".format(receipt.status),
+                "Inspect the receipt validations and restore the verified backup manually.", {"receipt": _receipt_data(receipt)},
             )
             return _emit_wire_result(result, arguments.json)
 
@@ -338,15 +343,19 @@ def _run_wire(arguments):
                 print(preview["diff"])
                 print("Confirmation required: rerun with --confirm to apply this transaction.")
             return 2
-        receipt = transaction.apply(True)
-        result = ResultEnvelope.ok(operation, {"receipt": _receipt_data(receipt)}) if receipt.status == "applied" else ResultEnvelope.fail(
-            operation, "transaction_rolled_back", "Wire validation or health check failed; the prior configuration was restored.",
-            "Inspect the receipt validation results before retrying.",
+        if not arguments.json:
+            print(preview["diff"])
+        receipt = transaction.apply(preview["preview_hash"])
+        data = {"preview": preview, "receipt": _receipt_data(receipt)}
+        result = ResultEnvelope.ok(operation, data) if receipt.status == "applied" else _wire_failure(
+            operation, receipt.status, "Wire did not apply; receipt status is {0}.".format(receipt.status),
+            "Inspect the receipt validation results and use the recorded recovery path before retrying.", data,
         )
         return _emit_wire_result(result, arguments.json)
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
-        return _emit_wire_result(ResultEnvelope.fail(
-            operation, "wire_failed", "Wire could not complete: {0}".format(error),
+        code = "preview_stale" if str(error).startswith("preview is stale") else "wire_failed"
+        return _emit_wire_result(_wire_failure(
+            operation, code, "Wire could not complete: {0}".format(error),
             "Correct the target configuration or receipt, then render a new preview.",
         ), arguments.json)
 

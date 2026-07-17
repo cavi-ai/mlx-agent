@@ -6,9 +6,10 @@ import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 from mlx_agent.cli import main
-from mlx_agent.transactions import Transaction, rollback
+from mlx_agent.transactions import Receipt, Transaction, rollback
 
 
 class TransactionTests(unittest.TestCase):
@@ -105,6 +106,186 @@ class TransactionTests(unittest.TestCase):
             receipt = json.loads(output.getvalue())["data"]["receipt"]
             self.assertEqual("applied", receipt["status"])
             self.assertTrue(Path(receipt["receipt_path"]).is_file())
+            self.assertIn("preview", json.loads(output.getvalue())["data"])
+
+    def test_cli_health_failure_returns_nonzero_with_rolled_back_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text("{}\n")
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(2, main([
+                    "wire", "apply", "mlx-community/Test-4bit", "--target", "mlx_lm", "--path", str(target),
+                    "--endpoint", "http://127.0.0.1:1/health", "--confirm", "--json",
+                ]))
+            payload = json.loads(output.getvalue())
+            self.assertEqual("rolled_back", payload["data"]["receipt"]["status"])
+            self.assertEqual("{}\n", target.read_text())
+
+    def test_pending_journal_survives_crash_after_first_of_two_replacements(self):
+        class SimulatedCrash(BaseException):
+            pass
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first, second = root / "one.json", root / "two.json"
+            first.write_text('{"before": 1}\n')
+            second.write_text('{"before": 2}\n')
+            def crash(point):
+                if point == "after_replace:0":
+                    raise SimulatedCrash()
+            transaction = Transaction(receipts_dir=root / "receipts", fault_injector=crash)
+            transaction.preview([
+                self._change(first, '{"after": 1}\n'),
+                self._change(second, '{"after": 2}\n'),
+            ])
+            with self.assertRaises(SimulatedCrash):
+                transaction.apply(True)
+            journals = list((root / "receipts").glob("*/receipt.json"))
+            self.assertEqual(1, len(journals))
+            self.assertEqual("pending", json.loads(journals[0].read_text())["status"])
+            receipt = rollback(journals[0])
+            self.assertEqual("rolled_back", receipt.status)
+            self.assertEqual('{"before": 1}\n', first.read_text())
+            self.assertEqual('{"before": 2}\n', second.read_text())
+
+    def test_pending_receipt_write_failure_changes_no_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            before = b'{"before": true}\n'
+            target.write_bytes(before)
+            def reject_receipt(path, value):
+                raise OSError("receipt disk full")
+            transaction = Transaction(receipts_dir=root / "receipts", receipt_writer=reject_receipt)
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            receipt = transaction.apply(True)
+            self.assertEqual("failed", receipt.status)
+            self.assertEqual(before, target.read_bytes())
+
+    def test_receipt_transition_failure_restores_and_leaves_pending_journal_recoverable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            before = b'{"before": true}\n'
+            target.write_bytes(before)
+            calls = []
+            def writer(path, value):
+                calls.append(value["status"])
+                if len(calls) == 1:
+                    path.write_text(json.dumps(value))
+                else:
+                    raise OSError("receipt transition unavailable")
+            transaction = Transaction(receipts_dir=root / "receipts", receipt_writer=writer)
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            receipt = transaction.apply(True)
+            self.assertEqual("recovery_required", receipt.status)
+            self.assertEqual(before, target.read_bytes())
+            self.assertEqual("pending", json.loads(Path(receipt.receipt_path).read_text())["status"])
+            self.assertEqual("rolled_back", rollback(receipt.receipt_path).status)
+
+    def test_rollback_rejects_tampered_or_missing_backup_without_claiming_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text('{"before": true}\n')
+            transaction = Transaction(receipts_dir=root / "receipts")
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            receipt = transaction.apply(True)
+            Path(receipt.backup_paths[str(target)]).write_text("tampered\n")
+            restored = rollback(receipt.receipt_path)
+            self.assertIn(restored.status, {"rollback_failed", "recovery_required"})
+
+    def test_rollback_restore_write_failure_never_claims_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text('{"before": true}\n')
+            transaction = Transaction(receipts_dir=root / "receipts")
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            receipt = transaction.apply(True)
+            from mlx_agent.transactions import _atomic_in_directory as real_atomic
+            def fail_target(directory, name, *args, **kwargs):
+                if Path(directory) == target.parent and name == target.name:
+                    raise OSError("simulated restore write failure")
+                return real_atomic(directory, name, *args, **kwargs)
+            with patch("mlx_agent.transactions._atomic_in_directory", side_effect=fail_target):
+                restored = rollback(receipt.receipt_path)
+            self.assertIn(restored.status, {"rollback_failed", "recovery_required"})
+            self.assertEqual('{"after": true}\n', target.read_text())
+            self.assertEqual('{"after": true}\n', target.read_text())
+            Path(receipt.backup_paths[str(target)]).unlink()
+            restored = rollback(receipt.receipt_path)
+            self.assertIn(restored.status, {"rollback_failed", "recovery_required"})
+
+    def test_receipt_rejects_ancestor_symlink_traversal_and_unknown_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            real = root / "real"
+            real.mkdir()
+            linked = root / "linked"
+            linked.symlink_to(real, target_is_directory=True)
+            with self.assertRaises(ValueError):
+                Transaction(receipts_dir=root / "receipts").preview([self._change(linked / "providers.json", "{}\n")])
+            receipts_link = root / "receipts-link"
+            receipts_link.symlink_to(real, target_is_directory=True)
+            transaction = Transaction(receipts_dir=receipts_link)
+            target = real / "providers.json"
+            with self.assertRaises(ValueError):
+                transaction.preview([self._change(target, "{}\n")])
+                transaction.apply(True)
+            bad = root / "bad.json"
+            bad.write_text(json.dumps({"schema_version": "1.0", "unexpected": True}))
+            with self.assertRaises(ValueError):
+                Receipt.from_dict(json.loads(bad.read_text()), str(bad))
+
+    def test_receipt_loader_rejects_unknown_status_and_backup_escape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text('{"before": true}\n')
+            transaction = Transaction(receipts_dir=root / "receipts")
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            receipt = transaction.apply(True)
+            value = json.loads(Path(receipt.receipt_path).read_text())
+            value["status"] = "anything"
+            with self.assertRaises(ValueError):
+                Receipt.from_dict(value, receipt.receipt_path)
+            value["status"] = "applied"
+            value["backup_paths"][str(target)] = str(root / "outside-backup.bin")
+            with self.assertRaises(ValueError):
+                Receipt.from_dict(value, receipt.receipt_path)
+
+    def test_apply_aborts_if_previewed_before_hash_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text('{"before": 1}\n')
+            transaction = Transaction(receipts_dir=root / "receipts")
+            transaction.preview([self._change(target, '{"after": 1}\n')])
+            target.write_text('{"changed": true}\n')
+            with self.assertRaises(ValueError):
+                transaction.apply(True)
+            self.assertEqual('{"changed": true}\n', target.read_text())
+
+    def test_cli_status_and_confirmed_rollback_report_receipt_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text("{}\n")
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(0, main(["wire", "apply", "mlx-community/Test-4bit", "--target", "mlx_lm", "--path", str(target), "--confirm", "--json"]))
+            receipt_path = json.loads(output.getvalue())["data"]["receipt"]["receipt_path"]
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(0, main(["wire", "status", receipt_path, "--json"]))
+            self.assertEqual("applied", json.loads(output.getvalue())["data"]["receipt"]["status"])
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(0, main(["wire", "rollback", receipt_path, "--confirm", "--json"]))
+            self.assertEqual("rolled_back", json.loads(output.getvalue())["data"]["receipt"]["status"])
 
 
 if __name__ == "__main__":

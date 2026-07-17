@@ -11,6 +11,13 @@ SCHEMA_VERSION = "1.0"
 CAPABILITIES = ("scout", "adopt", "wire")
 NATIVE_PROVIDERS = ("claude", "codex", "gemini", "opencode")
 PROVIDERS = NATIVE_PROVIDERS + ("agentskills",)
+PROVIDER_INVOCATIONS = {
+    "claude": {"kind": "command", "prefix": "/"},
+    "codex": {"kind": "skill", "prefix": "$"},
+    "gemini": {"kind": "command", "prefix": "/"},
+    "opencode": {"kind": "command", "prefix": "/"},
+    "agentskills": {"kind": "skill", "prefix": ""},
+}
 DATE_TIME_PATTERN = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"
 )
@@ -148,7 +155,7 @@ def _validate_provider(
     if not _is_dict(value):
         errors.append("{0} must be an object".format(prefix))
         return
-    keys = ("native", "capabilities", "commands", "detect_commands", "user_root", "project_root", "artifacts", "config_paths")
+    keys = ("native", "capabilities", "commands", "detect_commands", "user_root", "project_root", "invocation", "artifacts", "config_paths")
     _require_keys(value, keys, prefix, errors)
     _unexpected_keys(value, keys, prefix, errors)
     if value.get("capabilities") != list(CAPABILITIES):
@@ -166,6 +173,8 @@ def _validate_provider(
         errors.append("{0}.artifacts must contain source/destination strings".format(prefix))
     if not isinstance(value.get("config_paths"), list) or not all(isinstance(item, str) for item in value["config_paths"]):
         errors.append("{0}.config_paths must be an array of strings".format(prefix))
+    if value.get("invocation") != PROVIDER_INVOCATIONS[name]:
+        errors.append("{0}.invocation must equal {1}".format(prefix, PROVIDER_INVOCATIONS[name]))
     if name in NATIVE_PROVIDERS:
         if value.get("native") is not True:
             errors.append("{0}.native must be true".format(prefix))

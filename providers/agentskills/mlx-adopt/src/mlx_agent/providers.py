@@ -21,6 +21,8 @@ class ProviderDefinition:
     detect_commands: tuple
     user_root: Path
     project_root: Path
+    invocation_kind: str
+    invocation_prefix: str
     artifacts: tuple
     config_paths: tuple
 
@@ -91,6 +93,16 @@ class ProviderRegistry:
             raise ValueError("provider {0}.detect_commands is invalid".format(provider_id))
         user_root = self._user_root(value["user_root"], provider_id)
         project_root = self._project_root(value["project_root"], provider_id)
+        invocation = value.get("invocation", {"kind": "skill", "prefix": ""})
+        if not isinstance(invocation, dict) or set(invocation) != {"kind", "prefix"}:
+            raise ValueError("provider {0}.invocation is invalid".format(provider_id))
+        invocation_kind, invocation_prefix = invocation["kind"], invocation["prefix"]
+        if invocation_kind not in {"command", "skill"} or not isinstance(invocation_prefix, str):
+            raise ValueError("provider {0}.invocation is invalid".format(provider_id))
+        if invocation_kind == "command" and invocation_prefix != "/":
+            raise ValueError("provider {0}.invocation is invalid".format(provider_id))
+        if invocation_kind == "skill" and invocation_prefix not in {"", "$"}:
+            raise ValueError("provider {0}.invocation is invalid".format(provider_id))
         artifacts = []
         if not isinstance(value["artifacts"], list) or not value["artifacts"]:
             raise ValueError("provider {0}.artifacts is invalid".format(provider_id))
@@ -117,6 +129,8 @@ class ProviderRegistry:
             detect_commands=tuple(commands),
             user_root=user_root,
             project_root=project_root,
+            invocation_kind=invocation_kind,
+            invocation_prefix=invocation_prefix,
             artifacts=tuple(artifacts),
             config_paths=tuple(config_paths),
         )

@@ -24,9 +24,10 @@ class ProviderRegistryTests(unittest.TestCase):
             )
             for provider_id, definition in definitions.items():
                 with self.subTest(provider=provider_id):
-                    self.assertTrue(str(definition.user_root).startswith(str((root / "config").resolve())))
+                    expected_root = root / ("home/plugins/mlx-agent" if provider_id == "codex" else "config")
+                    self.assertTrue(str(definition.user_root).startswith(str(expected_root.resolve())))
                     self.assertEqual(
-                        (root / "project" / definition.project_root.name).resolve(),
+                        (root / "project" / definition.project_root).resolve(),
                         definition.destination("project", root / "project"),
                     )
                     self.assertTrue(definition.artifacts)

@@ -92,6 +92,10 @@
         "mlx-adopt",
         "mlx-wire"
       ],
+      "invocation": {
+        "kind": "command",
+        "prefix": "/"
+      },
       "detect_commands": ["claude"],
       "user_root": "{config_root}/.claude",
       "project_root": "{project}/.claude",
@@ -110,10 +114,19 @@
         "mlx-adopt",
         "mlx-wire"
       ],
+      "invocation": {
+        "kind": "skill",
+        "prefix": "$"
+      },
       "detect_commands": ["codex"],
-      "user_root": "{config_root}/.codex",
-      "project_root": "{project}/.codex",
-      "artifacts": [{"source": "skills/mlx-scout/SKILL.md", "destination": "skills/mlx-scout/SKILL.md"}],
+      "user_root": "{home}/plugins/mlx-agent",
+      "project_root": "{project}/.agents/plugins/mlx-agent",
+      "artifacts": [
+        {"source": "providers/codex/.codex-plugin", "destination": ".codex-plugin"},
+        {"source": "providers/codex/skills/mlx-scout", "destination": "skills/mlx-scout"},
+        {"source": "providers/codex/skills/mlx-adopt", "destination": "skills/mlx-adopt"},
+        {"source": "providers/codex/skills/mlx-wire", "destination": "skills/mlx-wire"}
+      ],
       "config_paths": []
     },
     "gemini": {
@@ -128,6 +141,10 @@
         "mlx-adopt",
         "mlx-wire"
       ],
+      "invocation": {
+        "kind": "command",
+        "prefix": "/"
+      },
       "detect_commands": ["gemini"],
       "user_root": "{config_root}/.gemini",
       "project_root": "{project}/.gemini",
@@ -146,6 +163,10 @@
         "mlx-adopt",
         "mlx-wire"
       ],
+      "invocation": {
+        "kind": "command",
+        "prefix": "/"
+      },
       "detect_commands": ["opencode"],
       "user_root": "{config_root}/.opencode",
       "project_root": "{project}/.opencode",
@@ -160,6 +181,10 @@
         "wire"
       ],
       "commands": [],
+      "invocation": {
+        "kind": "skill",
+        "prefix": ""
+      },
       "detect_commands": [],
       "user_root": "{config_root}/.agents",
       "project_root": "{project}/.agents",

@@ -17,7 +17,7 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Union
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SUPPORTED_PROVIDERS = ("claude", "agentskills")
+SUPPORTED_PROVIDERS = ("claude", "codex", "agentskills")
 INVENTORY_NAME = ".mlx-agent-generated-files.json"
 INVENTORY_SCHEMA_VERSION = 2
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -119,6 +119,20 @@ def _generic_skill_markdown(manifest: Mapping[str, object], capability: str) -> 
     )
 
 
+def _codex_skill_markdown(manifest: Mapping[str, object], capability: str) -> str:
+    """Render a Codex skill rather than an unsupported custom slash command."""
+
+    content = _generic_skill_markdown(manifest, capability)
+    invocation = "$mlx-{0}".format(capability)
+    marker = "\n# MLX {0}\n".format(capability.title())
+    return content.replace(
+        marker,
+        "\nUse `{0}` to invoke this installed Codex skill explicitly. Codex does not "
+        "support custom `/mlx-*` slash commands.\n".format(invocation) + marker,
+        1,
+    )
+
+
 def _plugin_metadata(manifest: Mapping[str, object]) -> str:
     capabilities = manifest["capabilities"]
     payload = {
@@ -151,6 +165,40 @@ def _marketplace_metadata(manifest: Mapping[str, object]) -> str:
             "source": ".",
             "category": "development",
         }],
+    }
+    return json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+
+
+def _codex_plugin_metadata(manifest: Mapping[str, object]) -> str:
+    """Render the current public Codex plugin manifest shape.
+
+    Source: https://github.com/openai/codex/blob/main/codex-rs/skills/src/
+    assets/samples/plugin-creator/references/plugin-json-spec.md
+    """
+
+    payload = {
+        "name": manifest["identity"],
+        "version": "0.1.0",
+        "description": "Structured local MLX discovery, adoption, and wiring for Apple Silicon agents.",
+        "author": {"name": "Sasan Sotoodehfar", "url": "https://github.com/sasan1200"},
+        "homepage": "https://github.com/sasan1200/mlx-agent",
+        "repository": "https://github.com/sasan1200/mlx-agent",
+        "license": "MIT",
+        "keywords": ["mlx", "apple-silicon", "local-llm", "agent-adapter"],
+        "skills": "./skills/",
+        "interface": {
+            "displayName": "MLX Agent",
+            "shortDescription": "Discover, adopt, and wire local MLX models.",
+            "longDescription": "Structured local MLX discovery, adoption, and confirmation-gated wiring for Apple Silicon agents.",
+            "developerName": "Sasan Sotoodehfar",
+            "category": "Developer Tools",
+            "capabilities": ["Interactive", "Write"],
+            "defaultPrompt": [
+                "Use $mlx-scout to discover a local MLX model.",
+                "Use $mlx-adopt to recommend a model for coding.",
+                "Use $mlx-wire to preview a model configuration change.",
+            ],
+        },
     }
     return json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
 
@@ -224,6 +272,8 @@ def _runtime_bundle(destination: Path, source_root: Optional[Path] = None) -> Di
 def _surface(path: Path) -> Optional[Path]:
     if path.parts[:2] == ("providers", "claude"):
         return Path("providers/claude")
+    if path.parts[:2] == ("providers", "codex"):
+        return Path("providers/codex")
     if path.parts[:2] == ("providers", "agentskills"):
         return Path("providers/agentskills")
     return None
@@ -238,6 +288,8 @@ def _surface_id(surface: Optional[Path]) -> str:
         return "root-claude-compat"
     if surface == Path("providers/claude"):
         return "claude-package"
+    if surface == Path("providers/codex"):
+        return "codex-package"
     if surface == Path("providers/agentskills"):
         return "agentskills-package"
     raise ValueError("unknown generated surface: {0}".format(surface))
@@ -255,6 +307,13 @@ def _allowed_surface_paths(surface: Optional[Path]) -> set:
         return root_paths
     if surface == Path("providers/claude"):
         return root_paths | runtime
+    if surface == Path("providers/codex"):
+        allowed = {Path(".codex-plugin/plugin.json")}
+        for capability in ("scout", "adopt", "wire"):
+            skill = Path("skills/mlx-{0}".format(capability))
+            allowed.add(skill / "SKILL.md")
+            allowed.update(skill / path for path in runtime)
+        return allowed
     if surface == Path("providers/agentskills"):
         allowed = set()
         for capability in ("scout", "adopt", "wire"):
@@ -317,6 +376,13 @@ def _render(manifest: Mapping[str, object], provider_ids: Sequence[str]) -> Dict
         for path, content in claude_paths.items():
             rendered[Path("providers/claude") / path] = content
         rendered.update(_runtime_bundle(Path("providers/claude")))
+    if "codex" in selected:
+        codex_root = Path("providers/codex")
+        rendered[codex_root / ".codex-plugin" / "plugin.json"] = _codex_plugin_metadata(manifest)
+        for capability in ("scout", "adopt", "wire"):
+            skill_root = codex_root / "skills" / "mlx-{0}".format(capability)
+            rendered[skill_root / "SKILL.md"] = _codex_skill_markdown(manifest, capability)
+            rendered.update(_runtime_bundle(skill_root))
     if "agentskills" in selected:
         for capability in ("scout", "adopt", "wire"):
             skill_root = Path("providers/agentskills/mlx-{0}".format(capability))

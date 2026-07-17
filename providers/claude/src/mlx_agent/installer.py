@@ -27,7 +27,12 @@ class _ArtifactAdapter:
     def validate(self, content):
         if not isinstance(content, str):
             raise TypeError("installer artifacts must be UTF-8 text")
-        if redact_secrets(content) != content:
+        redacted = redact_secrets(content)
+        try:
+            contains_persisted_secret = json.loads(redacted) != json.loads(content)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            contains_persisted_secret = redacted != content
+        if contains_persisted_secret:
             raise ValueError("installer artifacts must not contain persisted secrets")
         return True
 

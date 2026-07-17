@@ -1,0 +1,35 @@
+{
+  "name": "mlx-agent",
+  "version": "0.1.0",
+  "description": "Structured local MLX discovery, adoption, and wiring for Apple Silicon agents.",
+  "author": {
+    "name": "Sasan Sotoodehfar",
+    "url": "https://github.com/sasan1200"
+  },
+  "homepage": "https://github.com/sasan1200/mlx-agent",
+  "repository": "https://github.com/sasan1200/mlx-agent",
+  "license": "MIT",
+  "keywords": [
+    "mlx",
+    "apple-silicon",
+    "local-llm",
+    "agent-adapter"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "MLX Agent",
+    "shortDescription": "Discover, adopt, and wire local MLX models.",
+    "longDescription": "Structured local MLX discovery, adoption, and confirmation-gated wiring for Apple Silicon agents.",
+    "developerName": "Sasan Sotoodehfar",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Use $mlx-scout to discover a local MLX model.",
+      "Use $mlx-adopt to recommend a model for coding.",
+      "Use $mlx-wire to preview a model configuration change."
+    ]
+  }
+}

@@ -177,7 +177,7 @@ class InstallerRoundTripTests(unittest.TestCase):
         receipt = installer.execute(plan, confirmed=plan.preview["preview_hash"])
         self.assertEqual("rolled_back", receipt.status)
         self.assertFalse((self.config / ".claude" / "skills" / "mlx-scout" / "SKILL.md").exists())
-        self.assertFalse((self.config / ".codex" / "skills" / "mlx-scout" / "SKILL.md").exists())
+        self.assertFalse((self.home / "plugins" / "mlx-agent" / "skills" / "mlx-scout" / "SKILL.md").exists())
         self.assertTrue(Path(receipt.batch_path).is_file())
         self.assertEqual("rolled_back", json.loads(Path(receipt.batch_path).read_text())["status"])
 
@@ -247,7 +247,7 @@ class InstallerRoundTripTests(unittest.TestCase):
         with self.assertRaises(InstallerConflictError):
             installer.execute(removal, confirmed=removal.preview["preview_hash"])
         self.assertTrue((self.config / ".claude" / "skills" / "mlx-scout" / "SKILL.md").is_file())
-        self.assertFalse((self.config / ".codex" / "skills" / "mlx-scout" / "SKILL.md").exists())
+        self.assertFalse((self.home / "plugins" / "mlx-agent" / "skills" / "mlx-scout" / "SKILL.md").exists())
         journals = [json.loads(path.read_text()) for path in (self.config / "mlx-agent" / "installer-receipts" / "batches").glob("*/batch.json")]
         self.assertIn("recovery_required", [item["status"] for item in journals])
         journal = next(item for item in journals if item["status"] == "recovery_required")
@@ -267,7 +267,7 @@ class InstallerRoundTripTests(unittest.TestCase):
         with self.assertRaises(InstallerConflictError):
             installer.execute(removal, confirmed=removal.preview["preview_hash"])
         self.assertFalse((self.config / ".claude" / "skills" / "mlx-scout" / "SKILL.md").exists())
-        self.assertTrue((self.config / ".codex" / "skills" / "mlx-scout" / "SKILL.md").is_file())
+        self.assertTrue((self.home / "plugins" / "mlx-agent" / "skills" / "mlx-scout" / "SKILL.md").is_file())
         journals = [json.loads(path.read_text()) for path in (self.config / "mlx-agent" / "installer-receipts" / "batches").glob("*/batch.json")]
         self.assertIn("recovery_required", [item["status"] for item in journals])
         journal = next(item for item in journals if item["status"] == "recovery_required")

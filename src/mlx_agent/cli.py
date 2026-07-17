@@ -7,11 +7,13 @@ import sys
 import urllib.parse
 from pathlib import Path
 
+from .adoption import AdoptionRequest, AdoptionWorkflow
 from .contracts import ResultEnvelope
 from .discovery import DiscoveryRequest, DiscoveryService
 from .host import HostInventory
 from .huggingface import HuggingFaceClient
 from .models import ROLES, render_md, wire
+from .verification import Verifier
 
 
 FIXTURE_WARNING = {
@@ -150,6 +152,110 @@ def _run_discovery(arguments, legacy):
     return 0 if result.status == "ok" else 2
 
 
+def _adoption_state_path(arguments):
+    return arguments.state or os.environ.get("MLX_AGENT_ADOPTION_STATE")
+
+
+def _emit_adoption_result(result, as_json):
+    value = result.to_dict()
+    if as_json:
+        print(json.dumps(value, indent=2))
+    elif result.status == "ok":
+        state = result.data["state"]
+        print("Adoption {0}: {1}".format(state["status"], state["phase"]))
+        if state["recommendations"]:
+            for item in state["recommendations"]:
+                print("{0}: {1} [{2}]".format(item["role"], item["repo"], item["evidence_strength"]))
+    else:
+        error = value["error"]
+        print("{0} failed [{1}]: {2}\nremediation: {3}".format(
+            result.operation, error["code"], error["message"], error["remediation"]
+        ))
+    return 0 if result.status == "ok" else 2
+
+
+def _run_adoption(arguments):
+    operation = "adopt-{0}".format(arguments.adopt_command)
+    state_path = _adoption_state_path(arguments)
+    if not state_path:
+        return _emit_adoption_result(ResultEnvelope.fail(
+            operation,
+            "state_path_required",
+            "No adoption state path was supplied.",
+            "Pass --state PATH or set MLX_AGENT_ADOPTION_STATE.",
+        ), arguments.json)
+
+    if arguments.adopt_command == "status":
+        workflow = AdoptionWorkflow(
+            discovery_service=DiscoveryService(), verifier=Verifier(), state_path=state_path
+        )
+        try:
+            state = workflow.status(state_path)
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+            return _emit_adoption_result(ResultEnvelope.fail(
+                operation,
+                "adoption_state_invalid",
+                "Adoption state could not be read: {0}".format(error),
+                "Check --state PATH and restore a schema-version 1.0 adoption handoff.",
+            ), arguments.json)
+        return _emit_adoption_result(
+            ResultEnvelope.ok(operation, {"state": state.to_dict()}), arguments.json
+        )
+
+    service, fixture_warning, fixture_error = _discovery_service_from_environment()
+    if fixture_error:
+        return _emit_adoption_result(fixture_error, arguments.json)
+    workflow = AdoptionWorkflow(
+        discovery_service=service,
+        verifier=Verifier(metadata_client=getattr(service, "_huggingface", None)),
+        state_path=state_path,
+    )
+    try:
+        if arguments.adopt_command == "start":
+            state = workflow.start(AdoptionRequest(
+                roles=tuple(arguments.roles or ("general",)),
+                state_path=state_path,
+                shortlist_limit=arguments.shortlist_limit,
+                allow_network=arguments.allow_network and not arguments.offline,
+                offline=arguments.offline,
+                refresh=arguments.refresh,
+                fast=arguments.fast,
+            ))
+        else:
+            state = workflow.resume(state_path)
+        while state.phase != "complete":
+            state = workflow.advance(state)
+    except (OSError, TypeError, ValueError, RuntimeError, json.JSONDecodeError) as error:
+        return _emit_adoption_result(ResultEnvelope.fail(
+            operation,
+            "adoption_failed",
+            "Adoption workflow could not continue: {0}".format(error),
+            "Inspect the saved state with 'adopt status', resolve the reported issue, and resume.",
+        ), arguments.json)
+    warnings = [fixture_warning] if fixture_warning else []
+    return _emit_adoption_result(
+        ResultEnvelope.ok(operation, {"state": state.to_dict()}, warnings=warnings),
+        arguments.json,
+    )
+
+
+def _add_adoption_arguments(parser):
+    actions = parser.add_subparsers(dest="adopt_command", required=True)
+    start = actions.add_parser("start", help="start and durably run a model adoption workflow")
+    start.add_argument("--state", help="adoption handoff path")
+    start.add_argument("--role", dest="roles", action="append", choices=[role for role, _keywords, _label in ROLES])
+    start.add_argument("--shortlist-limit", type=int, default=4)
+    start.add_argument("--offline", action="store_true", help="use cached discovery and no metadata network requests")
+    start.add_argument("--refresh", action="store_true", help="refresh model discovery")
+    start.add_argument("--fast", action="store_true", help="use heuristic-only discovery enrichment")
+    start.add_argument("--no-network", dest="allow_network", action="store_false", default=True, help="do not inspect missing-model metadata")
+    start.add_argument("--json", action="store_true")
+    for name in ("resume", "status"):
+        action = actions.add_parser(name, help="{0} an adoption handoff".format(name))
+        action.add_argument("--state", help="adoption handoff path")
+        action.add_argument("--json", action="store_true")
+
+
 def legacy_scout_main(argv=None):
     parser = argparse.ArgumentParser(description="Discover MLX models on HuggingFace for this host.")
     _add_discovery_arguments(parser)
@@ -161,5 +267,9 @@ def main(argv=None):
     subcommands = parser.add_subparsers(dest="command", required=True)
     discover = subcommands.add_parser("discover", help="discover MLX models for this host")
     _add_discovery_arguments(discover)
+    adopt = subcommands.add_parser("adopt", help="run or inspect resumable model adoption")
+    _add_adoption_arguments(adopt)
     arguments = parser.parse_args(argv)
+    if arguments.command == "adopt":
+        return _run_adoption(arguments)
     return _run_discovery(arguments, legacy=False)

@@ -3,17 +3,24 @@
 import argparse
 import json
 import os
+import sys
 import urllib.parse
 from pathlib import Path
 
+from .contracts import ResultEnvelope
 from .discovery import DiscoveryRequest, DiscoveryService
 from .host import HostInventory
 from .huggingface import HuggingFaceClient
 from .models import ROLES, render_md, wire
 
 
-def _fixture_http_get(path):
-    payload = json.loads(Path(path).read_text())
+FIXTURE_WARNING = {
+    "code": "synthetic_fixture",
+    "message": "Fixture-backed discovery; this is not live Hugging Face evidence.",
+}
+
+
+def _fixture_http_get(payload):
 
     def get(url, timeout=10.0):
         del timeout
@@ -33,9 +40,39 @@ def _fixture_http_get(path):
 def _discovery_service_from_environment():
     fixture = os.environ.get("MLX_AGENT_FIXTURE")
     if not fixture:
-        return DiscoveryService()
-    payload = json.loads(Path(fixture).read_text())
-    return DiscoveryService(host=HostInventory(**payload["host"]), huggingface=HuggingFaceClient(http_get=_fixture_http_get(fixture)))
+        return DiscoveryService(), None, None
+    try:
+        payload = json.loads(Path(fixture).read_text())
+        _validate_fixture(payload)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
+        return None, None, ResultEnvelope.fail(
+            "discover", "invalid_fixture", "MLX_AGENT_FIXTURE is invalid: {0}".format(error),
+            "Use a valid test fixture or unset MLX_AGENT_FIXTURE to run live discovery.",
+        )
+    service = DiscoveryService(host=HostInventory(**payload["host"]), huggingface=HuggingFaceClient(http_get=_fixture_http_get(payload)))
+    return service, FIXTURE_WARNING, None
+
+
+def _validate_fixture(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("fixture root must be an object")
+    if not isinstance(payload.get("models"), list):
+        raise ValueError("fixture.models must be a list")
+    if not isinstance(payload.get("details"), dict):
+        raise ValueError("fixture.details must be an object")
+    if not isinstance(payload.get("trees"), dict):
+        raise ValueError("fixture.trees must be an object")
+    host = payload.get("host")
+    if not isinstance(host, dict):
+        raise ValueError("fixture.host must be an object")
+    if set(host) != {"ram_gb", "chip", "ollama", "lmstudio"}:
+        raise ValueError("fixture.host must contain only ram_gb, chip, ollama, and lmstudio")
+    if host["ram_gb"] is not None and (not isinstance(host["ram_gb"], int) or isinstance(host["ram_gb"], bool)):
+        raise ValueError("fixture.host.ram_gb must be an integer or null")
+    if host["chip"] is not None and not isinstance(host["chip"], str):
+        raise ValueError("fixture.host.chip must be a string or null")
+    if not isinstance(host["ollama"], bool) or not isinstance(host["lmstudio"], bool):
+        raise ValueError("fixture.host runtime flags must be booleans")
 
 
 def _add_discovery_arguments(parser):
@@ -53,11 +90,14 @@ def _run_discovery(arguments, legacy):
     if arguments.wire:
         print(wire(arguments.wire, arguments.target, arguments.port))
         return 0
-    service = _discovery_service_from_environment()
-    result = service.discover(DiscoveryRequest(limit=arguments.limit, role=arguments.role, new=arguments.new, fast=arguments.fast))
+    service, fixture_warning, fixture_error = _discovery_service_from_environment()
+    result = fixture_error or service.discover(DiscoveryRequest(limit=arguments.limit, role=arguments.role, new=arguments.new, fast=arguments.fast))
+    if fixture_warning:
+        result = ResultEnvelope.ok("discover", result.data, warnings=[fixture_warning])
+        print("warning: synthetic fixture-backed discovery; not live Hugging Face evidence.", file=sys.stderr)
     value = result.to_dict()
     if legacy:
-        report = value["data"] if result.status == "ok" else {"host": service.host.to_dict(), "error": value["error"]["message"], "roles": {}}
+        report = value["data"] if result.status == "ok" else {"host": service.host.to_dict() if service else HostInventory().to_dict(), "error": value["error"]["message"], "roles": {}}
         print(json.dumps(report, indent=2) if arguments.json else render_md(report))
         return 0 if result.status == "ok" else 2
     if arguments.json:

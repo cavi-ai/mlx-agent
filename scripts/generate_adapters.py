@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import os
 import re
 import stat
 import sys
+import uuid
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Union
 
@@ -369,53 +371,161 @@ def _assert_safe_generated_path(root: Path, relative: Path, surface: Optional[Pa
     return target
 
 
-def _open_parent_no_follow(root: Path, relative: Path):
-    """Open a verified parent directory by descriptor without following links."""
+def _physical_generated_root(root: Path) -> Path:
+    """Return the descriptor-safe root, recognizing only macOS's fixed /var alias."""
 
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-    directory_fd = os.open(str(root), flags)
+    logical = Path(os.path.abspath(str(root)))
+    if str(logical) == "/var" or str(logical).startswith("/var/"):
+        if not os.path.islink("/var") or os.readlink("/var") != "private/var":
+            raise ValueError("untrusted /var compatibility alias")
+        return Path("/private/var") / logical.relative_to("/var")
+    return logical
+
+
+def _directory_flags() -> int:
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise ValueError("platform lacks required no-follow directory traversal")
+    return os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW
+
+
+def _open_generated_component(parent_fd: int, component: str, create: bool) -> int:
+    flags = _directory_flags()
     try:
-        for part in relative.parts[:-1]:
-            child_fd = os.open(part, flags, dir_fd=directory_fd)
-            os.close(directory_fd)
-            directory_fd = child_fd
-        return directory_fd
-    except Exception:
-        os.close(directory_fd)
+        return os.open(component, flags, dir_fd=parent_fd)
+    except FileNotFoundError:
+        if not create:
+            raise
+        os.mkdir(component, 0o755, dir_fd=parent_fd)
+        os.fsync(parent_fd)
+        return os.open(component, flags, dir_fd=parent_fd)
+    except OSError as error:
+        raise ValueError("refusing unsafe generated directory component {0}: {1}".format(component, error))
+
+
+def _same_directory_identity(current, expected) -> bool:
+    return stat.S_ISDIR(current.st_mode) and (current.st_dev, current.st_ino) == (expected.st_dev, expected.st_ino)
+
+
+def _assert_directory_chain_unchanged(chain) -> None:
+    for parent_fd, component, expected in chain:
+        current = os.stat(component, dir_fd=parent_fd, follow_symlinks=False)
+        if not _same_directory_identity(current, expected):
+            raise ValueError("generated directory component changed or became unsafe: {0}".format(component))
+
+
+def _open_generated_parent(root: Path, relative: Path, create: bool = False, component_hook=None):
+    """Open a generated file's parent through pinned, no-follow directory FDs."""
+
+    if relative.is_absolute() or ".." in relative.parts or not relative.parts:
+        raise ValueError("generated path escapes output root: {0}".format(relative))
+    logical_root = Path(os.path.abspath(str(root)))
+    physical_root = _physical_generated_root(root)
+    descriptors = []
+    chain = []
+    try:
+        descriptors.append(os.open("/", _directory_flags()))
+        for component in physical_root.parts[1:]:
+            parent_fd = descriptors[-1]
+            child_fd = _open_generated_component(parent_fd, component, create)
+            descriptors.append(child_fd)
+            chain.append((parent_fd, component, os.fstat(child_fd)))
+        for component in relative.parts[:-1]:
+            parent_fd = descriptors[-1]
+            if component_hook is not None:
+                component_hook(parent_fd, component)
+            child_fd = _open_generated_component(parent_fd, component, create)
+            descriptors.append(child_fd)
+            chain.append((parent_fd, component, os.fstat(child_fd)))
+        _assert_directory_chain_unchanged(chain)
+        return logical_root, descriptors, chain
+    except BaseException:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
         raise
 
 
-def _read_regular_no_follow(root: Path, relative: Path) -> bytes:
-    parent_fd = _open_parent_no_follow(root, relative)
+def _close_directory_chain(descriptors) -> None:
+    for descriptor in reversed(descriptors):
+        os.close(descriptor)
+
+
+def _read_regular_no_follow(root: Path, relative: Path, component_hook=None) -> bytes:
+    logical_root, descriptors, chain = _open_generated_parent(root, relative, component_hook=component_hook)
+    parent_fd = descriptors[-1]
     try:
-        file_fd = os.open(relative.name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=parent_fd)
+        _assert_directory_chain_unchanged(chain)
+        file_fd = os.open(relative.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent_fd)
         try:
             if not stat.S_ISREG(os.fstat(file_fd).st_mode):
-                raise ValueError("generated inventory target is not a regular file: {0}".format(root / relative))
+                raise ValueError("generated inventory target is not a regular file: {0}".format(logical_root / relative))
             chunks = []
             while True:
                 chunk = os.read(file_fd, 65536)
                 if not chunk:
+                    _assert_directory_chain_unchanged(chain)
                     return b"".join(chunks)
                 chunks.append(chunk)
         finally:
             os.close(file_fd)
     finally:
-        os.close(parent_fd)
+        _close_directory_chain(descriptors)
 
 
 def _unlink_regular_no_follow(root: Path, relative: Path, expected_stat) -> None:
-    parent_fd = _open_parent_no_follow(root, relative)
+    logical_root, descriptors, chain = _open_generated_parent(root, relative)
+    parent_fd = descriptors[-1]
     try:
+        _assert_directory_chain_unchanged(chain)
         current = os.stat(relative.name, dir_fd=parent_fd, follow_symlinks=False)
         if not stat.S_ISREG(current.st_mode) or (current.st_dev, current.st_ino) != (expected_stat.st_dev, expected_stat.st_ino):
-            raise ValueError("refusing to delete stale generated artifact because it changed: {0}".format(root / relative))
+            raise ValueError("refusing to delete stale generated artifact because it changed: {0}".format(logical_root / relative))
         os.unlink(relative.name, dir_fd=parent_fd)
+        os.fsync(parent_fd)
     finally:
-        os.close(parent_fd)
+        _close_directory_chain(descriptors)
 
 
-def _inventory_files(root: Path, relative_path: Path, surface: Optional[Path]) -> Dict[Path, str]:
+def _write_all(descriptor: int, content: bytes) -> None:
+    offset = 0
+    while offset < len(content):
+        offset += os.write(descriptor, content[offset:])
+
+
+def _atomic_write_generated(root: Path, relative: Path, content: bytes, mode: int, component_hook=None) -> Path:
+    """Stage and atomically replace a generated artifact without reopening ancestors."""
+
+    logical_root, descriptors, chain = _open_generated_parent(root, relative, create=True, component_hook=component_hook)
+    parent_fd = descriptors[-1]
+    stage_name = ".mlx-agent-stage-{0}".format(uuid.uuid4().hex)
+    stage_fd = None
+    try:
+        _assert_directory_chain_unchanged(chain)
+        stage_fd = os.open(stage_name, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, mode, dir_fd=parent_fd)
+        _write_all(stage_fd, content)
+        os.fchmod(stage_fd, mode)
+        os.fsync(stage_fd)
+        os.close(stage_fd)
+        stage_fd = None
+        os.fsync(parent_fd)
+        _assert_directory_chain_unchanged(chain)
+        os.replace(stage_name, relative.name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+        os.fsync(parent_fd)
+        return logical_root / relative
+    except BaseException:
+        if stage_fd is not None:
+            os.close(stage_fd)
+        try:
+            os.unlink(stage_name, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+        except OSError as error:
+            if error.errno != errno.ENOENT:
+                raise
+        raise
+    finally:
+        _close_directory_chain(descriptors)
+
+
+def _inventory_files(root: Path, relative_path: Path, surface: Optional[Path], component_hook=None) -> Dict[Path, str]:
     path = _assert_safe_generated_path(root, relative_path, relative_path.parent)
     path_stat = _path_lstat(path)
     if path_stat is None:
@@ -423,7 +533,7 @@ def _inventory_files(root: Path, relative_path: Path, surface: Optional[Path]) -
     if not stat.S_ISREG(path_stat.st_mode):
         raise _invalid_inventory(path, "is not a regular file")
     try:
-        value = json.loads(_read_regular_no_follow(Path(root).absolute(), relative_path).decode("utf-8"))
+        value = json.loads(_read_regular_no_follow(Path(root).absolute(), relative_path, component_hook=component_hook).decode("utf-8"))
     except (OSError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise _invalid_inventory(path, "not valid JSON: {0}".format(error))
     if not isinstance(value, dict) or set(value) != {"schema_version", "surface", "files"}:
@@ -469,7 +579,7 @@ def _remove_stale_inventoried_files(root: Path, rendered: Mapping[Path, Content]
             _unlink_regular_no_follow(Path(root).absolute(), surface / relative, target_stat)
 
 
-def generate(provider_ids: Iterable[str], output_root: Path) -> List[Path]:
+def generate(provider_ids: Iterable[str], output_root: Path, path_race_hook=None) -> List[Path]:
     """Write selected provider adapters as UTF-8 LF files and return sorted paths."""
 
     manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
@@ -478,29 +588,31 @@ def generate(provider_ids: Iterable[str], output_root: Path) -> List[Path]:
     _remove_stale_inventoried_files(root, rendered)
     written = []
     for relative_path, content in rendered.items():
-        path = _assert_safe_generated_path(root, relative_path, _surface(relative_path))
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(_content_bytes(content))
-        if path.name == "mlx-agent" and path.parent.name == "scripts":
-            path.chmod(0o755)
-        written.append(path)
+        _assert_safe_generated_path(root, relative_path, _surface(relative_path))
+        mode = 0o755 if relative_path.name == "mlx-agent" and relative_path.parent.name == "scripts" else 0o644
+        written.append(_atomic_write_generated(root, relative_path, _content_bytes(content), mode, component_hook=path_race_hook))
     return written
 
 
-def _check(provider_ids: Sequence[str], output_root: Path = ROOT) -> List[Path]:
+def _check(provider_ids: Sequence[str], output_root: Path = ROOT, path_race_hook=None) -> List[Path]:
     manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
     root = Path(output_root)
     drift = []
     rendered = _render(manifest, provider_ids)
     for relative_path, content in rendered.items():
-        path = root / relative_path
         expected = _content_bytes(content)
-        if not path.is_file() or path.read_bytes() != expected:
+        try:
+            _assert_safe_generated_path(root, relative_path, _surface(relative_path))
+            actual = _read_regular_no_follow(Path(root).absolute(), relative_path, component_hook=path_race_hook)
+        except (OSError, ValueError):
+            drift.append(relative_path)
+            continue
+        if actual != expected:
             drift.append(relative_path)
     for inventory_relative in [path for path in rendered if path.name == INVENTORY_NAME]:
         surface = _surface(inventory_relative)
         try:
-            previous = _inventory_files(root, inventory_relative, surface)
+            previous = _inventory_files(root, inventory_relative, surface, component_hook=path_race_hook)
         except ValueError:
             drift.append(inventory_relative)
             continue

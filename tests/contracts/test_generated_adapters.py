@@ -141,6 +141,74 @@ class GeneratedAdapterTests(unittest.TestCase):
                 generator._render = original_render
             self.assertEqual(original, stale.read_bytes())
 
+    def test_generation_refuses_surface_swap_after_preflight_without_external_write_or_chmod(self):
+        generator = load_generator()
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory) / "output"
+            generator.generate(("claude", "agentskills"), output_root)
+            surface = output_root / "providers" / "agentskills"
+            moved_surface = Path(directory) / "moved-agentskills"
+            external = Path(directory) / "external"
+            external_skill = external / "mlx-scout" / "SKILL.md"
+            external_skill.parent.mkdir(parents=True)
+            external_skill.write_text("external sentinel\n", encoding="utf-8")
+            external_skill.chmod(0o600)
+            original = external_skill.read_bytes()
+            original_mode = external_skill.stat().st_mode & 0o777
+
+            def swap_surface(_parent_fd, component):
+                if component == "agentskills":
+                    surface.replace(moved_surface)
+                    os.symlink(str(external), str(surface))
+
+            with self.assertRaisesRegex(ValueError, "unsafe|symlink"):
+                generator.generate(("claude", "agentskills"), output_root, path_race_hook=swap_surface)
+            self.assertEqual(original, external_skill.read_bytes())
+            self.assertEqual(original_mode, external_skill.stat().st_mode & 0o777)
+
+    def test_check_refuses_leaf_and_ancestor_symlinks_even_when_external_bytes_match(self):
+        generator = load_generator()
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory) / "output"
+            generator.generate(("claude", "agentskills"), output_root)
+            leaf_relative = Path("providers/claude/commands/mlx-scout.md")
+            leaf = output_root / leaf_relative
+            external_leaf = Path(directory) / "external-leaf.md"
+            external_leaf.write_bytes(leaf.read_bytes())
+            leaf.unlink()
+            os.symlink(str(external_leaf), str(leaf))
+            self.assertIn(leaf_relative, generator._check(("claude", "agentskills"), output_root))
+
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory) / "output"
+            generator.generate(("claude", "agentskills"), output_root)
+            provider = output_root / "providers" / "claude"
+            external_provider = Path(directory) / "external-claude"
+            provider.replace(external_provider)
+            os.symlink(str(external_provider), str(provider))
+            artifact = Path("providers/claude/commands/mlx-scout.md")
+            self.assertIn(artifact, generator._check(("claude", "agentskills"), output_root))
+
+    def test_check_refuses_surface_swap_during_descriptor_descent(self):
+        generator = load_generator()
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory) / "output"
+            generator.generate(("claude", "agentskills"), output_root)
+            provider = output_root / "providers" / "claude"
+            external_provider = Path(directory) / "external-claude"
+            swapped = [False]
+
+            def swap_surface(_parent_fd, component):
+                if component == "claude" and not swapped[0]:
+                    provider.replace(external_provider)
+                    os.symlink(str(external_provider), str(provider))
+                    swapped[0] = True
+
+            artifact = Path("providers/claude/commands/mlx-scout.md")
+            drift = generator._check(("claude", "agentskills"), output_root, path_race_hook=swap_surface)
+            self.assertTrue(swapped[0])
+            self.assertIn(artifact, drift)
+
     def test_tampered_inventory_rejects_cross_surface_traversal_duplicates_and_root_files(self):
         generator = load_generator()
         cases = ("README.md", "../outside.md", "/absolute.md", "providers/claude/commands/mlx-scout.md")

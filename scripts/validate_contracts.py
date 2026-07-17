@@ -148,11 +148,24 @@ def _validate_provider(
     if not _is_dict(value):
         errors.append("{0} must be an object".format(prefix))
         return
-    keys = ("native", "capabilities", "commands")
+    keys = ("native", "capabilities", "commands", "detect_commands", "user_root", "project_root", "artifacts", "config_paths")
     _require_keys(value, keys, prefix, errors)
     _unexpected_keys(value, keys, prefix, errors)
     if value.get("capabilities") != list(CAPABILITIES):
         errors.append("{0}.capabilities must equal ['scout', 'adopt', 'wire']".format(prefix))
+    commands = value.get("detect_commands")
+    if not isinstance(commands, list) or not all(isinstance(item, str) and item for item in commands):
+        errors.append("{0}.detect_commands must be an array of non-empty strings".format(prefix))
+    for key in ("user_root", "project_root"):
+        if not isinstance(value.get(key), str) or not value[key]:
+            errors.append("{0}.{1} must be a non-empty string".format(prefix, key))
+    artifacts = value.get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        errors.append("{0}.artifacts must be a non-empty array".format(prefix))
+    elif not all(isinstance(item, dict) and set(item) == {"source", "destination"} and all(isinstance(item[field], str) and item[field] for field in ("source", "destination")) for item in artifacts):
+        errors.append("{0}.artifacts must contain source/destination strings".format(prefix))
+    if not isinstance(value.get("config_paths"), list) or not all(isinstance(item, str) for item in value["config_paths"]):
+        errors.append("{0}.config_paths must be an array of strings".format(prefix))
     if name in NATIVE_PROVIDERS:
         if value.get("native") is not True:
             errors.append("{0}.native must be true".format(prefix))

@@ -91,7 +91,12 @@
         "mlx-scout",
         "mlx-adopt",
         "mlx-wire"
-      ]
+      ],
+      "detect_commands": ["claude"],
+      "user_root": "{config_root}/.claude",
+      "project_root": "{project}/.claude",
+      "artifacts": [{"source": "skills/mlx-scout/SKILL.md", "destination": "skills/mlx-scout/SKILL.md"}],
+      "config_paths": []
     },
     "codex": {
       "native": true,
@@ -104,7 +109,12 @@
         "mlx-scout",
         "mlx-adopt",
         "mlx-wire"
-      ]
+      ],
+      "detect_commands": ["codex"],
+      "user_root": "{config_root}/.codex",
+      "project_root": "{project}/.codex",
+      "artifacts": [{"source": "skills/mlx-scout/SKILL.md", "destination": "skills/mlx-scout/SKILL.md"}],
+      "config_paths": []
     },
     "gemini": {
       "native": true,
@@ -117,7 +127,12 @@
         "mlx-scout",
         "mlx-adopt",
         "mlx-wire"
-      ]
+      ],
+      "detect_commands": ["gemini"],
+      "user_root": "{config_root}/.gemini",
+      "project_root": "{project}/.gemini",
+      "artifacts": [{"source": "skills/mlx-scout/SKILL.md", "destination": "skills/mlx-scout/SKILL.md"}],
+      "config_paths": []
     },
     "opencode": {
       "native": true,
@@ -130,7 +145,12 @@
         "mlx-scout",
         "mlx-adopt",
         "mlx-wire"
-      ]
+      ],
+      "detect_commands": ["opencode"],
+      "user_root": "{config_root}/.opencode",
+      "project_root": "{project}/.opencode",
+      "artifacts": [{"source": "skills/mlx-scout/SKILL.md", "destination": "skills/mlx-scout/SKILL.md"}],
+      "config_paths": []
     },
     "agentskills": {
       "native": false,
@@ -139,7 +159,12 @@
         "adopt",
         "wire"
       ],
-      "commands": []
+      "commands": [],
+      "detect_commands": [],
+      "user_root": "{config_root}/.agents",
+      "project_root": "{project}/.agents",
+      "artifacts": [{"source": "skills/mlx-scout/SKILL.md", "destination": "skills/mlx-scout/SKILL.md"}],
+      "config_paths": []
     }
   }
 }

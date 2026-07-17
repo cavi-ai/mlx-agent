@@ -12,7 +12,9 @@ from .contracts import ErrorDetail, ResultEnvelope
 from .discovery import DiscoveryRequest, DiscoveryService
 from .host import HostInventory
 from .huggingface import HuggingFaceClient
+from .installer import Installer, InstallerConflictError
 from .models import ROLES, render_md, wire
+from .providers import ProviderRegistry
 from .transactions import COOPERATIVE_CONCURRENCY_NOTE, ConcurrentTransactionError, Receipt, Transaction, _assert_safe_target, _read_regular, rollback
 from .verification import Verifier
 from .wiring import ConfigAdapter
@@ -399,6 +401,82 @@ def _add_wire_arguments(parser):
     restore.add_argument("--json", action="store_true")
 
 
+def _installer_registry():
+    root = Path(__file__).resolve().parents[2]
+    home = os.environ.get("MLX_AGENT_HOME")
+    config_root = os.environ.get("MLX_AGENT_CONFIG_ROOT")
+    return ProviderRegistry(root / "plugin.json", home=home, config_root=config_root)
+
+
+def _add_installer_arguments(parser, include_providers=True):
+    if include_providers:
+        parser.add_argument("providers", nargs="*", help="explicit provider IDs; omit to inspect detected choices")
+    parser.add_argument("--scope", choices=["user", "project"], default="user")
+    parser.add_argument("--project", default=str(Path.cwd()), help="project root for project-scoped installation")
+    parser.add_argument("--dry-run", action="store_true", help="show the reviewed plan without mutating files")
+    parser.add_argument("--confirm", action="store_true", help="authorize a separately reviewed installer preview")
+    parser.add_argument("--preview-hash", help="preview hash returned by the installer dry run")
+    parser.add_argument("--json", action="store_true")
+
+
+def _installer_result(operation, data, as_json, status="ok", error=None):
+    result = ResultEnvelope.ok(operation, data) if status == "ok" else ResultEnvelope.fail(
+        operation, error[0], error[1], error[2]
+    )
+    if as_json:
+        print(json.dumps(result.to_dict(), indent=2))
+    elif status == "ok":
+        if data.get("selection_required"):
+            available = [item["id"] for item in data["providers"] if item["available"]]
+            print("No provider was selected. Detected providers: {0}".format(", ".join(available) if available else "none"))
+        elif "preview" in data:
+            print(data["preview"]["diff"])
+            print("Confirmation required: rerun with --confirm --preview-hash PREVIEW_HASH.")
+        else:
+            print(json.dumps(data, indent=2))
+    else:
+        print("{0} failed [{1}]: {2}\nremediation: {3}".format(operation, error[0], error[1], error[2]))
+    return 0 if status == "ok" else 2
+
+
+def _run_installer(arguments):
+    operation = arguments.command
+    try:
+        installer = Installer(_installer_registry(), project_root=arguments.project)
+        detections = [item.to_dict() for item in installer.detected()]
+        selected = tuple(getattr(arguments, "providers", ()) or ())
+        if operation == "providers" or not selected:
+            return _installer_result(operation, {
+                "providers": detections,
+                "selection_required": operation != "providers",
+                "mutated": False,
+            }, arguments.json)
+        plan = installer.plan(operation, selected, arguments.scope, arguments.project)
+        if arguments.dry_run or (operation != "doctor" and not arguments.confirm):
+            return _installer_result(operation, {"plan": plan.to_dict(), "preview": plan.preview, "mutated": False}, arguments.json)
+        if operation != "doctor" and not arguments.preview_hash:
+            return _installer_result(operation, {"plan": plan.to_dict(), "preview": plan.preview}, arguments.json, "error", (
+                "preview_hash_required", "--confirm requires the hash from an inspected preview.",
+                "Run the command with --dry-run, inspect its preview, then pass --preview-hash.",
+            ))
+        if operation != "doctor" and arguments.preview_hash != plan.preview["preview_hash"]:
+            return _installer_result(operation, {"plan": plan.to_dict(), "preview": plan.preview}, arguments.json, "error", (
+                "preview_stale", "The supplied preview hash does not match the current plan.",
+                "Generate and inspect a new preview before confirming this mutation.",
+            ))
+        result = installer.execute(plan, arguments.preview_hash if operation != "doctor" else False)
+        data = result if isinstance(result, dict) else result.to_dict()
+        return _installer_result(operation, {"result": data, "mutated": operation != "doctor"}, arguments.json)
+    except InstallerConflictError as error:
+        return _installer_result(operation, {}, arguments.json, "error", (
+            "artifact_conflict", str(error), "Preserve the modified file or restore it to the receipt hash before retrying.",
+        ))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        return _installer_result(operation, {}, arguments.json, "error", (
+            "installer_failed", str(error), "Inspect the provider selection and preview, then correct the reported path or manifest issue.",
+        ))
+
+
 def legacy_scout_main(argv=None):
     parser = argparse.ArgumentParser(description="Discover MLX models on HuggingFace for this host.")
     _add_discovery_arguments(parser)
@@ -414,9 +492,16 @@ def main(argv=None):
     _add_adoption_arguments(adopt)
     wire_command = subcommands.add_parser("wire", help="render, apply, inspect, or roll back runtime wiring")
     _add_wire_arguments(wire_command)
+    providers_command = subcommands.add_parser("providers", help="list detected supported provider CLIs")
+    _add_installer_arguments(providers_command, include_providers=False)
+    for name in ("install", "update", "uninstall", "doctor"):
+        installer_command = subcommands.add_parser(name, help="{0} declared provider artifacts safely".format(name))
+        _add_installer_arguments(installer_command)
     arguments = parser.parse_args(argv)
     if arguments.command == "adopt":
         return _run_adoption(arguments)
     if arguments.command == "wire":
         return _run_wire(arguments)
+    if arguments.command in {"providers", "install", "update", "uninstall", "doctor"}:
+        return _run_installer(arguments)
     return _run_discovery(arguments, legacy=False)

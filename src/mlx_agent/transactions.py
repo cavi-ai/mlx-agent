@@ -108,13 +108,13 @@ def _target_lock_name(target):
 
 
 @contextmanager
-def _target_locks(targets):
+def _target_locks(targets, create_parents=False):
     """Acquire target-adjacent physical locks in canonical order to avoid deadlocks."""
     canonical = sorted({_physical_absolute(target) for target in targets}, key=str)
     held = []
     try:
         for target in canonical:
-            _parent, directory_fd = _walk_directory(target.parent)
+            _parent, directory_fd = _walk_directory(target.parent, create=create_parents)
             lock_fd = None
             try:
                 lock_fd = os.open(
@@ -338,12 +338,13 @@ class Receipt:
 class Transaction:
     """Create a crash-recoverable journal before any configuration mutation."""
 
-    def __init__(self, receipts_dir=None, health_checker=None, fault_injector=None, receipt_writer=None, path_race_hook=None):
+    def __init__(self, receipts_dir=None, health_checker=None, fault_injector=None, receipt_writer=None, path_race_hook=None, create_target_parents=False):
         self.receipts_dir = Path(receipts_dir) if receipts_dir else None
         self.health_checker = health_checker
         self.fault_injector = fault_injector
         self.receipt_writer = receipt_writer
         self.path_race_hook = path_race_hook
+        self.create_target_parents = bool(create_target_parents)
         self._changes = []
         self._preview = ""
         self._preview_hash = ""
@@ -365,7 +366,12 @@ class Transaction:
                 raise TypeError("change content must be text")
             adapter = change.get("adapter") or ConfigAdapter.detect(path, runtime=change.get("runtime"))
             adapter.validate(content)
-            before, existed, mode = _read_target(path, self.path_race_hook)
+            try:
+                before, existed, mode = _read_target(path, self.path_race_hook)
+            except ValueError as error:
+                if not self.create_target_parents or not str(error).startswith("path component does not exist:"):
+                    raise
+                before, existed, mode = b"", False, None
             after = content.encode("utf-8")
             before_text = before.decode("utf-8")
             diffs.append("".join(difflib.unified_diff(
@@ -389,7 +395,7 @@ class Transaction:
 
     @contextmanager
     def _advisory_lock(self):
-        with _target_locks(self._lock_targets()):
+        with _target_locks(self._lock_targets(), create_parents=self.create_target_parents):
             yield
 
     def _lock_targets(self):

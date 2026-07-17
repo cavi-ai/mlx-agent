@@ -74,7 +74,7 @@
     },
     {
       "path": "src/mlx_agent/providers.py",
-      "sha256": "0bbcdcbbd0d00f394450401aa0f38bc4e8cc1b93563f727721307c7d5e1fb419"
+      "sha256": "e965bcfaffd7d802c680b99f660386b5d2987706874339d6ca2ba74c2613cf78"
     },
     {
       "path": "src/mlx_agent/resources/adapter-runtime.json",

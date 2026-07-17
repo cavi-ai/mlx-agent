@@ -1,12 +1,24 @@
 {
   "files": [
     {
-      "path": ".codex-plugin/plugin.json",
-      "sha256": "27906e8fd179f4eb921b4d4b9c24be82d8c37b26c4b79197eeb11ab935617e3e"
+      "path": "commands/mlx-adopt.toml",
+      "sha256": "1c75bfe7271d13c435ba59a04a41a203ec261fa533db876f5748053e1c69d0a8"
+    },
+    {
+      "path": "commands/mlx-scout.toml",
+      "sha256": "0dcac1e061585780a50946ae972ba01125189f739f1ac2e2e962352a9a1b1a1a"
+    },
+    {
+      "path": "commands/mlx-wire.toml",
+      "sha256": "9a927ec8c80bdf96b10f5e214fede20d6e58edc65222cc4f864d0011ad306c2a"
+    },
+    {
+      "path": "gemini-extension.json",
+      "sha256": "b3a7cd0fe8fa9d8cdc664f664bbc6e4a5a8cc939af0eaa7cf47b2867f81504d5"
     },
     {
       "path": "skills/mlx-adopt/SKILL.md",
-      "sha256": "b5649f38b5a1ca020fbfc2506137e3b04375b2fa4ef579106e7cb987b76ef287"
+      "sha256": "c2ade32ecf7f5438e25bb4b4696013526beb7d25ec96028ca491eec22a194549"
     },
     {
       "path": "skills/mlx-adopt/scripts/mlx-agent",
@@ -74,7 +86,7 @@
     },
     {
       "path": "skills/mlx-scout/SKILL.md",
-      "sha256": "e0f2da6234aac82f05b85375566f79f55f3861d1e5db1579aaffeae1690935f8"
+      "sha256": "c30f7a4bec958de668f75d907e2599b0f4a50d2a51005383e95e7631881ecb20"
     },
     {
       "path": "skills/mlx-scout/scripts/mlx-agent",
@@ -142,7 +154,7 @@
     },
     {
       "path": "skills/mlx-wire/SKILL.md",
-      "sha256": "e02468d91522a925d6826d881077f64cc4af9393691ee1e133f7c42fcb24d2d0"
+      "sha256": "fcdc3c7990b4b79e8957cc243c7ee27180294c7d5d11097dde4de233847c060f"
     },
     {
       "path": "skills/mlx-wire/scripts/mlx-agent",
@@ -210,5 +222,5 @@
     }
   ],
   "schema_version": 2,
-  "surface": "codex-package"
+  "surface": "gemini-extension"
 }

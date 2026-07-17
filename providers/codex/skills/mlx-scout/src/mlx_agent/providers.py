@@ -9,6 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+_GEMINI_EXTENSION_SUFFIX = Path(".gemini") / "extensions" / "mlx-agent"
+
+
 @dataclass(frozen=True)
 class ProviderArtifact:
     source: Path
@@ -119,11 +122,16 @@ class ProviderRegistry:
             else:
                 for child in sorted(location.rglob("*")):
                     resolved = child.resolve()
+                    relative = child.relative_to(location)
+                    if "__pycache__" in relative.parts or child.suffix == ".pyc":
+                        continue
                     if child.is_file() and location in resolved.parents:
                         artifacts.append(ProviderArtifact(resolved, destination / child.relative_to(location)))
         config_paths = value["config_paths"]
         if not isinstance(config_paths, list) or not all(isinstance(item, str) for item in config_paths):
             raise ValueError("provider {0}.config_paths is invalid".format(provider_id))
+        if provider_id == "gemini":
+            self._validate_gemini_extension_layout(user_root, project_root, artifacts)
         return ProviderDefinition(
             id=provider_id,
             detect_commands=tuple(commands),
@@ -134,6 +142,16 @@ class ProviderRegistry:
             artifacts=tuple(artifacts),
             config_paths=tuple(config_paths),
         )
+
+    @staticmethod
+    def _validate_gemini_extension_layout(user_root, project_root, artifacts):
+        """Keep Gemini's install roots aligned with its extension discovery layout."""
+        if tuple(user_root.parts[-3:]) != tuple(_GEMINI_EXTENSION_SUFFIX.parts):
+            raise ValueError("provider gemini.user_root must target .gemini/extensions/mlx-agent")
+        if project_root != _GEMINI_EXTENSION_SUFFIX:
+            raise ValueError("provider gemini.project_root must target .gemini/extensions/mlx-agent")
+        if not any(item.destination == Path("gemini-extension.json") for item in artifacts):
+            raise ValueError("provider gemini must install gemini-extension.json")
 
     def _user_root(self, template, provider_id):
         if not isinstance(template, str) or "{project}" in template:

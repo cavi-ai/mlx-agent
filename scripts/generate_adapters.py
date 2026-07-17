@@ -17,7 +17,7 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Union
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SUPPORTED_PROVIDERS = ("claude", "codex", "agentskills")
+SUPPORTED_PROVIDERS = ("claude", "codex", "gemini", "agentskills")
 INVENTORY_NAME = ".mlx-agent-generated-files.json"
 INVENTORY_SCHEMA_VERSION = 2
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -131,6 +131,49 @@ def _codex_skill_markdown(manifest: Mapping[str, object], capability: str) -> st
         "support custom `/mlx-*` slash commands.\n".format(invocation) + marker,
         1,
     )
+
+
+def _gemini_command_toml(manifest: Mapping[str, object], capability: str) -> str:
+    """Render Gemini CLI's documented v1 custom-command TOML subset.
+
+    The extension owns the skills and each command asks Gemini to activate the
+    corresponding one.  Commands deliberately do not embed a shell execution
+    block: Gemini only substitutes `${extensionPath}` in manifests and hooks,
+    not command TOML, and the skill bundle resolves its launcher relative to
+    its own SKILL.md.
+    """
+
+    description = manifest["capabilities"][capability]["description"]
+    prompt = "Activate and follow the bundled mlx-{0} skill.\n\n".format(capability)
+    if capability == "scout":
+        prompt += (
+            "Use the skill's structured discovery core for the user's request. "
+            "Do not download model weights or change configuration. {{args}}"
+        )
+    elif capability == "adopt":
+        prompt += (
+            "Use Gemini's native skill activation and orchestration when it is available. "
+            "Otherwise use the skill's sequential resumable adoption core with a visible state path. "
+            "Do not download model weights or change configuration. {{args}}"
+        )
+    else:
+        prompt += (
+            "Use the skill's exact Wire sequence: render, request the unconfirmed apply preview and hash, "
+            "then apply only after the user explicitly confirms that exact hash. "
+            "Do not write configuration directly. {{args}}"
+        )
+    return "description = {0}\nprompt = {1}\n".format(
+        json.dumps(description, ensure_ascii=False), json.dumps(prompt, ensure_ascii=False)
+    )
+
+
+def _gemini_extension_metadata(manifest: Mapping[str, object]) -> str:
+    payload = {
+        "name": manifest["identity"],
+        "version": "0.1.0",
+        "description": "Structured local MLX discovery, adoption, and confirmation-gated wiring for Apple Silicon agents.",
+    }
+    return json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
 
 
 def _plugin_metadata(manifest: Mapping[str, object]) -> str:
@@ -274,6 +317,8 @@ def _surface(path: Path) -> Optional[Path]:
         return Path("providers/claude")
     if path.parts[:2] == ("providers", "codex"):
         return Path("providers/codex")
+    if path.parts[:2] == ("providers", "gemini"):
+        return Path("providers/gemini")
     if path.parts[:2] == ("providers", "agentskills"):
         return Path("providers/agentskills")
     return None
@@ -290,6 +335,8 @@ def _surface_id(surface: Optional[Path]) -> str:
         return "claude-package"
     if surface == Path("providers/codex"):
         return "codex-package"
+    if surface == Path("providers/gemini"):
+        return "gemini-extension"
     if surface == Path("providers/agentskills"):
         return "agentskills-package"
     raise ValueError("unknown generated surface: {0}".format(surface))
@@ -311,6 +358,14 @@ def _allowed_surface_paths(surface: Optional[Path]) -> set:
         allowed = {Path(".codex-plugin/plugin.json")}
         for capability in ("scout", "adopt", "wire"):
             skill = Path("skills/mlx-{0}".format(capability))
+            allowed.add(skill / "SKILL.md")
+            allowed.update(skill / path for path in runtime)
+        return allowed
+    if surface == Path("providers/gemini"):
+        allowed = {Path("gemini-extension.json")}
+        for capability in ("scout", "adopt", "wire"):
+            skill = Path("skills/mlx-{0}".format(capability))
+            allowed.add(Path("commands/mlx-{0}.toml".format(capability)))
             allowed.add(skill / "SKILL.md")
             allowed.update(skill / path for path in runtime)
         return allowed
@@ -382,6 +437,14 @@ def _render(manifest: Mapping[str, object], provider_ids: Sequence[str]) -> Dict
         for capability in ("scout", "adopt", "wire"):
             skill_root = codex_root / "skills" / "mlx-{0}".format(capability)
             rendered[skill_root / "SKILL.md"] = _codex_skill_markdown(manifest, capability)
+            rendered.update(_runtime_bundle(skill_root))
+    if "gemini" in selected:
+        gemini_root = Path("providers/gemini")
+        rendered[gemini_root / "gemini-extension.json"] = _gemini_extension_metadata(manifest)
+        for capability in ("scout", "adopt", "wire"):
+            skill_root = gemini_root / "skills" / "mlx-{0}".format(capability)
+            rendered[gemini_root / "commands" / "mlx-{0}.toml".format(capability)] = _gemini_command_toml(manifest, capability)
+            rendered[skill_root / "SKILL.md"] = _generic_skill_markdown(manifest, capability)
             rendered.update(_runtime_bundle(skill_root))
     if "agentskills" in selected:
         for capability in ("scout", "adopt", "wire"):

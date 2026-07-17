@@ -1,0 +1,2 @@
+description = "Discover MLX models suitable for the current host."
+prompt = "Activate and follow the bundled mlx-scout skill.\n\nUse the skill's structured discovery core for the user's request. Do not download model weights or change configuration. {{args}}"

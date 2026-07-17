@@ -1,0 +1,2 @@
+description = "Preview and confirm wiring a chosen MLX model."
+prompt = "Activate and follow the bundled mlx-wire skill.\n\nUse the skill's exact Wire sequence: render, request the unconfirmed apply preview and hash, then apply only after the user explicitly confirms that exact hash. Do not write configuration directly. {{args}}"

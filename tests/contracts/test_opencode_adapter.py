@@ -85,6 +85,11 @@ class OpenCodeAdapterContractTests(unittest.TestCase):
             self.assertNotIn('Bun.$', plugin_text)
             self.assertNotIn('shell:', plugin_text)
             self.assertNotIn('gemini', plugin_text.lower())
+            self.assertEqual(1, plugin_text.count("const decoder = new TextDecoder()"))
+            self.assertRegex(
+                plugin_text,
+                r"async function readBounded\(stream: ReadableStream<Uint8Array>\) \{\n  const decoder = new TextDecoder\(\)",
+            )
             command_paths = sorted(path.name for path in (package_root / "commands").glob("*.md"))
             self.assertEqual(["mlx-adopt.md", "mlx-scout.md", "mlx-wire.md"], command_paths)
             for capability in CAPABILITIES:
@@ -118,10 +123,10 @@ class OpenCodeAdapterContractTests(unittest.TestCase):
             adopt = (package_root / "commands" / "mlx-adopt.md").read_text(encoding="utf-8")
             scout = (package_root / "commands" / "mlx-scout.md").read_text(encoding="utf-8")
             wire = (package_root / "commands" / "mlx-wire.md").read_text(encoding="utf-8")
-            self.assertNotIn("agent:", frontmatter(scout))
-            self.assertNotIn("subtask:", frontmatter(scout))
-            self.assertNotIn("agent:", frontmatter(wire))
-            self.assertNotIn("subtask:", frontmatter(wire))
+            self.assertEqual("mlx-advisor", frontmatter(scout)["agent"])
+            self.assertEqual("false", frontmatter(scout)["subtask"])
+            self.assertEqual("mlx-advisor", frontmatter(wire)["agent"])
+            self.assertEqual("false", frontmatter(wire)["subtask"])
             self.assertEqual("mlx-advisor", frontmatter(adopt)["agent"])
             self.assertEqual("true", frontmatter(adopt)["subtask"])
             self.assertIn("independent verification record", adopt)
@@ -184,7 +189,7 @@ class OpenCodeAdapterContractTests(unittest.TestCase):
 
     def test_smoke_script_is_isolated_and_honest_about_unavailable_auth(self):
         smoke = (ROOT / "tests" / "smoke" / "opencode.sh").read_text(encoding="utf-8")
-        self.assertIn("SKIP: OpenCode CLI unavailable", smoke)
+        self.assertIn("SKIP: live OpenCode/Bun plugin proof unavailable", smoke)
         self.assertIn("XDG_CONFIG_HOME", smoke)
         self.assertIn("mlx-scout", smoke)
         self.assertIn("mlx-adopt", smoke)
@@ -192,7 +197,8 @@ class OpenCodeAdapterContractTests(unittest.TestCase):
         self.assertIn("uninstall opencode", smoke)
         self.assertIn("MLX_AGENT_OPENCODE_LIVE_COMMAND_DISCOVERY", smoke)
         self.assertIn("MLX_AGENT_FIXTURE", smoke)
-        self.assertIn("opencode_tool_transport.mjs", smoke)
+        self.assertIn("opencode_argv_stdin_contract.mjs", smoke)
+        self.assertIn("equivalent no-shell argv/stdin transport contract", smoke)
         self.assertIn("no model", smoke.lower())
         self.assertIn("response is claimed when they are absent", smoke.lower())
 
@@ -206,7 +212,7 @@ class OpenCodeAdapterContractTests(unittest.TestCase):
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             )
             self.assertEqual(0, result.returncode, result.stderr)
-            self.assertIn("SKIP: OpenCode CLI unavailable", result.stdout)
+            self.assertIn("SKIP: live OpenCode/Bun plugin proof unavailable", result.stdout)
 
 
 if __name__ == "__main__":

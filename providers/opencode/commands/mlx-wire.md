@@ -1,5 +1,7 @@
 ---
 description: "Preview and confirm wiring a chosen MLX model."
+agent: mlx-advisor
+subtask: false
 ---
 
 # MLX Wire

@@ -10,15 +10,15 @@
     },
     {
       "path": "commands/mlx-scout.md",
-      "sha256": "46ded7938e01dd45d7b7b0761495e9a287875625ae5d2f3c50b5210dfe3fb468"
+      "sha256": "b92dc06e5a587305d9ba37b36f99036c727b7cc799bc2bf3171d7599357d02a7"
     },
     {
       "path": "commands/mlx-wire.md",
-      "sha256": "e6f4881c1bc44fd160c0969c7d1f3bf905cfacd402e3bbfc923ce9939c9be09e"
+      "sha256": "6efefcfb5e5bad73b1792bfe957f1d2d6b916d853bcd199c4f32b84bd3e384e4"
     },
     {
       "path": "plugins/mlx-agent-command.ts",
-      "sha256": "75c352429efc8f5639e94dc0deba9a94a490276afd5655715203c3c2ddac0b8c"
+      "sha256": "d65828e97445c054c2d1dc9661871c08ed95265c3ccf3a7b42ae6f03b7d6568c"
     },
     {
       "path": "skills/mlx-adopt/SKILL.md",

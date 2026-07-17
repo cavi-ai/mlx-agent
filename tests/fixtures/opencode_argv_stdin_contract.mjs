@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// Contract-test equivalent of the plugin's no-shell argv/stdin transport.
+// It does not load or execute the shipped OpenCode TypeScript plugin or Bun.
 import { spawn } from "node:child_process"
 
 const [runtimeRoot, capability, rawArguments] = process.argv.slice(2)

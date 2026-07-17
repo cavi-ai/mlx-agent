@@ -232,9 +232,9 @@ def _opencode_command_markdown(manifest: Mapping[str, object], capability: str) 
     """Render an OpenCode command that transports command data as opaque text."""
 
     description = manifest["capabilities"][capability]["description"]
-    front_matter = "---\ndescription: {0}\n".format(_yaml_scalar(description))
-    if capability == "adopt":
-        front_matter += "agent: mlx-advisor\nsubtask: true\n"
+    front_matter = "---\ndescription: {0}\nagent: mlx-advisor\nsubtask: {1}\n".format(
+        _yaml_scalar(description), "true" if capability == "adopt" else "false"
+    )
     front_matter += "---\n\n"
     capability_notes = {
         "scout": "Run only the validated discovery operation. Do not download model weights or change configuration.",
@@ -340,9 +340,9 @@ const MAX_OUTPUT_BYTES = 16384
 const pluginDirectory = dirname(fileURLToPath(import.meta.url))
 const runtimeRoot = join(pluginDirectory, "..", "src")
 const encoder = new TextEncoder()
-const decoder = new TextDecoder()
 
 async function readBounded(stream: ReadableStream<Uint8Array>) {
+  const decoder = new TextDecoder()
   const reader = stream.getReader()
   let text = ""
   let size = 0

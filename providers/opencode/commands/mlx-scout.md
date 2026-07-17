@@ -1,5 +1,7 @@
 ---
 description: "Discover MLX models suitable for the current host."
+agent: mlx-advisor
+subtask: false
 ---
 
 # MLX Scout

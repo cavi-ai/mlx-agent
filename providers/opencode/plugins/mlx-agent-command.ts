@@ -7,9 +7,9 @@ const MAX_OUTPUT_BYTES = 16384
 const pluginDirectory = dirname(fileURLToPath(import.meta.url))
 const runtimeRoot = join(pluginDirectory, "..", "src")
 const encoder = new TextEncoder()
-const decoder = new TextDecoder()
 
 async function readBounded(stream: ReadableStream<Uint8Array>) {
+  const decoder = new TextDecoder()
   const reader = stream.getReader()
   let text = ""
   let size = 0

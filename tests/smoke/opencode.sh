@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smoke native OpenCode artifacts and its no-shell custom-tool transport.
+# Smoke native OpenCode artifacts and an equivalent no-shell argv/stdin transport contract.
 set -euo pipefail
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
@@ -54,7 +54,9 @@ assert_package "$USER_ROOT"
 test "$(cat "$USER_ROOT/opencode.json")" = '{"model":"unowned-global"}'
 
 if command -v node >/dev/null 2>&1; then
-  TRANSPORT="$(MLX_AGENT_FIXTURE="$ROOT/tests/fixtures/scout_responses.json" node "$ROOT/tests/fixtures/opencode_tool_transport.mjs" "$USER_ROOT/src" scout '--limit 1 --json')"
+  # This validates an equivalent no-shell argv/stdin transport contract. It
+  # does not load or execute the shipped TypeScript plugin with Bun.
+  TRANSPORT="$(MLX_AGENT_FIXTURE="$ROOT/tests/fixtures/scout_responses.json" node "$ROOT/tests/fixtures/opencode_argv_stdin_contract.mjs" "$USER_ROOT/src" scout '--limit 1 --json')"
   printf '%s' "$TRANSPORT" | python3 -c 'import json, sys; value=json.load(sys.stdin); assert value["status"] == "ok" and "discover" in value["stdout"]["text"]'
 else
   printf '%s' '--limit 1 --json' | MLX_AGENT_FIXTURE="$ROOT/tests/fixtures/scout_responses.json" \
@@ -65,7 +67,7 @@ install_scope project "$PROJECT"
 assert_package "$PROJECT/.opencode"
 test "$(cat "$PROJECT/opencode.json")" = '{"model":"unowned-project"}'
 
-if command -v opencode >/dev/null 2>&1; then
+if command -v opencode >/dev/null 2>&1 && command -v bun >/dev/null 2>&1; then
   AGENTS="$(opencode agent list 2>&1 || true)"
   case "$AGENTS" in
     *mlx-advisor*) ;;
@@ -78,7 +80,7 @@ if command -v opencode >/dev/null 2>&1; then
       opencode run --command mlx-scout --dir "$PROJECT" --format json -- '--limit 1 --json'
   fi
 else
-  echo "SKIP: OpenCode CLI unavailable"
+  echo "SKIP: live OpenCode/Bun plugin proof unavailable"
 fi
 
 uninstall_scope project "$PROJECT"
@@ -88,4 +90,4 @@ uninstall_scope user "$PROJECT"
 test ! -e "$USER_ROOT/plugins/mlx-agent-command.ts"
 test "$(cat "$USER_ROOT/opencode.json")" = '{"model":"unowned-global"}'
 
-echo 'PASS: OpenCode package installed, custom-tool transport fixture ran, and owned artifacts were removed cleanly'
+echo 'PASS: OpenCode package installed, equivalent no-shell argv/stdin transport contract ran, and owned artifacts were removed cleanly'

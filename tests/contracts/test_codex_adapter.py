@@ -129,6 +129,38 @@ esac
             self.assertIn("exec --ephemeral", calls)
             self.assertIn("plugin remove", calls)
 
+    def test_smoke_removes_plugin_when_fixture_only_exec_fails(self):
+        smoke = ROOT / "tests" / "smoke" / "codex.sh"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            home = root / "caller-home"
+            (home / ".codex").mkdir(parents=True)
+            (home / ".codex" / "auth.json").write_text("{}\n", encoding="utf-8")
+            log = root / "codex-calls.log"
+            fake_codex = bin_dir / "codex"
+            fake_codex.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "$FAKE_CODEX_LOG"
+case "${1:-} ${2:-}" in
+  "plugin marketplace"|"plugin add"|"plugin remove") exit 0 ;;
+  "plugin list") printf '{"plugins":[{"name":"mlx-agent"}]}\\n' ;;
+  "debug prompt-input") printf '{"developer":["mlx-agent:mlx-scout","mlx-agent:mlx-adopt","mlx-agent:mlx-wire"]}\\n' ;;
+  "exec "*) exit 9 ;;
+  *) exit 1 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            fake_codex.chmod(0o755)
+            environment = dict(os.environ, HOME=str(home), PATH=str(bin_dir) + os.pathsep + os.environ["PATH"], FAKE_CODEX_LOG=str(log))
+            environment.pop("CODEX_HOME", None)
+            result = subprocess.run(["bash", str(smoke)], cwd=str(ROOT), env=environment, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.assertEqual(9, result.returncode)
+            self.assertIn("plugin remove", log.read_text(encoding="utf-8"))
+
     def test_readme_and_approved_design_record_the_codex_skill_invocation_correction(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         design = (ROOT / "docs" / "superpowers" / "specs" / "2026-07-17-universal-plugin-design.md").read_text(encoding="utf-8")

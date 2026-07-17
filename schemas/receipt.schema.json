@@ -11,6 +11,8 @@
     "adapter_version": {"type": "string", "minLength": 1},
     "timestamp": {"type": "string", "format": "date-time"},
     "transaction_root": {"type": "string", "minLength": 1},
+    "lock_root": {"type": "string", "minLength": 1},
+    "lock_migration": {"const": "legacy-target-locks-v1"},
     "targets": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
     "target_roots": {"type": "object", "additionalProperties": {"type": "string"}},
     "target_modes": {"type": "object", "additionalProperties": {"type": ["integer", "null"], "minimum": 0, "maximum": 511}},

@@ -156,6 +156,18 @@ def _run_discovery(arguments, legacy):
     return 0 if result.status == "ok" else 2
 
 
+def _run_inspect_host(arguments):
+    host, warnings = HostInventory.inspect(HuggingFaceClient()._http_get)
+    result = ResultEnvelope.ok("inspect-host", host.to_dict(), warnings=warnings)
+    if arguments.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        print("Host inventory: {0}".format(json.dumps(host.to_dict(), sort_keys=True)))
+        for warning in warnings:
+            print("warning [{0}/{1}]: {2}".format(warning["code"], warning["probe"], warning["message"]))
+    return 0
+
+
 def _adoption_state_path(arguments):
     return arguments.state or os.environ.get("MLX_AGENT_ADOPTION_STATE")
 
@@ -468,8 +480,12 @@ def _run_installer(arguments):
         data = result if isinstance(result, dict) else result.to_dict()
         return _installer_result(operation, {"result": data, "mutated": operation != "doctor"}, arguments.json)
     except InstallerConflictError as error:
+        lock_code = "legacy_lock_busy" if str(error).startswith("legacy_lock_busy") else (
+            "legacy_lock_recreated" if str(error).startswith("legacy_lock_recreated") else "artifact_conflict"
+        )
         return _installer_result(operation, {}, arguments.json, "error", (
-            "artifact_conflict", str(error), "Preserve the modified file or restore it to the receipt hash before retrying.",
+            lock_code, str(error),
+            "Stop older mlx-agent processes and remove only recreated legacy locks." if lock_code != "artifact_conflict" else "Preserve the modified file or restore it to the receipt hash before retrying.",
         ))
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         return _installer_result(operation, {}, arguments.json, "error", (
@@ -488,6 +504,8 @@ def main(argv=None):
     subcommands = parser.add_subparsers(dest="command", required=True)
     discover = subcommands.add_parser("discover", help="discover MLX models for this host")
     _add_discovery_arguments(discover)
+    inspect_host = subcommands.add_parser("inspect-host", help="inspect local Apple Silicon and runtime inventory without model discovery")
+    inspect_host.add_argument("--json", action="store_true")
     adopt = subcommands.add_parser("adopt", help="run or inspect resumable model adoption")
     _add_adoption_arguments(adopt)
     wire_command = subcommands.add_parser("wire", help="render, apply, inspect, or roll back runtime wiring")
@@ -504,4 +522,6 @@ def main(argv=None):
         return _run_wire(arguments)
     if arguments.command in {"providers", "install", "update", "uninstall", "doctor"}:
         return _run_installer(arguments)
+    if arguments.command == "inspect-host":
+        return _run_inspect_host(arguments)
     return _run_discovery(arguments, legacy=False)

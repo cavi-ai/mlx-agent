@@ -11,8 +11,25 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 SMOKE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/mlx-agent-codex-smoke.XXXXXX")"
 CALLER_HOME="${HOME:?HOME must be set for the Codex smoke}"
 CALLER_CODEX_HOME="${CODEX_HOME:-$CALLER_HOME/.codex}"
+PLUGIN_INSTALLED=0
 cleanup() {
+  primary_status=$?
+  cleanup_status=0
+  set +e
+  if [ "$PLUGIN_INSTALLED" -eq 1 ]; then
+    codex plugin remove mlx-agent --marketplace mlx-agent-smoke
+    cleanup_status=$?
+    if [ "$cleanup_status" -eq 0 ]; then
+      echo 'PASS: Codex isolated plugin cleanup completed'
+    else
+      echo 'ERROR: Codex isolated plugin cleanup failed' >&2
+    fi
+  fi
   rm -rf "$SMOKE_ROOT"
+  if [ "$primary_status" -ne 0 ]; then
+    exit "$primary_status"
+  fi
+  exit "$cleanup_status"
 }
 trap cleanup EXIT
 
@@ -66,6 +83,7 @@ if not contains_mlx_agent(json.loads(sys.argv[1])):
     raise SystemExit("mlx-agent not listed by isolated Codex marketplace")
 ' "$AVAILABLE"
 codex plugin add mlx-agent --marketplace mlx-agent-smoke
+PLUGIN_INSTALLED=1
 
 # Ask Codex itself to render a model-visible prompt after installation. This
 # checks that every plugin skill is discovered before the noninteractive Scout
@@ -111,4 +129,5 @@ for expected in (
 MLX_AGENT_FIXTURE="$ROOT/tests/fixtures/scout_responses.json" \
   python3 "$MARKETPLACE_ROOT/plugins/mlx-agent/skills/mlx-scout/scripts/mlx-agent" discover --limit 1 --json >/dev/null
 codex plugin remove mlx-agent --marketplace mlx-agent-smoke
+PLUGIN_INSTALLED=0
 echo 'PASS: Codex plugin installed, exposed $mlx-agent:mlx-scout, and removed in an isolated Codex home'

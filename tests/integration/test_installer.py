@@ -2,8 +2,10 @@ import json
 import contextlib
 import io
 import os
+import fcntl
 import tempfile
 import unittest
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -11,7 +13,7 @@ from unittest.mock import patch
 from mlx_agent.installer import Installer, InstallerConflictError
 from mlx_agent.providers import ProviderRegistry
 from mlx_agent.cli import main
-from mlx_agent.transactions import Transaction, rollback
+from mlx_agent.transactions import Transaction, _target_lock_name, rollback
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -58,6 +60,138 @@ class InstallerRoundTripTests(unittest.TestCase):
         again = self.installer.plan("install", ["gemini"], "project", self.project)
         self.assertTrue(again.noop)
         self.assertEqual("noop", self.installer.execute(again, confirmed=False).status)
+
+    def test_agentskills_uninstall_removes_empty_owned_skill_directories_in_both_scopes(self):
+        for scope in ("user", "project"):
+            with self.subTest(scope=scope):
+                plan = self.installer.plan("install", ["agentskills"], scope, self.project)
+                self.assertEqual("applied", self.installer.execute(plan, confirmed=plan.preview["preview_hash"]).status)
+                root = self.config / ".agents" if scope == "user" else self.project / ".agents"
+                launcher = root / "skills" / "mlx-scout" / "scripts" / "mlx-agent"
+                result = subprocess.run(
+                    ["python3", str(launcher), "discover", "--limit", "1", "--json"],
+                    env=dict(os.environ, MLX_AGENT_FIXTURE=str(ROOT / "tests" / "fixtures" / "scout_responses.json")),
+                    text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                removal = self.installer.plan("uninstall", ["agentskills"], scope, self.project)
+                self.assertEqual("rolled_back", self.installer.execute(removal, confirmed=removal.preview["preview_hash"]).status)
+                for capability in ("mlx-scout", "mlx-adopt", "mlx-wire"):
+                    self.assertFalse((root / "skills" / capability).exists())
+
+    def test_legacy_lock_migration_keeps_agentskills_uninstall_clean_and_doctor_rejects_recreation(self):
+        definition = self.registry.definitions()["agentskills"]
+        artifact = definition.artifacts[0]
+        target = definition.artifact_destination("user", self.project, artifact)
+        target.parent.mkdir(parents=True)
+        legacy = target.parent / _target_lock_name(target)
+        legacy.write_text("stale legacy lock\n")
+
+        install = self.installer.plan("install", ["agentskills"], "user", self.project)
+        applied = self.installer.execute(install, confirmed=install.preview["preview_hash"])
+        self.assertEqual("applied", applied.status)
+        self.assertFalse(legacy.exists())
+        receipt = json.loads(Path(applied.receipt_path).read_text())
+        self.assertEqual("legacy-target-locks-v1", receipt["lock_migration"])
+
+        legacy.write_text("recreated legacy lock\n")
+        doctor = self.installer.execute(self.installer.plan("doctor", ["agentskills"], "user", self.project))
+        self.assertFalse(doctor["healthy"])
+        problem = next(item for item in doctor["problems"] if item["code"] == "legacy_lock_recreated")
+        self.assertIn("stop older mlx-agent processes", problem["remediation"])
+
+        removal = self.installer.plan("uninstall", ["agentskills"], "user", self.project)
+        with self.assertRaisesRegex(InstallerConflictError, "legacy_lock_recreated"):
+            self.installer.execute(removal, confirmed=removal.preview["preview_hash"])
+
+    def test_target_specific_legacy_state_is_isolated_between_user_and_project_scopes(self):
+        installer = self._two_artifact_installer()
+        targets = {
+            "user": self.config / "fixture" / "skills" / "one.md",
+            "project": self.project / ".fixture" / "skills" / "one.md",
+        }
+        for scope, target in targets.items():
+            target.parent.mkdir(parents=True)
+            (target.parent / _target_lock_name(target)).write_text("stale\n")
+            plan = installer.plan("install", ["fixture"], scope, self.project)
+            self.assertEqual("applied", installer.execute(plan, confirmed=plan.preview["preview_hash"]).status)
+
+        user_state = json.loads((self.config / "mlx-agent" / "installer-receipts" / "locks" / "legacy-lock-migration-v1.json").read_text())
+        project_state = json.loads((self.project / ".mlx-agent" / "installer-receipts" / "locks" / "legacy-lock-migration-v1.json").read_text())
+        self.assertIn(_target_lock_name(targets["user"])[16:-5], user_state["targets"])
+        self.assertIn(_target_lock_name(targets["project"])[16:-5], project_state["targets"])
+        self.assertNotEqual(user_state["targets"], project_state["targets"])
+
+    def test_busy_legacy_lock_refuses_installer_install_update_and_rollback(self):
+        installer = self._two_artifact_installer()
+        target = self.config / "fixture" / "skills" / "one.md"
+        target.parent.mkdir(parents=True)
+        legacy = target.parent / _target_lock_name(target)
+        legacy.write_text("legacy\n")
+
+        descriptor = os.open(legacy, os.O_RDWR | os.O_NOFOLLOW)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            install = installer.plan("install", ["fixture"], "user", self.project)
+            with self.assertRaisesRegex(InstallerConflictError, "legacy_lock_busy"):
+                installer.execute(install, confirmed=install.preview["preview_hash"])
+            self.assertFalse(target.exists())
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
+
+        install = installer.plan("install", ["fixture"], "user", self.project)
+        self.assertEqual("applied", installer.execute(install, confirmed=install.preview["preview_hash"]).status)
+        self.assertEqual("one-v1\n", target.read_text())
+        (self.root / "one.md").write_text("one-v2\n")
+        legacy.write_text("recreated\n")
+        descriptor = os.open(legacy, os.O_RDWR | os.O_NOFOLLOW)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            update = installer.plan("update", ["fixture"], "user", self.project)
+            with self.assertRaisesRegex(InstallerConflictError, "legacy_lock_busy"):
+                installer.execute(update, confirmed=update.preview["preview_hash"])
+            self.assertEqual("one-v1\n", target.read_text())
+
+            removal = installer.plan("uninstall", ["fixture"], "user", self.project)
+            with self.assertRaisesRegex(InstallerConflictError, "legacy_lock_busy"):
+                installer.execute(removal, confirmed=removal.preview["preview_hash"])
+            self.assertEqual("one-v1\n", target.read_text())
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
+
+    def test_cli_classifies_busy_legacy_lock(self):
+        target = self.config / ".agents" / "skills" / "mlx-scout" / "SKILL.md"
+        target.parent.mkdir(parents=True)
+        legacy = target.parent / _target_lock_name(target)
+        legacy.write_text("legacy\n")
+        with patch.dict(os.environ, {"MLX_AGENT_CONFIG_ROOT": str(self.config)}):
+            preview = io.StringIO()
+            with contextlib.redirect_stdout(preview):
+                self.assertEqual(0, main(["install", "agentskills", "--scope", "user", "--project", str(self.project), "--dry-run", "--json"]))
+            preview_hash = json.loads(preview.getvalue())["data"]["preview"]["preview_hash"]
+            descriptor = os.open(legacy, os.O_RDWR | os.O_NOFOLLOW)
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    self.assertEqual(2, main(["install", "agentskills", "--scope", "user", "--project", str(self.project), "--confirm", "--preview-hash", preview_hash, "--json"]))
+                self.assertEqual("legacy_lock_busy", json.loads(output.getvalue())["error"]["code"])
+            finally:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+                os.close(descriptor)
+
+    def test_doctor_reports_a_symlinked_legacy_lock_without_following_it(self):
+        definition = self.registry.definitions()["agentskills"]
+        target = definition.artifact_destination("user", self.project, definition.artifacts[0])
+        target.parent.mkdir(parents=True)
+        outside = self.root / "outside.lock"
+        outside.write_text("outside\n")
+        (target.parent / _target_lock_name(target)).symlink_to(outside)
+        result = self.installer.execute(self.installer.plan("doctor", ["agentskills"], "user", self.project))
+        self.assertFalse(result["healthy"])
+        self.assertIn("legacy_lock_invalid", [item["code"] for item in result["problems"]])
 
     def test_update_uses_new_declared_artifact_version_and_uninstall_restores_only_receipt_owned_files(self):
         manifest = json.loads((ROOT / "plugin.json").read_text())

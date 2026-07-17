@@ -6,7 +6,7 @@
     },
     {
       "path": "mlx-adopt/scripts/mlx-agent",
-      "sha256": "2feae2b4449a7cdc44a6751f1d8db501cef615d1f3ce9bb04eeafdc79506533e"
+      "sha256": "ab779456cac163b4b0c925031596c9f2dff03a3380fe9d75b2329c27869be6df"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/__init__.py",
@@ -22,7 +22,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/cli.py",
-      "sha256": "ae713724dafc5e8b9a5965abfc915c9fc3bb89f4c060b368f173081bda8657ca"
+      "sha256": "ddf32ebfc6eb06ccf0c1b3342f8f7a8738e87b2b31b0a907120cf552ff41e6ce"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/command_executor.py",
@@ -50,7 +50,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/host.py",
-      "sha256": "6276369f7835fa4ed71af6ba3eab1a089299f77b947a7502ac6f435ab11a92d3"
+      "sha256": "fdd5cdb9dcd3e2e1e10184cc1115a112772e1d8a9e180942cfe6e5ed7c9b36fb"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/huggingface.py",
@@ -58,7 +58,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/installer.py",
-      "sha256": "977c3b657b0f0b14b9a3409a2ffbd2a277845d1e01b3c17b6a164c552fb3657b"
+      "sha256": "5a8f6c3402148c782c66d832ddabe4ffab754873fb4baf8afef145eba453d718"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/models.py",
@@ -74,7 +74,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/transactions.py",
-      "sha256": "00efdde38eae6c7545961ccaec3aa5802e9550f1fd1ab46d9836c81b58cdab5a"
+      "sha256": "35c0c6b1db154ee2b7bcf58a33e3bea38315dc904cf72ae64f9f7eb8b41c61be"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/verification.py",
@@ -90,7 +90,7 @@
     },
     {
       "path": "mlx-scout/scripts/mlx-agent",
-      "sha256": "2feae2b4449a7cdc44a6751f1d8db501cef615d1f3ce9bb04eeafdc79506533e"
+      "sha256": "ab779456cac163b4b0c925031596c9f2dff03a3380fe9d75b2329c27869be6df"
     },
     {
       "path": "mlx-scout/src/mlx_agent/__init__.py",
@@ -106,7 +106,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/cli.py",
-      "sha256": "ae713724dafc5e8b9a5965abfc915c9fc3bb89f4c060b368f173081bda8657ca"
+      "sha256": "ddf32ebfc6eb06ccf0c1b3342f8f7a8738e87b2b31b0a907120cf552ff41e6ce"
     },
     {
       "path": "mlx-scout/src/mlx_agent/command_executor.py",
@@ -134,7 +134,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/host.py",
-      "sha256": "6276369f7835fa4ed71af6ba3eab1a089299f77b947a7502ac6f435ab11a92d3"
+      "sha256": "fdd5cdb9dcd3e2e1e10184cc1115a112772e1d8a9e180942cfe6e5ed7c9b36fb"
     },
     {
       "path": "mlx-scout/src/mlx_agent/huggingface.py",
@@ -142,7 +142,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/installer.py",
-      "sha256": "977c3b657b0f0b14b9a3409a2ffbd2a277845d1e01b3c17b6a164c552fb3657b"
+      "sha256": "5a8f6c3402148c782c66d832ddabe4ffab754873fb4baf8afef145eba453d718"
     },
     {
       "path": "mlx-scout/src/mlx_agent/models.py",
@@ -158,7 +158,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/transactions.py",
-      "sha256": "00efdde38eae6c7545961ccaec3aa5802e9550f1fd1ab46d9836c81b58cdab5a"
+      "sha256": "35c0c6b1db154ee2b7bcf58a33e3bea38315dc904cf72ae64f9f7eb8b41c61be"
     },
     {
       "path": "mlx-scout/src/mlx_agent/verification.py",
@@ -174,7 +174,7 @@
     },
     {
       "path": "mlx-wire/scripts/mlx-agent",
-      "sha256": "2feae2b4449a7cdc44a6751f1d8db501cef615d1f3ce9bb04eeafdc79506533e"
+      "sha256": "ab779456cac163b4b0c925031596c9f2dff03a3380fe9d75b2329c27869be6df"
     },
     {
       "path": "mlx-wire/src/mlx_agent/__init__.py",
@@ -190,7 +190,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/cli.py",
-      "sha256": "ae713724dafc5e8b9a5965abfc915c9fc3bb89f4c060b368f173081bda8657ca"
+      "sha256": "ddf32ebfc6eb06ccf0c1b3342f8f7a8738e87b2b31b0a907120cf552ff41e6ce"
     },
     {
       "path": "mlx-wire/src/mlx_agent/command_executor.py",
@@ -218,7 +218,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/host.py",
-      "sha256": "6276369f7835fa4ed71af6ba3eab1a089299f77b947a7502ac6f435ab11a92d3"
+      "sha256": "fdd5cdb9dcd3e2e1e10184cc1115a112772e1d8a9e180942cfe6e5ed7c9b36fb"
     },
     {
       "path": "mlx-wire/src/mlx_agent/huggingface.py",
@@ -226,7 +226,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/installer.py",
-      "sha256": "977c3b657b0f0b14b9a3409a2ffbd2a277845d1e01b3c17b6a164c552fb3657b"
+      "sha256": "5a8f6c3402148c782c66d832ddabe4ffab754873fb4baf8afef145eba453d718"
     },
     {
       "path": "mlx-wire/src/mlx_agent/models.py",
@@ -242,7 +242,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/transactions.py",
-      "sha256": "00efdde38eae6c7545961ccaec3aa5802e9550f1fd1ab46d9836c81b58cdab5a"
+      "sha256": "35c0c6b1db154ee2b7bcf58a33e3bea38315dc904cf72ae64f9f7eb8b41c61be"
     },
     {
       "path": "mlx-wire/src/mlx_agent/verification.py",

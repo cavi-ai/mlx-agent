@@ -1,6 +1,11 @@
+import contextlib
+import io
 import unittest
+from unittest.mock import patch
 
 from mlx_agent.contracts import ResultEnvelope
+from mlx_agent.cli import main
+from mlx_agent.host import HostInventory
 from scripts.validate_contracts import validate_result
 
 
@@ -110,3 +115,14 @@ class ResultEnvelopeTests(unittest.TestCase):
         errors = validate_result(value)
         self.assertIn("error is only allowed when status is 'error'", errors)
         self.assertIn("warnings[0] must be an object of strings", errors)
+
+    def test_inspect_host_cli_returns_versioned_inventory_and_classified_probe_warnings(self):
+        output = io.StringIO()
+        warnings = [{"code": "runtime_probe_unavailable", "probe": "ollama", "message": "Local runtime probe unavailable."}]
+        with patch.object(HostInventory, "inspect", return_value=(HostInventory(ram_gb=32, chip="Apple Test"), warnings)), contextlib.redirect_stdout(output):
+            self.assertEqual(0, main(["inspect-host", "--json"]))
+        payload = __import__("json").loads(output.getvalue())
+        self.assertEqual("inspect-host", payload["operation"])
+        self.assertEqual({"ram_gb": 32, "chip": "Apple Test", "ollama": False, "lmstudio": False}, payload["data"])
+        self.assertEqual(warnings, payload["warnings"])
+        self.assertEqual([], validate_result(payload))

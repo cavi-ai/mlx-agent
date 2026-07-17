@@ -11,8 +11,8 @@ from pathlib import Path
 
 from .providers import detect_providers
 from .transactions import (
-    Receipt, Transaction, _assert_safe_directory, _assert_safe_target,
-    _atomic_in_directory, _read_regular, _walk_directory, rollback,
+    LegacyLockError, Receipt, Transaction, _assert_safe_directory, _assert_safe_target,
+    _atomic_in_directory, _read_regular, _walk_directory, legacy_lock_problem, rollback,
 )
 from .wiring import redact_secrets
 
@@ -184,6 +184,9 @@ class Installer:
                 successful.append(receipt)
             self._batch_update(batch_path, "complete", successful)
             return InstallerReceipt("applied", all_receipts, successful[-1].receipt_path, [target for item in successful for target in item.targets], str(batch_path))
+        except LegacyLockError as error:
+            self._batch_update(batch_path, "rolled_back", all_receipts, error=str(error))
+            raise InstallerConflictError(str(error))
         except Exception as error:
             recovered, unresolved = self._compensate_install(all_receipts)
             child_requires_recovery = any(item.status in {"recovery_required", "rollback_failed"} for item in all_receipts)
@@ -204,6 +207,7 @@ class Installer:
                 if recorded.status != "rolled_back":
                     raise InstallerConflictError("uninstall rollback did not complete: {0}".format(recorded.status))
                 completed.append(recorded)
+            self._cleanup_empty_artifact_dirs(plan)
             self._batch_update(batch_path, "complete", attempted)
             return InstallerReceipt("rolled_back", attempted, attempted[-1].receipt_path if attempted else "", [target for item in attempted for target in item.targets], str(batch_path))
         except Exception as error:
@@ -285,6 +289,38 @@ class Installer:
     def _doctor_plan(self, selected, definitions, scope, project):
         return self._make_plan("doctor", selected, scope, project, definitions=definitions)
 
+    def _cleanup_empty_artifact_dirs(self, plan):
+        """Remove only emptied receipt-owned descendants; retain host-owned roots."""
+        definitions = self.registry.definitions()
+        for provider_id in plan.provider_ids:
+            definition = definitions[provider_id]
+            provider_root = definition.destination(plan.scope, plan.project_root)
+            for artifact in definition.artifacts:
+                if not definition.applies_to(plan.scope, artifact):
+                    continue
+                destination = definition.artifact_destination(plan.scope, plan.project_root, artifact)
+                try:
+                    relative = destination.relative_to(provider_root)
+                except ValueError:
+                    # Some providers own companion artifacts (for example,
+                    # Gemini command files) beneath a host-wide directory
+                    # rather than their package directory.  Removing empty
+                    # parents there could remove host-owned structure.
+                    continue
+                stop = provider_root / relative.parts[0]
+                current = destination.parent
+                while current != stop:
+                    try:
+                        _parent, descriptor = _walk_directory(current.parent)
+                        try:
+                            os.rmdir(current.name, dir_fd=descriptor)
+                            os.fsync(descriptor)
+                        finally:
+                            os.close(descriptor)
+                    except (FileNotFoundError, OSError, ValueError):
+                        break
+                    current = current.parent
+
     def _doctor(self, plan):
         problems, checked = [], []
         definitions = self.registry.definitions()
@@ -305,6 +341,20 @@ class Installer:
                 except (OSError, ValueError):
                     problems.append({"provider": provider_id, "code": "artifact_invalid", "path": str(target)})
         problems.extend(self._batch_problems(plan.scope, plan.project_root))
+        lock_root = self._receipts_dir(plan.scope, plan.project_root) / "locks"
+        for provider_id in plan.provider_ids:
+            definition = definitions[provider_id]
+            targets = [
+                str(definition.artifact_destination(plan.scope, plan.project_root, artifact))
+                for artifact in definition.artifacts
+                if definition.applies_to(plan.scope, artifact)
+            ]
+            try:
+                legacy_problem = legacy_lock_problem(targets, lock_root)
+            except ValueError as error:
+                problems.append({"provider": provider_id, "code": "legacy_lock_invalid", "message": str(error)})
+                continue
+            problems.extend({"provider": provider_id, **item} for item in legacy_problem)
         return {"healthy": not problems, "problems": problems, "checked": checked,
                 "cooperative_concurrency": "Transaction advisory locks protect cooperative writers."}
 
@@ -374,7 +424,13 @@ class Installer:
         return transaction, preview
 
     def _new_transaction(self, scope, project, transaction_id=None):
-        return self.transaction_factory(receipts_dir=self._receipts_dir(scope, project), create_target_parents=True, transaction_id=transaction_id)
+        receipts_dir = self._receipts_dir(scope, project)
+        return self.transaction_factory(
+            receipts_dir=receipts_dir,
+            lock_root=receipts_dir / "locks",
+            create_target_parents=True,
+            transaction_id=transaction_id,
+        )
 
     @staticmethod
     def _operation_transaction_id(batch_id, child_index, provider_id):

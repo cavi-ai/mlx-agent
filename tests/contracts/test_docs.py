@@ -14,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MATRIX_PATH = ROOT / "compatibility" / "providers.json"
+RELEASE_EVIDENCE_PATH = ROOT / "compatibility" / "release-evidence.json"
 README_PATH = ROOT / "README.md"
 RENDERER_PATH = ROOT / "scripts" / "render_compatibility.py"
 PROVIDERS = ("claude", "codex", "gemini", "opencode", "agentskills")
@@ -44,12 +45,43 @@ class DocumentationContractTests(unittest.TestCase):
                 self.assertEqual(set(COMMANDS), {item["command"] for item in entry["capabilities"].values()})
                 self.assertEqual({"scout", "adopt", "wire"}, set(entry["capabilities"]))
                 self.assertEqual({"status", "date", "summary"}, set(entry["last_smoke_test"]))
+                self.assertEqual(
+                    {"id", "status", "date", "environment", "cli_version", "scopes_tested", "native_discovery", "fixture_bundle", "uninstall"},
+                    set(entry["release_evidence"]),
+                )
+                self.assertTrue(entry["release_evidence"]["id"])
+                self.assertIn(entry["release_evidence"]["status"], self.matrix["allowed_evidence_statuses"])
+                date.fromisoformat(entry["release_evidence"]["date"])
+                self.assertTrue(entry["release_evidence"]["environment"])
+                self.assertIsInstance(entry["release_evidence"]["scopes_tested"], list)
                 self.assertIn(entry["last_smoke_test"]["status"], self.matrix["allowed_evidence_statuses"])
                 date.fromisoformat(entry["last_smoke_test"]["date"])
                 self.assertTrue(entry["last_smoke_test"]["summary"])
                 self.assertEqual(set(EVIDENCE_FIELDS), set(entry["evidence"]))
                 for evidence in EVIDENCE_FIELDS:
                     self.assertIn(entry["evidence"][evidence]["status"], self.matrix["allowed_evidence_statuses"])
+
+    def test_release_evidence_is_redacted_and_covers_every_matrix_provider(self):
+        self.assertTrue(RELEASE_EVIDENCE_PATH.is_file())
+        evidence = json.loads(RELEASE_EVIDENCE_PATH.read_text(encoding="utf-8"))
+        self.assertEqual("1.0", evidence["schema_version"])
+        self.assertEqual(self.matrix["allowed_evidence_statuses"], evidence["allowed_evidence_statuses"])
+        self.assertEqual(set(PROVIDERS), set(evidence["providers"]))
+        for provider_id, matrix_entry in self.matrix["providers"].items():
+            with self.subTest(provider=provider_id):
+                self.assertEqual(matrix_entry["release_evidence"], evidence["providers"][provider_id])
+        self.assertTrue(evidence["commands"])
+        commands = {item["id"]: item for item in evidence["commands"]}
+        self.assertEqual(0, commands["diff-check"]["exit_status"])
+        self.assertEqual(0, commands["git-status"]["exit_status"])
+        self.assertEqual("", commands["git-status"]["output"])
+        self.assertTrue(commands["git-status"]["clean"])
+        self.assertIn("before_sha256", evidence["wire_transaction"])
+        self.assertIn("after_sha256", evidence["wire_transaction"])
+        self.assertTrue(evidence["wire_transaction"]["receipt_secret_scan"]["passed"])
+        serialized = json.dumps(evidence).lower()
+        self.assertNotIn("auth.json", serialized)
+        self.assertNotIn("secret-value", serialized)
 
     def test_native_provider_docs_cover_install_lifecycle_and_exact_invocation(self):
         for provider_id in NATIVE_PROVIDERS:
@@ -144,6 +176,21 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("compatibility block", result.stderr)
 
+    def test_compatibility_renderer_rejects_release_evidence_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            release_evidence = Path(directory) / "release-evidence.json"
+            evidence = json.loads(RELEASE_EVIDENCE_PATH.read_text(encoding="utf-8"))
+            evidence["providers"]["gemini"]["status"] = "fixture"
+            release_evidence.write_text(json.dumps(evidence), encoding="utf-8")
+            result = subprocess.run(
+                ["python3", str(RENDERER_PATH), "--check", "--release-evidence", str(release_evidence)],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("release evidence", result.stderr)
+
     def test_wire_docs_do_not_claim_model_download_or_pull_behavior(self):
         text = "\n".join(
             path.read_text(encoding="utf-8")
@@ -151,6 +198,18 @@ class DocumentationContractTests(unittest.TestCase):
         )
         self.assertNotIn("Pull a chosen model", text)
         self.assertIn("does not pull, install, or download model weights", text)
+
+    def test_release_checklist_records_the_authorized_runtime_hardening_scope(self):
+        checklist = (ROOT / "docs" / "release-checklist.md").read_text(encoding="utf-8")
+        security = (ROOT / "docs" / "security.md").read_text(encoding="utf-8")
+        self.assertIn("retargeted by user authorization", checklist)
+        self.assertIn("runtime/installer hardening", checklist)
+        self.assertIn("legacy-lock migration", checklist)
+        self.assertIn("target-specific", checklist)
+        self.assertIn("all older mlx-agent processes stopped", security)
+        self.assertIn("older binary is unsupported", security)
+        self.assertIn("legacy_lock_recreated", security)
+        self.assertIn("OpenCode/Bun native smoke unavailable", checklist)
 
 
 if __name__ == "__main__":

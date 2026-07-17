@@ -20,7 +20,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 
 from .wiring import ConfigAdapter, redact_endpoint, redact_secrets
 
@@ -30,10 +30,16 @@ MAX_PREVIEW_CHARS = 12000
 _STATUSES = {"pending", "applied", "failed", "rolled_back", "rollback_failed", "recovery_required"}
 _HASH = __import__("re").compile(r"^[0-9a-f]{64}$")
 COOPERATIVE_CONCURRENCY_NOTE = "Advisory lock protects accidental/cooperative writers; a malicious process ignoring it can still race the final rename."
+LEGACY_LOCK_MIGRATION = "legacy-target-locks-v1"
+_LEGACY_LOCK_MARKER = "legacy-lock-migration-v1.json"
 
 
 class ConcurrentTransactionError(ValueError):
     """A cooperative writer holds the transaction's advisory lock."""
+
+
+class LegacyLockError(ConcurrentTransactionError):
+    """A legacy target-adjacent lock prevents a safe scoped-lock upgrade."""
 
 
 def _sha256(value):
@@ -103,18 +109,213 @@ def _assert_safe_directory(path, create=False):
 
 
 def _target_lock_name(target):
-    digest = _sha256(str(_physical_absolute(target)).encode("utf-8"))
-    return ".mlx-agent-wire-{0}.lock".format(digest)
+    return ".mlx-agent-wire-{0}.lock".format(_target_lock_digest(target))
+
+
+def _target_lock_digest(target):
+    """Identity shared by legacy locks, scoped locks, and migration state."""
+    return _sha256(str(_physical_absolute(target)).encode("utf-8"))
+
+
+def _legacy_lock_entries(targets):
+    """Open existing legacy locks without creating target parents or lock files."""
+    held = []
+    for target in sorted({_physical_absolute(item) for item in targets}, key=str):
+        try:
+            _parent, directory_fd = _walk_directory(target.parent)
+        except ValueError as error:
+            if str(error).startswith("path component does not exist:"):
+                continue
+            raise
+        descriptor = None
+        name = _target_lock_name(target)
+        try:
+            try:
+                descriptor = os.open(name, os.O_RDWR | os.O_NOFOLLOW, dir_fd=directory_fd)
+            except FileNotFoundError:
+                os.close(directory_fd)
+                continue
+            except OSError as error:
+                raise ValueError("could not safely open legacy target transaction lock: {0}".format(error))
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                raise ValueError("legacy target transaction lock is not a regular file")
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as error:
+                if error.errno in (errno.EACCES, errno.EAGAIN):
+                    raise LegacyLockError("legacy_lock_busy: stop older mlx-agent processes before upgrading scoped locks")
+                raise ValueError("could not safely acquire legacy target transaction lock: {0}".format(error))
+            held.append((descriptor, directory_fd, name, str(target.parent / name), _target_lock_digest(target)))
+        except BaseException:
+            if descriptor is not None:
+                os.close(descriptor)
+            os.close(directory_fd)
+            for held_descriptor, held_directory, _held_name, _held_path, _held_digest in reversed(held):
+                try:
+                    fcntl.flock(held_descriptor, fcntl.LOCK_UN)
+                finally:
+                    os.close(held_descriptor)
+                    os.close(held_directory)
+            raise
+    return held
+
+
+def _read_legacy_migration_state(lock_root):
+    """Read validated target-specific scoped legacy-lock migration state."""
+    try:
+        _root, directory_fd = _walk_directory(lock_root)
+    except ValueError as error:
+        if str(error).startswith("path component does not exist:"):
+            return {"version": LEGACY_LOCK_MIGRATION, "targets": {}}
+        raise
+    descriptor = None
+    try:
+        try:
+            descriptor = os.open(_LEGACY_LOCK_MARKER, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
+        except FileNotFoundError:
+            return {"version": LEGACY_LOCK_MIGRATION, "targets": {}}
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise ValueError("legacy lock migration marker is not a regular file")
+        value = json.loads(os.read(descriptor, 1048576).decode("utf-8"))
+        # The prior release-candidate marker had no target map. Treat it as
+        # an empty target-specific map: it cannot prove which targets migrated.
+        if value == {"version": LEGACY_LOCK_MIGRATION}:
+            return {"version": LEGACY_LOCK_MIGRATION, "targets": {}}
+        if not isinstance(value, dict) or set(value) != {"version", "targets"} or value["version"] != LEGACY_LOCK_MIGRATION or not isinstance(value["targets"], dict):
+            raise ValueError("legacy lock migration marker is malformed")
+        for digest, entry in value["targets"].items():
+            if not isinstance(digest, str) or not _HASH.fullmatch(digest) or not isinstance(entry, dict) or set(entry) != {"migrated_at"} or not isinstance(entry["migrated_at"], str):
+                raise ValueError("legacy lock migration marker is malformed")
+            try:
+                if datetime.fromisoformat(entry["migrated_at"].replace("Z", "+00:00")).tzinfo is None:
+                    raise ValueError("missing timezone")
+            except ValueError:
+                raise ValueError("legacy lock migration marker is malformed")
+        return value
+    except OSError as error:
+        raise ValueError("could not safely read legacy lock migration marker: {0}".format(error))
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(directory_fd)
+
+
+def _write_legacy_migration_state(lock_root, state):
+    _atomic_in_directory(
+        lock_root,
+        _LEGACY_LOCK_MARKER,
+        (json.dumps(state, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8"),
+        0o600,
+    )
 
 
 @contextmanager
-def _target_locks(targets, create_parents=False):
+def _legacy_migration_window(lock_root):
+    """Serialize target-map upgrades so multi-target writes cannot lose entries."""
+    _root, directory_fd = _walk_directory(lock_root, create=True)
+    descriptor = None
+    try:
+        descriptor = os.open(".legacy-lock-migration-v1.state.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600, dir_fd=directory_fd)
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise ValueError("legacy lock migration state lock is not a regular file")
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            if error.errno in (errno.EACCES, errno.EAGAIN):
+                raise LegacyLockError("legacy_lock_busy: another scoped legacy-lock migration is active")
+            raise ValueError("could not safely acquire legacy lock migration state lock: {0}".format(error))
+        yield
+    finally:
+        if descriptor is not None:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(descriptor)
+        os.close(directory_fd)
+
+
+@contextmanager
+def _migrate_legacy_target_locks(targets, lock_root):
+    """Upgrade target-adjacent legacy locks before entering scoped lock storage."""
+    held = _legacy_lock_entries(targets)
+    try:
+        canonical = sorted({_physical_absolute(item) for item in targets}, key=str)
+        with _legacy_migration_window(lock_root):
+            state = _read_legacy_migration_state(lock_root)
+            migrated = state["targets"]
+            if any(digest in migrated for _descriptor, _directory_fd, _name, _path, digest in held):
+                raise LegacyLockError("legacy_lock_recreated: stop older mlx-agent processes and remove recreated legacy locks before continuing")
+            for _descriptor, directory_fd, name, _path, _digest in held:
+                os.unlink(name, dir_fd=directory_fd)
+                os.fsync(directory_fd)
+            changed = False
+            for target in canonical:
+                digest = _target_lock_digest(target)
+                if digest not in migrated:
+                    migrated[digest] = {"migrated_at": _timestamp()}
+                    changed = True
+            _write_legacy_migration_state(lock_root, state)
+            yield
+    finally:
+        for descriptor, directory_fd, _name, _path, _digest in reversed(held):
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(descriptor)
+                os.close(directory_fd)
+
+
+def legacy_lock_problem(targets, lock_root):
+    """Describe legacy-lock state for installer doctor without mutating it."""
+    migrated = _read_legacy_migration_state(lock_root)["targets"]
+    paths = {"legacy_lock_recreated": [], "legacy_lock_migration_required": []}
+    for target in sorted({_physical_absolute(item) for item in targets}, key=str):
+        try:
+            _parent, directory_fd = _walk_directory(target.parent)
+        except ValueError as error:
+            if str(error).startswith("path component does not exist:"):
+                continue
+            raise
+        try:
+            name = _target_lock_name(target)
+            try:
+                descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
+            except FileNotFoundError:
+                continue
+            except OSError as error:
+                raise ValueError("could not safely open legacy target transaction lock: {0}".format(error))
+            try:
+                if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                    raise ValueError("legacy target transaction lock is not a regular file")
+                code = "legacy_lock_recreated" if _target_lock_digest(target) in migrated else "legacy_lock_migration_required"
+                paths[code].append(str(target.parent / name))
+            finally:
+                os.close(descriptor)
+        finally:
+            os.close(directory_fd)
+    return [
+        {
+            "code": code,
+            "paths": affected,
+            "remediation": "stop older mlx-agent processes; after target-specific scoped-lock migration, do not run an older binary and remove only recreated legacy locks.",
+        }
+        for code, affected in paths.items() if affected
+    ]
+
+
+@contextmanager
+def _target_locks(targets, create_parents=False, lock_root=None):
     """Acquire target-adjacent physical locks in canonical order to avoid deadlocks."""
     canonical = sorted({_physical_absolute(target) for target in targets}, key=str)
     held = []
     try:
         for target in canonical:
-            _parent, directory_fd = _walk_directory(target.parent, create=create_parents)
+            if lock_root is None:
+                _parent, directory_fd = _walk_directory(target.parent, create=create_parents)
+            else:
+                _target_parent, target_parent_fd = _walk_directory(target.parent, create=create_parents)
+                os.close(target_parent_fd)
+                _parent, directory_fd = _walk_directory(lock_root, create=True)
             lock_fd = None
             try:
                 lock_fd = os.open(
@@ -267,11 +468,17 @@ class Receipt:
     status: str
     preview: str
     preview_hash: str
+    lock_root: str = None
+    lock_migration: str = None
     receipt_path: str = field(default="", repr=False, compare=False)
 
     def to_dict(self):
         value = asdict(self)
         value.pop("receipt_path", None)
+        if value.get("lock_root") is None:
+            value.pop("lock_root")
+        if value.get("lock_migration") is None:
+            value.pop("lock_migration")
         return value
 
     @classmethod
@@ -281,7 +488,7 @@ class Receipt:
             "targets", "target_roots", "target_modes", "before_hashes", "after_hashes", "backup_paths",
             "validations", "status", "preview", "preview_hash",
         }
-        if not isinstance(value, dict) or set(value) != required:
+        if not isinstance(value, dict) or not required.issubset(value) or set(value) - (required | {"lock_root", "lock_migration"}):
             raise ValueError("receipt fields are malformed or untrusted")
         if value["schema_version"] != RECEIPT_SCHEMA_VERSION or value["status"] not in _STATUSES:
             raise ValueError("receipt version or status is unsupported")
@@ -301,6 +508,16 @@ class Receipt:
             location = _assert_safe_target(receipt_path)
             if location.parent != root or location.name != "receipt.json":
                 raise ValueError("receipt is outside its transaction layout")
+        lock_root = value.get("lock_root")
+        if lock_root is not None:
+            if not isinstance(lock_root, str) or not lock_root:
+                raise ValueError("receipt lock root is malformed")
+            safe_lock_root = _assert_safe_directory(lock_root)
+            if str(safe_lock_root) != lock_root:
+                raise ValueError("receipt lock root must be normalized")
+        migration = value.get("lock_migration")
+        if migration is not None and (lock_root is None or migration != LEGACY_LOCK_MIGRATION):
+            raise ValueError("receipt lock migration is malformed")
         targets = value["targets"]
         maps = (value["target_roots"], value["target_modes"], value["before_hashes"], value["after_hashes"], value["backup_paths"])
         if not isinstance(targets, list) or not targets or not all(isinstance(item, str) for item in targets) or len(targets) != len(set(targets)) or not all(isinstance(item, dict) for item in maps):
@@ -338,8 +555,9 @@ class Receipt:
 class Transaction:
     """Create a crash-recoverable journal before any configuration mutation."""
 
-    def __init__(self, receipts_dir=None, health_checker=None, fault_injector=None, receipt_writer=None, path_race_hook=None, create_target_parents=False, transaction_id=None):
+    def __init__(self, receipts_dir=None, health_checker=None, fault_injector=None, receipt_writer=None, path_race_hook=None, create_target_parents=False, transaction_id=None, lock_root=None):
         self.receipts_dir = Path(receipts_dir) if receipts_dir else None
+        self.lock_root = Path(lock_root) if lock_root is not None else None
         self.health_checker = health_checker
         self.fault_injector = fault_injector
         self.receipt_writer = receipt_writer
@@ -409,8 +627,19 @@ class Transaction:
 
     @contextmanager
     def _advisory_lock(self):
-        with _target_locks(self._lock_targets(), create_parents=self.create_target_parents):
-            yield
+        lock_root = self._safe_lock_root() if self.lock_root is not None else None
+        if lock_root is None:
+            with _target_locks(self._lock_targets(), create_parents=self.create_target_parents):
+                yield
+            return
+        with _migrate_legacy_target_locks(self._lock_targets(), lock_root):
+            with _target_locks(self._lock_targets(), create_parents=self.create_target_parents, lock_root=lock_root):
+                yield
+
+    def _safe_lock_root(self):
+        root, descriptor = _walk_directory(self.lock_root, create=True)
+        os.close(descriptor)
+        return root
 
     def _lock_targets(self):
         return [str(path) for path in sorted({change["path"] for change in self._changes}, key=str)]
@@ -523,7 +752,10 @@ class Transaction:
             before_hashes={}, after_hashes={}, backup_paths={}, validations={
                 "concurrency": {"scope": "advisory_cooperative_target_scoped", "note": COOPERATIVE_CONCURRENCY_NOTE, "passed": True},
             }, status="pending",
-            preview=self._preview, preview_hash=self._preview_hash, receipt_path=str(root / "receipt.json"),
+            preview=self._preview, preview_hash=self._preview_hash,
+            lock_root=str(self._safe_lock_root()) if self.lock_root is not None else None,
+            lock_migration=LEGACY_LOCK_MIGRATION if self.lock_root is not None else None,
+            receipt_path=str(root / "receipt.json"),
         )
         for index, change in enumerate(self._changes):
             path = change["path"]
@@ -640,32 +872,37 @@ def rollback(receipt_path, expected_after_hashes=None):
     """Restore a receipt, optionally proving reviewed current hashes under its lock."""
     location = _assert_safe_target(receipt_path)
     initial = Receipt.from_dict(json.loads(_read_regular(location).decode("utf-8")), str(location))
-    with _target_locks(initial.targets):
-        receipt = Receipt.from_dict(json.loads(_read_regular(location).decode("utf-8")), str(location))
-        if expected_after_hashes is not None:
-            if not isinstance(expected_after_hashes, dict) or set(expected_after_hashes) != set(receipt.targets):
-                raise ValueError("reviewed rollback hashes do not match receipt targets")
-            for target_name in receipt.targets:
-                current, exists, _mode = _read_target(target_name)
-                if not exists or _sha256(current) != expected_after_hashes[target_name]:
-                    raise ValueError("receipt target changed after reviewed rollback preview")
-        if receipt.status == "rolled_back":
-            current_matches = True
-            for target_name in receipt.targets:
-                current, exists, mode = _read_target(target_name)
-                expected_absent = receipt.backup_paths[target_name] is None
-                if _sha256(current) != receipt.before_hashes[target_name] or exists == expected_absent or mode != receipt.target_modes[target_name]:
-                    current_matches = False
-                    break
-            if current_matches:
-                return receipt
-        if _restore_receipt(receipt):
-            receipt.status = "rolled_back"
-        else:
-            receipt.status = "rollback_failed"
-        try:
-            _atomic_in_directory(Path(receipt.transaction_root), "receipt.json", (json.dumps(receipt.to_dict(), indent=2, sort_keys=True) + "\n").encode("utf-8"), 0o600)
-        except Exception as error:
-            receipt.status = "recovery_required"
-            receipt.validations["receipt_write"] = {"passed": False, "message": redact_secrets(str(error))}
-        return receipt
+    lock_context = (
+        _migrate_legacy_target_locks(initial.targets, initial.lock_root)
+        if initial.lock_root is not None else nullcontext()
+    )
+    with lock_context:
+        with _target_locks(initial.targets, lock_root=initial.lock_root):
+            receipt = Receipt.from_dict(json.loads(_read_regular(location).decode("utf-8")), str(location))
+            if expected_after_hashes is not None:
+                if not isinstance(expected_after_hashes, dict) or set(expected_after_hashes) != set(receipt.targets):
+                    raise ValueError("reviewed rollback hashes do not match receipt targets")
+                for target_name in receipt.targets:
+                    current, exists, _mode = _read_target(target_name)
+                    if not exists or _sha256(current) != expected_after_hashes[target_name]:
+                        raise ValueError("receipt target changed after reviewed rollback preview")
+            if receipt.status == "rolled_back":
+                current_matches = True
+                for target_name in receipt.targets:
+                    current, exists, mode = _read_target(target_name)
+                    expected_absent = receipt.backup_paths[target_name] is None
+                    if _sha256(current) != receipt.before_hashes[target_name] or exists == expected_absent or mode != receipt.target_modes[target_name]:
+                        current_matches = False
+                        break
+                if current_matches:
+                    return receipt
+            if _restore_receipt(receipt):
+                receipt.status = "rolled_back"
+            else:
+                receipt.status = "rollback_failed"
+            try:
+                _atomic_in_directory(Path(receipt.transaction_root), "receipt.json", (json.dumps(receipt.to_dict(), indent=2, sort_keys=True) + "\n").encode("utf-8"), 0o600)
+            except Exception as error:
+                receipt.status = "recovery_required"
+                receipt.validations["receipt_write"] = {"passed": False, "message": redact_secrets(str(error))}
+            return receipt

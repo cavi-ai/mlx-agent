@@ -8,7 +8,7 @@
 
 ## Summary
 
-`mlx-agent` will become a universal, provider-native plugin for Claude Code, Codex, Gemini CLI, and OpenCode while retaining a generic AgentSkills distribution. Each first-class provider will expose the same native commands: `/mlx-scout`, `/mlx-adopt`, and `/mlx-wire`.
+`mlx-agent` will become a universal, provider-native plugin for Claude Code, Codex, Gemini CLI, and OpenCode while retaining a generic AgentSkills distribution. Claude Code, Gemini CLI, and OpenCode expose `/mlx-scout`, `/mlx-adopt`, and `/mlx-wire`; Codex exposes native `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, and `$mlx-agent:mlx-wire` installed skills because current Codex does not support custom slash commands.
 
 The implementation will keep the dependency-free Python runtime as the execution core, introduce a canonical capability manifest, generate or validate provider-native adapters from that contract, and add a universal installer alongside each provider's native installation path. The installer will support both user-global and project-local scopes.
 
@@ -16,7 +16,7 @@ First-class support requires manifest and schema validation, isolated install/up
 
 ## Goals
 
-- Provide native installation and native slash commands for Claude Code, Codex, Gemini CLI, and OpenCode.
+- Provide native installation for all four providers, with slash commands for Claude Code, Gemini CLI, and OpenCode and installed `$` skills for Codex.
 - Preserve capability parity for Scout, Adopt, and Wire across all first-class providers.
 - Retain generic AgentSkills compatibility for other compatible agents.
 - Provide a universal installer that detects providers and supports user and project scopes.
@@ -89,12 +89,12 @@ Provider-specific files are allowed when a platform offers unique functionality.
 
 ### Provider adapters
 
-Each first-class provider exposes `/mlx-scout`, `/mlx-adopt`, and `/mlx-wire` as native slash commands. Natural-language skill activation is an additional path, not a substitute for native commands.
+Claude Code, Gemini CLI, and OpenCode expose `/mlx-scout`, `/mlx-adopt`, and `/mlx-wire` as native slash commands. Codex uses native `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, and `$mlx-agent:mlx-wire` installed skills because it does not support custom slash commands. Natural-language skill activation remains an additional path.
 
 | Provider | Native package surface | Commands | Adoption execution |
 | --- | --- | --- | --- |
 | Claude Code | Marketplace plugin, commands, skills, agent, workflow adapter | `/mlx-scout`, `/mlx-adopt`, `/mlx-wire` | Native orchestration adapter over the core workflow |
-| Codex | Codex-native plugin, skills, commands, and agent instructions | `/mlx-scout`, `/mlx-adopt`, `/mlx-wire` | Native delegation when available, sequential fallback |
+| Codex | Codex-native plugin and skills | `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, `$mlx-agent:mlx-wire` | Installed skill delegation with sequential fallback; Codex does not support custom slash commands |
 | Gemini CLI | Extension manifest, commands, skills, and context | `/mlx-scout`, `/mlx-adopt`, `/mlx-wire` | Gemini-native orchestration over the core workflow |
 | OpenCode | Commands, agents, skills, and optional plugin/config adapter | `/mlx-scout`, `/mlx-adopt`, `/mlx-wire` | Native subtasks when available, sequential fallback |
 | Other AgentSkills clients | Self-contained skill | Natural-language activation | Sequential core workflow |
@@ -361,7 +361,7 @@ Implementation planning must split these dependencies into reviewable slices and
 
 - A fresh user can install the plugin natively on any first-class provider.
 - A fresh user can use the universal installer for one or multiple detected providers at user or project scope.
-- All four providers recognize `/mlx-scout`, `/mlx-adopt`, and `/mlx-wire`.
+- Claude Code, Gemini CLI, and OpenCode recognize `/mlx-scout`, `/mlx-adopt`, and `/mlx-wire`; Codex recognizes installed `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, and `$mlx-agent:mlx-wire` skills.
 - Equivalent inputs produce schema-equivalent results across providers.
 - Adopt can resume after interruption and distinguishes runtime-tested from metadata-only evidence.
 - Wire previews every change, requires confirmation, validates the result, and can roll back precisely.

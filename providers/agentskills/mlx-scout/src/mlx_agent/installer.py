@@ -233,7 +233,8 @@ class Installer:
                         raise InstallerConflictError("refusing to overwrite unowned or modified artifact: {0}".format(target))
                     if current == desired.encode("utf-8"):
                         continue
-                adapter = _SourceCodeArtifactAdapter() if artifact.source.suffix == ".py" else _ArtifactAdapter()
+                is_runtime_source = "src" in artifact.source.parts and "mlx_agent" in artifact.source.parts
+                adapter = _SourceCodeArtifactAdapter() if is_runtime_source else _ArtifactAdapter()
                 changes.append({"path": str(target), "content": desired, "adapter": adapter})
             if changes:
                 transaction = self._new_transaction(scope, project)

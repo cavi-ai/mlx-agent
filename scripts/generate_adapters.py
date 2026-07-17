@@ -4,15 +4,20 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import sys
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Union
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SUPPORTED_PROVIDERS = ("claude", "agentskills")
 INVENTORY_NAME = ".mlx-agent-generated-files.json"
+INVENTORY_SCHEMA_VERSION = 2
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+Content = Union[str, bytes]
 
 
 def _capability_id(manifest: Mapping[str, object], capability: str) -> str:
@@ -171,12 +176,44 @@ return agent(
 """
 
 
-def _runtime_bundle(destination: Path) -> Dict[Path, str]:
+def _sha256(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+def _content_bytes(content: Content) -> bytes:
+    if isinstance(content, bytes):
+        return content
+    if isinstance(content, str):
+        return content.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
+    raise TypeError("generated content must be text or bytes")
+
+
+def _production_bundle_sources(source_root: Optional[Path] = None) -> List[Path]:
+    """Return every declared production runtime file, recursively and deterministically."""
+
+    root = Path(source_root) if source_root is not None else ROOT / "src" / "mlx_agent"
+    if not root.is_dir():
+        raise ValueError("production runtime source root is missing: {0}".format(root))
+    files = []
+    for source in sorted(root.rglob("*")):
+        relative = source.relative_to(root)
+        if "__pycache__" in relative.parts or source.suffix == ".pyc":
+            continue
+        if source.is_symlink() or not source.is_file():
+            continue
+        files.append(source)
+    if not files:
+        raise ValueError("production runtime bundle has no declared files")
+    return files
+
+
+def _runtime_bundle(destination: Path, source_root: Optional[Path] = None) -> Dict[Path, Content]:
+    root = Path(source_root) if source_root is not None else ROOT / "src" / "mlx_agent"
     bundle = {
         destination / "scripts" / "mlx-agent": (ROOT / "scripts" / "mlx-agent").read_text(encoding="utf-8"),
     }
-    for source in sorted((ROOT / "src" / "mlx_agent").glob("*.py")):
-        bundle[destination / "src" / "mlx_agent" / source.name] = source.read_text(encoding="utf-8")
+    for source in _production_bundle_sources(root):
+        bundle[destination / "src" / "mlx_agent" / source.relative_to(root)] = source.read_bytes()
     return bundle
 
 
@@ -192,25 +229,76 @@ def _surface_relative(path: Path, surface: Optional[Path]) -> Path:
     return path if surface is None else path.relative_to(surface)
 
 
-def _inventory_content(files: Sequence[Path]) -> str:
-    return json.dumps({"schema_version": 1, "files": [str(path) for path in sorted(files, key=str)]}, indent=2) + "\n"
+def _surface_id(surface: Optional[Path]) -> str:
+    if surface is None:
+        return "root-claude-compat"
+    if surface == Path("providers/claude"):
+        return "claude-package"
+    if surface == Path("providers/agentskills"):
+        return "agentskills-package"
+    raise ValueError("unknown generated surface: {0}".format(surface))
 
 
-def _with_inventories(rendered: Dict[Path, str]) -> Dict[Path, str]:
+def _allowed_surface_paths(surface: Optional[Path]) -> set:
+    root_paths = {
+        Path(".claude-plugin/plugin.json"), Path(".claude-plugin/marketplace.json"),
+        Path("commands/mlx-scout.md"), Path("commands/mlx-adopt.md"), Path("commands/mlx-wire.md"),
+        Path("agents/mlx-advisor.md"), Path("scripts/mlx-adopt.workflow.mjs"),
+    }
+    runtime = {Path("scripts/mlx-agent")}
+    runtime.update(Path("src/mlx_agent") / source.relative_to(ROOT / "src" / "mlx_agent") for source in _production_bundle_sources())
+    if surface is None:
+        return root_paths
+    if surface == Path("providers/claude"):
+        return root_paths | runtime
+    if surface == Path("providers/agentskills"):
+        allowed = set()
+        for capability in ("scout", "adopt", "wire"):
+            skill = Path("mlx-{0}".format(capability))
+            allowed.add(skill / "SKILL.md")
+            allowed.update(skill / path for path in runtime)
+        return allowed
+    raise ValueError("unknown generated surface: {0}".format(surface))
+
+
+def _surface_files(rendered: Mapping[Path, Content], surface: Optional[Path]) -> Dict[Path, Content]:
+    files = {
+        _surface_relative(path, surface): content
+        for path, content in rendered.items()
+        if _surface(path) == surface and path.name != INVENTORY_NAME
+    }
+    undeclared = sorted(set(files) - _allowed_surface_paths(surface), key=str)
+    if undeclared:
+        raise ValueError("production bundle contains undeclared generated paths: {0}".format(", ".join(str(path) for path in undeclared)))
+    return files
+
+
+def _inventory_content(surface: Optional[Path], files: Mapping[Path, Content]) -> str:
+    payload = {
+        "schema_version": INVENTORY_SCHEMA_VERSION,
+        "surface": _surface_id(surface),
+        "files": [
+            {"path": str(path), "sha256": _sha256(_content_bytes(content))}
+            for path, content in sorted(files.items(), key=lambda item: str(item[0]))
+        ],
+    }
+    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+
+def _with_inventories(rendered: Dict[Path, Content]) -> Dict[Path, Content]:
     surfaces = sorted({_surface(path) for path in rendered}, key=lambda value: "" if value is None else str(value))
     for surface in surfaces:
-        files = [_surface_relative(path, surface) for path in rendered if _surface(path) == surface]
         inventory = Path(INVENTORY_NAME) if surface is None else surface / INVENTORY_NAME
-        rendered[inventory] = _inventory_content(files)
+        rendered[inventory] = _inventory_content(surface, _surface_files(rendered, surface))
     return dict(sorted(rendered.items(), key=lambda item: str(item[0])))
 
 
-def _render(manifest: Mapping[str, object], provider_ids: Sequence[str]) -> Dict[Path, str]:
+def _render(manifest: Mapping[str, object], provider_ids: Sequence[str]) -> Dict[Path, Content]:
     selected = tuple(provider_ids)
     unknown = sorted(set(selected) - set(SUPPORTED_PROVIDERS))
     if unknown:
         raise ValueError("unsupported provider IDs: {0}".format(", ".join(unknown)))
-    rendered: Dict[Path, str] = {}
+    rendered: Dict[Path, Content] = {}
     if "claude" in selected:
         claude_paths = {
             Path(".claude-plugin/plugin.json"): _plugin_metadata(manifest),
@@ -233,38 +321,58 @@ def _render(manifest: Mapping[str, object], provider_ids: Sequence[str]) -> Dict
     return _with_inventories(rendered)
 
 
-def _inventory_files(path: Path, surface_root: Path) -> List[Path]:
+def _invalid_inventory(path: Path, reason: str) -> ValueError:
+    return ValueError("invalid generated inventory {0}: {1}".format(path, reason))
+
+
+def _inventory_files(path: Path, surface: Optional[Path]) -> Dict[Path, str]:
+    if not path.exists():
+        return {}
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, TypeError, ValueError, json.JSONDecodeError):
-        return []
-    files = value.get("files") if isinstance(value, dict) else None
-    if value.get("schema_version") != 1 or not isinstance(files, list) or not all(isinstance(item, str) for item in files):
-        return []
-    safe = []
-    for item in files:
-        relative = Path(item)
-        if relative.is_absolute() or ".." in relative.parts or not relative.parts:
-            continue
-        safe.append(relative)
-    return safe
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise _invalid_inventory(path, "not valid JSON: {0}".format(error))
+    if not isinstance(value, dict) or set(value) != {"schema_version", "surface", "files"}:
+        raise _invalid_inventory(path, "unexpected shape")
+    if value["schema_version"] != INVENTORY_SCHEMA_VERSION or value["surface"] != _surface_id(surface):
+        raise _invalid_inventory(path, "wrong schema version or surface")
+    files = value["files"]
+    if not isinstance(files, list):
+        raise _invalid_inventory(path, "files must be a list")
+    allowed = _allowed_surface_paths(surface)
+    parsed = {}
+    for entry in files:
+        if not isinstance(entry, dict) or set(entry) != {"path", "sha256"}:
+            raise _invalid_inventory(path, "files must contain path/hash entries")
+        name, digest = entry["path"], entry["sha256"]
+        if not isinstance(name, str) or not isinstance(digest, str) or not _SHA256.fullmatch(digest):
+            raise _invalid_inventory(path, "entry has invalid path or hash")
+        relative = Path(name)
+        if relative.is_absolute() or ".." in relative.parts or not relative.parts or str(relative) != name:
+            raise _invalid_inventory(path, "entry path escapes its surface")
+        if relative not in allowed:
+            raise _invalid_inventory(path, "entry path is not allowed for this surface")
+        if relative in parsed:
+            raise _invalid_inventory(path, "duplicate entry path")
+        parsed[relative] = digest
+    return parsed
 
 
-def _remove_stale_inventoried_files(root: Path, rendered: Mapping[Path, str]) -> None:
+def _remove_stale_inventoried_files(root: Path, rendered: Mapping[Path, Content]) -> None:
     inventory_paths = [path for path in rendered if path.name == INVENTORY_NAME]
     for inventory_relative in inventory_paths:
         surface = inventory_relative.parent
         inventory = root / inventory_relative
-        previous = set(_inventory_files(inventory, root / surface))
-        desired = {
-            _surface_relative(path, _surface(path))
-            for path in rendered
-            if _surface(path) == _surface(inventory_relative) and path.name != INVENTORY_NAME
-        }
-        for relative in sorted(previous - desired, key=str):
+        current_surface = _surface(inventory_relative)
+        previous = _inventory_files(inventory, current_surface)
+        desired = _surface_files(rendered, current_surface)
+        for relative in sorted(set(previous) - set(desired), key=str):
             target = root / surface / relative
-            if target.is_file() or target.is_symlink():
-                target.unlink()
+            if not target.exists() and not target.is_symlink():
+                continue
+            if not target.is_file() or _sha256(target.read_bytes()) != previous[relative]:
+                raise ValueError("refusing to delete stale generated artifact because its hash does not match: {0}".format(target))
+            target.unlink()
 
 
 def generate(provider_ids: Iterable[str], output_root: Path) -> List[Path]:
@@ -278,7 +386,7 @@ def generate(provider_ids: Iterable[str], output_root: Path) -> List[Path]:
     for relative_path, content in rendered.items():
         path = root / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(content.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8"))
+        path.write_bytes(_content_bytes(content))
         if path.name == "mlx-agent" and path.parent.name == "scripts":
             path.chmod(0o755)
         written.append(path)
@@ -292,19 +400,20 @@ def _check(provider_ids: Sequence[str], output_root: Path = ROOT) -> List[Path]:
     rendered = _render(manifest, provider_ids)
     for relative_path, content in rendered.items():
         path = root / relative_path
-        expected = content.encode("utf-8")
+        expected = _content_bytes(content)
         if not path.is_file() or path.read_bytes() != expected:
             drift.append(relative_path)
     for inventory_relative in [path for path in rendered if path.name == INVENTORY_NAME]:
-        surface = inventory_relative.parent
-        expected = {
-            _surface_relative(path, _surface(path))
-            for path in rendered
-            if _surface(path) == _surface(inventory_relative) and path.name != INVENTORY_NAME
-        }
-        for relative in _inventory_files(root / inventory_relative, root / surface):
+        surface = _surface(inventory_relative)
+        try:
+            previous = _inventory_files(root / inventory_relative, surface)
+        except ValueError:
+            drift.append(inventory_relative)
+            continue
+        expected = _surface_files(rendered, surface)
+        for relative in previous:
             if relative not in expected:
-                drift.append(surface / relative)
+                drift.append(inventory_relative.parent / relative)
     return sorted(set(drift), key=str)
 
 

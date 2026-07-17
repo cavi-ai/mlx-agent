@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import importlib.util
 import json
 import os
@@ -83,7 +84,7 @@ class GeneratedAdapterTests(unittest.TestCase):
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertEqual("discover", json.loads(result.stdout)["operation"])
 
-    def test_generation_removes_only_stale_inventoried_files_and_check_reports_them(self):
+    def test_generation_removes_only_hash_matched_stale_inventoried_files(self):
         generator = load_generator()
         with tempfile.TemporaryDirectory() as directory:
             output_root = Path(directory)
@@ -91,17 +92,89 @@ class GeneratedAdapterTests(unittest.TestCase):
             surface = output_root / "providers" / "agentskills"
             inventory_path = surface / ".mlx-agent-generated-files.json"
             inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
-            inventory["files"].append("mlx-scout/obsolete-generated.md")
-            inventory_path.write_text(json.dumps(inventory), encoding="utf-8")
-            stale = surface / "mlx-scout" / "obsolete-generated.md"
-            stale.write_text("generated stale\n", encoding="utf-8")
+            stale = surface / "mlx-scout" / "SKILL.md"
             handwritten = surface / "handwritten.md"
             handwritten.write_text("preserve me\n", encoding="utf-8")
-            drift = generator._check(("claude", "agentskills"), output_root)
-            self.assertIn(Path("providers/agentskills/mlx-scout/obsolete-generated.md"), drift)
-            generator.generate(("claude", "agentskills"), output_root)
+            rendered = generator._render(json.loads((ROOT / "plugin.json").read_text(encoding="utf-8")), ("claude", "agentskills"))
+            del rendered[Path("providers/agentskills/mlx-scout/SKILL.md")]
+            generator._remove_stale_inventoried_files(output_root, rendered)
             self.assertFalse(stale.exists())
             self.assertEqual("preserve me\n", handwritten.read_text(encoding="utf-8"))
+
+    def test_stale_cleanup_fails_closed_for_modified_generated_file(self):
+        generator = load_generator()
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory)
+            generator.generate(("claude", "agentskills"), output_root)
+            stale = output_root / "providers" / "agentskills" / "mlx-scout" / "SKILL.md"
+            stale.write_text("user edit\n", encoding="utf-8")
+            rendered = generator._render(json.loads((ROOT / "plugin.json").read_text(encoding="utf-8")), ("claude", "agentskills"))
+            del rendered[Path("providers/agentskills/mlx-scout/SKILL.md")]
+            with self.assertRaisesRegex(ValueError, "hash does not match"):
+                generator._remove_stale_inventoried_files(output_root, rendered)
+            self.assertEqual("user edit\n", stale.read_text(encoding="utf-8"))
+
+    def test_tampered_inventory_rejects_cross_surface_traversal_duplicates_and_root_files(self):
+        generator = load_generator()
+        cases = ("README.md", "../outside.md", "/absolute.md", "providers/claude/commands/mlx-scout.md")
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory)
+            generator.generate(("claude", "agentskills"), output_root)
+            readme = output_root / "README.md"
+            readme.write_text("handwritten\n", encoding="utf-8")
+            inventory_path = output_root / ".mlx-agent-generated-files.json"
+            original = json.loads(inventory_path.read_text(encoding="utf-8"))
+            for bad_path in cases:
+                with self.subTest(path=bad_path):
+                    tampered = copy.deepcopy(original)
+                    tampered["files"].append({"path": bad_path, "sha256": hashlib.sha256(b"tampered").hexdigest()})
+                    inventory_path.write_text(json.dumps(tampered), encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, "invalid generated inventory"):
+                        generator.generate(("claude", "agentskills"), output_root)
+                    self.assertEqual("handwritten\n", readme.read_text(encoding="utf-8"))
+            duplicate = copy.deepcopy(original)
+            duplicate["files"].append(dict(duplicate["files"][0]))
+            inventory_path.write_text(json.dumps(duplicate), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "invalid generated inventory"):
+                generator.generate(("claude", "agentskills"), output_root)
+            malformed = copy.deepcopy(original)
+            malformed["surface"] = "agentskills-package"
+            malformed["files"].append({"path": "commands/mlx-scout.md", "sha256": "not-a-hash"})
+            inventory_path.write_text(json.dumps(malformed), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "invalid generated inventory"):
+                generator.generate(("claude", "agentskills"), output_root)
+
+    def test_runtime_bundle_contract_is_recursive_and_copies_nested_resources(self):
+        generator = load_generator()
+        with tempfile.TemporaryDirectory() as directory:
+            source_root = Path(directory) / "mlx_agent"
+            (source_root / "resources" / "nested").mkdir(parents=True)
+            (source_root / "__init__.py").write_text("\n", encoding="utf-8")
+            (source_root / "resources" / "nested" / "fixture.txt").write_text("fixture\n", encoding="utf-8")
+            (source_root / "resources" / "nested" / "fixture.bin").write_bytes(b"\x00\xffresource")
+            (source_root / "__pycache__").mkdir()
+            (source_root / "__pycache__" / "ignored.pyc").write_bytes(b"ignored")
+            bundle = generator._runtime_bundle(Path("package"), source_root=source_root)
+            self.assertIn(Path("package/src/mlx_agent/resources/nested/fixture.txt"), bundle)
+            self.assertEqual(b"\x00\xffresource", bundle[Path("package/src/mlx_agent/resources/nested/fixture.bin")])
+            self.assertNotIn(Path("package/src/mlx_agent/__pycache__/ignored.pyc"), bundle)
+
+    def test_check_detects_missing_nested_non_python_runtime_resource(self):
+        generator = load_generator()
+        resource = ROOT / "src" / "mlx_agent" / "resources" / "adapter-runtime.json"
+        self.assertTrue(resource.is_file())
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory)
+            generator.generate(("claude", "agentskills"), output_root)
+            relative = Path("src/mlx_agent/resources/adapter-runtime.json")
+            copies = [
+                output_root / "providers" / "claude" / relative,
+                *(output_root / "providers" / "agentskills" / "mlx-{0}".format(capability) / relative for capability in ("scout", "adopt", "wire")),
+            ]
+            for copy in copies:
+                self.assertTrue(copy.is_file(), str(copy))
+            copies[0].unlink()
+            self.assertIn(Path("providers/claude") / relative, generator._check(("claude", "agentskills"), output_root))
 
     def test_manifest_uses_three_portable_agentskills_artifacts(self):
         manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))

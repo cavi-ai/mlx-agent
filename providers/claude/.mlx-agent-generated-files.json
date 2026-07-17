@@ -1,27 +1,98 @@
 {
-  "schema_version": 1,
   "files": [
-    ".claude-plugin/marketplace.json",
-    ".claude-plugin/plugin.json",
-    "agents/mlx-advisor.md",
-    "commands/mlx-adopt.md",
-    "commands/mlx-scout.md",
-    "commands/mlx-wire.md",
-    "scripts/mlx-adopt.workflow.mjs",
-    "scripts/mlx-agent",
-    "src/mlx_agent/__init__.py",
-    "src/mlx_agent/__main__.py",
-    "src/mlx_agent/adoption.py",
-    "src/mlx_agent/cli.py",
-    "src/mlx_agent/contracts.py",
-    "src/mlx_agent/discovery.py",
-    "src/mlx_agent/host.py",
-    "src/mlx_agent/huggingface.py",
-    "src/mlx_agent/installer.py",
-    "src/mlx_agent/models.py",
-    "src/mlx_agent/providers.py",
-    "src/mlx_agent/transactions.py",
-    "src/mlx_agent/verification.py",
-    "src/mlx_agent/wiring.py"
-  ]
+    {
+      "path": ".claude-plugin/marketplace.json",
+      "sha256": "dd54a4bc64e913e7c9d9a0fd652bb0ace1ae56f152acf655cb8683cef04f65bb"
+    },
+    {
+      "path": ".claude-plugin/plugin.json",
+      "sha256": "51bcc7c125d342fffc9e02b2742b69314c51c4c432473b31860bbd3c14fdb52c"
+    },
+    {
+      "path": "agents/mlx-advisor.md",
+      "sha256": "d6454a5a314512d41e80b58adc05aa7d9e1306992eaa2eb32640c43f6f979374"
+    },
+    {
+      "path": "commands/mlx-adopt.md",
+      "sha256": "93b7256bb66ae1ceab424dd1a43933bcdef3bfb6eb5e1a038a78354faaf5a744"
+    },
+    {
+      "path": "commands/mlx-scout.md",
+      "sha256": "366457a5ecc6d70d6fe453f135526d88fb685cb16df0f1df59d1a3380524e33d"
+    },
+    {
+      "path": "commands/mlx-wire.md",
+      "sha256": "a82dca45b1350b0486d1b599f3e1d9c24d941d262ddc813491315b1abf7759d1"
+    },
+    {
+      "path": "scripts/mlx-adopt.workflow.mjs",
+      "sha256": "bc732f944e63155871073df934f1eb377d25c7980a3ae0d2baa73f391a8deb7c"
+    },
+    {
+      "path": "scripts/mlx-agent",
+      "sha256": "2feae2b4449a7cdc44a6751f1d8db501cef615d1f3ce9bb04eeafdc79506533e"
+    },
+    {
+      "path": "src/mlx_agent/__init__.py",
+      "sha256": "938881c24f995bafd53403227e7e115b3f0f4e0b2fc342e51a4ef838d139a95a"
+    },
+    {
+      "path": "src/mlx_agent/__main__.py",
+      "sha256": "b6fe6fe6fce77e054c60e4da3869ac00db1439661c47fc7cc17efef962a7ceae"
+    },
+    {
+      "path": "src/mlx_agent/adoption.py",
+      "sha256": "dd334cecc8c3206f7940e192863799f3e22737f26f9863c57593b2b8e72b68fb"
+    },
+    {
+      "path": "src/mlx_agent/cli.py",
+      "sha256": "ae713724dafc5e8b9a5965abfc915c9fc3bb89f4c060b368f173081bda8657ca"
+    },
+    {
+      "path": "src/mlx_agent/contracts.py",
+      "sha256": "f1f7a81810d8e1dbd082a034dc2b76dc2695393de7dcaa17b53b1472c57f7b8c"
+    },
+    {
+      "path": "src/mlx_agent/discovery.py",
+      "sha256": "458d1b0ce3d3f900d4866a77f23c21be179de0a195dda067394de3adfe20e0c5"
+    },
+    {
+      "path": "src/mlx_agent/host.py",
+      "sha256": "6276369f7835fa4ed71af6ba3eab1a089299f77b947a7502ac6f435ab11a92d3"
+    },
+    {
+      "path": "src/mlx_agent/huggingface.py",
+      "sha256": "942a41ce8d4df330f5a80d2ff59a3fa040ad61ba9a2cf50ab0356c294a8dc09a"
+    },
+    {
+      "path": "src/mlx_agent/installer.py",
+      "sha256": "1303beba5b3f707619a517606cc6b443b7518b34208b18ea28d8a728fd88a6ad"
+    },
+    {
+      "path": "src/mlx_agent/models.py",
+      "sha256": "c542cb85316cb6a6a05b9fe936f8b65c2c291936431700a9086ff54125f2751a"
+    },
+    {
+      "path": "src/mlx_agent/providers.py",
+      "sha256": "e487d0a9915e5c1647ba11d30d424ebaa51b9e482a54d724dd3fad21fa65d5dd"
+    },
+    {
+      "path": "src/mlx_agent/resources/adapter-runtime.json",
+      "sha256": "3cd3e93f3bb3e90fca33b2371631730dcdc6053e2eb938182ea800fd69860162"
+    },
+    {
+      "path": "src/mlx_agent/transactions.py",
+      "sha256": "00efdde38eae6c7545961ccaec3aa5802e9550f1fd1ab46d9836c81b58cdab5a"
+    },
+    {
+      "path": "src/mlx_agent/verification.py",
+      "sha256": "a5b2c96a373c2402428a69410107ff480a1afed469a756ddda3d525e070e1bd3"
+    },
+    {
+      "path": "src/mlx_agent/wiring.py",
+      "sha256": "e2f7102399b6ff9d6d4fb379db939e48f9d13748211ca6f864c4f74ca1e55e51"
+    }
+  ],
+  "schema_version": 2,
+  "surface": "claude-package"
 }

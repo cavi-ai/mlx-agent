@@ -1,12 +1,34 @@
 {
-  "schema_version": 1,
   "files": [
-    ".claude-plugin/marketplace.json",
-    ".claude-plugin/plugin.json",
-    "agents/mlx-advisor.md",
-    "commands/mlx-adopt.md",
-    "commands/mlx-scout.md",
-    "commands/mlx-wire.md",
-    "scripts/mlx-adopt.workflow.mjs"
-  ]
+    {
+      "path": ".claude-plugin/marketplace.json",
+      "sha256": "dd54a4bc64e913e7c9d9a0fd652bb0ace1ae56f152acf655cb8683cef04f65bb"
+    },
+    {
+      "path": ".claude-plugin/plugin.json",
+      "sha256": "51bcc7c125d342fffc9e02b2742b69314c51c4c432473b31860bbd3c14fdb52c"
+    },
+    {
+      "path": "agents/mlx-advisor.md",
+      "sha256": "d6454a5a314512d41e80b58adc05aa7d9e1306992eaa2eb32640c43f6f979374"
+    },
+    {
+      "path": "commands/mlx-adopt.md",
+      "sha256": "93b7256bb66ae1ceab424dd1a43933bcdef3bfb6eb5e1a038a78354faaf5a744"
+    },
+    {
+      "path": "commands/mlx-scout.md",
+      "sha256": "366457a5ecc6d70d6fe453f135526d88fb685cb16df0f1df59d1a3380524e33d"
+    },
+    {
+      "path": "commands/mlx-wire.md",
+      "sha256": "a82dca45b1350b0486d1b599f3e1d9c24d941d262ddc813491315b1abf7759d1"
+    },
+    {
+      "path": "scripts/mlx-adopt.workflow.mjs",
+      "sha256": "bc732f944e63155871073df934f1eb377d25c7980a3ae0d2baa73f391a8deb7c"
+    }
+  ],
+  "schema_version": 2,
+  "surface": "root-claude-compat"
 }

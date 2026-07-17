@@ -7,15 +7,24 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, Sequence
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SUPPORTED_PROVIDERS = ("claude", "agentskills")
+INVENTORY_NAME = ".mlx-agent-generated-files.json"
 
 
 def _capability_id(manifest: Mapping[str, object], capability: str) -> str:
     return "{0}.{1}".format(manifest["identity"], capability)
+
+
+def _yaml_scalar(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("YAML scalar must be a string")
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise ValueError("YAML scalar must not contain control characters")
+    return json.dumps(value, ensure_ascii=False)
 
 
 def _command_markdown(manifest: Mapping[str, object], capability: str, root: str) -> str:
@@ -23,7 +32,9 @@ def _command_markdown(manifest: Mapping[str, object], capability: str, root: str
     descriptions = manifest["capabilities"]
     description = descriptions[capability]["description"]
     invocation = "python3 {0}/scripts/mlx-agent".format(root)
-    front_matter = "---\nname: mlx-{0}\ndescription: {1}\n---\n\n".format(capability, description)
+    front_matter = "---\nname: {0}\ndescription: {1}\n---\n\n".format(
+        _yaml_scalar("mlx-{0}".format(capability)), _yaml_scalar(description)
+    )
     if capability == "scout":
         body = """# MLX Scout
 
@@ -55,11 +66,15 @@ Report the CLI state and recommendations. Do not recreate adoption policy in thi
 
 canonical capability ID: {identifier}
 
-Use the structured CLI to render a non-mutating configuration preview:
+Use the structured CLI to inspect the target configuration without mutation:
 
 `{invocation} wire render <model> --target <target> --path <config-path> --json`
 
-Show the returned preview and its hash. Do not write configuration files directly. Only after the user explicitly confirms that exact preview, run:
+Then request the exact transaction diff and preview hash without confirmation. This command is intentionally non-mutating and exits nonzero while it waits for confirmation:
+
+`{invocation} wire apply <model> --target <target> --path <config-path> --json`
+
+Show that returned diff and preview hash. Do not write configuration files directly. Only after the user explicitly confirms that exact preview, run:
 
 `{invocation} wire apply <model> --target <target> --path <config-path> --confirm --preview-hash <preview-hash> --json`
 
@@ -73,7 +88,7 @@ def _advisor_markdown(manifest: Mapping[str, object]) -> str:
     adopt = _capability_id(manifest, "adopt")
     wire = _capability_id(manifest, "wire")
     return """---
-description: Provider adapter for the structured MLX agent CLI.
+description: {description}
 ---
 
 # MLX Advisor
@@ -82,13 +97,17 @@ canonical capability ID: {scout}
 canonical capability ID: {adopt}
 canonical capability ID: {wire}
 
-Use only the structured CLI beneath `${{CLAUDE_PLUGIN_ROOT}}/scripts/mlx-agent`. Run `discover` for evidence, `adopt start --state <state-path>` or `adopt resume --state <state-path>` for durable recommendations, and `wire render` before any requested wiring. Do not duplicate adoption policy, download model weights, or write configuration files. A download or configuration mutation is permitted only after explicit user confirmation of the CLI preview; use `wire apply --confirm --preview-hash <preview-hash>` for the reviewed change.
-""".format(scout=scout, adopt=adopt, wire=wire)
+Use only the structured CLI beneath `${{CLAUDE_PLUGIN_ROOT}}/scripts/mlx-agent`. Run `discover` for evidence and `adopt start --state <state-path>` or `adopt resume --state <state-path>` for durable recommendations. For wiring, run `wire render <model> --target <target> --path <config-path> --json`, then the unconfirmed `wire apply <model> --target <target> --path <config-path> --json` to obtain the exact diff and preview hash. Show it. Only after the user explicitly confirms that exact preview, run `wire apply <model> --target <target> --path <config-path> --confirm --preview-hash <preview-hash> --json`. Do not duplicate adoption policy, download model weights, or write configuration files.
+""".format(description=_yaml_scalar("Provider adapter for the structured MLX agent CLI."), scout=scout, adopt=adopt, wire=wire)
 
 
 def _generic_skill_markdown(manifest: Mapping[str, object], capability: str) -> str:
-    content = _command_markdown(manifest, capability, "../../..")
-    return content.replace("$ARGUMENTS", "<arguments>")
+    content = _command_markdown(manifest, capability, "<skill-dir>")
+    content = content.replace("$ARGUMENTS", "<arguments>")
+    return content.replace(
+        "# MLX {0}\n".format(capability.title()),
+        "# MLX {0}\n\nResolve `<skill-dir>` as the absolute directory containing this SKILL.md. Never resolve the bundled executable from the shell working directory.\n".format(capability.title()),
+    )
 
 
 def _plugin_metadata(manifest: Mapping[str, object]) -> str:
@@ -152,6 +171,40 @@ return agent(
 """
 
 
+def _runtime_bundle(destination: Path) -> Dict[Path, str]:
+    bundle = {
+        destination / "scripts" / "mlx-agent": (ROOT / "scripts" / "mlx-agent").read_text(encoding="utf-8"),
+    }
+    for source in sorted((ROOT / "src" / "mlx_agent").glob("*.py")):
+        bundle[destination / "src" / "mlx_agent" / source.name] = source.read_text(encoding="utf-8")
+    return bundle
+
+
+def _surface(path: Path) -> Optional[Path]:
+    if path.parts[:2] == ("providers", "claude"):
+        return Path("providers/claude")
+    if path.parts[:2] == ("providers", "agentskills"):
+        return Path("providers/agentskills")
+    return None
+
+
+def _surface_relative(path: Path, surface: Optional[Path]) -> Path:
+    return path if surface is None else path.relative_to(surface)
+
+
+def _inventory_content(files: Sequence[Path]) -> str:
+    return json.dumps({"schema_version": 1, "files": [str(path) for path in sorted(files, key=str)]}, indent=2) + "\n"
+
+
+def _with_inventories(rendered: Dict[Path, str]) -> Dict[Path, str]:
+    surfaces = sorted({_surface(path) for path in rendered}, key=lambda value: "" if value is None else str(value))
+    for surface in surfaces:
+        files = [_surface_relative(path, surface) for path in rendered if _surface(path) == surface]
+        inventory = Path(INVENTORY_NAME) if surface is None else surface / INVENTORY_NAME
+        rendered[inventory] = _inventory_content(files)
+    return dict(sorted(rendered.items(), key=lambda item: str(item[0])))
+
+
 def _render(manifest: Mapping[str, object], provider_ids: Sequence[str]) -> Dict[Path, str]:
     selected = tuple(provider_ids)
     unknown = sorted(set(selected) - set(SUPPORTED_PROVIDERS))
@@ -170,12 +223,48 @@ def _render(manifest: Mapping[str, object], provider_ids: Sequence[str]) -> Dict
         }
         rendered.update(claude_paths)
         for path, content in claude_paths.items():
-            if path.parts[0] in {".claude-plugin", "commands", "agents"}:
-                rendered[Path("providers/claude") / path] = content
+            rendered[Path("providers/claude") / path] = content
+        rendered.update(_runtime_bundle(Path("providers/claude")))
     if "agentskills" in selected:
         for capability in ("scout", "adopt", "wire"):
-            rendered[Path("providers/agentskills/mlx-{0}/SKILL.md".format(capability))] = _generic_skill_markdown(manifest, capability)
-    return dict(sorted(rendered.items(), key=lambda item: str(item[0])))
+            skill_root = Path("providers/agentskills/mlx-{0}".format(capability))
+            rendered[skill_root / "SKILL.md"] = _generic_skill_markdown(manifest, capability)
+            rendered.update(_runtime_bundle(skill_root))
+    return _with_inventories(rendered)
+
+
+def _inventory_files(path: Path, surface_root: Path) -> List[Path]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return []
+    files = value.get("files") if isinstance(value, dict) else None
+    if value.get("schema_version") != 1 or not isinstance(files, list) or not all(isinstance(item, str) for item in files):
+        return []
+    safe = []
+    for item in files:
+        relative = Path(item)
+        if relative.is_absolute() or ".." in relative.parts or not relative.parts:
+            continue
+        safe.append(relative)
+    return safe
+
+
+def _remove_stale_inventoried_files(root: Path, rendered: Mapping[Path, str]) -> None:
+    inventory_paths = [path for path in rendered if path.name == INVENTORY_NAME]
+    for inventory_relative in inventory_paths:
+        surface = inventory_relative.parent
+        inventory = root / inventory_relative
+        previous = set(_inventory_files(inventory, root / surface))
+        desired = {
+            _surface_relative(path, _surface(path))
+            for path in rendered
+            if _surface(path) == _surface(inventory_relative) and path.name != INVENTORY_NAME
+        }
+        for relative in sorted(previous - desired, key=str):
+            target = root / surface / relative
+            if target.is_file() or target.is_symlink():
+                target.unlink()
 
 
 def generate(provider_ids: Iterable[str], output_root: Path) -> List[Path]:
@@ -183,24 +272,40 @@ def generate(provider_ids: Iterable[str], output_root: Path) -> List[Path]:
 
     manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
     root = Path(output_root)
+    rendered = _render(manifest, tuple(provider_ids))
+    _remove_stale_inventoried_files(root, rendered)
     written = []
-    for relative_path, content in _render(manifest, tuple(provider_ids)).items():
+    for relative_path, content in rendered.items():
         path = root / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8"))
+        if path.name == "mlx-agent" and path.parent.name == "scripts":
+            path.chmod(0o755)
         written.append(path)
     return written
 
 
-def _check(provider_ids: Sequence[str]) -> List[Path]:
+def _check(provider_ids: Sequence[str], output_root: Path = ROOT) -> List[Path]:
     manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+    root = Path(output_root)
     drift = []
-    for relative_path, content in _render(manifest, provider_ids).items():
-        path = ROOT / relative_path
+    rendered = _render(manifest, provider_ids)
+    for relative_path, content in rendered.items():
+        path = root / relative_path
         expected = content.encode("utf-8")
         if not path.is_file() or path.read_bytes() != expected:
             drift.append(relative_path)
-    return drift
+    for inventory_relative in [path for path in rendered if path.name == INVENTORY_NAME]:
+        surface = inventory_relative.parent
+        expected = {
+            _surface_relative(path, _surface(path))
+            for path in rendered
+            if _surface(path) == _surface(inventory_relative) and path.name != INVENTORY_NAME
+        }
+        for relative in _inventory_files(root / inventory_relative, root / surface):
+            if relative not in expected:
+                drift.append(surface / relative)
+    return sorted(set(drift), key=str)
 
 
 def main(argv: Sequence[str] = None) -> int:

@@ -1,6 +1,6 @@
 ---
-name: mlx-adopt
-description: Verify and recommend an MLX model for a requested role.
+name: "mlx-adopt"
+description: "Verify and recommend an MLX model for a requested role."
 ---
 
 # MLX Adopt

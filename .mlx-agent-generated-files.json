@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "files": [
+    ".claude-plugin/marketplace.json",
+    ".claude-plugin/plugin.json",
+    "agents/mlx-advisor.md",
+    "commands/mlx-adopt.md",
+    "commands/mlx-scout.md",
+    "commands/mlx-wire.md",
+    "scripts/mlx-adopt.workflow.mjs"
+  ]
+}

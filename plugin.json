@@ -163,7 +163,11 @@
       "detect_commands": [],
       "user_root": "{config_root}/.agents",
       "project_root": "{project}/.agents",
-      "artifacts": [{"source": "skills/mlx-scout/SKILL.md", "destination": "skills/mlx-scout/SKILL.md"}],
+      "artifacts": [
+        {"source": "providers/agentskills/mlx-scout", "destination": "skills/mlx-scout"},
+        {"source": "providers/agentskills/mlx-adopt", "destination": "skills/mlx-adopt"},
+        {"source": "providers/agentskills/mlx-wire", "destination": "skills/mlx-wire"}
+      ],
       "config_paths": []
     }
   }

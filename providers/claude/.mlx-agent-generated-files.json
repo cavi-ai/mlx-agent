@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "files": [
+    ".claude-plugin/marketplace.json",
+    ".claude-plugin/plugin.json",
+    "agents/mlx-advisor.md",
+    "commands/mlx-adopt.md",
+    "commands/mlx-scout.md",
+    "commands/mlx-wire.md",
+    "scripts/mlx-adopt.workflow.mjs",
+    "scripts/mlx-agent",
+    "src/mlx_agent/__init__.py",
+    "src/mlx_agent/__main__.py",
+    "src/mlx_agent/adoption.py",
+    "src/mlx_agent/cli.py",
+    "src/mlx_agent/contracts.py",
+    "src/mlx_agent/discovery.py",
+    "src/mlx_agent/host.py",
+    "src/mlx_agent/huggingface.py",
+    "src/mlx_agent/installer.py",
+    "src/mlx_agent/models.py",
+    "src/mlx_agent/providers.py",
+    "src/mlx_agent/transactions.py",
+    "src/mlx_agent/verification.py",
+    "src/mlx_agent/wiring.py"
+  ]
+}

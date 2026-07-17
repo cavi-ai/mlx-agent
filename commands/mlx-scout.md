@@ -1,6 +1,6 @@
 ---
-name: mlx-scout
-description: Discover MLX models suitable for the current host.
+name: "mlx-scout"
+description: "Discover MLX models suitable for the current host."
 ---
 
 # MLX Scout

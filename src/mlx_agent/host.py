@@ -15,7 +15,7 @@ class HostInventory:
     def runtime_supports(runtime, role):
         """Whether a runtime can serve the requested model class, independent of install state."""
         if runtime == "mlx-vlm":
-            return True
+            return role == "vision"
         if role == "vision":
             return False
         return runtime in ("mlx_lm", "ollama", "lmstudio", "litellm")

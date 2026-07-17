@@ -51,7 +51,8 @@ class DiscoveryModelTests(unittest.TestCase):
 
         model = result["data"]["roles"]["general"][0]
         self.assertEqual(model["est_ram_gb"], 4.2)
-        self.assertEqual(model["ram_src"], "actual")
+        self.assertEqual(model["ram_src"], "estimated_from_weight_bytes")
+        self.assertEqual(model["facts"]["weight_bytes"], 4200000000)
 
     def test_discovery_data_retains_legacy_report_keys(self):
         result = self.service.discover(DiscoveryRequest(limit=2, fast=True)).to_dict()

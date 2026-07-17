@@ -1,7 +1,9 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from mlx_agent.discovery import DiscoveryRequest, DiscoveryService
 from mlx_agent.host import HostInventory
@@ -56,3 +58,21 @@ class DiscoveryCacheTests(unittest.TestCase):
         result = self._service().discover(DiscoveryRequest(role="coding", offline=True)).to_dict()
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["warnings"][0]["code"], "stale_cache")
+
+    def test_equivalent_quantization_policies_share_one_cache_entry(self):
+        self._service().discover(DiscoveryRequest(role="coding", quantization="q8"))
+        result = self._service().discover(DiscoveryRequest(role="coding", quantization="8bit")).to_dict()
+        self.assertEqual(self.hub.calls, 1)
+        self.assertEqual(result["data"]["cache"]["status"], "fresh")
+
+    def test_refresh_replaces_cache_atomically(self):
+        request = DiscoveryRequest(role="coding")
+        self._service().discover(request)
+        cache_path = next(Path(self.directory.name).glob("*.json"))
+        initial = cache_path.read_text()
+        with patch("mlx_agent.discovery.os.replace", wraps=os.replace) as replace:
+            self._service().discover(DiscoveryRequest(role="coding", refresh=True))
+        self.assertEqual(replace.call_count, 1)
+        self.assertEqual(Path(replace.call_args[0][1]), cache_path)
+        self.assertNotEqual(cache_path.read_text(), initial)
+        self.assertEqual(list(Path(self.directory.name).glob("*.tmp")), [])

@@ -30,10 +30,26 @@ class HuggingFaceClient:
         return self._http_get("{0}?{1}".format(HF_API, query))
 
     def inspect_model(self, repo):
-        output = {"weight_bytes": None, "tags": [], "gated": False, "license": None, "reasoning": None, "reason_src": None, "params_total": None, "repository_url": "https://huggingface.co/{0}".format(repo)}
         quoted = urllib.parse.quote(repo)
+        model_url = "{0}/{1}".format(HF_API, quoted)
+        tree_url = "{0}/{1}/tree/main?recursive=true".format(HF_API, quoted)
+        output = {
+            "weight_bytes": None,
+            "tags": [],
+            "gated": None,
+            "license": None,
+            "reasoning": None,
+            "reason_src": None,
+            "params_total": None,
+            "metadata_available": False,
+            "tree_available": False,
+            "metadata_url": model_url,
+            "tree_url": tree_url,
+            "repository_url": "https://huggingface.co/{0}".format(repo),
+        }
         try:
-            metadata = self._http_get("{0}/{1}".format(HF_API, quoted), timeout=8)
+            metadata = self._http_get(model_url, timeout=8)
+            output["metadata_available"] = True
             tags = metadata.get("tags", []) or []
             output["tags"] = tags
             output["gated"] = bool(metadata.get("gated"))
@@ -54,7 +70,8 @@ class HuggingFaceClient:
         except Exception:
             pass
         try:
-            tree = self._http_get("{0}/{1}/tree/main?recursive=true".format(HF_API, quoted), timeout=8)
+            tree = self._http_get(tree_url, timeout=8)
+            output["tree_available"] = True
             weights = sum(item.get("size", 0) for item in tree if item.get("path", "").endswith((".safetensors", ".gguf", ".bin")))
             output["weight_bytes"] = weights or None
         except Exception:

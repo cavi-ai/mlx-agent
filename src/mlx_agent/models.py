@@ -82,14 +82,14 @@ def quant_rank(repo):
 
 def resolve_ram(repo, enrichment):
     if enrichment.get("weight_bytes"):
-        return round(enrichment["weight_bytes"] / 1e9, 1), "actual"
+        return round(enrichment["weight_bytes"] / 1e9, 1), "estimated_from_weight_bytes"
     if enrichment.get("params_total"):
         for pattern, value in QUANT_GB_PER_B:
             if pattern.search(repo):
-                return round(enrichment["params_total"] * value / 1e9, 1), "est"
-        return round(enrichment["params_total"] * 0.55 / 1e9, 1), "est"
+                return round(enrichment["params_total"] * value / 1e9, 1), "estimated_from_parameter_count"
+        return round(enrichment["params_total"] * 0.55 / 1e9, 1), "estimated_from_parameter_count"
     estimate = name_ram_gb(repo)
-    return (estimate, "est") if estimate is not None else (None, None)
+    return (estimate, "estimated_from_name") if estimate is not None else (None, None)
 
 
 def resolve_reasoning(repo, enrichment):
@@ -119,12 +119,10 @@ def render_md(report):
         out.extend(["\n## {0}".format(labels.get(role, role)), "| model | RAM | reasoning | fits | license | wiring |", "|---|---|---|---|---|---|"])
         for item in items:
             ram = "{0}GB".format(item["est_ram_gb"]) if item.get("est_ram_gb") is not None else "?"
-            if item.get("ram_src") == "actual":
-                ram += "*"
             reason = "⚠ {0}".format(item.get("reason_src") or "") if item.get("reasoning") else "no"
             license_name = (item.get("license") or "?") + (" 🔒" if item.get("gated") else "")
             out.append("| `{0}`{1} | {2} | {3} | {4} | {5} | {6} |".format(item["repo"], " ⭐" if item.get("trusted") else "", ram, reason, "✓" if item["fits"] else "✗", license_name, item["wiring"]))
-    out.append("\n_`*` = real download size (HF); else estimated. Add KV-cache headroom (~1–4GB) beyond weights._")
+    out.append("\n_RAM is always an estimate; measured model-file bytes, when available, are retained separately as evidence. Add KV-cache headroom (~1–4GB) beyond weights._")
     out.append("_`reasoning ⚠` sources: chat_template > tags > name (weakest). Verify with a test-generate._")
     return "\n".join(out)
 

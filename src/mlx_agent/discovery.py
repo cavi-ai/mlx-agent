@@ -52,7 +52,7 @@ class DiscoveryRequest:
         return {
             "role": self.role,
             "memory_gb": self.memory_gb,
-            "quantization": self.quantization,
+            "quantization": _canonical_quantization(self.quantization),
             "licenses": _normalise_values(self.licenses),
             "include_gated": self.include_gated,
             "publishers": _normalise_values(self.publishers),
@@ -69,6 +69,13 @@ def _normalise_values(value):
     if isinstance(value, str):
         return [value.lower()]
     return sorted(str(item).lower() for item in value)
+
+
+def _canonical_quantization(value):
+    if value is None:
+        return None
+    normalized = infer_quantization(str(value))
+    return normalized or str(value).strip().lower()
 
 
 def _utc_now():
@@ -184,15 +191,18 @@ class DiscoveryService:
         budget = request.memory_gb if request.memory_gb is not None else host_data.get("ram_gb")
         fits = ram is None or budget is None or ram < float(budget) * 0.8
         rank_score = (1000000 if trusted else 0) + (quant_rank(repo) * 10000) + min(downloads, 9999) + min(likes, 999)
+        metadata_available = enrichment.get("metadata_available") is True
+        gated_status = "unknown"
+        if metadata_available:
+            gated_status = "gated" if enrichment.get("gated") else "public"
         facts = {
             "repository": repo,
-            "publisher": publisher,
             "downloads": downloads,
             "likes": likes,
-            "gated": bool(enrichment.get("gated", False)),
-            "license": enrichment.get("license"),
+            "gated": gated_status,
+            "license": enrichment.get("license") if metadata_available else None,
         }
-        if enrichment.get("weight_bytes"):
+        if enrichment.get("tree_available") is True and enrichment.get("weight_bytes"):
             facts["weight_bytes"] = enrichment["weight_bytes"]
         return {
             # Legacy report keys.
@@ -203,11 +213,11 @@ class DiscoveryService:
             "base": base_name(repo),
             "qrank": quant_rank(repo),
             "est_ram_gb": ram,
-            "ram_src": "est" if request.fast else ram_source,
+            "ram_src": ram_source,
             "fits": fits,
             "reasoning": reasoning,
             "reason_src": reason_source,
-            "gated": facts["gated"],
+            "gated": enrichment.get("gated") if metadata_available else None,
             "license": facts["license"],
             "wiring": wiring(repo, role, host_data),
             # Explainable structured fields. Memory remains an estimate, even when
@@ -215,19 +225,49 @@ class DiscoveryService:
             "facts": facts,
             "estimates": {"ram_gb": ram, "memory_budget_gb": budget, "headroom_fraction": 0.2},
             "heuristics": {"role": role, "quantization": quantization, "trusted_publisher": trusted},
-            "provenance": self._provenance(repo, request.fast),
+            "provenance": self._provenance(repo, enrichment, request.fast, ram_source, reason_source),
             "rank_score": rank_score,
             "selection_reasons": self._selection_reasons(role, quantization, trusted, fits),
             "rejection_reasons": [],
         }
 
     @staticmethod
-    def _provenance(repo, fast):
+    def _provenance(repo, enrichment, fast, ram_source, reason_source):
         encoded = repo.replace("/", "%2F")
-        fields = ["repository", "downloads", "likes"]
-        if not fast:
-            fields.extend(["gated", "license", "weight_bytes"])
-        return [{"source": "huggingface_api", "url": "https://huggingface.co/api/models/{0}".format(encoded), "fields": fields}]
+        records = [{
+            "source": "huggingface_model_list",
+            "url": "https://huggingface.co/api/models",
+            "fields": ["repository", "downloads", "likes"],
+        }]
+        if not fast and enrichment.get("metadata_available") is True:
+            metadata_fields = ["gated", "license"]
+            if reason_source in ("chat_template", "tags", "checked"):
+                metadata_fields.append("reasoning")
+            records.append({
+                "source": "huggingface_model_metadata",
+                "url": enrichment.get("metadata_url") or "https://huggingface.co/api/models/{0}".format(encoded),
+                "fields": metadata_fields,
+            })
+        if not fast and enrichment.get("tree_available") is True and enrichment.get("weight_bytes"):
+            records.append({
+                "source": "huggingface_repository_tree",
+                "url": enrichment.get("tree_url") or "https://huggingface.co/api/models/{0}/tree/main?recursive=true".format(encoded),
+                "fields": ["weight_bytes"],
+            })
+        records.append({
+            "source": "local_name_derivation",
+            "fields": ["role", "quantization", "trusted_publisher"] + (["reasoning"] if reason_source == "name" else []),
+        })
+        records.append({
+            "source": "local_memory_estimate",
+            "fields": ["ram_gb", "fits"],
+            "basis": ram_source or "unavailable",
+        })
+        records.append({
+            "source": "local_ranking_derivation",
+            "fields": ["rank_score", "selection_reasons", "rejection_reasons"],
+        })
+        return records
 
     @staticmethod
     def _selection_reasons(role, quantization, trusted, fits):
@@ -250,12 +290,14 @@ class DiscoveryService:
         reasons = []
         licenses = set(_normalise_values(request.licenses))
         publishers = set(_normalise_values(request.publishers))
-        wanted_quantization = infer_quantization(str(request.quantization or ""))
-        if not request.include_gated and candidate["gated"]:
+        wanted_quantization = _canonical_quantization(request.quantization)
+        if not request.include_gated and candidate["facts"]["gated"] == "gated":
             reasons.append("gated")
+        if not request.include_gated and candidate["facts"]["gated"] == "unknown":
+            reasons.append("gated_status_unknown")
         if licenses and (candidate["license"] or "").lower() not in licenses:
             reasons.append("license")
-        if publishers and candidate["facts"]["publisher"] not in publishers:
+        if publishers and candidate["repo"].split("/", 1)[0].lower() not in publishers:
             reasons.append("publisher")
         if wanted_quantization and candidate["heuristics"]["quantization"] != wanted_quantization:
             reasons.append("quantization")

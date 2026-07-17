@@ -596,11 +596,19 @@ def _remove_target(path):
         os.close(directory)
 
 
-def rollback(receipt_path):
+def rollback(receipt_path, expected_after_hashes=None):
+    """Restore a receipt, optionally proving reviewed current hashes under its lock."""
     location = _assert_safe_target(receipt_path)
     initial = Receipt.from_dict(json.loads(_read_regular(location).decode("utf-8")), str(location))
     with _target_locks(initial.targets):
         receipt = Receipt.from_dict(json.loads(_read_regular(location).decode("utf-8")), str(location))
+        if expected_after_hashes is not None:
+            if not isinstance(expected_after_hashes, dict) or set(expected_after_hashes) != set(receipt.targets):
+                raise ValueError("reviewed rollback hashes do not match receipt targets")
+            for target_name in receipt.targets:
+                current, exists, _mode = _read_target(target_name)
+                if not exists or _sha256(current) != expected_after_hashes[target_name]:
+                    raise ValueError("receipt target changed after reviewed rollback preview")
         if receipt.status == "rolled_back":
             current_matches = True
             for target_name in receipt.targets:

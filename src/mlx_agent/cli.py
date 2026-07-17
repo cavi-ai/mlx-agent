@@ -13,7 +13,7 @@ from .discovery import DiscoveryRequest, DiscoveryService
 from .host import HostInventory
 from .huggingface import HuggingFaceClient
 from .models import ROLES, render_md, wire
-from .transactions import Receipt, Transaction, _assert_safe_target, rollback
+from .transactions import Receipt, Transaction, _assert_safe_target, _read_regular, rollback
 from .verification import Verifier
 from .wiring import ConfigAdapter
 
@@ -306,10 +306,8 @@ def _run_wire(arguments):
     operation = "wire-{0}".format(arguments.wire_command)
     try:
         if arguments.wire_command == "status":
-            location = Path(arguments.receipt)
-            if location.is_symlink():
-                raise ValueError("refusing symlink receipt: {0}".format(location))
-            receipt = Receipt.from_dict(json.loads(location.read_text(encoding="utf-8")), str(location))
+            location = _assert_safe_target(arguments.receipt)
+            receipt = Receipt.from_dict(json.loads(_read_regular(location).decode("utf-8")), str(location))
             return _emit_wire_result(ResultEnvelope.ok(operation, {"receipt": _receipt_data(receipt)}), arguments.json)
         if arguments.wire_command == "rollback":
             if not arguments.confirm:
@@ -343,9 +341,21 @@ def _run_wire(arguments):
                 print(preview["diff"])
                 print("Confirmation required: rerun with --confirm to apply this transaction.")
             return 2
+        if not arguments.preview_hash:
+            return _emit_wire_result(_wire_failure(
+                operation, "preview_hash_required", "--confirm requires the preview hash from a prior preview.",
+                "Run wire apply without --confirm, inspect the preview, then pass its --preview-hash value.",
+                {"preview": preview},
+            ), arguments.json)
+        if arguments.preview_hash != preview["preview_hash"]:
+            return _emit_wire_result(_wire_failure(
+                operation, "preview_stale", "The supplied preview hash does not match the current preview.",
+                "Generate and inspect a new preview before confirming this mutation.",
+                {"preview": preview},
+            ), arguments.json)
         if not arguments.json:
             print(preview["diff"])
-        receipt = transaction.apply(preview["preview_hash"])
+        receipt = transaction.apply(arguments.preview_hash)
         data = {"preview": preview, "receipt": _receipt_data(receipt)}
         result = ResultEnvelope.ok(operation, data) if receipt.status == "applied" else _wire_failure(
             operation, receipt.status, "Wire did not apply; receipt status is {0}.".format(receipt.status),
@@ -370,6 +380,7 @@ def _add_wire_arguments(parser):
         action.add_argument("--json", action="store_true")
         if name == "apply":
             action.add_argument("--confirm", action="store_true", help="explicitly authorize this reviewed mutation")
+            action.add_argument("--preview-hash", help="hash returned by the separately reviewed wire apply preview")
             action.add_argument("--receipts-dir", help="directory for non-secret transaction receipts")
             action.add_argument("--endpoint", help="optional local runtime health endpoint")
     status = actions.add_parser("status", help="inspect a Wire receipt")

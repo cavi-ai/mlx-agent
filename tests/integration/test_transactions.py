@@ -100,9 +100,13 @@ class TransactionTests(unittest.TestCase):
                 self.assertEqual(2, main(["wire", "apply", "mlx-community/Test-4bit", "--target", "mlx_lm", "--path", str(target)]))
             self.assertIn("---", preview.getvalue())
             self.assertEqual("{}\n", target.read_text())
+            preview_json = StringIO()
+            with redirect_stdout(preview_json):
+                self.assertEqual(2, main(["wire", "apply", "mlx-community/Test-4bit", "--target", "mlx_lm", "--path", str(target), "--json"]))
+            preview_hash = json.loads(preview_json.getvalue())["data"]["preview"]["preview_hash"]
             output = StringIO()
             with redirect_stdout(output):
-                self.assertEqual(0, main(["wire", "apply", "mlx-community/Test-4bit", "--target", "mlx_lm", "--path", str(target), "--confirm", "--json"]))
+                self.assertEqual(0, main(["wire", "apply", "mlx-community/Test-4bit", "--target", "mlx_lm", "--path", str(target), "--confirm", "--preview-hash", preview_hash, "--json"]))
             receipt = json.loads(output.getvalue())["data"]["receipt"]
             self.assertEqual("applied", receipt["status"])
             self.assertTrue(Path(receipt["receipt_path"]).is_file())
@@ -113,11 +117,15 @@ class TransactionTests(unittest.TestCase):
             root = Path(directory)
             target = root / "providers.json"
             target.write_text("{}\n")
+            preview = StringIO()
+            with redirect_stdout(preview):
+                self.assertEqual(2, main(["wire", "apply", "mlx-community/Test-4bit", "--target", "mlx_lm", "--path", str(target), "--endpoint", "http://127.0.0.1:1/health", "--json"]))
+            preview_hash = json.loads(preview.getvalue())["data"]["preview"]["preview_hash"]
             output = StringIO()
             with redirect_stdout(output):
                 self.assertEqual(2, main([
                     "wire", "apply", "mlx-community/Test-4bit", "--target", "mlx_lm", "--path", str(target),
-                    "--endpoint", "http://127.0.0.1:1/health", "--confirm", "--json",
+                    "--endpoint", "http://127.0.0.1:1/health", "--confirm", "--preview-hash", preview_hash, "--json",
                 ]))
             payload = json.loads(output.getvalue())
             self.assertEqual("rolled_back", payload["data"]["receipt"]["status"])
@@ -274,9 +282,13 @@ class TransactionTests(unittest.TestCase):
             root = Path(directory)
             target = root / "providers.json"
             target.write_text("{}\n")
+            preview = StringIO()
+            with redirect_stdout(preview):
+                self.assertEqual(2, main(["wire", "apply", "mlx-community/Test-4bit", "--target", "mlx_lm", "--path", str(target), "--json"]))
+            preview_hash = json.loads(preview.getvalue())["data"]["preview"]["preview_hash"]
             output = StringIO()
             with redirect_stdout(output):
-                self.assertEqual(0, main(["wire", "apply", "mlx-community/Test-4bit", "--target", "mlx_lm", "--path", str(target), "--confirm", "--json"]))
+                self.assertEqual(0, main(["wire", "apply", "mlx-community/Test-4bit", "--target", "mlx_lm", "--path", str(target), "--confirm", "--preview-hash", preview_hash, "--json"]))
             receipt_path = json.loads(output.getvalue())["data"]["receipt"]["receipt_path"]
             output = StringIO()
             with redirect_stdout(output):
@@ -286,6 +298,124 @@ class TransactionTests(unittest.TestCase):
             with redirect_stdout(output):
                 self.assertEqual(0, main(["wire", "rollback", receipt_path, "--confirm", "--json"]))
             self.assertEqual("rolled_back", json.loads(output.getvalue())["data"]["receipt"]["status"])
+
+    def test_cli_apply_requires_prior_preview_hash_across_invocations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text("{}\n")
+            output = StringIO()
+            request = ["wire", "apply", "mlx-community/Test-4bit", "--target", "mlx_lm", "--path", str(target), "--json"]
+            with redirect_stdout(output):
+                self.assertEqual(2, main(request))
+            preview = json.loads(output.getvalue())["data"]["preview"]
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(2, main(request[:-1] + ["--confirm", "--json"]))
+            self.assertEqual("{}\n", target.read_text())
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(0, main(request[:-1] + ["--confirm", "--preview-hash", preview["preview_hash"], "--json"]))
+            self.assertEqual("applied", json.loads(output.getvalue())["data"]["receipt"]["status"])
+
+    def test_cli_preview_hash_rejects_stale_render_or_current_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text("{}\n")
+            request = ["wire", "apply", "mlx-community/Test-4bit", "--target", "mlx_lm", "--path", str(target), "--json"]
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(2, main(request))
+            preview_hash = json.loads(output.getvalue())["data"]["preview"]["preview_hash"]
+            target.write_text('{"external": true}\n')
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(2, main(request[:-1] + ["--confirm", "--preview-hash", preview_hash, "--json"]))
+            self.assertEqual("preview_stale", json.loads(output.getvalue())["error"]["code"])
+
+    def test_cli_preview_hash_rejects_render_change(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text("{}\n")
+            initial = ["wire", "apply", "mlx-community/Test-4bit", "--target", "mlx_lm", "--path", str(target), "--json"]
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(2, main(initial))
+            preview_hash = json.loads(output.getvalue())["data"]["preview"]["preview_hash"]
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(2, main([
+                    "wire", "apply", "mlx-community/Other-4bit", "--target", "mlx_lm", "--path", str(target),
+                    "--confirm", "--preview-hash", preview_hash, "--json",
+                ]))
+            self.assertEqual("preview_stale", json.loads(output.getvalue())["error"]["code"])
+
+    def test_repeated_rollback_rechecks_current_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            before = b'{"before": true}\n'
+            target.write_bytes(before)
+            transaction = Transaction(receipts_dir=root / "receipts")
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            receipt = transaction.apply(True)
+            self.assertEqual("rolled_back", rollback(receipt.receipt_path).status)
+            target.write_text('{"later": true}\n')
+            self.assertEqual("rolled_back", rollback(receipt.receipt_path).status)
+            self.assertEqual(before, target.read_bytes())
+
+    def test_ancestor_swap_hook_refuses_without_external_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            safe = root / "safe"
+            child = safe / "child"
+            external = root / "external"
+            child.mkdir(parents=True)
+            external.mkdir()
+            target = child / "providers.json"
+            external_target = external / "providers.json"
+            target.write_text('{"before": true}\n')
+            def swap(parent, component):
+                if component == "child":
+                    child.rename(safe / "old-child")
+                    child.symlink_to(external, target_is_directory=True)
+            transaction = Transaction(receipts_dir=root / "receipts", path_race_hook=swap)
+            with self.assertRaises(ValueError):
+                transaction.preview([self._change(target, '{"after": true}\n')])
+            self.assertFalse(external_target.exists())
+
+    def test_prepare_journal_rechecks_absent_target_before_backup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "new.json"
+            def create_after_preview(point):
+                if point == "before_journal_capture":
+                    target.write_text('{"external": true}\n')
+            transaction = Transaction(receipts_dir=root / "receipts", fault_injector=create_after_preview)
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            with self.assertRaises(ValueError):
+                transaction.apply(True)
+            self.assertEqual('{"external": true}\n', target.read_text())
+
+    def test_cli_status_refuses_swapped_receipt_ancestor_before_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text('{"before": true}\n')
+            transaction = Transaction(receipts_dir=root / "receipts")
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            receipt = transaction.apply(True)
+            receipts = root / "receipts"
+            receipts.rename(root / "old-receipts")
+            external = root / "external"
+            external.mkdir()
+            receipts.symlink_to(external, target_is_directory=True)
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(2, main(["wire", "status", receipt.receipt_path, "--json"]))
+            self.assertEqual("wire_failed", json.loads(output.getvalue())["error"]["code"])
 
 
 if __name__ == "__main__":

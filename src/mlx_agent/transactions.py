@@ -14,7 +14,6 @@ import hashlib
 import json
 import os
 import stat
-import tempfile
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -39,68 +38,71 @@ def _timestamp():
 
 def _absolute(path):
     value = Path(path)
+    if _has_parent_reference(value):
+        raise ValueError("path traversal is not allowed: {0}".format(path))
     return Path(os.path.abspath(str(value)))
+
+
+def _physical_absolute(path):
+    result = _absolute(path)
+    # /var is a fixed macOS compatibility alias. Normalize before descriptor
+    # traversal rather than following a user-controlled symlink component.
+    if str(result) == "/var" or str(result).startswith("/var/"):
+        if not os.path.islink("/var") or os.readlink("/var") != "private/var":
+            raise ValueError("untrusted /var compatibility alias")
+        result = Path("/private/var") / result.relative_to("/var")
+    return result
 
 
 def _has_parent_reference(path):
     return ".." in Path(path).parts
 
 
-def _assert_no_symlink_ancestors(path, leaf_may_be_missing=False):
-    """Reject symlinks in every existing component without resolving them."""
-    value = _absolute(path)
-    if _has_parent_reference(path):
-        raise ValueError("path traversal is not allowed: {0}".format(path))
-    current = Path(value.anchor)
-    parts = value.parts[1:]
-    for index, part in enumerate(parts):
-        current /= part
-        try:
-            item = os.lstat(str(current))
-        except FileNotFoundError:
-            if leaf_may_be_missing and index == len(parts) - 1:
-                return value
-            raise ValueError("path component does not exist: {0}".format(current))
-        # macOS exposes /var as a system-owned compatibility alias to /private/var;
-        # accept only that exact root alias so temporary directories remain usable.
-        if stat.S_ISLNK(item.st_mode) and not (str(current) == "/var" and os.readlink(str(current)) == "private/var"):
-            raise ValueError("refusing symlink path component: {0}".format(current))
-    return value
+def _walk_directory(path, create=False, component_hook=None):
+    """Open each absolute component from `/` using dir-fd + O_NOFOLLOW only."""
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise ValueError("platform lacks required no-follow directory traversal")
+    logical = _absolute(path)
+    value = _physical_absolute(logical)
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW
+    descriptor = os.open("/", flags)
+    try:
+        for component in value.parts[1:]:
+            if component_hook is not None:
+                component_hook(descriptor, component)
+            try:
+                child = os.open(component, flags, dir_fd=descriptor)
+            except FileNotFoundError:
+                if not create:
+                    raise ValueError("path component does not exist: {0}".format(component))
+                os.mkdir(component, 0o700, dir_fd=descriptor)
+                os.fsync(descriptor)
+                child = os.open(component, flags, dir_fd=descriptor)
+            except OSError as error:
+                raise ValueError("refusing unsafe directory component {0}: {1}".format(component, error))
+            os.close(descriptor)
+            descriptor = child
+        return logical, descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
 
 
 def _assert_safe_directory(path, create=False):
-    value = _absolute(path)
-    if create and not value.exists():
-        parent = _assert_safe_directory(value.parent, create=True)
-        os.mkdir(str(value), 0o700)
-        _fsync_directory(parent)
-    _assert_no_symlink_ancestors(value)
-    if not value.is_dir():
-        raise ValueError("safe directory required: {0}".format(value))
+    value, descriptor = _walk_directory(path, create=create)
+    os.close(descriptor)
     return value
 
 
 def _assert_safe_target(path):
     value = _absolute(path)
-    _assert_no_symlink_ancestors(value, leaf_may_be_missing=True)
-    _assert_safe_directory(value.parent)
-    if value.exists():
-        item = os.lstat(str(value))
-        if not stat.S_ISREG(item.st_mode):
-            raise ValueError("target is not a regular file: {0}".format(value))
+    _read_target(value)
     return value
 
 
 def _open_directory(path):
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(str(path), flags)
-    try:
-        if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
-            raise ValueError("not a directory: {0}".format(path))
-        return descriptor
-    except BaseException:
-        os.close(descriptor)
-        raise
+    _value, descriptor = _walk_directory(path)
+    return descriptor
 
 
 def _fsync_directory(path_or_fd):
@@ -160,11 +162,36 @@ def _atomic_in_directory(directory, name, content, mode, validator=None):
         os.close(dir_fd)
 
 
+def _read_target(path, component_hook=None):
+    """Read a regular leaf through its opened parent directory descriptor."""
+    value = _absolute(path)
+    _parent, directory = _walk_directory(value.parent, component_hook=component_hook)
+    try:
+        try:
+            descriptor = os.open(value.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
+        except FileNotFoundError:
+            return b"", False, None
+        try:
+            item = os.fstat(descriptor)
+            if not stat.S_ISREG(item.st_mode):
+                raise ValueError("target is not a regular file: {0}".format(value))
+            parts = []
+            while True:
+                chunk = os.read(descriptor, 65536)
+                if not chunk:
+                    break
+                parts.append(chunk)
+            return b"".join(parts), True, item.st_mode & 0o777
+        finally:
+            os.close(descriptor)
+    except OSError as error:
+        raise ValueError("refusing unsafe target leaf {0}: {1}".format(value, error))
+    finally:
+        os.close(directory)
+
+
 def _read_regular(path):
-    value = _assert_safe_target(path)
-    if not value.exists():
-        return b""
-    return value.read_bytes()
+    return _read_target(path)[0]
 
 
 @dataclass
@@ -255,11 +282,12 @@ class Receipt:
 class Transaction:
     """Create a crash-recoverable journal before any configuration mutation."""
 
-    def __init__(self, receipts_dir=None, health_checker=None, fault_injector=None, receipt_writer=None):
+    def __init__(self, receipts_dir=None, health_checker=None, fault_injector=None, receipt_writer=None, path_race_hook=None):
         self.receipts_dir = Path(receipts_dir) if receipts_dir else None
         self.health_checker = health_checker
         self.fault_injector = fault_injector
         self.receipt_writer = receipt_writer
+        self.path_race_hook = path_race_hook
         self._changes = []
         self._preview = ""
         self._preview_hash = ""
@@ -272,7 +300,7 @@ class Transaction:
         for change in changes:
             if not isinstance(change, dict) or "path" not in change or "content" not in change:
                 raise ValueError("each change requires path and content")
-            path = _assert_safe_target(change["path"])
+            path = _absolute(change["path"])
             if str(path) in seen:
                 raise ValueError("each target may appear only once")
             seen.add(str(path))
@@ -281,15 +309,15 @@ class Transaction:
                 raise TypeError("change content must be text")
             adapter = change.get("adapter") or ConfigAdapter.detect(path, runtime=change.get("runtime"))
             adapter.validate(content)
-            before = _read_regular(path)
+            before, existed, mode = _read_target(path, self.path_race_hook)
             after = content.encode("utf-8")
             before_text = before.decode("utf-8")
             diffs.append("".join(difflib.unified_diff(
                 redact_secrets(before_text).splitlines(True), redact_secrets(content).splitlines(True),
                 fromfile=str(path), tofile=str(path), lineterm="",
             )))
-            binding.append({"path": str(path), "before": _sha256(before), "after": _sha256(after)})
-            prepared.append({"path": path, "content": content, "adapter": adapter, "endpoint": change.get("endpoint"), "before_hash": _sha256(before), "mode": (path.stat().st_mode & 0o777) if path.exists() else None})
+            binding.append({"path": str(path), "before": _sha256(before), "after": _sha256(after), "endpoint": _sha256(str(change.get("endpoint") or "").encode("utf-8"))})
+            prepared.append({"path": path, "content": content, "adapter": adapter, "endpoint": change.get("endpoint"), "before_hash": _sha256(before), "existed": existed, "mode": mode})
         self._changes = prepared
         self._preview = self._bounded("\n".join(diffs))
         self._preview_hash = _sha256(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode("utf-8"))
@@ -301,8 +329,8 @@ class Transaction:
         if not self._changes:
             raise ValueError("preview changes before applying them")
         for change in self._changes:
-            current = _sha256(_read_regular(change["path"]))
-            if current != change["before_hash"]:
+            current, exists, _mode = _read_target(change["path"], self.path_race_hook)
+            if _sha256(current) != change["before_hash"] or exists != change["existed"]:
                 raise ValueError("preview is stale; target changed after preview")
         receipt = self._prepare_journal()
         journal_written = False
@@ -338,6 +366,13 @@ class Transaction:
         return rollback(receipt_path)
 
     def _prepare_journal(self):
+        self._fault("before_journal_capture")
+        captured = []
+        for change in self._changes:
+            before, exists, mode = _read_target(change["path"], self.path_race_hook)
+            if _sha256(before) != change["before_hash"] or exists != change["existed"]:
+                raise ValueError("preview is stale; target changed before journal capture")
+            captured.append((before, exists, mode))
         receipts_dir = _assert_safe_directory(self.receipts_dir or self._changes[0]["path"].parent / ".mlx-agent-receipts", create=True)
         transaction_id = str(uuid.uuid4())
         root = receipts_dir / transaction_id
@@ -354,13 +389,13 @@ class Transaction:
         )
         for index, change in enumerate(self._changes):
             path = change["path"]
-            before = _read_regular(path)
+            before, exists, mode = captured[index]
             target = str(path)
             receipt.before_hashes[target] = _sha256(before)
             receipt.after_hashes[target] = _sha256(before)
-            if change["mode"] is not None:
+            if exists:
                 backup = root / "backup-{0}.bin".format(index)
-                _atomic_in_directory(root, backup.name, before, change["mode"] or 0o600)
+                _atomic_in_directory(root, backup.name, before, mode or 0o600)
                 receipt.backup_paths[target] = str(backup)
             else:
                 receipt.backup_paths[target] = None
@@ -422,15 +457,16 @@ def _restore_receipt(receipt):
                 planned.append((target, None, receipt.target_modes[target_name], expected))
                 continue
             backup = _assert_safe_target(backup_name)
-            if backup.parent != root or backup.name != "backup-{0}.bin".format(index) or not backup.exists():
+            backup_data, backup_exists, _backup_mode = _read_target(backup)
+            if backup.parent != root or backup.name != "backup-{0}.bin".format(index) or not backup_exists:
                 raise ValueError("backup is missing or outside transaction root")
-            data = backup.read_bytes()
-            if _sha256(data) != expected:
+            if _sha256(backup_data) != expected:
                 raise ValueError("backup hash does not match receipt")
-            planned.append((target, data, receipt.target_modes[target_name], expected))
+            planned.append((target, backup_data, receipt.target_modes[target_name], expected))
         for target, data, mode, expected in planned:
             if data is None:
-                if target.exists():
+                _current, exists, _current_mode = _read_target(target)
+                if exists:
                     _remove_target(target)
             else:
                 _atomic_in_directory(target.parent, target.name, data, mode if mode is not None else 0o600)
@@ -447,7 +483,8 @@ def _restore_receipt(receipt):
 
 def _remove_target(path):
     _assert_safe_target(path)
-    if not path.exists():
+    _content, exists, _mode = _read_target(path)
+    if not exists:
         return
     directory = _open_directory(path.parent)
     try:
@@ -462,9 +499,17 @@ def _remove_target(path):
 
 def rollback(receipt_path):
     location = _assert_safe_target(receipt_path)
-    receipt = Receipt.from_dict(json.loads(location.read_text(encoding="utf-8")), str(location))
+    receipt = Receipt.from_dict(json.loads(_read_regular(location).decode("utf-8")), str(location))
     if receipt.status == "rolled_back":
-        return receipt
+        current_matches = True
+        for target_name in receipt.targets:
+            current, exists, _mode = _read_target(target_name)
+            expected_absent = receipt.backup_paths[target_name] is None
+            if _sha256(current) != receipt.before_hashes[target_name] or exists == expected_absent:
+                current_matches = False
+                break
+        if current_matches:
+            return receipt
     if _restore_receipt(receipt):
         receipt.status = "rolled_back"
     else:

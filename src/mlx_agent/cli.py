@@ -13,7 +13,9 @@ from .discovery import DiscoveryRequest, DiscoveryService
 from .host import HostInventory
 from .huggingface import HuggingFaceClient
 from .models import ROLES, render_md, wire
+from .transactions import Receipt, Transaction, rollback
 from .verification import Verifier
+from .wiring import ConfigAdapter
 
 
 FIXTURE_WARNING = {
@@ -263,6 +265,113 @@ def _add_adoption_arguments(parser):
         action.add_argument("--json", action="store_true")
 
 
+def _emit_wire_result(result, as_json, human=None):
+    if as_json:
+        print(json.dumps(result.to_dict(), indent=2))
+    elif human is not None:
+        print(human)
+    elif result.status == "ok":
+        print(json.dumps(result.data, indent=2))
+    else:
+        error = result.to_dict()["error"]
+        print("{0} failed [{1}]: {2}\nremediation: {3}".format(
+            result.operation, error["code"], error["message"], error["remediation"]
+        ))
+    return 0 if result.status == "ok" else 2
+
+
+def _receipt_data(receipt):
+    value = receipt.to_dict()
+    value["receipt_path"] = receipt.receipt_path
+    return value
+
+
+def _wire_render(arguments):
+    path = Path(arguments.path)
+    if path.is_symlink():
+        raise ValueError("refusing symlink target: {0}".format(path))
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    adapter = ConfigAdapter.detect(path, runtime=arguments.target)
+    content = adapter.render(arguments.model, arguments.target, existing)
+    adapter.validate(content)
+    return path, adapter, content
+
+
+def _run_wire(arguments):
+    operation = "wire-{0}".format(arguments.wire_command)
+    try:
+        if arguments.wire_command == "status":
+            location = Path(arguments.receipt)
+            if location.is_symlink():
+                raise ValueError("refusing symlink receipt: {0}".format(location))
+            receipt = Receipt.from_dict(json.loads(location.read_text(encoding="utf-8")), str(location))
+            return _emit_wire_result(ResultEnvelope.ok(operation, {"receipt": _receipt_data(receipt)}), arguments.json)
+        if arguments.wire_command == "rollback":
+            if not arguments.confirm:
+                return _emit_wire_result(ResultEnvelope.fail(
+                    operation, "confirmation_required", "Rollback was not started without --confirm.",
+                    "Review the receipt with 'wire status RECEIPT', then run 'wire rollback RECEIPT --confirm'.",
+                ), arguments.json)
+            receipt = rollback(arguments.receipt)
+            result = ResultEnvelope.ok(operation, {"receipt": _receipt_data(receipt)}) if receipt.status == "rolled_back" else ResultEnvelope.fail(
+                operation, "rollback_failed", "Rollback did not complete.",
+                "Inspect the receipt validations and restore the affected backup manually.",
+            )
+            return _emit_wire_result(result, arguments.json)
+
+        path, adapter, content = _wire_render(arguments)
+        if arguments.wire_command == "render":
+            return _emit_wire_result(ResultEnvelope.ok(operation, {
+                "path": str(path), "runtime": arguments.target, "config": content,
+                "validation": {"parse": True},
+            }), arguments.json, human=content)
+        transaction = Transaction(receipts_dir=arguments.receipts_dir)
+        preview = transaction.preview([{
+            "path": str(path), "content": content, "runtime": arguments.target,
+            "adapter": adapter, "endpoint": arguments.endpoint,
+        }])
+        if not arguments.confirm:
+            result = ResultEnvelope.ok(operation, {"preview": preview, "requires_confirmation": True})
+            if arguments.json:
+                print(json.dumps(result.to_dict(), indent=2))
+            else:
+                print(preview["diff"])
+                print("Confirmation required: rerun with --confirm to apply this transaction.")
+            return 2
+        receipt = transaction.apply(True)
+        result = ResultEnvelope.ok(operation, {"receipt": _receipt_data(receipt)}) if receipt.status == "applied" else ResultEnvelope.fail(
+            operation, "transaction_rolled_back", "Wire validation or health check failed; the prior configuration was restored.",
+            "Inspect the receipt validation results before retrying.",
+        )
+        return _emit_wire_result(result, arguments.json)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        return _emit_wire_result(ResultEnvelope.fail(
+            operation, "wire_failed", "Wire could not complete: {0}".format(error),
+            "Correct the target configuration or receipt, then render a new preview.",
+        ), arguments.json)
+
+
+def _add_wire_arguments(parser):
+    actions = parser.add_subparsers(dest="wire_command", required=True)
+    for name in ("render", "apply"):
+        action = actions.add_parser(name, help="{0} a deterministic runtime configuration".format(name))
+        action.add_argument("model", help="Hugging Face model repository")
+        action.add_argument("--target", choices=["ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm"], default="mlx_lm")
+        action.add_argument("--path", required=True, help="target configuration file")
+        action.add_argument("--json", action="store_true")
+        if name == "apply":
+            action.add_argument("--confirm", action="store_true", help="explicitly authorize this reviewed mutation")
+            action.add_argument("--receipts-dir", help="directory for non-secret transaction receipts")
+            action.add_argument("--endpoint", help="optional local runtime health endpoint")
+    status = actions.add_parser("status", help="inspect a Wire receipt")
+    status.add_argument("receipt")
+    status.add_argument("--json", action="store_true")
+    restore = actions.add_parser("rollback", help="restore a Wire receipt's exact backup")
+    restore.add_argument("receipt")
+    restore.add_argument("--confirm", action="store_true", help="explicitly authorize this rollback")
+    restore.add_argument("--json", action="store_true")
+
+
 def legacy_scout_main(argv=None):
     parser = argparse.ArgumentParser(description="Discover MLX models on HuggingFace for this host.")
     _add_discovery_arguments(parser)
@@ -276,7 +385,11 @@ def main(argv=None):
     _add_discovery_arguments(discover)
     adopt = subcommands.add_parser("adopt", help="run or inspect resumable model adoption")
     _add_adoption_arguments(adopt)
+    wire_command = subcommands.add_parser("wire", help="render, apply, inspect, or roll back runtime wiring")
+    _add_wire_arguments(wire_command)
     arguments = parser.parse_args(argv)
     if arguments.command == "adopt":
         return _run_adoption(arguments)
+    if arguments.command == "wire":
+        return _run_wire(arguments)
     return _run_discovery(arguments, legacy=False)

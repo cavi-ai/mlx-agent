@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mlx-agent.dev/schemas/receipt.schema.json",
+  "title": "MLX Agent transactional Wire receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "transaction_id", "adapter_version", "timestamp", "targets", "before_hashes", "after_hashes", "backup_paths", "validations", "status", "preview"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "transaction_id": {"type": "string", "minLength": 1},
+    "adapter_version": {"type": "string", "minLength": 1},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "targets": {"type": "array", "items": {"type": "string"}},
+    "before_hashes": {"type": "object", "additionalProperties": {"type": "string"}},
+    "after_hashes": {"type": "object", "additionalProperties": {"type": "string"}},
+    "backup_paths": {"type": "object", "additionalProperties": {"type": ["string", "null"]}},
+    "validations": {"type": "object"},
+    "status": {"enum": ["pending", "applied", "failed", "rolled_back", "rollback_failed"]},
+    "preview": {"type": "string"}
+  }
+}

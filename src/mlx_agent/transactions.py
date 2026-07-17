@@ -102,35 +102,52 @@ def _assert_safe_directory(path, create=False):
     return value
 
 
+def _target_lock_name(target):
+    digest = _sha256(str(_absolute(target)).encode("utf-8"))
+    return ".mlx-agent-wire-{0}.lock".format(digest)
+
+
 @contextmanager
-def _advisory_lock(directory):
-    """Hold a descriptor-relative no-follow lock for cooperative writers."""
-    _logical, directory_fd = _walk_directory(directory, create=True)
-    lock_fd = None
+def _target_locks(targets):
+    """Acquire target-adjacent locks in canonical order to avoid deadlocks."""
+    canonical = sorted({_absolute(target) for target in targets}, key=str)
+    held = []
     try:
-        try:
-            lock_fd = os.open(
-                ".mlx-agent-wire.lock",
-                os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW,
-                0o600,
-                dir_fd=directory_fd,
-            )
-            if not stat.S_ISREG(os.fstat(lock_fd).st_mode):
-                raise ValueError("transaction lock is not a regular file")
-            os.fsync(directory_fd)
-            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError as error:
-            if error.errno in (errno.EACCES, errno.EAGAIN):
-                raise ConcurrentTransactionError("another cooperative Wire transaction is active")
-            raise ValueError("could not safely acquire transaction lock: {0}".format(error))
-        yield _logical, directory_fd
+        for target in canonical:
+            _parent, directory_fd = _walk_directory(target.parent)
+            lock_fd = None
+            try:
+                lock_fd = os.open(
+                    _target_lock_name(target),
+                    os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW,
+                    0o600,
+                    dir_fd=directory_fd,
+                )
+                if not stat.S_ISREG(os.fstat(lock_fd).st_mode):
+                    raise ValueError("target transaction lock is not a regular file")
+                os.fsync(directory_fd)
+                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                held.append((lock_fd, directory_fd))
+            except OSError as error:
+                if lock_fd is not None:
+                    os.close(lock_fd)
+                os.close(directory_fd)
+                if error.errno in (errno.EACCES, errno.EAGAIN):
+                    raise ConcurrentTransactionError("another cooperative Wire transaction is active for a target")
+                raise ValueError("could not safely acquire target transaction lock: {0}".format(error))
+            except BaseException:
+                if lock_fd is not None:
+                    os.close(lock_fd)
+                os.close(directory_fd)
+                raise
+        yield canonical
     finally:
-        if lock_fd is not None:
+        for lock_fd, directory_fd in reversed(held):
             try:
                 fcntl.flock(lock_fd, fcntl.LOCK_UN)
             finally:
                 os.close(lock_fd)
-        os.close(directory_fd)
+                os.close(directory_fd)
 
 
 def _assert_safe_target(path):
@@ -330,8 +347,6 @@ class Transaction:
         self._changes = []
         self._preview = ""
         self._preview_hash = ""
-        self._active_lock_directory = None
-        self._active_lock_fd = None
 
     def preview(self, changes):
         if not isinstance(changes, (list, tuple)) or not changes:
@@ -374,15 +389,11 @@ class Transaction:
 
     @contextmanager
     def _advisory_lock(self):
-        directory = self.receipts_dir or self._changes[0]["path"].parent / ".mlx-agent-receipts"
-        with _advisory_lock(directory) as (locked_directory, locked_fd):
-            self._active_lock_directory = locked_directory
-            self._active_lock_fd = locked_fd
-            try:
-                yield
-            finally:
-                self._active_lock_directory = None
-                self._active_lock_fd = None
+        with _target_locks(self._lock_targets()):
+            yield
+
+    def _lock_targets(self):
+        return [str(path) for path in sorted({change["path"] for change in self._changes}, key=str)]
 
     def _apply_locked(self):
         for change in self._changes:
@@ -443,10 +454,7 @@ class Transaction:
             if _sha256(before) != change["before_hash"] or exists != change["existed"] or mode != change["mode"]:
                 raise ValueError("preview is stale; target changed after journal capture")
             captured[index] = (before, exists, mode)
-        if self._active_lock_fd is not None:
-            receipts_dir, receipts_fd = self._active_lock_directory, os.dup(self._active_lock_fd)
-        else:
-            receipts_dir, receipts_fd = _walk_directory(self.receipts_dir or self._changes[0]["path"].parent / ".mlx-agent-receipts", create=True)
+        receipts_dir, receipts_fd = _walk_directory(self.receipts_dir or self._changes[0]["path"].parent / ".mlx-agent-receipts", create=True)
         transaction_id = str(uuid.uuid4())
         root = receipts_dir / transaction_id
         try:
@@ -467,7 +475,7 @@ class Transaction:
             target_roots={str(change["path"]): str(change["path"].parent) for change in self._changes},
             target_modes={str(change["path"]): captured[index][2] for index, change in enumerate(self._changes)},
             before_hashes={}, after_hashes={}, backup_paths={}, validations={
-                "concurrency": {"scope": "advisory_cooperative", "note": COOPERATIVE_CONCURRENCY_NOTE, "passed": True},
+                "concurrency": {"scope": "advisory_cooperative_target_scoped", "note": COOPERATIVE_CONCURRENCY_NOTE, "passed": True},
             }, status="pending",
             preview=self._preview, preview_hash=self._preview_hash, receipt_path=str(root / "receipt.json"),
         )
@@ -584,7 +592,8 @@ def _remove_target(path):
 
 def rollback(receipt_path):
     location = _assert_safe_target(receipt_path)
-    with _advisory_lock(location.parent.parent):
+    initial = Receipt.from_dict(json.loads(_read_regular(location).decode("utf-8")), str(location))
+    with _target_locks(initial.targets):
         receipt = Receipt.from_dict(json.loads(_read_regular(location).decode("utf-8")), str(location))
         if receipt.status == "rolled_back":
             current_matches = True

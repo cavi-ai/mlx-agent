@@ -534,6 +534,7 @@ class TransactionTests(unittest.TestCase):
 
             preview_hash = payload["data"]["preview"]["preview_hash"]
             holder = Transaction(receipts_dir=root / ".mlx-agent-receipts")
+            holder.preview([self._change(target, '{"holder": true}\n')])
             with holder._advisory_lock():
                 output = StringIO()
                 with redirect_stdout(output):
@@ -542,6 +543,54 @@ class TransactionTests(unittest.TestCase):
                         "--confirm", "--preview-hash", preview_hash, "--json",
                     ]))
                 self.assertEqual("cooperative_lock_busy", json.loads(output.getvalue())["error"]["code"])
+
+    def test_same_target_different_receipt_directories_contend_and_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text('{"before": true}\n')
+            first = Transaction(receipts_dir=root / "receipts-a")
+            second = Transaction(receipts_dir=root / "receipts-b")
+            first.preview([self._change(target, '{"first": true}\n')])
+            second.preview([self._change(target, '{"second": true}\n')])
+            with first._advisory_lock():
+                with self.assertRaises(ConcurrentTransactionError):
+                    second.apply(True)
+                self.assertEqual('{"before": true}\n', target.read_text())
+            self.assertEqual("applied", second.apply(True).status)
+
+    def test_rollback_contends_with_apply_using_different_receipt_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text('{"before": true}\n')
+            original = Transaction(receipts_dir=root / "receipts-a")
+            original.preview([self._change(target, '{"after": true}\n')])
+            receipt = original.apply(True)
+            holder = Transaction(receipts_dir=root / "receipts-b")
+            holder.preview([self._change(target, '{"next": true}\n')])
+            with holder._advisory_lock():
+                with self.assertRaises(ConcurrentTransactionError):
+                    rollback(receipt.receipt_path)
+            self.assertEqual("rolled_back", rollback(receipt.receipt_path).status)
+
+    def test_overlapping_multi_target_locks_sort_and_fail_without_partial_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first_path, shared_path, second_path = root / "a.json", root / "b.json", root / "c.json"
+            for path in (first_path, shared_path, second_path):
+                path.write_text('{"before": true}\n')
+            first = Transaction(receipts_dir=root / "receipts-a")
+            second = Transaction(receipts_dir=root / "receipts-b")
+            first.preview([self._change(shared_path, '{"first": true}\n'), self._change(first_path, '{"first": true}\n')])
+            second.preview([self._change(second_path, '{"second": true}\n'), self._change(shared_path, '{"second": true}\n')])
+            self.assertEqual([str(first_path), str(shared_path)], first._lock_targets())
+            with first._advisory_lock():
+                with self.assertRaises(ConcurrentTransactionError):
+                    second.apply(True)
+                self.assertEqual('{"before": true}\n', second_path.read_text())
+                self.assertEqual('{"before": true}\n', shared_path.read_text())
+            self.assertEqual("applied", second.apply(True).status)
 
     def test_cli_status_refuses_swapped_receipt_ancestor_before_read(self):
         with tempfile.TemporaryDirectory() as directory:

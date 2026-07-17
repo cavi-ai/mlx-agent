@@ -114,6 +114,33 @@ class GeneratedAdapterTests(unittest.TestCase):
                 generator._remove_stale_inventoried_files(output_root, rendered)
             self.assertEqual("user edit\n", stale.read_text(encoding="utf-8"))
 
+    def test_stale_cleanup_refuses_symlinked_surface_ancestor_without_touching_external_files(self):
+        generator = load_generator()
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory) / "output"
+            generator.generate(("claude", "agentskills"), output_root)
+            providers = output_root / "providers"
+            installed_surface = providers / "agentskills"
+            external_surface = Path(directory) / "external-agentskills"
+            installed_surface.replace(external_surface)
+            os.symlink(str(external_surface), str(installed_surface))
+            stale = external_surface / "mlx-scout" / "SKILL.md"
+            original = stale.read_bytes()
+            original_render = generator._render
+
+            def render_without_stale_skill(manifest, provider_ids):
+                rendered = original_render(manifest, provider_ids)
+                del rendered[Path("providers/agentskills/mlx-scout/SKILL.md")]
+                return rendered
+
+            generator._render = render_without_stale_skill
+            try:
+                with self.assertRaisesRegex(ValueError, "symlink"):
+                    generator.generate(("claude", "agentskills"), output_root)
+            finally:
+                generator._render = original_render
+            self.assertEqual(original, stale.read_bytes())
+
     def test_tampered_inventory_rejects_cross_surface_traversal_duplicates_and_root_files(self):
         generator = load_generator()
         cases = ("README.md", "../outside.md", "/absolute.md", "providers/claude/commands/mlx-scout.md")

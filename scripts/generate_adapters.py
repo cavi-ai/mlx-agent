@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
+import stat
 import sys
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Union
@@ -325,12 +327,104 @@ def _invalid_inventory(path: Path, reason: str) -> ValueError:
     return ValueError("invalid generated inventory {0}: {1}".format(path, reason))
 
 
-def _inventory_files(path: Path, surface: Optional[Path]) -> Dict[Path, str]:
-    if not path.exists():
-        return {}
+def _path_lstat(path: Path):
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        return path.lstat()
+    except FileNotFoundError:
+        return None
+
+
+def _assert_safe_generated_path(root: Path, relative: Path, surface: Optional[Path] = None) -> Path:
+    """Reject symlink traversal before an inventory path is read or removed."""
+
+    root = Path(root).absolute()
+    root_stat = _path_lstat(root)
+    if root_stat is not None:
+        if stat.S_ISLNK(root_stat.st_mode):
+            raise ValueError("refusing generated inventory path through symlinked output root: {0}".format(root))
+        if not stat.S_ISDIR(root_stat.st_mode):
+            raise ValueError("generated output root is not a directory: {0}".format(root))
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("generated path escapes output root: {0}".format(relative))
+    current = root
+    for index, part in enumerate(relative.parts):
+        current = current / part
+        current_stat = _path_lstat(current)
+        if current_stat is None:
+            break
+        if stat.S_ISLNK(current_stat.st_mode):
+            raise ValueError("refusing generated inventory path through symlink: {0}".format(current))
+        if index < len(relative.parts) - 1 and not stat.S_ISDIR(current_stat.st_mode):
+            raise ValueError("generated path ancestor is not a directory: {0}".format(current))
+    root_resolved = root.resolve(strict=False)
+    target = root / relative
+    target_resolved = target.resolve(strict=False)
+    if target_resolved != root_resolved and root_resolved not in target_resolved.parents:
+        raise ValueError("generated path resolves outside output root: {0}".format(target))
+    if surface is not None:
+        surface_path = root / surface
+        surface_resolved = surface_path.resolve(strict=False)
+        if target_resolved != surface_resolved and surface_resolved not in target_resolved.parents:
+            raise ValueError("generated path resolves outside intended surface: {0}".format(target))
+    return target
+
+
+def _open_parent_no_follow(root: Path, relative: Path):
+    """Open a verified parent directory by descriptor without following links."""
+
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    directory_fd = os.open(str(root), flags)
+    try:
+        for part in relative.parts[:-1]:
+            child_fd = os.open(part, flags, dir_fd=directory_fd)
+            os.close(directory_fd)
+            directory_fd = child_fd
+        return directory_fd
+    except Exception:
+        os.close(directory_fd)
+        raise
+
+
+def _read_regular_no_follow(root: Path, relative: Path) -> bytes:
+    parent_fd = _open_parent_no_follow(root, relative)
+    try:
+        file_fd = os.open(relative.name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=parent_fd)
+        try:
+            if not stat.S_ISREG(os.fstat(file_fd).st_mode):
+                raise ValueError("generated inventory target is not a regular file: {0}".format(root / relative))
+            chunks = []
+            while True:
+                chunk = os.read(file_fd, 65536)
+                if not chunk:
+                    return b"".join(chunks)
+                chunks.append(chunk)
+        finally:
+            os.close(file_fd)
+    finally:
+        os.close(parent_fd)
+
+
+def _unlink_regular_no_follow(root: Path, relative: Path, expected_stat) -> None:
+    parent_fd = _open_parent_no_follow(root, relative)
+    try:
+        current = os.stat(relative.name, dir_fd=parent_fd, follow_symlinks=False)
+        if not stat.S_ISREG(current.st_mode) or (current.st_dev, current.st_ino) != (expected_stat.st_dev, expected_stat.st_ino):
+            raise ValueError("refusing to delete stale generated artifact because it changed: {0}".format(root / relative))
+        os.unlink(relative.name, dir_fd=parent_fd)
+    finally:
+        os.close(parent_fd)
+
+
+def _inventory_files(root: Path, relative_path: Path, surface: Optional[Path]) -> Dict[Path, str]:
+    path = _assert_safe_generated_path(root, relative_path, relative_path.parent)
+    path_stat = _path_lstat(path)
+    if path_stat is None:
+        return {}
+    if not stat.S_ISREG(path_stat.st_mode):
+        raise _invalid_inventory(path, "is not a regular file")
+    try:
+        value = json.loads(_read_regular_no_follow(Path(root).absolute(), relative_path).decode("utf-8"))
+    except (OSError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise _invalid_inventory(path, "not valid JSON: {0}".format(error))
     if not isinstance(value, dict) or set(value) != {"schema_version", "surface", "files"}:
         raise _invalid_inventory(path, "unexpected shape")
@@ -362,17 +456,17 @@ def _remove_stale_inventoried_files(root: Path, rendered: Mapping[Path, Content]
     inventory_paths = [path for path in rendered if path.name == INVENTORY_NAME]
     for inventory_relative in inventory_paths:
         surface = inventory_relative.parent
-        inventory = root / inventory_relative
         current_surface = _surface(inventory_relative)
-        previous = _inventory_files(inventory, current_surface)
+        previous = _inventory_files(root, inventory_relative, current_surface)
         desired = _surface_files(rendered, current_surface)
         for relative in sorted(set(previous) - set(desired), key=str):
-            target = root / surface / relative
-            if not target.exists() and not target.is_symlink():
+            target = _assert_safe_generated_path(root, surface / relative, surface)
+            target_stat = _path_lstat(target)
+            if target_stat is None:
                 continue
-            if not target.is_file() or _sha256(target.read_bytes()) != previous[relative]:
+            if not stat.S_ISREG(target_stat.st_mode) or _sha256(_read_regular_no_follow(Path(root).absolute(), surface / relative)) != previous[relative]:
                 raise ValueError("refusing to delete stale generated artifact because its hash does not match: {0}".format(target))
-            target.unlink()
+            _unlink_regular_no_follow(Path(root).absolute(), surface / relative, target_stat)
 
 
 def generate(provider_ids: Iterable[str], output_root: Path) -> List[Path]:
@@ -384,7 +478,7 @@ def generate(provider_ids: Iterable[str], output_root: Path) -> List[Path]:
     _remove_stale_inventoried_files(root, rendered)
     written = []
     for relative_path, content in rendered.items():
-        path = root / relative_path
+        path = _assert_safe_generated_path(root, relative_path, _surface(relative_path))
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(_content_bytes(content))
         if path.name == "mlx-agent" and path.parent.name == "scripts":
@@ -406,7 +500,7 @@ def _check(provider_ids: Sequence[str], output_root: Path = ROOT) -> List[Path]:
     for inventory_relative in [path for path in rendered if path.name == INVENTORY_NAME]:
         surface = _surface(inventory_relative)
         try:
-            previous = _inventory_files(root / inventory_relative, surface)
+            previous = _inventory_files(root, inventory_relative, surface)
         except ValueError:
             drift.append(inventory_relative)
             continue

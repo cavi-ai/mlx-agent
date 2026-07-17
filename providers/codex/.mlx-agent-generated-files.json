@@ -46,7 +46,7 @@
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/gemini_transport.py",
-      "sha256": "cb4d03c93a8eda1285669ac085537d91ce240cb08ac18699902c4617d0af493d"
+      "sha256": "8799e357851dab68bd00f82c13874953dc09f64b2cd94197c9124d471ab3e1cb"
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/host.py",
@@ -126,7 +126,7 @@
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/gemini_transport.py",
-      "sha256": "cb4d03c93a8eda1285669ac085537d91ce240cb08ac18699902c4617d0af493d"
+      "sha256": "8799e357851dab68bd00f82c13874953dc09f64b2cd94197c9124d471ab3e1cb"
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/host.py",
@@ -206,7 +206,7 @@
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/gemini_transport.py",
-      "sha256": "cb4d03c93a8eda1285669ac085537d91ce240cb08ac18699902c4617d0af493d"
+      "sha256": "8799e357851dab68bd00f82c13874953dc09f64b2cd94197c9124d471ab3e1cb"
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/host.py",

@@ -18,7 +18,7 @@
     },
     {
       "path": "skills/mlx-adopt/SKILL.md",
-      "sha256": "1dcab6f83136355d51eb6949771c8c50d498f4b2a399f927a860b87f33cf2694"
+      "sha256": "018521e14dbaf2164348233ef47bab195dbadd5e324373049a97648910c3a996"
     },
     {
       "path": "skills/mlx-adopt/scripts/mlx-agent",
@@ -58,7 +58,7 @@
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/gemini_transport.py",
-      "sha256": "cb4d03c93a8eda1285669ac085537d91ce240cb08ac18699902c4617d0af493d"
+      "sha256": "8799e357851dab68bd00f82c13874953dc09f64b2cd94197c9124d471ab3e1cb"
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/host.py",
@@ -98,7 +98,7 @@
     },
     {
       "path": "skills/mlx-scout/SKILL.md",
-      "sha256": "14187d6441436257597f76af253478774319ba9713a6fbeed20f6d41b03eae8d"
+      "sha256": "79ad9dab7290a8d1ddd61e57d3810fa4f9fcea537be4ff3cf5a4837791056b0c"
     },
     {
       "path": "skills/mlx-scout/scripts/mlx-agent",
@@ -138,7 +138,7 @@
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/gemini_transport.py",
-      "sha256": "cb4d03c93a8eda1285669ac085537d91ce240cb08ac18699902c4617d0af493d"
+      "sha256": "8799e357851dab68bd00f82c13874953dc09f64b2cd94197c9124d471ab3e1cb"
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/host.py",
@@ -178,7 +178,7 @@
     },
     {
       "path": "skills/mlx-wire/SKILL.md",
-      "sha256": "3688d497030626c3fd8383d72a80963e3d9aaf888bede33afbe90f45658eb579"
+      "sha256": "b12cfbd21c55746f2acf89b7d66fa6047629b8da0c071d21095176cd8e6d7523"
     },
     {
       "path": "skills/mlx-wire/scripts/mlx-agent",
@@ -218,7 +218,7 @@
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/gemini_transport.py",
-      "sha256": "cb4d03c93a8eda1285669ac085537d91ce240cb08ac18699902c4617d0af493d"
+      "sha256": "8799e357851dab68bd00f82c13874953dc09f64b2cd94197c9124d471ab3e1cb"
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/host.py",

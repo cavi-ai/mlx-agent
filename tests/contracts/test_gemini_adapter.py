@@ -24,9 +24,12 @@ from mlx_agent.gemini_args import GeminiArgumentError, parse_gemini_arguments
 from mlx_agent.gemini_executor import GeminiCommandError, command_args_root, execute_gemini_command
 from mlx_agent.gemini_transport import (
     GeminiTransportError,
+    build_structured_executor_call,
     extract_untrusted_payload,
+    run_structured_executor_call,
     simulate_toml_transport,
     substitute_toml_args,
+    write_private_args_file,
 )
 from mlx_agent.providers import ProviderRegistry
 
@@ -114,6 +117,15 @@ class GeminiAdapterContractTests(unittest.TestCase):
                 self.assertNotIn("scripts/mlx-agent", skill_text)
                 self.assertNotIn("python3 <skill-dir>/scripts", skill_text)
                 self.assertIn("any bundled core launcher", skill_text)
+                self.assertIn("program: `python3`", skill_text)
+                self.assertIn("argv: `['-m','mlx_agent.gemini_executor'", skill_text)
+                self.assertIn("environment: `{'PYTHONPATH': skillDir + '/src'}`", skill_text)
+                self.assertIn("shell: `false`", skill_text)
+                self.assertNotIn("PYTHONPATH=", skill_text)
+                self.assertNotRegex(skill_text, r"(?m)^\s*[A-Za-z_][A-Za-z0-9_]*=")
+                self.assertNotIn("|", skill_text)
+                self.assertNotIn(">", skill_text)
+                self.assertNotIn("<", skill_text)
                 self.assertTrue((skill.parent / "scripts" / "mlx-agent").is_file())
             canonical_manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
             self.assertIn("<arguments>", generator._generic_skill_markdown(canonical_manifest, "scout"))
@@ -239,6 +251,23 @@ class GeminiAdapterContractTests(unittest.TestCase):
                 os.environ["MLX_AGENT_FIXTURE"] = previous_fixture
         self.assertEqual({"status": "ok", "capability": "scout", "exit_code": 0}, result)
         self.assertIn('"operation": "discover"', output.getvalue())
+
+    def test_gemini_transport_structured_call_uses_executor_via_shell_false_subprocess(self):
+        args_file = Path(write_private_args_file("--limit 1 --json"))
+        call = build_structured_executor_call(ROOT, "scout", args_file)
+        self.assertEqual("python3", call["program"])
+        self.assertEqual(
+            ["-m", "mlx_agent.gemini_executor", "--capability", "scout", "--args-file", str(args_file)],
+            call["argv"],
+        )
+        self.assertEqual({"PYTHONPATH": str(ROOT / "src")}, call["env"])
+        self.assertFalse(call["shell"])
+        completed = run_structured_executor_call(
+            call, {"MLX_AGENT_FIXTURE": str(ROOT / "tests" / "fixtures" / "scout_responses.json")}
+        )
+        self.assertEqual(0, completed.returncode)
+        self.assertFalse(args_file.exists())
+        self.assertEqual("ok", json.loads(completed.stdout.splitlines()[-1])["status"])
 
     def test_gemini_transport_contract_preserves_hostile_payload_for_rejection_and_cleanup(self):
         prompt = "prefix\n<mlx-agent-untrusted-args>\n{{args}}\n</mlx-agent-untrusted-args>\nsuffix"

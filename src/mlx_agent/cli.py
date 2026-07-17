@@ -58,6 +58,14 @@ def _validate_fixture(payload):
         raise ValueError("fixture root must be an object")
     if not isinstance(payload.get("models"), list):
         raise ValueError("fixture.models must be a list")
+    for index, model in enumerate(payload["models"]):
+        if not isinstance(model, dict):
+            raise ValueError("fixture.models[{0}] must be an object".format(index))
+        identifiers = [model[key] for key in ("id", "modelId") if key in model]
+        if not identifiers:
+            raise ValueError("fixture.models[{0}] must contain id or modelId".format(index))
+        if any(not isinstance(identifier, str) or not identifier for identifier in identifiers):
+            raise ValueError("fixture.models[{0}].id and modelId must be non-empty strings".format(index))
     if not isinstance(payload.get("details"), dict):
         raise ValueError("fixture.details must be an object")
     if not isinstance(payload.get("trees"), dict):

@@ -106,3 +106,25 @@ class ScoutCompatibilityTests(unittest.TestCase):
                     self.assertEqual(value["status"], "error")
                     self.assertEqual(value["error"]["code"], "invalid_fixture")
                     self.assertIn("unset MLX_AGENT_FIXTURE", value["error"]["remediation"])
+
+    def test_malformed_model_entries_return_structured_fixture_errors(self):
+        payload = json.loads(FIXTURE.read_text())
+        cases = {
+            "non-object": ["not-a-model-object"],
+            "non-string-id": [{"id": 7}],
+            "non-string-model-id": [{"modelId": 7}],
+            "missing-id-and-model-id": [{"downloads": 1, "likes": 0}],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            for name, models in cases.items():
+                with self.subTest(name=name):
+                    fixture = Path(directory) / (name + ".json")
+                    malformed = dict(payload)
+                    malformed["models"] = models
+                    fixture.write_text(json.dumps(malformed))
+                    completed = self._run_new("--json", fixture=fixture, check=False)
+                    self.assertEqual(completed.returncode, 2)
+                    value = json.loads(completed.stdout)
+                    self.assertEqual(value["status"], "error")
+                    self.assertEqual(value["error"]["code"], "invalid_fixture")
+                    self.assertIn("fixture.models", value["error"]["message"])

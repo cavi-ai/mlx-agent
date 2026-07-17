@@ -66,6 +66,9 @@ def _validate_fixture(payload):
             raise ValueError("fixture.models[{0}] must contain id or modelId".format(index))
         if any(not isinstance(identifier, str) or not identifier for identifier in identifiers):
             raise ValueError("fixture.models[{0}].id and modelId must be non-empty strings".format(index))
+        for counter in ("downloads", "likes"):
+            if counter in model and (not isinstance(model[counter], int) or isinstance(model[counter], bool)):
+                raise ValueError("fixture.models[{0}].{1} must be an integer".format(index, counter))
     if not isinstance(payload.get("details"), dict):
         raise ValueError("fixture.details must be an object")
     if not isinstance(payload.get("trees"), dict):

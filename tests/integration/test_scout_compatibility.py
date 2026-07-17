@@ -128,3 +128,42 @@ class ScoutCompatibilityTests(unittest.TestCase):
                     self.assertEqual(value["status"], "error")
                     self.assertEqual(value["error"]["code"], "invalid_fixture")
                     self.assertIn("fixture.models", value["error"]["message"])
+
+    def test_invalid_popularity_counters_return_structured_fixture_errors_before_sorting(self):
+        payload = json.loads(FIXTURE.read_text())
+        cases = {
+            "downloads-string": {"downloads": "10"},
+            "downloads-object": {"downloads": {}},
+            "downloads-bool": {"downloads": True},
+            "likes-string": {"likes": "10"},
+            "likes-object": {"likes": {}},
+            "likes-bool": {"likes": True},
+        }
+        models = [
+            {"id": "mlx-community/Coda-Coder-7B-4bit", "downloads": 1, "likes": 0},
+            {"id": "mlx-community/Nova-Coder-7B-4bit", "downloads": 1, "likes": 0},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            for name, invalid_counter in cases.items():
+                with self.subTest(name=name):
+                    fixture = Path(directory) / (name + ".json")
+                    malformed = dict(payload)
+                    malformed["models"] = [dict(models[0], **invalid_counter), models[1]]
+                    fixture.write_text(json.dumps(malformed))
+                    completed = self._run_new("--json", "--fast", fixture=fixture, check=False)
+                    self.assertEqual(completed.returncode, 2)
+                    value = json.loads(completed.stdout)
+                    self.assertEqual(value["status"], "error")
+                    self.assertEqual(value["error"]["code"], "invalid_fixture")
+                    self.assertIn("fixture.models[0]", value["error"]["message"])
+
+    def test_missing_popularity_counters_default_to_zero(self):
+        payload = json.loads(FIXTURE.read_text())
+        payload["models"] = [{"id": "mlx-community/Coda-Coder-7B-4bit"}]
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Path(directory) / "missing-counters.json"
+            fixture.write_text(json.dumps(payload))
+            completed = self._run_new("--json", "--fast", fixture=fixture)
+        model = json.loads(completed.stdout)["data"]["roles"]["coding"][0]
+        self.assertEqual(model["downloads"], 0)
+        self.assertEqual(model["likes"], 0)

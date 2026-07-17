@@ -1,0 +1,65 @@
+{
+  "host": {
+    "ram_gb": 32,
+    "chip": "Apple M4 Max",
+    "ollama": false,
+    "lmstudio": true
+  },
+  "models": [
+    {
+      "id": "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit",
+      "downloads": 1200,
+      "likes": 12
+    },
+    {
+      "id": "lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-Q8",
+      "downloads": 400,
+      "likes": 8
+    },
+    {
+      "id": "mlx-community/Qwen3-8B-Instruct-4bit",
+      "downloads": 900,
+      "likes": 21
+    },
+    {
+      "id": "community/Thinking-7B-4bit",
+      "downloads": 110,
+      "likes": 2
+    }
+  ],
+  "details": {
+    "lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-Q8": {
+      "tags": ["mlx"],
+      "gated": false,
+      "config": {"tokenizer_config": {"chat_template": ""}},
+      "cardData": {"license": "apache-2.0"},
+      "safetensors": {"total": 30000000000}
+    },
+    "mlx-community/Qwen3-8B-Instruct-4bit": {
+      "tags": ["mlx", "reasoning"],
+      "gated": false,
+      "config": {"tokenizer_config": {"chat_template": "{% if reasoning_effort %}<think>{% endif %}"}},
+      "cardData": {"license": "apache-2.0"},
+      "safetensors": {"total": 8000000000}
+    },
+    "community/Thinking-7B-4bit": {
+      "tags": ["mlx", "thinking"],
+      "gated": true,
+      "config": {"tokenizer_config": {"chat_template": ""}},
+      "cardData": {},
+      "safetensors": {"total": 7000000000}
+    }
+  },
+  "trees": {
+    "lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-Q8": [
+      {"path": "model.safetensors", "size": 30000000000}
+    ],
+    "mlx-community/Qwen3-8B-Instruct-4bit": [
+      {"path": "model-00001-of-00002.safetensors", "size": 4200000000},
+      {"path": "config.json", "size": 100}
+    ],
+    "community/Thinking-7B-4bit": [
+      {"path": "model.safetensors", "size": 3900000000}
+    ]
+  }
+}

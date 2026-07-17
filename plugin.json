@@ -146,14 +146,18 @@
         "prefix": "/"
       },
       "detect_commands": ["gemini"],
-      "user_root": "{config_root}/.gemini/extensions/mlx-agent",
+      "user_root": "{home}/.gemini/extensions/mlx-agent",
       "project_root": "{project}/.gemini/extensions/mlx-agent",
       "artifacts": [
         {"source": "providers/gemini/gemini-extension.json", "destination": "gemini-extension.json"},
         {"source": "providers/gemini/commands", "destination": "commands"},
         {"source": "providers/gemini/skills/mlx-scout", "destination": "skills/mlx-scout"},
         {"source": "providers/gemini/skills/mlx-adopt", "destination": "skills/mlx-adopt"},
-        {"source": "providers/gemini/skills/mlx-wire", "destination": "skills/mlx-wire"}
+        {"source": "providers/gemini/skills/mlx-wire", "destination": "skills/mlx-wire"},
+        {"source": "providers/gemini/commands", "destination": "commands", "project_destination": ".gemini/commands", "scope": "project"},
+        {"source": "providers/gemini/skills/mlx-scout", "destination": "skills/mlx-scout", "project_destination": ".gemini/skills/mlx-scout", "scope": "project"},
+        {"source": "providers/gemini/skills/mlx-adopt", "destination": "skills/mlx-adopt", "project_destination": ".gemini/skills/mlx-adopt", "scope": "project"},
+        {"source": "providers/gemini/skills/mlx-wire", "destination": "skills/mlx-wire", "project_destination": ".gemini/skills/mlx-wire", "scope": "project"}
       ],
       "config_paths": []
     },

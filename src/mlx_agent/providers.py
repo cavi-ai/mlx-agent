@@ -16,6 +16,8 @@ _GEMINI_EXTENSION_SUFFIX = Path(".gemini") / "extensions" / "mlx-agent"
 class ProviderArtifact:
     source: Path
     destination: Path
+    project_destination: Path = None
+    scopes: tuple = ("user", "project")
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,16 @@ class ProviderDefinition:
         if project_root is None:
             raise ValueError("project scope requires a project root")
         return Path(project_root).resolve() / self.project_root
+
+    def artifact_destination(self, scope, project_root, artifact):
+        """Return the receipt-owned target for one declared artifact."""
+        if scope == "project" and artifact.project_destination is not None:
+            return Path(project_root).resolve() / artifact.project_destination
+        return self.destination(scope, project_root) / artifact.destination
+
+    @staticmethod
+    def applies_to(scope, artifact):
+        return scope in artifact.scopes
 
 
 @dataclass(frozen=True)
@@ -110,15 +122,22 @@ class ProviderRegistry:
         if not isinstance(value["artifacts"], list) or not value["artifacts"]:
             raise ValueError("provider {0}.artifacts is invalid".format(provider_id))
         for index, artifact in enumerate(value["artifacts"]):
-            if not isinstance(artifact, dict) or set(artifact) != {"source", "destination"}:
+            if not isinstance(artifact, dict) or set(artifact) not in ({"source", "destination"}, {"source", "destination", "project_destination"}, {"source", "destination", "project_destination", "scope"}):
                 raise ValueError("provider {0}.artifacts[{1}] is invalid".format(provider_id, index))
             source = _safe_relative(artifact["source"], "artifact source")
             location = (self.manifest_path.parent / source).resolve()
             if self.manifest_path.parent not in location.parents or not (location.is_file() or location.is_dir()):
                 raise ValueError("provider artifact source is outside the plugin or missing: {0}".format(source))
             destination = _safe_relative(artifact["destination"], "artifact destination")
+            project_destination = (
+                _safe_relative(artifact["project_destination"], "artifact project_destination")
+                if "project_destination" in artifact else None
+            )
+            scopes = (artifact.get("scope", "user"),) if "scope" in artifact else ("user", "project")
+            if scopes not in (("user",), ("project",)) and scopes != ("user", "project"):
+                raise ValueError("provider {0}.artifacts[{1}].scope is invalid".format(provider_id, index))
             if location.is_file():
-                artifacts.append(ProviderArtifact(location, destination))
+                artifacts.append(ProviderArtifact(location, destination, project_destination, scopes))
             else:
                 for child in sorted(location.rglob("*")):
                     resolved = child.resolve()
@@ -126,7 +145,8 @@ class ProviderRegistry:
                     if "__pycache__" in relative.parts or child.suffix == ".pyc":
                         continue
                     if child.is_file() and location in resolved.parents:
-                        artifacts.append(ProviderArtifact(resolved, destination / child.relative_to(location)))
+                        project_child = project_destination / child.relative_to(location) if project_destination else None
+                        artifacts.append(ProviderArtifact(resolved, destination / child.relative_to(location), project_child, scopes))
         config_paths = value["config_paths"]
         if not isinstance(config_paths, list) or not all(isinstance(item, str) for item in config_paths):
             raise ValueError("provider {0}.config_paths is invalid".format(provider_id))
@@ -143,15 +163,17 @@ class ProviderRegistry:
             config_paths=tuple(config_paths),
         )
 
-    @staticmethod
-    def _validate_gemini_extension_layout(user_root, project_root, artifacts):
+    def _validate_gemini_extension_layout(self, user_root, project_root, artifacts):
         """Keep Gemini's install roots aligned with its extension discovery layout."""
-        if tuple(user_root.parts[-3:]) != tuple(_GEMINI_EXTENSION_SUFFIX.parts):
-            raise ValueError("provider gemini.user_root must target .gemini/extensions/mlx-agent")
+        if user_root != (self.home / _GEMINI_EXTENSION_SUFFIX).resolve():
+            raise ValueError("provider gemini.user_root must target home/.gemini/extensions/mlx-agent")
         if project_root != _GEMINI_EXTENSION_SUFFIX:
             raise ValueError("provider gemini.project_root must target .gemini/extensions/mlx-agent")
         if not any(item.destination == Path("gemini-extension.json") for item in artifacts):
             raise ValueError("provider gemini must install gemini-extension.json")
+        for item in artifacts:
+            if item.project_destination is not None and item.project_destination.parts[:1] != (".gemini",):
+                raise ValueError("provider gemini project artifacts must stay under .gemini")
 
     def _user_root(self, template, provider_id):
         if not isinstance(template, str) or "{project}" in template:

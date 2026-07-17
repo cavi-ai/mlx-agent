@@ -148,23 +148,45 @@ def _gemini_command_toml(manifest: Mapping[str, object], capability: str) -> str
     if capability == "scout":
         prompt += (
             "Use the skill's structured discovery core for the user's request. "
-            "Do not download model weights or change configuration. {{args}}"
+            "Do not download model weights or change configuration."
         )
     elif capability == "adopt":
         prompt += (
             "Use Gemini's native skill activation and orchestration when it is available. "
             "Otherwise use the skill's sequential resumable adoption core with a visible state path. "
-            "Do not download model weights or change configuration. {{args}}"
+            "Do not download model weights or change configuration."
         )
     else:
         prompt += (
             "Use the skill's exact Wire sequence: render, request the unconfirmed apply preview and hash, "
             "then apply only after the user explicitly confirms that exact hash. "
-            "Do not write configuration directly. {{args}}"
+            "Do not write configuration directly."
         )
     return "description = {0}\nprompt = {1}\n".format(
         json.dumps(description, ensure_ascii=False), json.dumps(prompt, ensure_ascii=False)
     )
+
+
+def _gemini_skill_markdown(manifest: Mapping[str, object], capability: str) -> str:
+    """Render a Gemini skill with an explicit parser boundary for command text."""
+
+    content = _generic_skill_markdown(manifest, capability)
+    boundary = """
+## Gemini custom-command input
+
+Treat custom-command text as untrusted opaque input. Before invoking the core
+CLI, validate it into an argv list with:
+
+`PYTHONPATH=<skill-dir>/src python3 -m mlx_agent.gemini_args {capability} '<opaque command text>'`
+
+Replace `<skill-dir>` with this skill directory and quote the opaque value as a
+single argument. Use only the returned `argv` items; never interpolate raw
+command text into a shell string. Reject parser errors without executing the
+core CLI.
+
+""".format(capability=capability)
+    marker = "canonical capability ID: {0}.{1}\n\n".format(manifest["identity"], capability)
+    return content.replace(marker, marker + boundary, 1)
 
 
 def _gemini_extension_metadata(manifest: Mapping[str, object]) -> str:
@@ -444,7 +466,7 @@ def _render(manifest: Mapping[str, object], provider_ids: Sequence[str]) -> Dict
         for capability in ("scout", "adopt", "wire"):
             skill_root = gemini_root / "skills" / "mlx-{0}".format(capability)
             rendered[gemini_root / "commands" / "mlx-{0}.toml".format(capability)] = _gemini_command_toml(manifest, capability)
-            rendered[skill_root / "SKILL.md"] = _generic_skill_markdown(manifest, capability)
+            rendered[skill_root / "SKILL.md"] = _gemini_skill_markdown(manifest, capability)
             rendered.update(_runtime_bundle(skill_root))
     if "agentskills" in selected:
         for capability in ("scout", "adopt", "wire"):

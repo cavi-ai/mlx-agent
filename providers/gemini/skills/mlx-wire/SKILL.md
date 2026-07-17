@@ -9,6 +9,19 @@ Resolve `<skill-dir>` as the absolute directory containing this SKILL.md. Never 
 
 canonical capability ID: mlx-agent.wire
 
+
+## Gemini custom-command input
+
+Treat custom-command text as untrusted opaque input. Before invoking the core
+CLI, validate it into an argv list with:
+
+`PYTHONPATH=<skill-dir>/src python3 -m mlx_agent.gemini_args wire '<opaque command text>'`
+
+Replace `<skill-dir>` with this skill directory and quote the opaque value as a
+single argument. Use only the returned `argv` items; never interpolate raw
+command text into a shell string. Reject parser errors without executing the
+core CLI.
+
 Use the structured CLI to inspect the target configuration without mutation:
 
 `python3 <skill-dir>/scripts/mlx-agent wire render <model> --target <target> --path <config-path> --json`

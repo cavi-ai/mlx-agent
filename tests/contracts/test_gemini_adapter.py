@@ -17,6 +17,7 @@ import unittest
 from pathlib import Path
 
 from mlx_agent.installer import Installer
+from mlx_agent.gemini_args import GeminiArgumentError, parse_gemini_arguments
 from mlx_agent.providers import ProviderRegistry
 
 
@@ -82,9 +83,13 @@ class GeminiAdapterContractTests(unittest.TestCase):
                 self.assertEqual(
                     "Activate and follow the bundled mlx-{} skill.".format(capability), command["prompt"].splitlines()[0]
                 )
+                self.assertNotIn("{{args}}", command["prompt"])
                 skill = extension_root / "skills" / "mlx-{}".format(capability) / "SKILL.md"
                 self.assertTrue(skill.is_file())
-                self.assertIn("canonical capability ID: mlx-agent.{}".format(capability), skill.read_text(encoding="utf-8"))
+                skill_text = skill.read_text(encoding="utf-8")
+                self.assertIn("canonical capability ID: mlx-agent.{}".format(capability), skill_text)
+                self.assertIn("mlx_agent.gemini_args", skill_text)
+                self.assertIn("never interpolate raw", skill_text)
                 self.assertTrue((skill.parent / "scripts" / "mlx-agent").is_file())
 
     def test_commands_are_exactly_the_manifest_capabilities_and_do_not_embed_absolute_paths(self):
@@ -108,7 +113,7 @@ class GeminiAdapterContractTests(unittest.TestCase):
                 project_root=project,
             )
             for scope, extension_root in (
-                ("user", root / "config" / ".gemini" / "extensions" / "mlx-agent"),
+                ("user", root / "home" / ".gemini" / "extensions" / "mlx-agent"),
                 ("project", project / ".gemini" / "extensions" / "mlx-agent"),
             ):
                 plan = installer.plan("install", ["gemini"], scope, project)
@@ -116,6 +121,53 @@ class GeminiAdapterContractTests(unittest.TestCase):
                 self.assertTrue((extension_root / "gemini-extension.json").is_file())
                 for capability in CAPABILITIES:
                     self.assertTrue((extension_root / "commands" / "mlx-{}.toml".format(capability)).is_file())
+            for capability in CAPABILITIES:
+                self.assertTrue((project / ".gemini" / "commands" / "mlx-{}.toml".format(capability)).is_file())
+                self.assertTrue((project / ".gemini" / "skills" / "mlx-{}".format(capability) / "SKILL.md").is_file())
+            project_uninstall = installer.plan("uninstall", ["gemini"], "project", project)
+            installer.execute(project_uninstall, confirmed=project_uninstall.preview["preview_hash"])
+            self.assertFalse((project / ".gemini" / "extensions" / "mlx-agent" / "gemini-extension.json").exists())
+            for capability in CAPABILITIES:
+                self.assertFalse((project / ".gemini" / "commands" / "mlx-{}.toml".format(capability)).exists())
+                self.assertFalse((project / ".gemini" / "skills" / "mlx-{}".format(capability) / "SKILL.md").exists())
+
+    def test_gemini_user_scope_uses_home_not_config_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            definition = ProviderRegistry(
+                ROOT / "plugin.json", home=root / "home", config_root=root / "config"
+            ).definitions()["gemini"]
+            self.assertEqual((root / "home" / ".gemini" / "extensions" / "mlx-agent").resolve(), definition.user_root)
+            self.assertEqual(Path(".gemini/extensions/mlx-agent"), definition.project_root)
+
+    def test_gemini_argument_parser_builds_only_allowlisted_argv(self):
+        self.assertEqual(
+            ["discover", "--role", "coding", "--limit", "2", "--offline", "--json"],
+            parse_gemini_arguments("scout", "--role coding --limit 2 --offline --json"),
+        )
+        self.assertEqual(
+            ["adopt", "start", "--state", "state/adopt.json", "--role", "coding", "--offline", "--json"],
+            parse_gemini_arguments("adopt", "start --state state/adopt.json --role coding --offline --json"),
+        )
+        self.assertEqual(
+            ["wire", "render", "mlx-community/Qwen3-8B-4bit", "--target", "mlx_lm", "--path", "config/providers.json", "--json"],
+            parse_gemini_arguments("wire", "render mlx-community/Qwen3-8B-4bit --target mlx_lm --path config/providers.json --json"),
+        )
+
+    def test_gemini_argument_parser_rejects_hostile_or_unknown_input_without_execution(self):
+        hostile = (
+            ("scout", "--role coding; touch owned"),
+            ("scout", "--unknown value"),
+            ("adopt", "start --state ../outside.json --role coding"),
+            ("adopt", "resume --state $(touch owned)"),
+            ("wire", "render mlx-community/Qwen3-8B-4bit --path config.json --target mlx_lm;whoami"),
+            ("wire", "apply bad/model --path config.json --endpoint http://user:pass@127.0.0.1:8080"),
+            ("wire", "render mlx-community/Qwen3-8B-4bit --path config\nnext.json"),
+        )
+        for capability, raw in hostile:
+            with self.subTest(capability=capability, raw=raw):
+                with self.assertRaises(GeminiArgumentError):
+                    parse_gemini_arguments(capability, raw)
 
     def test_recursive_provider_artifacts_exclude_runtime_bytecode(self):
         registry = ProviderRegistry(ROOT / "plugin.json")
@@ -130,10 +182,14 @@ class GeminiAdapterContractTests(unittest.TestCase):
         self.assertIn("SKIP: Gemini CLI unavailable", smoke)
         self.assertIn("gemini extensions install", smoke)
         self.assertIn("gemini extensions list", smoke)
+        self.assertIn("/commands list", smoke)
         self.assertIn("gemini skills list", smoke)
         self.assertIn("/mlx-scout", smoke)
         self.assertIn("gemini extensions uninstall mlx-agent", smoke)
         self.assertIn("separate self-contained bundle proof", smoke)
+        self.assertIn("project scope", smoke.lower())
+        self.assertIn("MLX_AGENT_GEMINI_LIVE_COMMAND_DISCOVERY", smoke)
+        self.assertNotIn("not-a-secret", smoke)
         self.assertIn("MLX_AGENT_FIXTURE", smoke)
 
 

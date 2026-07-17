@@ -174,8 +174,14 @@ def _validate_provider(value: Any, name: str, errors: List[str]) -> None:
     artifacts = value.get("artifacts")
     if not isinstance(artifacts, list) or not artifacts:
         errors.append("{0}.artifacts must be a non-empty array".format(prefix))
-    elif not all(isinstance(item, dict) and set(item) == {"source", "destination"} and all(isinstance(item[field], str) and item[field] for field in ("source", "destination")) for item in artifacts):
-        errors.append("{0}.artifacts must contain source/destination strings".format(prefix))
+    elif not all(
+        isinstance(item, dict)
+        and set(item) in ({"source", "destination"}, {"source", "destination", "project_destination"}, {"source", "destination", "project_destination", "scope"})
+        and all(isinstance(item[field], str) and item[field] for field in item)
+        and ("scope" not in item or item["scope"] == "project")
+        for item in artifacts
+    ):
+        errors.append("{0}.artifacts must contain source/destination strings and optional project_destination/project scope".format(prefix))
     if not isinstance(value.get("config_paths"), list) or not all(isinstance(item, str) for item in value["config_paths"]):
         errors.append("{0}.config_paths must be an array of strings".format(prefix))
     if value.get("invocation") != PROVIDER_INVOCATIONS[name]:

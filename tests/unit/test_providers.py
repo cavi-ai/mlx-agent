@@ -24,7 +24,12 @@ class ProviderRegistryTests(unittest.TestCase):
             )
             for provider_id, definition in definitions.items():
                 with self.subTest(provider=provider_id):
-                    expected_root = root / ("home/plugins/mlx-agent" if provider_id == "codex" else "config")
+                    if provider_id == "codex":
+                        expected_root = root / "home/plugins/mlx-agent"
+                    elif provider_id == "gemini":
+                        expected_root = root / "home"
+                    else:
+                        expected_root = root / "config"
                     self.assertTrue(str(definition.user_root).startswith(str(expected_root.resolve())))
                     self.assertEqual(
                         (root / "project" / definition.project_root).resolve(),

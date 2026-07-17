@@ -226,10 +226,11 @@ class Installer:
         transactions, summary = [], []
         for provider_id in selected:
             definition = definitions[provider_id]
-            root = definition.destination(scope, project)
             changes = []
             for artifact in definition.artifacts:
-                target = root / artifact.destination
+                if not definition.applies_to(scope, artifact):
+                    continue
+                target = definition.artifact_destination(scope, project, artifact)
                 desired = artifact.source.read_text(encoding="utf-8")
                 current = target.read_bytes() if target.is_file() else None
                 if current is not None:
@@ -255,7 +256,9 @@ class Installer:
             definition = definitions[provider_id]
             provider_steps = []
             for artifact in definition.artifacts:
-                target = definition.destination(scope, project) / artifact.destination
+                if not definition.applies_to(scope, artifact):
+                    continue
+                target = definition.artifact_destination(scope, project, artifact)
                 history = self._artifact_history(definition, target, scope, project)
                 if not history:
                     continue
@@ -287,12 +290,13 @@ class Installer:
         definitions = self.registry.definitions()
         for provider_id in plan.provider_ids:
             definition = definitions[provider_id]
-            root = definition.destination(plan.scope, plan.project_root)
             for artifact in definition.artifacts:
-                target = root / artifact.destination
+                if not definition.applies_to(plan.scope, artifact):
+                    continue
+                target = definition.artifact_destination(plan.scope, plan.project_root, artifact)
                 checked.append(str(target))
                 try:
-                    safe_root = _assert_safe_directory(root)
+                    safe_root = _assert_safe_directory(plan.project_root if plan.scope == "project" else definition.user_root)
                     location = _assert_safe_target(target)
                     location.relative_to(safe_root)
                     history = self._artifact_history(definition, target, plan.scope, plan.project_root)
@@ -336,7 +340,7 @@ class Installer:
     def _make_plan(self, action, selected, scope, project, transactions=(), rollback_receipts=(),
                    uninstall_hashes=None, restore_changes=(), summary=(), definitions=None):
         definitions = definitions or self.registry.definitions()
-        destinations = [{"provider": provider_id, "targets": [str(definitions[provider_id].destination(scope, project) / artifact.destination) for artifact in definitions[provider_id].artifacts]} for provider_id in selected]
+        destinations = [{"provider": provider_id, "targets": [str(definitions[provider_id].artifact_destination(scope, project, artifact)) for artifact in definitions[provider_id].artifacts if definitions[provider_id].applies_to(scope, artifact)]} for provider_id in selected]
         binding = {
             "action": action, "providers": list(selected), "scope": scope, "project": str(project),
             "destinations": destinations,
@@ -355,7 +359,7 @@ class Installer:
         binding = {
             "action": plan.action, "providers": list(plan.provider_ids), "scope": plan.scope,
             "project": str(plan.project_root),
-            "destinations": [{"provider": provider_id, "targets": [str(definitions[provider_id].destination(plan.scope, plan.project_root) / artifact.destination) for artifact in definitions[provider_id].artifacts]} for provider_id in plan.provider_ids],
+            "destinations": [{"provider": provider_id, "targets": [str(definitions[provider_id].artifact_destination(plan.scope, plan.project_root, artifact)) for artifact in definitions[provider_id].artifacts if definitions[provider_id].applies_to(plan.scope, artifact)]} for provider_id in plan.provider_ids],
             "inner_previews": [{"provider": item.provider_id, "hash": item.preview_hash, "targets": list(item.destinations)} for item in plan.transactions],
             "rollback_chain": [self._receipt_identity(self._load_receipt(item.receipt_path, plan.scope, plan.project_root)) for item in plan.rollback_receipts],
         }
@@ -378,7 +382,7 @@ class Installer:
 
     def _artifact_history(self, definition, target, scope, project):
         target_name = str(target)
-        allowed = {str(definition.destination(scope, project) / artifact.destination) for artifact in definition.artifacts}
+        allowed = {str(definition.artifact_destination(scope, project, artifact)) for artifact in definition.artifacts if definition.applies_to(scope, artifact)}
         return [item for item in self._all_receipts(scope, project) if target_name in item.targets and set(item.targets).issubset(allowed) and item.status == "applied"]
 
     def _all_receipts(self, scope, project):

@@ -559,6 +559,25 @@ class TransactionTests(unittest.TestCase):
                 self.assertEqual('{"before": true}\n', target.read_text())
             self.assertEqual("applied", second.apply(True).status)
 
+    def test_macos_var_aliases_contend_for_the_same_physical_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            if not (str(root).startswith("/var/") and os.path.islink("/var") and os.readlink("/var") == "private/var"):
+                self.skipTest("requires the macOS /var compatibility alias")
+            physical_root = Path("/private/var") / root.relative_to("/var")
+            target = root / "providers.json"
+            alias_target = physical_root / "providers.json"
+            target.write_text('{"before": true}\n')
+            first = Transaction(receipts_dir=root / "receipts-a")
+            second = Transaction(receipts_dir=physical_root / "receipts-b")
+            first.preview([self._change(target, '{"first": true}\n')])
+            second.preview([self._change(alias_target, '{"second": true}\n')])
+            with first._advisory_lock():
+                with self.assertRaises(ConcurrentTransactionError):
+                    second.apply(True)
+                self.assertEqual('{"before": true}\n', target.read_text())
+            self.assertEqual("applied", second.apply(True).status)
+
     def test_rollback_contends_with_apply_using_different_receipt_directories(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

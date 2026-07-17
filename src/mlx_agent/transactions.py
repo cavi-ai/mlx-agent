@@ -103,14 +103,14 @@ def _assert_safe_directory(path, create=False):
 
 
 def _target_lock_name(target):
-    digest = _sha256(str(_absolute(target)).encode("utf-8"))
+    digest = _sha256(str(_physical_absolute(target)).encode("utf-8"))
     return ".mlx-agent-wire-{0}.lock".format(digest)
 
 
 @contextmanager
 def _target_locks(targets):
-    """Acquire target-adjacent locks in canonical order to avoid deadlocks."""
-    canonical = sorted({_absolute(target) for target in targets}, key=str)
+    """Acquire target-adjacent physical locks in canonical order to avoid deadlocks."""
+    canonical = sorted({_physical_absolute(target) for target in targets}, key=str)
     held = []
     try:
         for target in canonical:

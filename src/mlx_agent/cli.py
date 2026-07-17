@@ -13,7 +13,7 @@ from .discovery import DiscoveryRequest, DiscoveryService
 from .host import HostInventory
 from .huggingface import HuggingFaceClient
 from .models import ROLES, render_md, wire
-from .transactions import Receipt, Transaction, _assert_safe_target, _read_regular, rollback
+from .transactions import COOPERATIVE_CONCURRENCY_NOTE, ConcurrentTransactionError, Receipt, Transaction, _assert_safe_target, _read_regular, rollback
 from .verification import Verifier
 from .wiring import ConfigAdapter
 
@@ -289,8 +289,15 @@ def _receipt_data(receipt):
 def _wire_failure(operation, code, message, remediation, data=None):
     return ResultEnvelope(
         operation=operation, status="error", data=data or {},
+        warnings=[{"code": "cooperative_concurrency", "message": COOPERATIVE_CONCURRENCY_NOTE}],
         error=ErrorDetail(code, message, remediation),
     )
+
+
+def _wire_ok(operation, data):
+    return ResultEnvelope.ok(operation, data, warnings=[{
+        "code": "cooperative_concurrency", "message": COOPERATIVE_CONCURRENCY_NOTE,
+    }])
 
 
 def _wire_render(arguments):
@@ -308,7 +315,7 @@ def _run_wire(arguments):
         if arguments.wire_command == "status":
             location = _assert_safe_target(arguments.receipt)
             receipt = Receipt.from_dict(json.loads(_read_regular(location).decode("utf-8")), str(location))
-            return _emit_wire_result(ResultEnvelope.ok(operation, {"receipt": _receipt_data(receipt)}), arguments.json)
+            return _emit_wire_result(_wire_ok(operation, {"receipt": _receipt_data(receipt)}), arguments.json)
         if arguments.wire_command == "rollback":
             if not arguments.confirm:
                 return _emit_wire_result(_wire_failure(
@@ -316,7 +323,7 @@ def _run_wire(arguments):
                     "Review the receipt with 'wire status RECEIPT', then run 'wire rollback RECEIPT --confirm'.",
                 ), arguments.json)
             receipt = rollback(arguments.receipt)
-            result = ResultEnvelope.ok(operation, {"receipt": _receipt_data(receipt)}) if receipt.status == "rolled_back" else _wire_failure(
+            result = _wire_ok(operation, {"receipt": _receipt_data(receipt)}) if receipt.status == "rolled_back" else _wire_failure(
                 operation, receipt.status, "Rollback did not complete; receipt status is {0}.".format(receipt.status),
                 "Inspect the receipt validations and restore the verified backup manually.", {"receipt": _receipt_data(receipt)},
             )
@@ -324,7 +331,7 @@ def _run_wire(arguments):
 
         path, adapter, content = _wire_render(arguments)
         if arguments.wire_command == "render":
-            return _emit_wire_result(ResultEnvelope.ok(operation, {
+            return _emit_wire_result(_wire_ok(operation, {
                 "path": str(path), "runtime": arguments.target, "config": content,
                 "validation": {"parse": True},
             }), arguments.json, human=content)
@@ -334,7 +341,7 @@ def _run_wire(arguments):
             "adapter": adapter, "endpoint": arguments.endpoint,
         }])
         if not arguments.confirm:
-            result = ResultEnvelope.ok(operation, {"preview": preview, "requires_confirmation": True})
+            result = _wire_ok(operation, {"preview": preview, "requires_confirmation": True})
             if arguments.json:
                 print(json.dumps(result.to_dict(), indent=2))
             else:
@@ -357,13 +364,13 @@ def _run_wire(arguments):
             print(preview["diff"])
         receipt = transaction.apply(arguments.preview_hash)
         data = {"preview": preview, "receipt": _receipt_data(receipt)}
-        result = ResultEnvelope.ok(operation, data) if receipt.status == "applied" else _wire_failure(
+        result = _wire_ok(operation, data) if receipt.status == "applied" else _wire_failure(
             operation, receipt.status, "Wire did not apply; receipt status is {0}.".format(receipt.status),
             "Inspect the receipt validation results and use the recorded recovery path before retrying.", data,
         )
         return _emit_wire_result(result, arguments.json)
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
-        code = "preview_stale" if str(error).startswith("preview is stale") else "wire_failed"
+        code = "cooperative_lock_busy" if isinstance(error, ConcurrentTransactionError) else ("preview_stale" if str(error).startswith("preview is stale") else "wire_failed")
         return _emit_wire_result(_wire_failure(
             operation, code, "Wire could not complete: {0}".format(error),
             "Correct the target configuration or receipt, then render a new preview.",
@@ -373,7 +380,7 @@ def _run_wire(arguments):
 def _add_wire_arguments(parser):
     actions = parser.add_subparsers(dest="wire_command", required=True)
     for name in ("render", "apply"):
-        action = actions.add_parser(name, help="{0} a deterministic runtime configuration".format(name))
+        action = actions.add_parser(name, help="{0} a deterministic runtime configuration ({1})".format(name, "advisory lock protects cooperative writers" if name == "apply" else "safe render"))
         action.add_argument("model", help="Hugging Face model repository")
         action.add_argument("--target", choices=["ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm"], default="mlx_lm")
         action.add_argument("--path", required=True, help="target configuration file")

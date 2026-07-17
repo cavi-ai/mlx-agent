@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from mlx_agent.cli import main
-from mlx_agent.transactions import Receipt, Transaction, rollback
+from mlx_agent.transactions import ConcurrentTransactionError, Receipt, Transaction, rollback
 
 
 class TransactionTests(unittest.TestCase):
@@ -412,7 +412,7 @@ class TransactionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 transaction.apply(True)
             self.assertEqual('{"external": true}\n', target.read_text())
-            self.assertFalse((root / "receipts").exists())
+            self.assertEqual([], list((root / "receipts").glob("*/receipt.json")))
 
     def test_transaction_root_creation_uses_opened_receipts_directory_fd(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -479,6 +479,69 @@ class TransactionTests(unittest.TestCase):
                     with redirect_stdout(output):
                         self.assertEqual(2, main(["wire", "render", "mlx-community/Test-4bit", "--target", "mlx_lm", "--path", str(candidate), "--json"]))
                     self.assertEqual("wire_failed", json.loads(output.getvalue())["error"]["code"])
+
+    def test_cooperative_transaction_contention_fails_before_mutation_and_releases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text('{"before": true}\n')
+            first = Transaction(receipts_dir=root / "receipts")
+            second = Transaction(receipts_dir=root / "receipts")
+            first.preview([self._change(target, '{"first": true}\n')])
+            second.preview([self._change(target, '{"second": true}\n')])
+            with first._advisory_lock():
+                with self.assertRaises(ConcurrentTransactionError):
+                    second.apply(True)
+                self.assertEqual('{"before": true}\n', target.read_text())
+            receipt = second.apply(True)
+            self.assertEqual("applied", receipt.status)
+            self.assertEqual('{"second": true}\n', target.read_text())
+
+    def test_lock_covers_after_check_writer_and_releases_after_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text('{"before": true}\n')
+            contender = Transaction(receipts_dir=root / "receipts")
+            contender.preview([self._change(target, '{"contender": true}\n')])
+            attempted = []
+            def after_check(point):
+                if point == "before_replace:0":
+                    attempted.append(True)
+                    with self.assertRaises(ConcurrentTransactionError):
+                        contender.apply(True)
+                    raise ValueError("induced failure after final check")
+            first = Transaction(receipts_dir=root / "receipts", fault_injector=after_check)
+            first.preview([self._change(target, '{"first": true}\n')])
+            receipt = first.apply(True)
+            self.assertEqual([True], attempted)
+            self.assertEqual("rolled_back", receipt.status)
+            self.assertEqual('{"before": true}\n', target.read_text())
+            receipt = contender.apply(True)
+            self.assertEqual("applied", receipt.status)
+            self.assertIn("concurrency", receipt.validations)
+
+    def test_cli_reports_cooperative_concurrency_warning_and_classified_contention(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text("{}\n")
+            preview = StringIO()
+            with redirect_stdout(preview):
+                self.assertEqual(2, main(["wire", "apply", "mlx-community/Test-4bit", "--target", "mlx_lm", "--path", str(target), "--json"]))
+            payload = json.loads(preview.getvalue())
+            self.assertEqual("cooperative_concurrency", payload["warnings"][0]["code"])
+
+            preview_hash = payload["data"]["preview"]["preview_hash"]
+            holder = Transaction(receipts_dir=root / ".mlx-agent-receipts")
+            with holder._advisory_lock():
+                output = StringIO()
+                with redirect_stdout(output):
+                    self.assertEqual(2, main([
+                        "wire", "apply", "mlx-community/Test-4bit", "--target", "mlx_lm", "--path", str(target),
+                        "--confirm", "--preview-hash", preview_hash, "--json",
+                    ]))
+                self.assertEqual("cooperative_lock_busy", json.loads(output.getvalue())["error"]["code"])
 
     def test_cli_status_refuses_swapped_receipt_ancestor_before_read(self):
         with tempfile.TemporaryDirectory() as directory:

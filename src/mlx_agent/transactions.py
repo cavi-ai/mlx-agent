@@ -10,6 +10,8 @@ never follows it; ancestors are verified before opening their directory fd.
 from __future__ import annotations
 
 import difflib
+import errno
+import fcntl
 import hashlib
 import json
 import os
@@ -18,6 +20,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from contextlib import contextmanager
 
 from .wiring import ConfigAdapter, redact_endpoint, redact_secrets
 
@@ -26,6 +29,11 @@ RECEIPT_SCHEMA_VERSION = "2.0"
 MAX_PREVIEW_CHARS = 12000
 _STATUSES = {"pending", "applied", "failed", "rolled_back", "rollback_failed", "recovery_required"}
 _HASH = __import__("re").compile(r"^[0-9a-f]{64}$")
+COOPERATIVE_CONCURRENCY_NOTE = "Advisory lock protects accidental/cooperative writers; a malicious process ignoring it can still race the final rename."
+
+
+class ConcurrentTransactionError(ValueError):
+    """A cooperative writer holds the transaction's advisory lock."""
 
 
 def _sha256(value):
@@ -92,6 +100,37 @@ def _assert_safe_directory(path, create=False):
     value, descriptor = _walk_directory(path, create=create)
     os.close(descriptor)
     return value
+
+
+@contextmanager
+def _advisory_lock(directory):
+    """Hold a descriptor-relative no-follow lock for cooperative writers."""
+    _logical, directory_fd = _walk_directory(directory, create=True)
+    lock_fd = None
+    try:
+        try:
+            lock_fd = os.open(
+                ".mlx-agent-wire.lock",
+                os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW,
+                0o600,
+                dir_fd=directory_fd,
+            )
+            if not stat.S_ISREG(os.fstat(lock_fd).st_mode):
+                raise ValueError("transaction lock is not a regular file")
+            os.fsync(directory_fd)
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            if error.errno in (errno.EACCES, errno.EAGAIN):
+                raise ConcurrentTransactionError("another cooperative Wire transaction is active")
+            raise ValueError("could not safely acquire transaction lock: {0}".format(error))
+        yield _logical, directory_fd
+    finally:
+        if lock_fd is not None:
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            finally:
+                os.close(lock_fd)
+        os.close(directory_fd)
 
 
 def _assert_safe_target(path):
@@ -291,6 +330,8 @@ class Transaction:
         self._changes = []
         self._preview = ""
         self._preview_hash = ""
+        self._active_lock_directory = None
+        self._active_lock_fd = None
 
     def preview(self, changes):
         if not isinstance(changes, (list, tuple)) or not changes:
@@ -328,6 +369,22 @@ class Transaction:
             raise PermissionError("explicit confirmation for this preview is required")
         if not self._changes:
             raise ValueError("preview changes before applying them")
+        with self._advisory_lock():
+            return self._apply_locked()
+
+    @contextmanager
+    def _advisory_lock(self):
+        directory = self.receipts_dir or self._changes[0]["path"].parent / ".mlx-agent-receipts"
+        with _advisory_lock(directory) as (locked_directory, locked_fd):
+            self._active_lock_directory = locked_directory
+            self._active_lock_fd = locked_fd
+            try:
+                yield
+            finally:
+                self._active_lock_directory = None
+                self._active_lock_fd = None
+
+    def _apply_locked(self):
         for change in self._changes:
             current, exists, mode = _read_target(change["path"], self.path_race_hook)
             if _sha256(current) != change["before_hash"] or exists != change["existed"] or mode != change["mode"]:
@@ -386,7 +443,10 @@ class Transaction:
             if _sha256(before) != change["before_hash"] or exists != change["existed"] or mode != change["mode"]:
                 raise ValueError("preview is stale; target changed after journal capture")
             captured[index] = (before, exists, mode)
-        receipts_dir, receipts_fd = _walk_directory(self.receipts_dir or self._changes[0]["path"].parent / ".mlx-agent-receipts", create=True)
+        if self._active_lock_fd is not None:
+            receipts_dir, receipts_fd = self._active_lock_directory, os.dup(self._active_lock_fd)
+        else:
+            receipts_dir, receipts_fd = _walk_directory(self.receipts_dir or self._changes[0]["path"].parent / ".mlx-agent-receipts", create=True)
         transaction_id = str(uuid.uuid4())
         root = receipts_dir / transaction_id
         try:
@@ -406,7 +466,9 @@ class Transaction:
             timestamp=_timestamp(), transaction_root=str(root), targets=targets,
             target_roots={str(change["path"]): str(change["path"].parent) for change in self._changes},
             target_modes={str(change["path"]): captured[index][2] for index, change in enumerate(self._changes)},
-            before_hashes={}, after_hashes={}, backup_paths={}, validations={}, status="pending",
+            before_hashes={}, after_hashes={}, backup_paths={}, validations={
+                "concurrency": {"scope": "advisory_cooperative", "note": COOPERATIVE_CONCURRENCY_NOTE, "passed": True},
+            }, status="pending",
             preview=self._preview, preview_hash=self._preview_hash, receipt_path=str(root / "receipt.json"),
         )
         for index, change in enumerate(self._changes):
@@ -522,24 +584,25 @@ def _remove_target(path):
 
 def rollback(receipt_path):
     location = _assert_safe_target(receipt_path)
-    receipt = Receipt.from_dict(json.loads(_read_regular(location).decode("utf-8")), str(location))
-    if receipt.status == "rolled_back":
-        current_matches = True
-        for target_name in receipt.targets:
-            current, exists, mode = _read_target(target_name)
-            expected_absent = receipt.backup_paths[target_name] is None
-            if _sha256(current) != receipt.before_hashes[target_name] or exists == expected_absent or mode != receipt.target_modes[target_name]:
-                current_matches = False
-                break
-        if current_matches:
-            return receipt
-    if _restore_receipt(receipt):
-        receipt.status = "rolled_back"
-    else:
-        receipt.status = "rollback_failed"
-    try:
-        _atomic_in_directory(Path(receipt.transaction_root), "receipt.json", (json.dumps(receipt.to_dict(), indent=2, sort_keys=True) + "\n").encode("utf-8"), 0o600)
-    except Exception as error:
-        receipt.status = "recovery_required"
-        receipt.validations["receipt_write"] = {"passed": False, "message": redact_secrets(str(error))}
-    return receipt
+    with _advisory_lock(location.parent.parent):
+        receipt = Receipt.from_dict(json.loads(_read_regular(location).decode("utf-8")), str(location))
+        if receipt.status == "rolled_back":
+            current_matches = True
+            for target_name in receipt.targets:
+                current, exists, mode = _read_target(target_name)
+                expected_absent = receipt.backup_paths[target_name] is None
+                if _sha256(current) != receipt.before_hashes[target_name] or exists == expected_absent or mode != receipt.target_modes[target_name]:
+                    current_matches = False
+                    break
+            if current_matches:
+                return receipt
+        if _restore_receipt(receipt):
+            receipt.status = "rolled_back"
+        else:
+            receipt.status = "rollback_failed"
+        try:
+            _atomic_in_directory(Path(receipt.transaction_root), "receipt.json", (json.dumps(receipt.to_dict(), indent=2, sort_keys=True) + "\n").encode("utf-8"), 0o600)
+        except Exception as error:
+            receipt.status = "recovery_required"
+            receipt.validations["receipt_write"] = {"passed": False, "message": redact_secrets(str(error))}
+        return receipt

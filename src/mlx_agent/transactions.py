@@ -338,13 +338,20 @@ class Receipt:
 class Transaction:
     """Create a crash-recoverable journal before any configuration mutation."""
 
-    def __init__(self, receipts_dir=None, health_checker=None, fault_injector=None, receipt_writer=None, path_race_hook=None, create_target_parents=False):
+    def __init__(self, receipts_dir=None, health_checker=None, fault_injector=None, receipt_writer=None, path_race_hook=None, create_target_parents=False, transaction_id=None):
         self.receipts_dir = Path(receipts_dir) if receipts_dir else None
         self.health_checker = health_checker
         self.fault_injector = fault_injector
         self.receipt_writer = receipt_writer
         self.path_race_hook = path_race_hook
         self.create_target_parents = bool(create_target_parents)
+        if transaction_id is not None:
+            try:
+                self.transaction_id = str(uuid.UUID(str(transaction_id)))
+            except (TypeError, ValueError, AttributeError):
+                raise ValueError("transaction_id must be a UUID")
+        else:
+            self.transaction_id = None
         self._changes = []
         self._preview = ""
         self._preview_hash = ""
@@ -461,7 +468,7 @@ class Transaction:
                 raise ValueError("preview is stale; target changed after journal capture")
             captured[index] = (before, exists, mode)
         receipts_dir, receipts_fd = _walk_directory(self.receipts_dir or self._changes[0]["path"].parent / ".mlx-agent-receipts", create=True)
-        transaction_id = str(uuid.uuid4())
+        transaction_id = self.transaction_id or str(uuid.uuid4())
         root = receipts_dir / transaction_id
         try:
             self._fault("before_transaction_root_create")

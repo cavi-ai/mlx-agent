@@ -286,3 +286,76 @@ class InstallerRoundTripTests(unittest.TestCase):
         target.parent.parent.symlink_to(target.parent.parent.with_name("moved-skills"), target_is_directory=True)
         result = self.installer.execute(self.installer.plan("doctor", ["claude"], "user", self.project))
         self.assertFalse(result["healthy"])
+
+    def test_crash_after_child_receipt_write_leaves_batch_with_deterministic_active_receipt(self):
+        class SimulatedCrash(BaseException):
+            pass
+
+        calls = []
+
+        def transaction_factory(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 2:
+                kwargs["fault_injector"] = lambda point: (_ for _ in ()).throw(SimulatedCrash()) if point == "after_pending_receipt" else None
+            return Transaction(**kwargs)
+
+        installer = Installer(self.registry, project_root=self.project, transaction_factory=transaction_factory)
+        plan = installer.plan("install", ["claude"], "user", self.project)
+        with self.assertRaises(SimulatedCrash):
+            installer.execute(plan, confirmed=plan.preview["preview_hash"])
+        journals = [json.loads(path.read_text()) for path in (self.config / "mlx-agent" / "installer-receipts" / "batches").glob("*/batch.json")]
+        journal = journals[0]
+        self.assertEqual("pending", journal["status"])
+        self.assertEqual("claude", journal["active"]["provider"])
+        self.assertTrue(Path(journal["active"]["expected_receipt_path"]).is_file())
+        self.assertEqual(journal["active"]["transaction_id"], json.loads(Path(journal["active"]["expected_receipt_path"]).read_text())["transaction_id"])
+        doctor = installer.execute(installer.plan("doctor", ["claude"], "user", self.project))
+        self.assertFalse(doctor["healthy"])
+        self.assertIn("batch_recovery_required", [item["code"] for item in doctor["problems"]])
+
+    def test_recovery_required_child_is_recorded_and_keeps_batch_recovery_required(self):
+        factory_calls, writes = [], []
+
+        def transaction_factory(**kwargs):
+            factory_calls.append(kwargs)
+            if len(factory_calls) == 2:
+                def writer(path, value):
+                    writes.append(value["status"])
+                    if len(writes) == 1:
+                        path.write_text(json.dumps(value))
+                    else:
+                        raise OSError("receipt transition unavailable")
+                kwargs["receipt_writer"] = writer
+            return Transaction(**kwargs)
+
+        installer = Installer(self.registry, project_root=self.project, transaction_factory=transaction_factory)
+        plan = installer.plan("install", ["claude"], "user", self.project)
+        receipt = installer.execute(plan, confirmed=plan.preview["preview_hash"])
+        self.assertEqual("recovery_required", receipt.status)
+        journal = json.loads(Path(receipt.batch_path).read_text())
+        self.assertEqual("recovery_required", journal["status"])
+        self.assertEqual("recovery_required", journal["children"][0]["status"])
+        self.assertTrue(journal["remediation"])
+
+    def test_uninstall_compensation_does_not_overwrite_user_edit_after_completed_rollback(self):
+        install = self.installer.plan("install", ["claude", "codex"], "user", self.project)
+        self.installer.execute(install, confirmed=install.preview["preview_hash"])
+        removal = self.installer.plan("uninstall", ["claude", "codex"], "user", self.project)
+        target = self.config / ".claude" / "skills" / "mlx-scout" / "SKILL.md"
+        calls = []
+
+        def edit_then_fail(receipt_path, **kwargs):
+            calls.append(receipt_path)
+            if len(calls) == 2:
+                target.write_text("user edit after completed rollback\n")
+                return SimpleNamespace(status="rollback_failed")
+            return rollback(receipt_path, **kwargs)
+
+        installer = Installer(self.registry, project_root=self.project, rollback_func=edit_then_fail)
+        with self.assertRaises(InstallerConflictError):
+            installer.execute(removal, confirmed=removal.preview["preview_hash"])
+        self.assertEqual("user edit after completed rollback\n", target.read_text())
+        journals = [json.loads(path.read_text()) for path in (self.config / "mlx-agent" / "installer-receipts" / "batches").glob("*/batch.json")]
+        journal = next(item for item in journals if item["status"] == "recovery_required")
+        self.assertEqual("recovery_required", journal["status"])
+        self.assertTrue(any(str(target.resolve()) in item["paths"] for item in journal["remediation"]))

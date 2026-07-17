@@ -316,7 +316,7 @@ class Transaction:
                 redact_secrets(before_text).splitlines(True), redact_secrets(content).splitlines(True),
                 fromfile=str(path), tofile=str(path), lineterm="",
             )))
-            binding.append({"path": str(path), "before": _sha256(before), "after": _sha256(after), "endpoint": _sha256(str(change.get("endpoint") or "").encode("utf-8"))})
+            binding.append({"path": str(path), "before": _sha256(before), "after": _sha256(after), "exists": existed, "mode": mode, "endpoint": _sha256(str(change.get("endpoint") or "").encode("utf-8"))})
             prepared.append({"path": path, "content": content, "adapter": adapter, "endpoint": change.get("endpoint"), "before_hash": _sha256(before), "existed": existed, "mode": mode})
         self._changes = prepared
         self._preview = self._bounded("\n".join(diffs))
@@ -329,8 +329,8 @@ class Transaction:
         if not self._changes:
             raise ValueError("preview changes before applying them")
         for change in self._changes:
-            current, exists, _mode = _read_target(change["path"], self.path_race_hook)
-            if _sha256(current) != change["before_hash"] or exists != change["existed"]:
+            current, exists, mode = _read_target(change["path"], self.path_race_hook)
+            if _sha256(current) != change["before_hash"] or exists != change["existed"] or mode != change["mode"]:
                 raise ValueError("preview is stale; target changed after preview")
         receipt = self._prepare_journal()
         journal_written = False
@@ -341,11 +341,18 @@ class Transaction:
             self._fault("after_pending_receipt")
             for index, change in enumerate(self._changes):
                 path = change["path"]
+                self._fault("before_replace:{0}".format(index))
+                current, exists, mode = _read_target(path, self.path_race_hook)
+                if _sha256(current) != receipt.before_hashes[str(path)] or exists != change["existed"] or mode != receipt.target_modes[str(path)]:
+                    raise ValueError("preview is stale; target changed before replacement")
                 mutation_started = True
-                self._replace_target(path, change["content"].encode("utf-8"), change["adapter"], change["mode"])
+                self._replace_target(path, change["content"].encode("utf-8"), change["adapter"], receipt.target_modes[str(path)])
                 self._fault("after_replace:{0}".format(index))
                 change["adapter"].validate(_read_regular(path).decode("utf-8"))
-                receipt.after_hashes[str(path)] = _sha256(_read_regular(path))
+                after, after_exists, after_mode = _read_target(path)
+                if not after_exists or (receipt.target_modes[str(path)] is not None and after_mode != receipt.target_modes[str(path)]):
+                    raise ValueError("replacement mode does not match the reviewed target mode")
+                receipt.after_hashes[str(path)] = _sha256(after)
                 receipt.validations[str(path)] = {"pre": True, "post": True, "passed": True}
                 self._persist(receipt)
             receipt.validations["health_check"] = self._run_health_checks()
@@ -370,20 +377,35 @@ class Transaction:
         captured = []
         for change in self._changes:
             before, exists, mode = _read_target(change["path"], self.path_race_hook)
-            if _sha256(before) != change["before_hash"] or exists != change["existed"]:
+            if _sha256(before) != change["before_hash"] or exists != change["existed"] or mode != change["mode"]:
                 raise ValueError("preview is stale; target changed before journal capture")
             captured.append((before, exists, mode))
-        receipts_dir = _assert_safe_directory(self.receipts_dir or self._changes[0]["path"].parent / ".mlx-agent-receipts", create=True)
+        self._fault("after_journal_capture")
+        for index, change in enumerate(self._changes):
+            before, exists, mode = _read_target(change["path"], self.path_race_hook)
+            if _sha256(before) != change["before_hash"] or exists != change["existed"] or mode != change["mode"]:
+                raise ValueError("preview is stale; target changed after journal capture")
+            captured[index] = (before, exists, mode)
+        receipts_dir, receipts_fd = _walk_directory(self.receipts_dir or self._changes[0]["path"].parent / ".mlx-agent-receipts", create=True)
         transaction_id = str(uuid.uuid4())
         root = receipts_dir / transaction_id
-        os.mkdir(str(root), 0o700)
-        _fsync_directory(receipts_dir)
+        try:
+            self._fault("before_transaction_root_create")
+            os.mkdir(transaction_id, 0o700, dir_fd=receipts_fd)
+            os.fsync(receipts_fd)
+            root_fd = os.open(transaction_id, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW, dir_fd=receipts_fd)
+            try:
+                os.fsync(root_fd)
+            finally:
+                os.close(root_fd)
+        finally:
+            os.close(receipts_fd)
         targets = [str(change["path"]) for change in self._changes]
         receipt = Receipt(
             schema_version=RECEIPT_SCHEMA_VERSION, transaction_id=transaction_id, adapter_version=ConfigAdapter.version,
             timestamp=_timestamp(), transaction_root=str(root), targets=targets,
             target_roots={str(change["path"]): str(change["path"].parent) for change in self._changes},
-            target_modes={str(change["path"]): change["mode"] for change in self._changes},
+            target_modes={str(change["path"]): captured[index][2] for index, change in enumerate(self._changes)},
             before_hashes={}, after_hashes={}, backup_paths={}, validations={}, status="pending",
             preview=self._preview, preview_hash=self._preview_hash, receipt_path=str(root / "receipt.json"),
         )
@@ -470,8 +492,9 @@ def _restore_receipt(receipt):
                     _remove_target(target)
             else:
                 _atomic_in_directory(target.parent, target.name, data, mode if mode is not None else 0o600)
-            actual = _sha256(_read_regular(target))
-            if actual != expected:
+            actual_content, actual_exists, actual_mode = _read_target(target)
+            actual = _sha256(actual_content)
+            if actual != expected or actual_exists != (mode is not None) or actual_mode != mode:
                 raise ValueError("restore hash does not match receipt")
             receipt.after_hashes[str(target)] = actual
         receipt.validations["rollback"] = {"passed": True, "targets": [str(item[0]) for item in planned]}
@@ -503,9 +526,9 @@ def rollback(receipt_path):
     if receipt.status == "rolled_back":
         current_matches = True
         for target_name in receipt.targets:
-            current, exists, _mode = _read_target(target_name)
+            current, exists, mode = _read_target(target_name)
             expected_absent = receipt.backup_paths[target_name] is None
-            if _sha256(current) != receipt.before_hashes[target_name] or exists == expected_absent:
+            if _sha256(current) != receipt.before_hashes[target_name] or exists == expected_absent or mode != receipt.target_modes[target_name]:
                 current_matches = False
                 break
         if current_matches:

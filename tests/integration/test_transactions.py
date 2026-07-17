@@ -399,6 +399,87 @@ class TransactionTests(unittest.TestCase):
                 transaction.apply(True)
             self.assertEqual('{"external": true}\n', target.read_text())
 
+    def test_journal_capture_rechecks_content_after_initial_capture_before_pending_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text('{"before": true}\n')
+            def mutate_after_capture(point):
+                if point == "after_journal_capture":
+                    target.write_text('{"external": true}\n')
+            transaction = Transaction(receipts_dir=root / "receipts", fault_injector=mutate_after_capture)
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            with self.assertRaises(ValueError):
+                transaction.apply(True)
+            self.assertEqual('{"external": true}\n', target.read_text())
+            self.assertFalse((root / "receipts").exists())
+
+    def test_transaction_root_creation_uses_opened_receipts_directory_fd(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text('{"before": true}\n')
+            receipts = root / "receipts"
+            external = root / "external"
+            external.mkdir()
+            def swap_receipts(point):
+                if point == "before_transaction_root_create":
+                    receipts.rename(root / "old-receipts")
+                    receipts.symlink_to(external, target_is_directory=True)
+            transaction = Transaction(receipts_dir=receipts, fault_injector=swap_receipts)
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            with self.assertRaises(ValueError):
+                transaction.apply(True)
+            self.assertEqual([], list(external.iterdir()))
+            self.assertEqual('{"before": true}\n', target.read_text())
+
+    def test_mode_only_change_after_preview_aborts_before_pending_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text('{"before": true}\n')
+            os.chmod(target, 0o640)
+            def chmod_after_preview(point):
+                if point == "before_journal_capture":
+                    os.chmod(target, 0o600)
+            transaction = Transaction(receipts_dir=root / "receipts", fault_injector=chmod_after_preview)
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            with self.assertRaises(ValueError):
+                transaction.apply(True)
+            self.assertEqual(0o600, target.stat().st_mode & 0o777)
+
+    def test_repeated_rollback_restores_mode_after_later_chmod(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text('{"before": true}\n')
+            os.chmod(target, 0o640)
+            transaction = Transaction(receipts_dir=root / "receipts")
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            receipt = transaction.apply(True)
+            self.assertEqual("rolled_back", rollback(receipt.receipt_path).status)
+            os.chmod(target, 0o600)
+            self.assertEqual("rolled_back", rollback(receipt.receipt_path).status)
+            self.assertEqual(0o640, target.stat().st_mode & 0o777)
+
+    def test_cli_render_refuses_leaf_and_ancestor_symlink_targets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            real = root / "real"
+            real.mkdir()
+            target = real / "providers.json"
+            target.write_text("{}\n")
+            leaf = root / "leaf.json"
+            leaf.symlink_to(target)
+            ancestor = root / "ancestor"
+            ancestor.symlink_to(real, target_is_directory=True)
+            for candidate in (leaf, ancestor / "providers.json"):
+                with self.subTest(candidate=candidate):
+                    output = StringIO()
+                    with redirect_stdout(output):
+                        self.assertEqual(2, main(["wire", "render", "mlx-community/Test-4bit", "--target", "mlx_lm", "--path", str(candidate), "--json"]))
+                    self.assertEqual("wire_failed", json.loads(output.getvalue())["error"]["code"])
+
     def test_cli_status_refuses_swapped_receipt_ancestor_before_read(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -295,7 +295,7 @@ def _wire_failure(operation, code, message, remediation, data=None):
 
 def _wire_render(arguments):
     path = _assert_safe_target(arguments.path)
-    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    existing = _read_regular(path).decode("utf-8")
     adapter = ConfigAdapter.detect(path, runtime=arguments.target)
     content = adapter.render(arguments.model, arguments.target, existing)
     adapter.validate(content)

@@ -1,0 +1,145 @@
+{
+  "$schema": "schemas/plugin.schema.json",
+  "schema_version": "1.0",
+  "identity": "mlx-agent",
+  "scopes": [
+    "user",
+    "project"
+  ],
+  "requirements": {
+    "python3": ">=3.9"
+  },
+  "safety": {
+    "auto_install_provider_cli": false,
+    "auto_download_model": false,
+    "persist_secrets": false
+  },
+  "capabilities": {
+    "scout": {
+      "command": "mlx-scout",
+      "description": "Discover MLX models suitable for the current host.",
+      "arguments": [
+        {
+          "name": "role",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "required": false
+        },
+        {
+          "name": "offline",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    "adopt": {
+      "command": "mlx-adopt",
+      "description": "Verify and recommend an MLX model for a requested role.",
+      "arguments": [
+        {
+          "name": "role",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "offline",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    "wire": {
+      "command": "mlx-wire",
+      "description": "Preview and confirm wiring a chosen MLX model.",
+      "arguments": [
+        {
+          "name": "model",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "scope",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "confirm",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    }
+  },
+  "providers": {
+    "claude": {
+      "native": true,
+      "capabilities": [
+        "scout",
+        "adopt",
+        "wire"
+      ],
+      "commands": [
+        "mlx-scout",
+        "mlx-adopt",
+        "mlx-wire"
+      ]
+    },
+    "codex": {
+      "native": true,
+      "capabilities": [
+        "scout",
+        "adopt",
+        "wire"
+      ],
+      "commands": [
+        "mlx-scout",
+        "mlx-adopt",
+        "mlx-wire"
+      ]
+    },
+    "gemini": {
+      "native": true,
+      "capabilities": [
+        "scout",
+        "adopt",
+        "wire"
+      ],
+      "commands": [
+        "mlx-scout",
+        "mlx-adopt",
+        "mlx-wire"
+      ]
+    },
+    "opencode": {
+      "native": true,
+      "capabilities": [
+        "scout",
+        "adopt",
+        "wire"
+      ],
+      "commands": [
+        "mlx-scout",
+        "mlx-adopt",
+        "mlx-wire"
+      ]
+    },
+    "agentskills": {
+      "native": false,
+      "capabilities": [
+        "scout",
+        "adopt",
+        "wire"
+      ],
+      "commands": []
+    }
+  }
+}

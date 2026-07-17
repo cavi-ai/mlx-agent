@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mlx-agent.dev/schemas/plugin.schema.json",
+  "title": "MLX Agent canonical plugin manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "identity",
+    "scopes",
+    "requirements",
+    "safety",
+    "capabilities",
+    "providers"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "identity": {
+      "const": "mlx-agent"
+    },
+    "scopes": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "user",
+          "project"
+        ]
+      },
+      "uniqueItems": true,
+      "minItems": 2
+    },
+    "requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "python3"
+      ],
+      "properties": {
+        "python3": {
+          "const": ">=3.9"
+        }
+      }
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "auto_install_provider_cli",
+        "auto_download_model",
+        "persist_secrets"
+      ],
+      "properties": {
+        "auto_install_provider_cli": {
+          "const": false
+        },
+        "auto_download_model": {
+          "const": false
+        },
+        "persist_secrets": {
+          "const": false
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scout",
+        "adopt",
+        "wire"
+      ],
+      "properties": {
+        "scout": {
+          "$ref": "#/$defs/capability"
+        },
+        "adopt": {
+          "$ref": "#/$defs/capability"
+        },
+        "wire": {
+          "$ref": "#/$defs/capability"
+        }
+      }
+    },
+    "providers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claude",
+        "codex",
+        "gemini",
+        "opencode",
+        "agentskills"
+      ],
+      "properties": {
+        "claude": {
+          "$ref": "#/$defs/provider"
+        },
+        "codex": {
+          "$ref": "#/$defs/provider"
+        },
+        "gemini": {
+          "$ref": "#/$defs/provider"
+        },
+        "opencode": {
+          "$ref": "#/$defs/provider"
+        },
+        "agentskills": {
+          "$ref": "#/$defs/provider"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "argument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type",
+        "required"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": [
+            "string",
+            "integer",
+            "boolean"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "description",
+        "arguments"
+      ],
+      "properties": {
+        "command": {
+          "type": "string",
+          "pattern": "^mlx-(scout|adopt|wire)$"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "arguments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/argument"
+          }
+        }
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "native",
+        "capabilities",
+        "commands"
+      ],
+      "properties": {
+        "native": {
+          "type": "boolean"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "scout",
+              "adopt",
+              "wire"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

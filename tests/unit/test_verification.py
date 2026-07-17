@@ -133,6 +133,46 @@ class VerificationTests(unittest.TestCase):
         self.assertTrue(evidence.reasoning_confirmed)
         self.assertTrue(evidence.loads)
 
+    def test_visible_content_does_not_override_runtime_reasoning_signal(self):
+        runtime = FakeRuntimeClient(
+            ["local/thinking-7b"],
+            responses={
+                "local/thinking-7b": {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "final answer",
+                                "reasoning_content": "hidden chain of thought",
+                            }
+                        }
+                    ]
+                }
+            },
+        )
+
+        evidence = Verifier(runtime_clients=[runtime]).verify(
+            {"repo": "local/thinking-7b", "role": "general"},
+            {"ram_gb": 16},
+            allow_network=False,
+        )
+
+        self.assertTrue(evidence.reasoning_confirmed)
+        self.assertEqual(evidence.details["reasoning_evidence"], "runtime_hidden")
+
+    def test_metadata_reasoning_tag_confirms_reasoning_for_missing_model(self):
+        metadata = FakeMetadataClient(
+            {"remote/reasoner-7b": {"metadata_available": True, "tags": ["reasoning"]}}
+        )
+
+        evidence = Verifier(runtime_clients=[], metadata_client=metadata).verify(
+            {"repo": "remote/reasoner-7b", "role": "general", "reasoning": False},
+            {"ram_gb": 16},
+        )
+
+        self.assertEqual(evidence.strength, EvidenceStrength.METADATA_ONLY)
+        self.assertTrue(evidence.reasoning_confirmed)
+        self.assertEqual(evidence.details["reasoning_evidence"], "metadata_tags")
+
     def test_runtime_and_metadata_failures_become_bounded_evidence(self):
         runtime = FakeRuntimeClient(
             ["local/broken-7b"], failures={"local/broken-7b": "generation failed"}

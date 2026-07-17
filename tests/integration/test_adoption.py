@@ -80,6 +80,22 @@ class TrackingVerifier:
         )
 
 
+class MetadataReasoningVerifier:
+    def verify(self, item, host, allow_network=True):
+        del host, allow_network
+        return VerificationEvidence(
+            repo=item["repo"],
+            role=item["role"],
+            strength=EvidenceStrength.METADATA_ONLY,
+            available_locally=False,
+            loads=None,
+            reasoning_confirmed=True,
+            runtime=None,
+            note="Repository metadata tag confirms reasoning behavior.",
+            details={"reasoning_evidence": "metadata_tags"},
+        )
+
+
 class AdoptionWorkflowTests(unittest.TestCase):
     def _advance_to(self, workflow, state, phase):
         while state.phase != phase:
@@ -195,6 +211,110 @@ class AdoptionWorkflowTests(unittest.TestCase):
                 "inspect", "discover", "shortlist", "verify", "compare", "recommend", "complete"
             ))
 
+    def test_recommendation_rejects_metadata_confirmed_reasoner_for_fast_role(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workflow = AdoptionWorkflow(
+                discovery_service=FakeDiscoveryService(
+                    64, [candidate("remote/reasoner", "coding", reasoning=True, rank_score=100)]
+                ),
+                verifier=MetadataReasoningVerifier(),
+            )
+            state = workflow.start(
+                AdoptionRequest(
+                    roles=("coding",),
+                    state_path=Path(directory) / "state.json",
+                    fast=True,
+                )
+            )
+            state = self._advance_to(workflow, state, "complete")
+
+            self.assertEqual(state.recommendations, [])
+            rejected = state.comparisons[0]
+            self.assertFalse(rejected["eligible"])
+            self.assertIn("confirmed_reasoner_for_utility_role", rejected["rejection_reasons"])
+
+    def test_resume_rejects_noncontiguous_duplicate_and_phase_mismatched_completion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.json"
+            workflow = AdoptionWorkflow(
+                discovery_service=FakeDiscoveryService(32, [candidate("local/normal", "general")]),
+                verifier=TrackingVerifier(),
+            )
+            state = workflow.start(AdoptionRequest(roles=("general",), state_path=path))
+            state = self._advance_to(workflow, state, "verify")
+            saved = json.loads(path.read_text())
+
+            for completed, phase, status in (
+                (["inspect", "shortlist"], "verify", "running"),
+                (["inspect", "inspect"], "discover", "running"),
+                (["inspect"], "verify", "running"),
+                (list(PHASES[:-1]), "complete", "running"),
+                (list(PHASES), "complete", "complete"),
+            ):
+                with self.subTest(completed=completed, phase=phase, status=status):
+                    corrupt = dict(saved)
+                    corrupt["completed_phases"] = completed
+                    corrupt["phase"] = phase
+                    corrupt["status"] = status
+                    path.write_text(json.dumps(corrupt))
+                    with self.assertRaises(ValueError):
+                        workflow.resume(path)
+
+    def test_resume_rejects_state_that_claims_verification_without_current_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.json"
+            workflow = AdoptionWorkflow(
+                discovery_service=FakeDiscoveryService(32, [candidate("local/normal", "general")]),
+                verifier=TrackingVerifier(),
+            )
+            state = workflow.start(AdoptionRequest(roles=("general",), state_path=path))
+            state = self._advance_to(workflow, state, "verify")
+            saved = json.loads(path.read_text())
+            saved["completed_phases"].append("verify")
+            saved["phase"] = "compare"
+            saved["evidence"] = []
+            path.write_text(json.dumps(saved))
+
+            with self.assertRaises(ValueError):
+                workflow.resume(path)
+
+    def test_resume_rejects_invalid_nested_schema_values(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.json"
+            workflow = AdoptionWorkflow(
+                discovery_service=FakeDiscoveryService(32, []), verifier=TrackingVerifier()
+            )
+            state = workflow.start(AdoptionRequest(roles=("general",), state_path=path))
+            saved = state.to_dict()
+
+            invalid_values = []
+            invalid_evidence = dict(saved)
+            invalid_evidence["evidence"] = [{
+                "repo": "local/model", "role": "general", "strength": "invalid",
+                "available_locally": True, "loads": True, "reasoning_confirmed": False,
+                "runtime": "fake", "note": "x", "details": {},
+            }]
+            invalid_values.append(invalid_evidence)
+            missing_evidence_field = dict(saved)
+            missing_evidence_field["evidence"] = [{"repo": "local/model"}]
+            invalid_values.append(missing_evidence_field)
+            invalid_timestamp = dict(saved)
+            invalid_timestamp["created_at"] = "not-a-timestamp"
+            invalid_values.append(invalid_timestamp)
+            too_many_warnings = dict(saved)
+            too_many_warnings["warnings"] = [{}] * 51
+            invalid_values.append(too_many_warnings)
+            empty_roles = dict(saved)
+            empty_roles["request"] = dict(saved["request"])
+            empty_roles["request"]["roles"] = []
+            invalid_values.append(empty_roles)
+
+            for corrupt in invalid_values:
+                with self.subTest(corrupt=corrupt):
+                    path.write_text(json.dumps(corrupt))
+                    with self.assertRaises((TypeError, ValueError)):
+                        workflow.resume(path)
+
     def test_schema_and_cli_status_expose_bounded_structured_state(self):
         root = Path(__file__).resolve().parents[2]
         schema = json.loads((root / "schemas" / "adoption-state.schema.json").read_text())
@@ -255,6 +375,29 @@ class AdoptionWorkflowTests(unittest.TestCase):
                 self.assertEqual(resume_code, 0)
                 self.assertEqual(resumed["operation"], "adopt-resume")
                 self.assertEqual(resumed["data"]["state"]["phase"], "complete")
+            finally:
+                if original_fixture is None:
+                    os.environ.pop("MLX_AGENT_FIXTURE", None)
+                else:
+                    os.environ["MLX_AGENT_FIXTURE"] = original_fixture
+
+    def test_cli_invalid_fixture_uses_adopt_operation_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Path(directory) / "invalid-fixture.json"
+            fixture.write_text("[]")
+            state = Path(directory) / "state.json"
+            original_fixture = os.environ.get("MLX_AGENT_FIXTURE")
+            os.environ["MLX_AGENT_FIXTURE"] = str(fixture)
+            try:
+                for command in ("start", "resume"):
+                    with self.subTest(command=command):
+                        output = io.StringIO()
+                        with contextlib.redirect_stdout(output):
+                            code = main(["adopt", command, "--state", str(state), "--json"])
+                        envelope = json.loads(output.getvalue())
+                        self.assertEqual(code, 2)
+                        self.assertEqual(envelope["operation"], "adopt-{0}".format(command))
+                        self.assertEqual(envelope["error"]["code"], "invalid_fixture")
             finally:
                 if original_fixture is None:
                     os.environ.pop("MLX_AGENT_FIXTURE", None)

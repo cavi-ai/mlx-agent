@@ -204,7 +204,14 @@ def _run_adoption(arguments):
 
     service, fixture_warning, fixture_error = _discovery_service_from_environment()
     if fixture_error:
-        return _emit_adoption_result(fixture_error, arguments.json)
+        error = fixture_error.to_dict()["error"]
+        return _emit_adoption_result(ResultEnvelope.fail(
+            operation,
+            error["code"],
+            error["message"],
+            error["remediation"],
+            retryable=error["retryable"],
+        ), arguments.json)
     workflow = AdoptionWorkflow(
         discovery_service=service,
         verifier=Verifier(metadata_client=getattr(service, "_huggingface", None)),

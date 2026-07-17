@@ -158,9 +158,9 @@ class Verifier:
                     max_tokens=24,
                 )
                 content, hidden_reasoning = _generation_text(response)
-                reasoning_confirmed = bool(hidden_reasoning and not content.strip())
-                if content.strip():
-                    reasoning_confirmed = False
+                reasoning_confirmed, reasoning_evidence = _reasoning_confirmation(
+                    candidate, hidden_reasoning
+                )
                 return VerificationEvidence(
                     repo=repo,
                     role=role,
@@ -170,7 +170,11 @@ class Verifier:
                     reasoning_confirmed=reasoning_confirmed,
                     runtime=runtime_name,
                     note="Runtime generation completed without downloading the model.",
-                    details={"visible_content": bool(content.strip()), "hidden_reasoning": bool(hidden_reasoning)},
+                    details={
+                        "visible_content": bool(content.strip()),
+                        "hidden_reasoning": bool(hidden_reasoning),
+                        "reasoning_evidence": reasoning_evidence,
+                    },
                 )
             except Exception as error:
                 return VerificationEvidence(
@@ -188,16 +192,21 @@ class Verifier:
         if allow_network and self._metadata_client is not None:
             try:
                 metadata = self._metadata_client.inspect_model(repo)
+                reasoning_confirmed, reasoning_evidence = _reasoning_confirmation(
+                    candidate, metadata
+                )
+                details = _bounded_metadata(metadata)
+                details["reasoning_evidence"] = reasoning_evidence
                 return VerificationEvidence(
                     repo=repo,
                     role=role,
                     strength=EvidenceStrength.METADATA_ONLY,
                     available_locally=False,
                     loads=None,
-                    reasoning_confirmed=None,
+                    reasoning_confirmed=reasoning_confirmed,
                     runtime=None,
                     note="Model is not installed; repository metadata was inspected without downloading it.",
-                    details=_bounded_metadata(metadata),
+                    details=details,
                 )
             except Exception as error:
                 inventory_errors.append("metadata: {0}".format(error))
@@ -274,6 +283,26 @@ def _generation_text(response):
         or ""
     )
     return str(content), str(hidden)
+
+
+def _reasoning_confirmation(candidate, signal):
+    """Prefer any positive runtime or metadata signal over an inconclusive probe."""
+    if isinstance(signal, str) and signal.strip():
+        return True, "runtime_hidden"
+    if isinstance(signal, dict):
+        if signal.get("reasoning") is True:
+            source = signal.get("reason_src") or "field"
+            return True, "metadata_{0}".format(source)
+        tags = signal.get("tags") or []
+        if any(str(tag).lower() in ("reasoning", "thinking", "chain-of-thought") for tag in tags):
+            return True, "metadata_tags"
+        if signal.get("chat_template"):
+            return True, "metadata_chat_template"
+    if candidate.get("reasoning") is True and candidate.get("reason_src") in (
+        "chat_template", "tags",
+    ):
+        return True, "discovery_{0}".format(candidate["reason_src"])
+    return False, "none"
 
 
 def _bounded(value, limit=300):

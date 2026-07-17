@@ -51,10 +51,19 @@ class AdoptionRequest:
     fast: bool = False
 
     def __post_init__(self):
-        supplied_roles = (self.roles,) if isinstance(self.roles, str) else self.roles
-        roles = tuple(dict.fromkeys(str(role) for role in supplied_roles))
+        if isinstance(self.roles, str):
+            supplied_roles = (self.roles,)
+        elif isinstance(self.roles, (list, tuple)):
+            supplied_roles = tuple(self.roles)
+        else:
+            raise TypeError("roles must be a string or an array of strings")
+        if any(not isinstance(role, str) or not role for role in supplied_roles):
+            raise TypeError("roles must contain non-empty strings")
+        roles = tuple(supplied_roles)
         if not roles or any(role not in ALLOWED_ROLES for role in roles) or len(roles) > 5:
             raise ValueError("roles must contain one to five supported roles")
+        if len(set(roles)) != len(roles):
+            raise ValueError("roles must not contain duplicates")
         if not isinstance(self.shortlist_limit, int) or isinstance(self.shortlist_limit, bool):
             raise TypeError("shortlist_limit must be an integer")
         if self.shortlist_limit < 1 or self.shortlist_limit > 20:
@@ -103,7 +112,7 @@ class AdoptionRequest:
         if unknown:
             raise ValueError("adoption request has unexpected keys: {0}".format(unknown))
         return cls(
-            roles=tuple(value.get("roles") or ("general",)),
+            roles=value.get("roles", ("general",)),
             state_path=state_path or value.get("state_path") or value.get("state"),
             shortlist_limit=value.get("shortlist_limit", value.get("limit", 4)),
             allow_network=value.get("allow_network", True),
@@ -423,23 +432,167 @@ def _validate_state(value):
         raise ValueError("adoption state has unexpected keys: {0}".format(unexpected))
     if value["schema_version"] != ADOPTION_SCHEMA_VERSION:
         raise ValueError("unsupported adoption state schema version")
+    if not isinstance(value["workflow_id"], str) or not value["workflow_id"]:
+        raise ValueError("workflow_id must be a non-empty string")
     if value["phase"] not in PHASES:
         raise ValueError("invalid adoption phase")
     if value["status"] not in ("running", "complete"):
         raise ValueError("invalid adoption status")
-    if not isinstance(value["completed_phases"], list) or any(
-        phase not in PHASES[:-1] for phase in value["completed_phases"]
-    ):
-        raise ValueError("completed_phases contains an invalid phase")
+    _validate_completed_phases(value)
     if not isinstance(value["request"], dict):
         raise TypeError("adoption request must be an object")
+    _validate_request_shape(value["request"])
     AdoptionRequest.from_dict(value["request"])
     for key in ("host", "discovery"):
         if not isinstance(value[key], dict):
             raise TypeError("{0} must be an object".format(key))
-    for key in ("shortlist", "evidence", "comparisons", "recommendations", "warnings", "errors"):
+    bounds = {
+        "shortlist": 100,
+        "evidence": 100,
+        "comparisons": 100,
+        "recommendations": 5,
+        "warnings": 50,
+        "errors": 50,
+    }
+    for key, maximum in bounds.items():
         if not isinstance(value[key], list):
             raise TypeError("{0} must be an array".format(key))
+        if len(value[key]) > maximum:
+            raise ValueError("{0} exceeds its maximum size".format(key))
+    _validate_timestamp(value["created_at"], "created_at")
+    _validate_timestamp(value["updated_at"], "updated_at")
+    _validate_evidence(value["evidence"])
+    _validate_phase_artifacts(value)
+
+
+def _validate_completed_phases(value):
+    completed = value["completed_phases"]
+    if not isinstance(completed, list):
+        raise TypeError("completed_phases must be an array")
+    if len(completed) > len(PHASES) - 1:
+        raise ValueError("completed_phases contains an invalid phase")
+    expected = list(PHASES[:len(completed)])
+    if completed != expected:
+        raise ValueError("completed_phases must be a unique contiguous phase prefix")
+    expected_phase = PHASES[len(completed)]
+    if value["phase"] != expected_phase:
+        raise ValueError("phase does not match completed_phases")
+    expected_status = "complete" if expected_phase == "complete" else "running"
+    if value["status"] != expected_status:
+        raise ValueError("status does not match phase")
+
+
+def _validate_request_shape(request):
+    required = {
+        "roles", "shortlist_limit", "allow_network", "offline", "refresh",
+        "memory_gb", "quantization", "licenses", "include_gated", "publishers",
+        "runtime", "fast",
+    }
+    if set(request) != required:
+        raise ValueError("adoption request does not match the persisted schema")
+    if not isinstance(request["roles"], list) or not request["roles"]:
+        raise ValueError("request.roles must be a non-empty array")
+    if len(request["roles"]) > 5 or len(set(request["roles"])) != len(request["roles"]):
+        raise ValueError("request.roles must be bounded and unique")
+    if any(not isinstance(role, str) or not role for role in request["roles"]):
+        raise TypeError("request.roles must contain non-empty strings")
+    if not isinstance(request["shortlist_limit"], int) or isinstance(request["shortlist_limit"], bool):
+        raise TypeError("request.shortlist_limit must be an integer")
+    if not 1 <= request["shortlist_limit"] <= 20:
+        raise ValueError("request.shortlist_limit is out of range")
+    for key in ("allow_network", "offline", "refresh", "include_gated", "fast"):
+        if not isinstance(request[key], bool):
+            raise TypeError("request.{0} must be a boolean".format(key))
+    if request["memory_gb"] is not None and (
+        not isinstance(request["memory_gb"], (int, float)) or isinstance(request["memory_gb"], bool)
+    ):
+        raise TypeError("request.memory_gb must be a number or null")
+    for key in ("quantization", "runtime"):
+        if request[key] is not None and not isinstance(request[key], str):
+            raise TypeError("request.{0} must be a string or null".format(key))
+    for key in ("licenses", "publishers"):
+        if not isinstance(request[key], list) or len(request[key]) > 20:
+            raise ValueError("request.{0} must be a bounded array".format(key))
+        if any(not isinstance(item, str) for item in request[key]):
+            raise TypeError("request.{0} must contain strings".format(key))
+
+
+def _validate_timestamp(timestamp, field_name):
+    if not isinstance(timestamp, str):
+        raise TypeError("{0} must be an ISO-8601 timestamp".format(field_name))
+    normalized = timestamp[:-1] + "+00:00" if timestamp.endswith("Z") else timestamp
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        raise ValueError("{0} must be an ISO-8601 timestamp".format(field_name))
+    if parsed.tzinfo is None:
+        raise ValueError("{0} must include a timezone".format(field_name))
+
+
+def _validate_evidence(evidence):
+    required = {
+        "repo", "role", "strength", "available_locally", "loads",
+        "reasoning_confirmed", "runtime", "note", "details",
+    }
+    strengths = set(EVIDENCE_SCORES)
+    for index, item in enumerate(evidence):
+        prefix = "evidence[{0}]".format(index)
+        if not isinstance(item, dict):
+            raise TypeError("{0} must be an object".format(prefix))
+        if set(item) != required:
+            raise ValueError("{0} does not match the evidence schema".format(prefix))
+        for key in ("repo", "role", "note"):
+            if not isinstance(item[key], str) or not item[key]:
+                raise ValueError("{0}.{1} must be a non-empty string".format(prefix, key))
+        if len(item["note"]) > 300:
+            raise ValueError("{0}.note exceeds its maximum length".format(prefix))
+        if item["strength"] not in strengths:
+            raise ValueError("{0}.strength is invalid".format(prefix))
+        if not isinstance(item["available_locally"], bool):
+            raise TypeError("{0}.available_locally must be a boolean".format(prefix))
+        for key in ("loads", "reasoning_confirmed"):
+            if item[key] is not None and not isinstance(item[key], bool):
+                raise TypeError("{0}.{1} must be a boolean or null".format(prefix, key))
+        if item["runtime"] is not None and not isinstance(item["runtime"], str):
+            raise TypeError("{0}.runtime must be a string or null".format(prefix))
+        if not isinstance(item["details"], dict):
+            raise TypeError("{0}.details must be an object".format(prefix))
+
+
+def _validate_phase_artifacts(value):
+    completed = value["completed_phases"]
+    verify_complete = "verify" in completed
+    compare_complete = "compare" in completed
+    recommend_complete = "recommend" in completed
+    shortlist = value["shortlist"]
+    evidence = value["evidence"]
+    comparisons = value["comparisons"]
+    recommendations = value["recommendations"]
+    if not verify_complete and evidence:
+        raise ValueError("evidence is not valid before verification completes")
+    if verify_complete:
+        _validate_records_match(shortlist, evidence, "evidence")
+    if not compare_complete and comparisons:
+        raise ValueError("comparisons are not valid before comparison completes")
+    if compare_complete:
+        _validate_records_match(shortlist, comparisons, "comparisons")
+    if not recommend_complete and recommendations:
+        raise ValueError("recommendations are not valid before recommendation completes")
+
+
+def _validate_records_match(shortlist, records, field_name):
+    if len(shortlist) != len(records):
+        raise ValueError("{0} does not cover the current shortlist".format(field_name))
+    for index, (candidate, record) in enumerate(zip(shortlist, records)):
+        if not isinstance(candidate, dict) or not isinstance(record, dict):
+            raise TypeError("{0}[{1}] must be an object".format(field_name, index))
+        candidate_repo = candidate.get("repo") or candidate.get("repository")
+        if not isinstance(candidate_repo, str) or not candidate_repo:
+            raise ValueError("shortlist[{0}] has no repository".format(index))
+        if not isinstance(candidate.get("role"), str) or not candidate["role"]:
+            raise ValueError("shortlist[{0}] has no role".format(index))
+        if record.get("repo") != candidate_repo or record.get("role") != candidate["role"]:
+            raise ValueError("{0}[{1}] does not match the current shortlist".format(field_name, index))
 
 
 def _string_list(value):

@@ -11,6 +11,15 @@ class HostInventory:
     ollama: bool = False
     lmstudio: bool = False
 
+    @staticmethod
+    def runtime_supports(runtime, role):
+        """Whether a runtime can serve the requested model class, independent of install state."""
+        if runtime == "mlx-vlm":
+            return True
+        if role == "vision":
+            return False
+        return runtime in ("mlx_lm", "ollama", "lmstudio", "litellm")
+
     @classmethod
     def detect(cls, http_get, check_output=None):
         check_output = check_output or subprocess.check_output

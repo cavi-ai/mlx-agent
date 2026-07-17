@@ -29,6 +29,22 @@ QUANT_GB_PER_B = [
 QUANT_RANK = [("bf16", 6), ("fp16", 6), ("8bit", 5), ("q8", 5), ("6bit", 4), ("q6", 4), ("4bit", 3), ("q4", 3), ("mxfp4", 3), ("3bit", 2), ("2bit", 1)]
 
 
+def infer_quantization(value):
+    """Return a normalized name-derived quantization, never a measured property."""
+    low = value.lower()
+    for name, patterns in [
+        ("fp16", ("fp16", "bf16", "f16")),
+        ("8bit", ("8bit", "q8", "int8", "fp8")),
+        ("6bit", ("6bit", "q6")),
+        ("4bit", ("4bit", "q4", "int4", "mxfp4", "nvfp4")),
+        ("3bit", ("3bit", "q3")),
+        ("2bit", ("2bit", "q2")),
+    ]:
+        if any(pattern in low for pattern in patterns):
+            return name
+    return None
+
+
 def name_ram_gb(repo):
     match = PARAM_RE.search(repo)
     if not match:

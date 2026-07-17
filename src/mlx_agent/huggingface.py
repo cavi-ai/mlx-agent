@@ -30,7 +30,7 @@ class HuggingFaceClient:
         return self._http_get("{0}?{1}".format(HF_API, query))
 
     def inspect_model(self, repo):
-        output = {"weight_bytes": None, "tags": [], "gated": False, "license": None, "reasoning": None, "reason_src": None, "params_total": None}
+        output = {"weight_bytes": None, "tags": [], "gated": False, "license": None, "reasoning": None, "reason_src": None, "params_total": None, "repository_url": "https://huggingface.co/{0}".format(repo)}
         quoted = urllib.parse.quote(repo)
         try:
             metadata = self._http_get("{0}/{1}".format(HF_API, quoted), timeout=8)

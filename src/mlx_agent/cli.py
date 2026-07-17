@@ -37,10 +37,10 @@ def _fixture_http_get(payload):
     return get
 
 
-def _discovery_service_from_environment():
+def _discovery_service_from_environment(state_dir=None):
     fixture = os.environ.get("MLX_AGENT_FIXTURE")
     if not fixture:
-        return DiscoveryService(), None, None
+        return DiscoveryService(state_dir=state_dir), None, None
     try:
         payload = json.loads(Path(fixture).read_text())
         _validate_fixture(payload)
@@ -49,7 +49,12 @@ def _discovery_service_from_environment():
             "discover", "invalid_fixture", "MLX_AGENT_FIXTURE is invalid: {0}".format(error),
             "Use a valid test fixture or unset MLX_AGENT_FIXTURE to run live discovery.",
         )
-    service = DiscoveryService(host=HostInventory(**payload["host"]), huggingface=HuggingFaceClient(http_get=_fixture_http_get(payload)))
+    service = DiscoveryService(
+        host=HostInventory(**payload["host"]),
+        huggingface=HuggingFaceClient(http_get=_fixture_http_get(payload)),
+        state_dir=state_dir,
+        cache_enabled=False,
+    )
     return service, FIXTURE_WARNING, None
 
 
@@ -89,6 +94,17 @@ def _validate_fixture(payload):
 def _add_discovery_arguments(parser):
     parser.add_argument("--role", choices=[role for role, _keywords, _label in ROLES])
     parser.add_argument("--limit", type=int, default=6)
+    parser.add_argument("--memory-gb", type=float, help="maximum host memory budget in GB (keeps 20%% runtime headroom)")
+    parser.add_argument("--quantization", help="normalized quantization such as 4bit or q8")
+    parser.add_argument("--license", dest="licenses", action="append", help="allow only this license (repeatable)")
+    parser.add_argument("--publisher", dest="publishers", action="append", help="allow only this publisher (repeatable)")
+    parser.add_argument("--runtime", choices=["ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm"], help="require a runtime compatible with the model role")
+    parser.add_argument("--exclude-gated", dest="include_gated", action="store_false", default=True, help="exclude gated repositories")
+    parser.add_argument("--include-gated", dest="include_gated", action="store_true", help="include gated repositories (the legacy default)")
+    cache_group = parser.add_mutually_exclusive_group()
+    cache_group.add_argument("--refresh", action="store_true", help="bypass a fresh cache and fetch live evidence")
+    cache_group.add_argument("--offline", action="store_true", help="use only a matching local cache entry")
+    parser.add_argument("--state-dir", help="directory for versioned discovery cache entries")
     parser.add_argument("--new", action="store_true", help="sort by most-recently-updated")
     parser.add_argument("--fast", action="store_true", help="skip per-model enrichment (name heuristics only)")
     parser.add_argument("--json", action="store_true")
@@ -101,8 +117,21 @@ def _run_discovery(arguments, legacy):
     if arguments.wire:
         print(wire(arguments.wire, arguments.target, arguments.port))
         return 0
-    service, fixture_warning, fixture_error = _discovery_service_from_environment()
-    result = fixture_error or service.discover(DiscoveryRequest(limit=arguments.limit, role=arguments.role, new=arguments.new, fast=arguments.fast))
+    service, fixture_warning, fixture_error = _discovery_service_from_environment(arguments.state_dir)
+    result = fixture_error or service.discover(DiscoveryRequest(
+        role=arguments.role,
+        memory_gb=arguments.memory_gb,
+        quantization=arguments.quantization,
+        licenses=arguments.licenses,
+        include_gated=arguments.include_gated,
+        publishers=arguments.publishers,
+        runtime=arguments.runtime,
+        refresh=arguments.refresh,
+        offline=arguments.offline,
+        limit=arguments.limit,
+        new=arguments.new,
+        fast=arguments.fast,
+    ))
     if fixture_warning:
         result = ResultEnvelope.ok("discover", result.data, warnings=[fixture_warning])
         print("warning: synthetic fixture-backed discovery; not live Hugging Face evidence.", file=sys.stderr)

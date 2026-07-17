@@ -28,7 +28,12 @@ def command_args_root():
         details = os.lstat(str(root))
     except OSError as error:
         raise GeminiCommandError("private argument storage is unavailable") from error
-    if stat.S_ISLNK(details.st_mode) or not stat.S_ISDIR(details.st_mode) or details.st_mode & 0o077:
+    if (
+        stat.S_ISLNK(details.st_mode)
+        or not stat.S_ISDIR(details.st_mode)
+        or details.st_uid != os.getuid()
+        or stat.S_IMODE(details.st_mode) != 0o700
+    ):
         raise GeminiCommandError("private argument storage is unsafe")
     return root
 
@@ -62,7 +67,12 @@ def _read_args_file(value):
             before = os.lstat(str(path))
         except OSError as error:
             raise GeminiCommandError("argument file is unavailable") from error
-        if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+        if (
+            stat.S_ISLNK(before.st_mode)
+            or not stat.S_ISREG(before.st_mode)
+            or before.st_uid != os.getuid()
+            or stat.S_IMODE(before.st_mode) != 0o600
+        ):
             raise GeminiCommandError("argument file must be a regular file")
         if before.st_size > MAX_ARGS_BYTES:
             raise GeminiCommandError("argument file exceeds the maximum size")
@@ -72,7 +82,12 @@ def _read_args_file(value):
             opened = os.fstat(descriptor)
         except OSError as error:
             raise GeminiCommandError("argument file cannot be opened safely") from error
-        if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or opened.st_uid != os.getuid()
+            or stat.S_IMODE(opened.st_mode) != 0o600
+            or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+        ):
             raise GeminiCommandError("argument file changed before it could be read")
         data = os.read(descriptor, MAX_ARGS_BYTES + 1)
         if len(data) > MAX_ARGS_BYTES:

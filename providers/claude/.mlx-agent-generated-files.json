@@ -62,7 +62,11 @@
     },
     {
       "path": "src/mlx_agent/gemini_executor.py",
-      "sha256": "5d8b09e0bc4028118581f8644b15f9ea8695acd1ffdd7ab928f448320b7e6ccc"
+      "sha256": "1ffde9f2529a10b78f20fe8b8e938685aa82fc1bc16d69fe396cbbf1b43a8fcf"
+    },
+    {
+      "path": "src/mlx_agent/gemini_transport.py",
+      "sha256": "cb4d03c93a8eda1285669ac085537d91ce240cb08ac18699902c4617d0af493d"
     },
     {
       "path": "src/mlx_agent/host.py",

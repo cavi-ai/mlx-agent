@@ -17,10 +17,17 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from mlx_agent.installer import Installer
 from mlx_agent.gemini_args import GeminiArgumentError, parse_gemini_arguments
 from mlx_agent.gemini_executor import GeminiCommandError, command_args_root, execute_gemini_command
+from mlx_agent.gemini_transport import (
+    GeminiTransportError,
+    extract_untrusted_payload,
+    simulate_toml_transport,
+    substitute_toml_args,
+)
 from mlx_agent.providers import ProviderRegistry
 
 
@@ -103,7 +110,13 @@ class GeminiAdapterContractTests(unittest.TestCase):
                 self.assertIn("mlx_agent.gemini_executor", skill_text)
                 self.assertIn("non-shell file-writing tool/API", skill_text)
                 self.assertIn("never interpolate raw", skill_text.lower())
+                self.assertNotIn("<arguments>", skill_text)
+                self.assertNotIn("scripts/mlx-agent", skill_text)
+                self.assertNotIn("python3 <skill-dir>/scripts", skill_text)
+                self.assertIn("any bundled core launcher", skill_text)
                 self.assertTrue((skill.parent / "scripts" / "mlx-agent").is_file())
+            canonical_manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+            self.assertIn("<arguments>", generator._generic_skill_markdown(canonical_manifest, "scout"))
 
     def test_commands_are_exactly_the_manifest_capabilities_and_do_not_embed_absolute_paths(self):
         generator = load_generator()
@@ -206,6 +219,38 @@ class GeminiAdapterContractTests(unittest.TestCase):
         self.assertFalse(args_file.exists())
         self.assertIn('"operation": "discover"', output.getvalue())
 
+    def test_gemini_transport_contract_simulates_toml_payload_to_fixture_scout(self):
+        generator = load_generator()
+        with tempfile.TemporaryDirectory() as directory:
+            generator.generate(("gemini",), Path(directory))
+            prompt = parse_command_toml(
+                (Path(directory) / "providers" / "gemini" / "commands" / "mlx-scout.toml").read_text(encoding="utf-8")
+            )["prompt"]
+        output = io.StringIO()
+        previous_fixture = os.environ.get("MLX_AGENT_FIXTURE")
+        os.environ["MLX_AGENT_FIXTURE"] = str(ROOT / "tests" / "fixtures" / "scout_responses.json")
+        try:
+            with contextlib.redirect_stdout(output):
+                result = simulate_toml_transport(prompt, "--limit 1 --json", "scout")
+        finally:
+            if previous_fixture is None:
+                os.environ.pop("MLX_AGENT_FIXTURE", None)
+            else:
+                os.environ["MLX_AGENT_FIXTURE"] = previous_fixture
+        self.assertEqual({"status": "ok", "capability": "scout", "exit_code": 0}, result)
+        self.assertIn('"operation": "discover"', output.getvalue())
+
+    def test_gemini_transport_contract_preserves_hostile_payload_for_rejection_and_cleanup(self):
+        prompt = "prefix\n<mlx-agent-untrusted-args>\n{{args}}\n</mlx-agent-untrusted-args>\nsuffix"
+        for raw in ("--role 'coding'; touch owned", "--role $(touch owned)", "--role coding\n--json"):
+            with self.subTest(raw=raw):
+                captured = []
+                self.assertEqual(raw, extract_untrusted_payload(substitute_toml_args(prompt, raw)))
+                with self.assertRaises(GeminiTransportError):
+                    simulate_toml_transport(prompt, raw, "scout", core=lambda argv: captured.append(argv))
+                self.assertEqual([], captured)
+                self.assertFalse(list(command_args_root().glob("transport-*.args")))
+
     def test_gemini_executor_rejects_hostile_file_input_without_invoking_core(self):
         hostile = ("--role 'coding'; touch owned", "--role $(touch owned)", "--role coding\n--json")
         for raw in hostile:
@@ -239,6 +284,33 @@ class GeminiAdapterContractTests(unittest.TestCase):
         finally:
             if outside.exists():
                 outside.unlink()
+
+    def test_gemini_executor_requires_private_file_mode_and_owner(self):
+        args_file = self._args_file("--limit 1")
+        os.chmod(args_file, 0o640)
+        try:
+            with self.assertRaises(GeminiCommandError):
+                execute_gemini_command("scout", args_file, core=lambda argv: 0)
+            self.assertFalse(args_file.exists())
+        finally:
+            if args_file.exists():
+                args_file.unlink()
+
+        foreign_owner = self._args_file("--limit 1")
+        real_fstat = os.fstat
+
+        def foreign_stat(descriptor):
+            details = real_fstat(descriptor)
+            return os.stat_result((
+                details.st_mode, details.st_ino, details.st_dev, details.st_nlink,
+                os.getuid() + 1, details.st_gid, details.st_size,
+                details.st_atime, details.st_mtime, details.st_ctime,
+            ))
+
+        with patch("mlx_agent.gemini_executor.os.fstat", side_effect=foreign_stat):
+            with self.assertRaises(GeminiCommandError):
+                execute_gemini_command("scout", foreign_owner, core=lambda argv: 0)
+        self.assertFalse(foreign_owner.exists())
 
     def test_recursive_provider_artifacts_exclude_runtime_bytecode(self):
         registry = ProviderRegistry(ROOT / "plugin.json")

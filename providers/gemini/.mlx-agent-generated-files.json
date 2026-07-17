@@ -18,7 +18,7 @@
     },
     {
       "path": "skills/mlx-adopt/SKILL.md",
-      "sha256": "7df208084d2df4924f7a4b56d7b5a506ede077dc20491211b572384fbcca5144"
+      "sha256": "1dcab6f83136355d51eb6949771c8c50d498f4b2a399f927a860b87f33cf2694"
     },
     {
       "path": "skills/mlx-adopt/scripts/mlx-agent",
@@ -54,7 +54,11 @@
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/gemini_executor.py",
-      "sha256": "5d8b09e0bc4028118581f8644b15f9ea8695acd1ffdd7ab928f448320b7e6ccc"
+      "sha256": "1ffde9f2529a10b78f20fe8b8e938685aa82fc1bc16d69fe396cbbf1b43a8fcf"
+    },
+    {
+      "path": "skills/mlx-adopt/src/mlx_agent/gemini_transport.py",
+      "sha256": "cb4d03c93a8eda1285669ac085537d91ce240cb08ac18699902c4617d0af493d"
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/host.py",
@@ -94,7 +98,7 @@
     },
     {
       "path": "skills/mlx-scout/SKILL.md",
-      "sha256": "6bdcabfe315b8f8f039388e97df22ccc0e3548ac6578b8f3fa7241d4ea828ef8"
+      "sha256": "14187d6441436257597f76af253478774319ba9713a6fbeed20f6d41b03eae8d"
     },
     {
       "path": "skills/mlx-scout/scripts/mlx-agent",
@@ -130,7 +134,11 @@
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/gemini_executor.py",
-      "sha256": "5d8b09e0bc4028118581f8644b15f9ea8695acd1ffdd7ab928f448320b7e6ccc"
+      "sha256": "1ffde9f2529a10b78f20fe8b8e938685aa82fc1bc16d69fe396cbbf1b43a8fcf"
+    },
+    {
+      "path": "skills/mlx-scout/src/mlx_agent/gemini_transport.py",
+      "sha256": "cb4d03c93a8eda1285669ac085537d91ce240cb08ac18699902c4617d0af493d"
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/host.py",
@@ -170,7 +178,7 @@
     },
     {
       "path": "skills/mlx-wire/SKILL.md",
-      "sha256": "772d20989a2d3c31a7605d2bd41c01c2aa7444a05cccf902a8d1c0e434be8263"
+      "sha256": "3688d497030626c3fd8383d72a80963e3d9aaf888bede33afbe90f45658eb579"
     },
     {
       "path": "skills/mlx-wire/scripts/mlx-agent",
@@ -206,7 +214,11 @@
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/gemini_executor.py",
-      "sha256": "5d8b09e0bc4028118581f8644b15f9ea8695acd1ffdd7ab928f448320b7e6ccc"
+      "sha256": "1ffde9f2529a10b78f20fe8b8e938685aa82fc1bc16d69fe396cbbf1b43a8fcf"
+    },
+    {
+      "path": "skills/mlx-wire/src/mlx_agent/gemini_transport.py",
+      "sha256": "cb4d03c93a8eda1285669ac085537d91ce240cb08ac18699902c4617d0af493d"
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/host.py",

@@ -3,7 +3,7 @@ name: "mlx-adopt"
 description: "Verify and recommend an MLX model for a requested role."
 ---
 
-Use `$mlx-adopt` to invoke this installed Codex skill explicitly. Codex does not support custom `/mlx-*` slash commands.
+Use `$mlx-agent:mlx-adopt` to invoke this installed Codex skill explicitly. Codex does not support custom `/mlx-*` slash commands.
 
 # MLX Adopt
 

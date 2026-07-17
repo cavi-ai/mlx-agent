@@ -3,7 +3,7 @@ name: "mlx-wire"
 description: "Preview and confirm wiring a chosen MLX model."
 ---
 
-Use `$mlx-wire` to invoke this installed Codex skill explicitly. Codex does not support custom `/mlx-*` slash commands.
+Use `$mlx-agent:mlx-wire` to invoke this installed Codex skill explicitly. Codex does not support custom `/mlx-*` slash commands.
 
 # MLX Wire
 

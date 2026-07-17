@@ -3,7 +3,7 @@ name: "mlx-scout"
 description: "Discover MLX models suitable for the current host."
 ---
 
-Use `$mlx-scout` to invoke this installed Codex skill explicitly. Codex does not support custom `/mlx-*` slash commands.
+Use `$mlx-agent:mlx-scout` to invoke this installed Codex skill explicitly. Codex does not support custom `/mlx-*` slash commands.
 
 # MLX Scout
 

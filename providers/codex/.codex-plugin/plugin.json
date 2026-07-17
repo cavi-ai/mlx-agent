@@ -27,9 +27,9 @@
       "Write"
     ],
     "defaultPrompt": [
-      "Use $mlx-scout to discover a local MLX model.",
-      "Use $mlx-adopt to recommend a model for coding.",
-      "Use $mlx-wire to preview a model configuration change."
+      "Use $mlx-agent:mlx-scout to discover a local MLX model.",
+      "Use $mlx-agent:mlx-adopt to recommend a model for coding.",
+      "Use $mlx-agent:mlx-wire to preview a model configuration change."
     ]
   }
 }

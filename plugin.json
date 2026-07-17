@@ -110,9 +110,9 @@
         "wire"
       ],
       "commands": [
-        "mlx-scout",
-        "mlx-adopt",
-        "mlx-wire"
+        "mlx-agent:mlx-scout",
+        "mlx-agent:mlx-adopt",
+        "mlx-agent:mlx-wire"
       ],
       "invocation": {
         "kind": "skill",
@@ -120,7 +120,7 @@
       },
       "detect_commands": ["codex"],
       "user_root": "{home}/plugins/mlx-agent",
-      "project_root": "{project}/.agents/plugins/mlx-agent",
+      "project_root": "{project}/plugins/mlx-agent",
       "artifacts": [
         {"source": "providers/codex/.codex-plugin", "destination": ".codex-plugin"},
         {"source": "providers/codex/skills/mlx-scout", "destination": "skills/mlx-scout"},

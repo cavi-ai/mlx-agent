@@ -123,7 +123,7 @@ def _codex_skill_markdown(manifest: Mapping[str, object], capability: str) -> st
     """Render a Codex skill rather than an unsupported custom slash command."""
 
     content = _generic_skill_markdown(manifest, capability)
-    invocation = "$mlx-{0}".format(capability)
+    invocation = "$mlx-agent:mlx-{0}".format(capability)
     marker = "\n# MLX {0}\n".format(capability.title())
     return content.replace(
         marker,
@@ -194,9 +194,9 @@ def _codex_plugin_metadata(manifest: Mapping[str, object]) -> str:
             "category": "Developer Tools",
             "capabilities": ["Interactive", "Write"],
             "defaultPrompt": [
-                "Use $mlx-scout to discover a local MLX model.",
-                "Use $mlx-adopt to recommend a model for coding.",
-                "Use $mlx-wire to preview a model configuration change.",
+                "Use $mlx-agent:mlx-scout to discover a local MLX model.",
+                "Use $mlx-agent:mlx-adopt to recommend a model for coding.",
+                "Use $mlx-agent:mlx-wire to preview a model configuration change.",
             ],
         },
     }

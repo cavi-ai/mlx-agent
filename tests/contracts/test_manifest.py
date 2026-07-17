@@ -18,21 +18,25 @@ class ManifestTests(unittest.TestCase):
             {"claude", "codex", "gemini", "opencode", "agentskills"},
         )
         self.assertEqual(validate_manifest(ROOT / "plugin.json"), [])
-        for provider in ("claude", "codex", "gemini", "opencode"):
+        for provider in ("claude", "gemini", "opencode"):
             self.assertEqual(
                 manifest["providers"][provider]["commands"],
                 ["mlx-scout", "mlx-adopt", "mlx-wire"],
             )
+        self.assertEqual(
+            ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire"],
+            manifest["providers"]["codex"]["commands"],
+        )
 
     def test_manifest_validator_reports_native_command_drift(self):
         manifest = json.loads((ROOT / "plugin.json").read_text())
-        manifest["providers"]["codex"]["commands"] = ["mlx-scout"]
+        manifest["providers"]["codex"]["commands"] = ["mlx-agent:mlx-scout"]
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "plugin.json"
             path.write_text(json.dumps(manifest))
             errors = validate_manifest(path)
         self.assertIn(
-            "providers.codex.commands must equal ['mlx-scout', 'mlx-adopt', 'mlx-wire']",
+            "providers.codex.commands must equal ['mlx-agent:mlx-scout', 'mlx-agent:mlx-adopt', 'mlx-agent:mlx-wire']",
             errors,
         )
 

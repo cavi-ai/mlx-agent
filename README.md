@@ -31,6 +31,14 @@ claude plugin install mlx-agent
 
 Then use `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, or just ask *"what local model should I use for coding?"*
 
+## Provider invocation
+
+- **Codex:** install the native plugin, then invoke `$mlx-agent:mlx-scout`,
+  `$mlx-agent:mlx-adopt`, or `$mlx-agent:mlx-wire`. Current Codex does not
+  support custom slash commands.
+- **Claude Code, Gemini CLI, and OpenCode:** use `/mlx-scout`, `/mlx-adopt`, or
+  `/mlx-wire` where their native command adapters are installed.
+
 ## Quick look
 
 ```console

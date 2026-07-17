@@ -18,6 +18,13 @@ PROVIDER_INVOCATIONS = {
     "opencode": {"kind": "command", "prefix": "/"},
     "agentskills": {"kind": "skill", "prefix": ""},
 }
+PROVIDER_COMMANDS = {
+    "claude": ["mlx-scout", "mlx-adopt", "mlx-wire"],
+    "codex": ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire"],
+    "gemini": ["mlx-scout", "mlx-adopt", "mlx-wire"],
+    "opencode": ["mlx-scout", "mlx-adopt", "mlx-wire"],
+    "agentskills": [],
+}
 DATE_TIME_PATTERN = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"
 )
@@ -148,9 +155,7 @@ def _validate_capability(value: Any, name: str, errors: List[str]) -> None:
         _validate_argument(argument, "{0}.arguments[{1}]".format(prefix, index), errors)
 
 
-def _validate_provider(
-    value: Any, name: str, expected_commands: List[str], errors: List[str]
-) -> None:
+def _validate_provider(value: Any, name: str, errors: List[str]) -> None:
     prefix = "providers.{0}".format(name)
     if not _is_dict(value):
         errors.append("{0} must be an object".format(prefix))
@@ -178,12 +183,12 @@ def _validate_provider(
     if name in NATIVE_PROVIDERS:
         if value.get("native") is not True:
             errors.append("{0}.native must be true".format(prefix))
-        if value.get("commands") != expected_commands:
-            errors.append("{0}.commands must equal {1}".format(prefix, expected_commands))
+        if value.get("commands") != PROVIDER_COMMANDS[name]:
+            errors.append("{0}.commands must equal {1}".format(prefix, PROVIDER_COMMANDS[name]))
     else:
         if value.get("native") is not False:
             errors.append("{0}.native must be false".format(prefix))
-        if value.get("commands") != []:
+        if value.get("commands") != PROVIDER_COMMANDS[name]:
             errors.append("{0}.commands must equal []".format(prefix))
 
 
@@ -255,7 +260,6 @@ def validate_manifest(path: Path) -> List[str]:
             if capability in capabilities:
                 _validate_capability(capabilities[capability], capability, errors)
 
-    expected_commands = ["mlx-{0}".format(capability) for capability in CAPABILITIES]
     providers = value.get("providers")
     if not _is_dict(providers):
         errors.append("providers must be an object")
@@ -266,7 +270,7 @@ def validate_manifest(path: Path) -> List[str]:
             )
         for provider in PROVIDERS:
             if provider in providers:
-                _validate_provider(providers[provider], provider, expected_commands, errors)
+                _validate_provider(providers[provider], provider, errors)
 
     return errors
 

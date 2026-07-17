@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Turn `mlx-agent` into a dependency-free universal plugin with native Scout, Adopt, and Wire commands for Claude Code, Codex, Gemini CLI, and OpenCode, plus generic AgentSkills packaging and a safe multi-provider installer.
+**Goal:** Turn `mlx-agent` into a dependency-free universal plugin with native Scout, Adopt, and Wire surfaces for Claude Code, Codex, Gemini CLI, and OpenCode, plus generic AgentSkills packaging and a safe multi-provider installer.
 
 **Architecture:** Extract the current script into a focused `src/mlx_agent` standard-library package, define one versioned capability manifest and structured result contract, and generate provider-native adapters from that source. A transaction-based installer applies user- or project-scoped artifacts, while the core Adopt and Wire state machines provide provider-independent behavior with native orchestration as an optional optimization.
 
@@ -12,7 +12,7 @@
 
 - Runtime compatibility remains Python 3.9+ with standard-library-only production code.
 - First-class providers are Claude Code, Codex, Gemini CLI, and OpenCode.
-- Every first-class provider exposes native `/mlx-scout`, `/mlx-adopt`, and `/mlx-wire` commands.
+- Claude Code, Gemini CLI, and OpenCode expose native `/mlx-scout`, `/mlx-adopt`, and `/mlx-wire` commands. Codex exposes installed `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, and `$mlx-agent:mlx-wire` skills; current Codex does not support custom slash commands.
 - Generic AgentSkills compatibility remains supported.
 - Scout, Adopt, and Wire have schema-equivalent results across providers.
 - User-global and project-local installation scopes are both supported.
@@ -129,11 +129,15 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(set(manifest["capabilities"]), {"scout", "adopt", "wire"})
         self.assertEqual(set(manifest["providers"]), {"claude", "codex", "gemini", "opencode", "agentskills"})
         self.assertEqual(validate_manifest(ROOT / "plugin.json"), [])
-        for provider in ("claude", "codex", "gemini", "opencode"):
+        for provider in ("claude", "gemini", "opencode"):
             self.assertEqual(
                 manifest["providers"][provider]["commands"],
                 ["mlx-scout", "mlx-adopt", "mlx-wire"],
             )
+        self.assertEqual(
+            manifest["providers"]["codex"]["commands"],
+            ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire"],
+        )
 ```
 
 - [ ] **Step 2: Run tests and verify import/manifest failures**
@@ -499,11 +503,14 @@ git commit -m "feat: generate Claude and AgentSkills adapters"
 
 ### Task 8: Add the native Codex adapter
 
+> **Verified contract supersedes the original guess:** The original plan
+> assumed custom `/mlx-*` Codex slash commands. Current verified official and
+> installed Codex behavior instead exposes namespaced installed skills:
+> `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, and `$mlx-agent:mlx-wire`.
+> Do not create `providers/codex/commands/*` artifacts.
+
 **Files:**
-- Create: `providers/codex/plugin.json`
-- Create: `providers/codex/commands/mlx-scout.md`
-- Create: `providers/codex/commands/mlx-adopt.md`
-- Create: `providers/codex/commands/mlx-wire.md`
+- Create: `providers/codex/.codex-plugin/plugin.json`
 - Create: `providers/codex/skills/mlx-scout/SKILL.md`
 - Create: `providers/codex/skills/mlx-adopt/SKILL.md`
 - Create: `providers/codex/skills/mlx-wire/SKILL.md`
@@ -513,13 +520,13 @@ git commit -m "feat: generate Claude and AgentSkills adapters"
 - Create: `tests/smoke/codex.sh`
 
 **Interfaces:**
-- Consumes: Codex's current public plugin schema and native slash-command contract captured as validation assertions in `test_codex_adapter.py`.
-- Produces: three commands named exactly `/mlx-scout`, `/mlx-adopt`, and `/mlx-wire` after installation.
-- Produces: Codex-native delegation instructions with sequential Adopt fallback.
+- Consumes: Codex's current public plugin schema and verified native installed-skill contract, captured as validation assertions in `test_codex_adapter.py`.
+- Produces: exactly `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, and `$mlx-agent:mlx-wire` after installation, with no `providers/codex/commands/*` surface.
+- Produces: Codex-native installed-skill instructions with sequential Adopt fallback.
 
 - [ ] **Step 1: Encode the current Codex public contract as failing tests**
 
-Add fixture-free structural assertions for required manifest keys, command frontmatter, skill directory names, and provider-relative root substitution. Add an installer test proving user and project destinations resolved by `ProviderDefinition("codex", ...)` match the current Codex contract.
+Add fixture-free structural assertions for `.codex-plugin/plugin.json`, the three namespaced installed-skill invocations, absence of `providers/codex/commands/*`, skill directory names, and provider-relative root substitution. Add an installer test proving user and project destinations resolved by `ProviderDefinition("codex", ...)` match the current Codex contract.
 
 - [ ] **Step 2: Verify failures**
 
@@ -529,7 +536,7 @@ Expected: FAIL because Codex artifacts are absent.
 
 - [ ] **Step 3: Generate the native Codex package**
 
-Implement the adapter using the provider's documented manifest and slash-command fields. The commands call `discover`, `adopt start/resume`, and `wire render/apply`, preserve confirmation gates, request bounded JSON, and render concise results. Do not copy Claude Workflow syntax.
+Implement the adapter using the provider's documented `.codex-plugin/plugin.json` and `skills/` fields. The installed skills call `discover`, `adopt start/resume`, and `wire render/apply`, preserve confirmation gates, request bounded JSON, and render concise results. Do not copy Claude Workflow syntax or recreate unsupported slash-command artifacts.
 
 - [ ] **Step 4: Validate and smoke-test when Codex is present**
 
@@ -539,7 +546,7 @@ Expected: all tests pass.
 
 Run: `bash tests/smoke/codex.sh`
 
-Expected: SKIP with exit 0 when Codex is unavailable; otherwise install into a temporary Codex home, list `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, invoke Scout with a fixture, uninstall, and exit 0.
+Expected: SKIP with exit 0 when Codex is unavailable; otherwise install into a temporary Codex home, use `codex debug prompt-input` to discover `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, and `$mlx-agent:mlx-wire`, invoke `$mlx-agent:mlx-scout` with a fixture-only noninteractive session, uninstall, and exit 0.
 
 - [ ] **Step 5: Commit Codex support**
 

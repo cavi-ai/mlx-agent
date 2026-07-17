@@ -225,7 +225,9 @@
             "required": ["source", "destination"],
             "properties": {
               "source": {"type": "string", "minLength": 1},
-              "destination": {"type": "string", "minLength": 1}
+              "destination": {"type": "string", "minLength": 1},
+              "project_destination": {"type": "string", "minLength": 1},
+              "scope": {"enum": ["user", "project"]}
             }
           }
         },

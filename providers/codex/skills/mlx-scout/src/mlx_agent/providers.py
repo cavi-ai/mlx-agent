@@ -10,6 +10,7 @@ from pathlib import Path
 
 
 _GEMINI_EXTENSION_SUFFIX = Path(".gemini") / "extensions" / "mlx-agent"
+_OPENCODE_CONFIG_SUFFIX = Path(".config") / "opencode"
 
 
 @dataclass(frozen=True)
@@ -122,7 +123,7 @@ class ProviderRegistry:
         if not isinstance(value["artifacts"], list) or not value["artifacts"]:
             raise ValueError("provider {0}.artifacts is invalid".format(provider_id))
         for index, artifact in enumerate(value["artifacts"]):
-            if not isinstance(artifact, dict) or set(artifact) not in ({"source", "destination"}, {"source", "destination", "project_destination"}, {"source", "destination", "project_destination", "scope"}):
+            if not isinstance(artifact, dict) or set(artifact) not in ({"source", "destination"}, {"source", "destination", "scope"}, {"source", "destination", "project_destination"}, {"source", "destination", "project_destination", "scope"}):
                 raise ValueError("provider {0}.artifacts[{1}] is invalid".format(provider_id, index))
             source = _safe_relative(artifact["source"], "artifact source")
             location = (self.manifest_path.parent / source).resolve()
@@ -152,6 +153,8 @@ class ProviderRegistry:
             raise ValueError("provider {0}.config_paths is invalid".format(provider_id))
         if provider_id == "gemini":
             self._validate_gemini_extension_layout(user_root, project_root, artifacts)
+        if provider_id == "opencode":
+            self._validate_opencode_layout(user_root, project_root, artifacts)
         return ProviderDefinition(
             id=provider_id,
             detect_commands=tuple(commands),
@@ -174,6 +177,22 @@ class ProviderRegistry:
         for item in artifacts:
             if item.project_destination is not None and item.project_destination.parts[:1] != (".gemini",):
                 raise ValueError("provider gemini project artifacts must stay under .gemini")
+
+    def _validate_opencode_layout(self, user_root, project_root, artifacts):
+        """Keep OpenCode's documented global and project discovery locations exact."""
+        if user_root != (self.home / _OPENCODE_CONFIG_SUFFIX).resolve():
+            raise ValueError("provider opencode.user_root must target home/.config/opencode")
+        if project_root != Path(".opencode"):
+            raise ValueError("provider opencode.project_root must target .opencode")
+        if not any(item.destination == Path("commands/mlx-scout.md") for item in artifacts):
+            raise ValueError("provider opencode must install native command files")
+        if not any(item.destination == Path("agents/mlx-advisor.md") for item in artifacts):
+            raise ValueError("provider opencode must install its advisor agent")
+        if not any(item.destination == Path("skills/mlx-scout/SKILL.md") for item in artifacts):
+            raise ValueError("provider opencode must install native skills")
+        config = [item for item in artifacts if item.destination == Path("opencode.json")]
+        if len(config) != 2 or not any(item.project_destination == Path("opencode.json") for item in config):
+            raise ValueError("provider opencode must map config to global and project locations")
 
     def _user_root(self, template, provider_id):
         if not isinstance(template, str) or "{project}" in template:

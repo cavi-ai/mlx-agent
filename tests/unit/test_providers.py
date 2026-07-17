@@ -26,7 +26,7 @@ class ProviderRegistryTests(unittest.TestCase):
                 with self.subTest(provider=provider_id):
                     if provider_id == "codex":
                         expected_root = root / "home/plugins/mlx-agent"
-                    elif provider_id == "gemini":
+                    elif provider_id in {"gemini", "opencode"}:
                         expected_root = root / "home"
                     else:
                         expected_root = root / "config"

@@ -62,7 +62,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/providers.py",
-      "sha256": "87ec680178dbf6cf6301e67a1dea99d36c7809c4d5db7e84d8ca0416056fd823"
+      "sha256": "287d9878a9ebffecc24632443c360a4efe7be8a1cbff99c5f46a08bcb6fedb71"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/resources/adapter-runtime.json",
@@ -142,7 +142,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/providers.py",
-      "sha256": "87ec680178dbf6cf6301e67a1dea99d36c7809c4d5db7e84d8ca0416056fd823"
+      "sha256": "287d9878a9ebffecc24632443c360a4efe7be8a1cbff99c5f46a08bcb6fedb71"
     },
     {
       "path": "mlx-scout/src/mlx_agent/resources/adapter-runtime.json",
@@ -222,7 +222,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/providers.py",
-      "sha256": "87ec680178dbf6cf6301e67a1dea99d36c7809c4d5db7e84d8ca0416056fd823"
+      "sha256": "287d9878a9ebffecc24632443c360a4efe7be8a1cbff99c5f46a08bcb6fedb71"
     },
     {
       "path": "mlx-wire/src/mlx_agent/resources/adapter-runtime.json",

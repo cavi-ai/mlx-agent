@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ManifestTests(unittest.TestCase):
-    def test_manifest_has_three_capabilities_and_four_native_providers(self):
+    def test_manifest_has_three_capabilities_and_five_native_providers(self):
         manifest = json.loads((ROOT / "plugin.json").read_text())
         self.assertEqual(set(manifest["capabilities"]), {"scout", "adopt", "wire"})
         self.assertEqual(

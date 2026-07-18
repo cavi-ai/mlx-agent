@@ -7,6 +7,7 @@
   "required": [
     "schema_version",
     "workflow_id",
+    "revision",
     "phase",
     "status",
     "request",
@@ -23,8 +24,9 @@
     "updated_at"
   ],
   "properties": {
-    "schema_version": { "const": "1.0" },
+    "schema_version": { "const": "1.1" },
     "workflow_id": { "type": "string", "minLength": 1 },
+    "revision": { "type": "integer", "minimum": 1 },
     "phase": {
       "enum": ["inspect", "discover", "shortlist", "verify", "compare", "recommend", "complete"]
     },
@@ -52,7 +54,9 @@
           "minItems": 1,
           "maxItems": 5,
           "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "enum": ["general", "coding", "reasoning", "vision", "embedding"]
+          }
         },
         "shortlist_limit": { "type": "integer", "minimum": 1, "maximum": 20 },
         "allow_network": { "type": "boolean" },
@@ -94,7 +98,7 @@
           "loads": { "type": ["boolean", "null"] },
           "reasoning_confirmed": { "type": ["boolean", "null"] },
           "runtime": { "type": ["string", "null"] },
-          "note": { "type": "string", "maxLength": 300 },
+          "note": { "type": "string", "minLength": 1, "maxLength": 300 },
           "details": { "type": "object" }
         },
         "additionalProperties": false
@@ -106,5 +110,91 @@
     "errors": { "type": "array", "maxItems": 50, "items": { "type": "object" } },
     "created_at": { "type": "string", "format": "date-time" },
     "updated_at": { "type": "string", "format": "date-time" }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "completed_phases": { "contains": { "const": "verify" } },
+          "shortlist": { "minItems": 1 }
+        }
+      },
+      "then": { "properties": { "evidence": { "minItems": 1 } } }
+    },
+    {
+      "if": {
+        "properties": {
+          "completed_phases": { "contains": { "const": "compare" } },
+          "shortlist": { "minItems": 1 }
+        }
+      },
+      "then": { "properties": { "comparisons": { "minItems": 1 } } }
+    }
+  ],
+  "oneOf": [
+    {
+      "properties": {
+        "completed_phases": { "const": [] },
+        "phase": { "const": "inspect" },
+        "status": { "const": "running" },
+        "evidence": { "maxItems": 0 },
+        "comparisons": { "maxItems": 0 },
+        "recommendations": { "maxItems": 0 }
+      }
+    },
+    {
+      "properties": {
+        "completed_phases": { "const": ["inspect"] },
+        "phase": { "const": "discover" },
+        "status": { "const": "running" },
+        "evidence": { "maxItems": 0 },
+        "comparisons": { "maxItems": 0 },
+        "recommendations": { "maxItems": 0 }
+      }
+    },
+    {
+      "properties": {
+        "completed_phases": { "const": ["inspect", "discover"] },
+        "phase": { "const": "shortlist" },
+        "status": { "const": "running" },
+        "evidence": { "maxItems": 0 },
+        "comparisons": { "maxItems": 0 },
+        "recommendations": { "maxItems": 0 }
+      }
+    },
+    {
+      "properties": {
+        "completed_phases": { "const": ["inspect", "discover", "shortlist"] },
+        "phase": { "const": "verify" },
+        "status": { "const": "running" },
+        "evidence": { "maxItems": 0 },
+        "comparisons": { "maxItems": 0 },
+        "recommendations": { "maxItems": 0 }
+      }
+    },
+    {
+      "properties": {
+        "completed_phases": { "const": ["inspect", "discover", "shortlist", "verify"] },
+        "phase": { "const": "compare" },
+        "status": { "const": "running" },
+        "comparisons": { "maxItems": 0 },
+        "recommendations": { "maxItems": 0 }
+      }
+    },
+    {
+      "properties": {
+        "completed_phases": { "const": ["inspect", "discover", "shortlist", "verify", "compare"] },
+        "phase": { "const": "recommend" },
+        "status": { "const": "running" },
+        "recommendations": { "maxItems": 0 }
+      }
+    },
+    {
+      "properties": {
+        "completed_phases": { "const": ["inspect", "discover", "shortlist", "verify", "compare", "recommend"] },
+        "phase": { "const": "complete" },
+        "status": { "const": "complete" }
+      }
+    }
+  ]
 }

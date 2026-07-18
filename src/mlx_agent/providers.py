@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import selectors
 import shutil
+import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,6 +33,11 @@ class ProviderDefinition:
     project_root: Path
     invocation_kind: str
     invocation_prefix: str
+    minimum_version: str
+    last_tested_version: str
+    version_probe_args: tuple
+    version_probe_timeout: float
+    install_mode: str
     artifacts: tuple
     config_paths: tuple
 
@@ -58,6 +67,12 @@ class ProviderDetection:
     available: bool
     command: str = ""
     command_path: str = None
+    state: str = "absent"
+    version: str = None
+    minimum_version: str = None
+    last_tested_version: str = None
+    error: str = None
+    install_mode: str = "direct"
 
     def to_dict(self):
         return {
@@ -65,11 +80,19 @@ class ProviderDetection:
             "available": self.available,
             "command": self.command or None,
             "command_path": self.command_path,
+            "state": self.state,
+            "version": self.version,
+            "minimum_version": self.minimum_version,
+            "last_tested_version": self.last_tested_version,
+            "error": self.error,
+            "install_mode": self.install_mode,
         }
 
 
-def _safe_relative(value, field):
+def _safe_relative(value, field, allow_current=False):
     path = Path(value)
+    if allow_current and str(value) == ".":
+        return path
     if path.is_absolute() or ".." in path.parts or not path.parts:
         raise ValueError("{0} must be a safe relative path".format(field))
     return path
@@ -101,7 +124,11 @@ class ProviderRegistry:
     def _definition(self, provider_id, value):
         if not isinstance(value, dict):
             raise ValueError("provider {0} must be an object".format(provider_id))
-        required = ("detect_commands", "user_root", "project_root", "artifacts", "config_paths")
+        required = (
+            "detect_commands", "user_root", "project_root", "artifacts", "config_paths",
+            "invocation", "minimum_version", "last_tested_version", "version_probe",
+            "install_mode",
+        )
         if any(key not in value for key in required):
             raise ValueError("provider {0} has no installer definition".format(provider_id))
         commands = value["detect_commands"]
@@ -109,7 +136,7 @@ class ProviderRegistry:
             raise ValueError("provider {0}.detect_commands is invalid".format(provider_id))
         user_root = self._user_root(value["user_root"], provider_id)
         project_root = self._project_root(value["project_root"], provider_id)
-        invocation = value.get("invocation", {"kind": "skill", "prefix": ""})
+        invocation = value["invocation"]
         if not isinstance(invocation, dict) or set(invocation) != {"kind", "prefix"}:
             raise ValueError("provider {0}.invocation is invalid".format(provider_id))
         invocation_kind, invocation_prefix = invocation["kind"], invocation["prefix"]
@@ -119,6 +146,38 @@ class ProviderRegistry:
             raise ValueError("provider {0}.invocation is invalid".format(provider_id))
         if invocation_kind == "skill" and invocation_prefix not in {"", "$"}:
             raise ValueError("provider {0}.invocation is invalid".format(provider_id))
+        minimum_version = value["minimum_version"]
+        last_tested_version = value["last_tested_version"]
+        for label, version in (
+            ("minimum_version", minimum_version),
+            ("last_tested_version", last_tested_version),
+        ):
+            if version is not None and not _SEMVER.fullmatch(version):
+                raise ValueError("provider {0}.{1} is invalid".format(provider_id, label))
+        probe = value["version_probe"]
+        if probe is None:
+            version_probe_args, version_probe_timeout = (), 0.0
+        elif (
+            not isinstance(probe, dict)
+            or set(probe) != {"args", "timeout_seconds"}
+            or not isinstance(probe["args"], list)
+            or not 1 <= len(probe["args"]) <= 4
+            or not all(isinstance(item, str) and item and len(item) <= 64 for item in probe["args"])
+            or not isinstance(probe["timeout_seconds"], (int, float))
+            or isinstance(probe["timeout_seconds"], bool)
+            or not 0 < probe["timeout_seconds"] <= 5
+        ):
+            raise ValueError("provider {0}.version_probe is invalid".format(provider_id))
+        else:
+            version_probe_args = tuple(probe["args"])
+            version_probe_timeout = float(probe["timeout_seconds"])
+        install_mode = value["install_mode"]
+        if install_mode not in {"direct", "staged", "portable"}:
+            raise ValueError("provider {0}.install_mode is invalid".format(provider_id))
+        if install_mode == "portable" and (commands or probe is not None or minimum_version is not None or last_tested_version is not None):
+            raise ValueError("portable providers must not declare CLI compatibility probes")
+        if install_mode != "portable" and (not commands or probe is None or minimum_version is None):
+            raise ValueError("native providers require a minimum version and bounded probe")
         artifacts = []
         if not isinstance(value["artifacts"], list) or not value["artifacts"]:
             raise ValueError("provider {0}.artifacts is invalid".format(provider_id))
@@ -126,10 +185,20 @@ class ProviderRegistry:
             if not isinstance(artifact, dict) or set(artifact) not in ({"source", "destination"}, {"source", "destination", "scope"}, {"source", "destination", "project_destination"}, {"source", "destination", "project_destination", "scope"}):
                 raise ValueError("provider {0}.artifacts[{1}] is invalid".format(provider_id, index))
             source = _safe_relative(artifact["source"], "artifact source")
-            location = (self.manifest_path.parent / source).resolve()
+            unresolved = self.manifest_path.parent / source
+            cursor = self.manifest_path.parent
+            for component in source.parts:
+                cursor = cursor / component
+                if cursor.is_symlink():
+                    raise ValueError(
+                        "provider artifact source must not contain symlinks: {0}".format(source)
+                    )
+            location = unresolved.resolve()
             if self.manifest_path.parent not in location.parents or not (location.is_file() or location.is_dir()):
                 raise ValueError("provider artifact source is outside the plugin or missing: {0}".format(source))
-            destination = _safe_relative(artifact["destination"], "artifact destination")
+            destination = _safe_relative(
+                artifact["destination"], "artifact destination", allow_current=True
+            )
             project_destination = (
                 _safe_relative(artifact["project_destination"], "artifact project_destination")
                 if "project_destination" in artifact else None
@@ -141,6 +210,10 @@ class ProviderRegistry:
                 artifacts.append(ProviderArtifact(location, destination, project_destination, scopes))
             else:
                 for child in sorted(location.rglob("*")):
+                    if child.is_symlink():
+                        raise ValueError(
+                            "provider artifact source must not contain symlinks: {0}".format(child)
+                        )
                     resolved = child.resolve()
                     relative = child.relative_to(location)
                     if "__pycache__" in relative.parts or child.suffix == ".pyc":
@@ -162,6 +235,11 @@ class ProviderRegistry:
             project_root=project_root,
             invocation_kind=invocation_kind,
             invocation_prefix=invocation_prefix,
+            minimum_version=minimum_version,
+            last_tested_version=last_tested_version,
+            version_probe_args=version_probe_args,
+            version_probe_timeout=version_probe_timeout,
+            install_mode=install_mode,
             artifacts=tuple(artifacts),
             config_paths=tuple(config_paths),
         )
@@ -220,13 +298,69 @@ class ProviderRegistry:
             raise ValueError("provider {0}.project_root is invalid".format(provider_id))
 
 
-def detect_providers(definitions, env=None, path=None, executable_lookup=None):
+_SEMVER = re.compile(r"(?<![0-9])((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))(?![0-9])")
+_MAX_VERSION_OUTPUT = 8192
+
+
+def _version_tuple(value):
+    return tuple(int(part) for part in value.split("."))
+
+
+def _run_bounded_probe(argv, *, timeout, env):
+    """Run one no-shell probe while bounding time and captured output bytes."""
+    process = subprocess.Popen(
+        argv,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        shell=False,
+        env=env,
+    )
+    selector = selectors.DefaultSelector()
+    output = bytearray()
+    deadline = time.monotonic() + timeout
+    try:
+        selector.register(process.stdout, selectors.EVENT_READ)
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(argv, timeout)
+            ready = selector.select(remaining)
+            if not ready:
+                if process.poll() is not None:
+                    break
+                raise subprocess.TimeoutExpired(argv, timeout)
+            chunk = os.read(
+                process.stdout.fileno(),
+                min(4096, _MAX_VERSION_OUTPUT + 1 - len(output)),
+            )
+            if not chunk:
+                break
+            output.extend(chunk)
+            if len(output) > _MAX_VERSION_OUTPUT:
+                raise ValueError("version probe output exceeded the bounded limit")
+        returncode = process.wait(timeout=max(0.01, deadline - time.monotonic()))
+        return subprocess.CompletedProcess(argv, returncode, bytes(output))
+    finally:
+        selector.close()
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        if process.stdout is not None:
+            process.stdout.close()
+
+
+def detect_providers(definitions, env=None, path=None, executable_lookup=None, probe_runner=None):
     """Report installed provider CLIs only; this function never installs anything."""
     environment = dict(os.environ if env is None else env)
     search_path = path if path is not None else environment.get("PATH", "")
     lookup = executable_lookup or shutil.which
     detections = []
     for definition in definitions:
+        if definition.install_mode == "portable":
+            detections.append(ProviderDetection(
+                definition.id, True, state="portable", install_mode="portable"
+            ))
+            continue
         command_path = None
         command = ""
         for candidate in definition.detect_commands:
@@ -234,5 +368,60 @@ def detect_providers(definitions, env=None, path=None, executable_lookup=None):
             if found:
                 command, command_path = candidate, str(found)
                 break
-        detections.append(ProviderDetection(definition.id, bool(command_path), command, command_path))
+        if not command_path:
+            detections.append(ProviderDetection(
+                definition.id, False, command, command_path, state="absent",
+                minimum_version=definition.minimum_version,
+                last_tested_version=definition.last_tested_version,
+                error="provider executable was not found",
+                install_mode=definition.install_mode,
+            ))
+            continue
+        try:
+            argv = [command_path] + list(definition.version_probe_args)
+            if probe_runner is None:
+                completed = _run_bounded_probe(
+                    argv,
+                    timeout=definition.version_probe_timeout,
+                    env=environment,
+                )
+            else:
+                completed = probe_runner(
+                    argv,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    timeout=definition.version_probe_timeout,
+                    check=False,
+                    shell=False,
+                    env=environment,
+                )
+            raw = completed.stdout or b""
+            if isinstance(raw, bytes):
+                output = raw[:_MAX_VERSION_OUTPUT].decode("utf-8", errors="replace")
+            else:
+                output = str(raw)[:_MAX_VERSION_OUTPUT]
+            match = _SEMVER.search(output)
+            if completed.returncode != 0 or match is None:
+                raise ValueError("version probe did not return a SemVer core")
+            version = match.group(1)
+            supported = definition.last_tested_version is not None and (
+                _version_tuple(definition.minimum_version)
+                <= _version_tuple(version)
+                <= _version_tuple(definition.last_tested_version)
+            )
+            state = "native-visible" if supported else "unsupported"
+            detections.append(ProviderDetection(
+                definition.id, supported, command, command_path, state=state,
+                version=version, minimum_version=definition.minimum_version,
+                last_tested_version=definition.last_tested_version,
+                error=None if supported else "provider version is outside the validated range",
+                install_mode=definition.install_mode,
+            ))
+        except (OSError, subprocess.SubprocessError, ValueError) as error:
+            detections.append(ProviderDetection(
+                definition.id, False, command, command_path, state="unsupported",
+                minimum_version=definition.minimum_version,
+                last_tested_version=definition.last_tested_version,
+                error=str(error), install_mode=definition.install_mode,
+            ))
     return detections

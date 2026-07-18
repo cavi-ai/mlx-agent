@@ -46,8 +46,55 @@ class InstallerRoundTripTests(unittest.TestCase):
         self.assertTrue(receipt.receipt_path)
         doctor = self.installer.plan("doctor", ["claude", "codex"], "user", self.project)
         result = self.installer.execute(doctor, confirmed=False)
-        self.assertTrue(result["healthy"])
-        self.assertEqual([], result["problems"])
+        self.assertFalse(result["healthy"])
+        self.assertEqual(
+            {"claude": "staged", "codex": "staged"},
+            {item["provider"]: item["integration_state"] for item in result["providers"]},
+        )
+        self.assertEqual(
+            ["provider_staged", "provider_staged"],
+            [item["code"] for item in result["problems"]],
+        )
+
+    def test_claude_install_stages_complete_bundle_and_all_capabilities_execute(self):
+        plan = self.installer.plan("install", ["claude"], "user", self.project)
+        receipt = self.installer.execute(plan, confirmed=plan.preview["preview_hash"])
+        self.assertEqual("applied", receipt.status)
+        package = self.home / ".claude" / "plugins" / "mlx-agent"
+        for capability in ("scout", "adopt", "wire"):
+            self.assertTrue((package / "commands" / "mlx-{0}.md".format(capability)).is_file())
+        self.assertTrue((package / ".mcp.json").is_file())
+        self.assertTrue((package / "scripts" / "mlx-agent-mcp").is_file())
+        self.assertTrue((package / "src" / "mlx_agent" / "mcp_server.py").is_file())
+
+        fixture = ROOT / "tests" / "fixtures" / "scout_responses.json"
+        environment = dict(os.environ, MLX_AGENT_FIXTURE=str(fixture))
+        launcher = package / "scripts" / "mlx-agent"
+        executions = (
+            (["discover", "--limit", "1", "--json"], "discover"),
+            ([
+                "adopt", "start", "--state", str(self.root / "claude-adoption.json"),
+                "--shortlist-limit", "1", "--fast", "--no-network", "--json",
+            ], "adopt-start"),
+            ([
+                "wire", "render", "mlx-community/Test-4bit", "--target", "mlx_lm",
+                "--path", str(self.root / "claude-mlx-lm.json"), "--json",
+            ], "wire-render"),
+        )
+        for arguments, operation in executions:
+            result = subprocess.run(
+                ["python3", str(launcher)] + arguments,
+                cwd=self.root, env=environment, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(operation, json.loads(result.stdout)["operation"])
+
+        doctor = self.installer.execute(
+            self.installer.plan("doctor", ["claude"], "user", self.project)
+        )
+        self.assertFalse(doctor["healthy"])
+        self.assertEqual("staged", doctor["providers"][0]["integration_state"])
 
     def test_project_scope_uses_only_project_root_and_reinstall_is_a_noop(self):
         definition = self.registry.definitions()["gemini"]
@@ -61,12 +108,60 @@ class InstallerRoundTripTests(unittest.TestCase):
         self.assertTrue(again.noop)
         self.assertEqual("noop", self.installer.execute(again, confirmed=False).status)
 
+    def test_plan_and_doctor_report_absent_native_provider_as_staged_not_healthy(self):
+        installer = Installer(
+            self.registry,
+            project_root=self.project,
+            executable_lookup=lambda command, path=None: None,
+        )
+        plan = installer.plan("install", ["gemini"], "project", self.project)
+        self.assertEqual("absent", plan.compatibility[0]["state"])
+        self.assertEqual(
+            "applied", installer.execute(
+                plan, confirmed=plan.preview["preview_hash"]
+            ).status,
+        )
+        result = installer.execute(
+            installer.plan("doctor", ["gemini"], "project", self.project)
+        )
+        self.assertFalse(result["healthy"])
+        self.assertEqual("staged", result["providers"][0]["integration_state"])
+        self.assertIn("provider_absent", [item["code"] for item in result["problems"]])
+
+    def test_doctor_keeps_native_visibility_separate_from_artifact_validity(self):
+        installer = Installer(
+            self.registry,
+            project_root=self.project,
+            executable_lookup=lambda command, path=None: "/fake/bin/gemini"
+            if command == "gemini" else None,
+            probe_runner=lambda argv, **kwargs: subprocess.CompletedProcess(
+                argv, 0, b"gemini 0.46.0\n"
+            ),
+        )
+        plan = installer.plan("install", ["gemini"], "user", self.project)
+        installer.execute(plan, confirmed=plan.preview["preview_hash"])
+        definition = self.registry.definitions()["gemini"]
+        target = definition.artifact_destination(
+            "user", self.project, definition.artifacts[0]
+        )
+        target.unlink()
+
+        result = installer.execute(
+            installer.plan("doctor", ["gemini"], "user", self.project)
+        )
+        self.assertFalse(result["healthy"])
+        self.assertEqual("invalid", result["providers"][0]["artifact_state"])
+        self.assertEqual("native-visible", result["providers"][0]["integration_state"])
+        codes = [item["code"] for item in result["problems"]]
+        self.assertIn("artifact_invalid", codes)
+        self.assertNotIn("provider_absent", codes)
+
     def test_agentskills_uninstall_removes_empty_owned_skill_directories_in_both_scopes(self):
         for scope in ("user", "project"):
             with self.subTest(scope=scope):
                 plan = self.installer.plan("install", ["agentskills"], scope, self.project)
                 self.assertEqual("applied", self.installer.execute(plan, confirmed=plan.preview["preview_hash"]).status)
-                root = self.config / ".agents" if scope == "user" else self.project / ".agents"
+                root = self.home / ".agents" if scope == "user" else self.project / ".agents"
                 launcher = root / "skills" / "mlx-scout" / "scripts" / "mlx-agent"
                 result = subprocess.run(
                     ["python3", str(launcher), "discover", "--limit", "1", "--json"],
@@ -162,11 +257,14 @@ class InstallerRoundTripTests(unittest.TestCase):
             os.close(descriptor)
 
     def test_cli_classifies_busy_legacy_lock(self):
-        target = self.config / ".agents" / "skills" / "mlx-scout" / "SKILL.md"
+        target = self.home / ".agents" / "skills" / "mlx-scout" / "SKILL.md"
         target.parent.mkdir(parents=True)
         legacy = target.parent / _target_lock_name(target)
         legacy.write_text("legacy\n")
-        with patch.dict(os.environ, {"MLX_AGENT_CONFIG_ROOT": str(self.config)}):
+        with patch.dict(os.environ, {
+            "MLX_AGENT_CONFIG_ROOT": str(self.config),
+            "MLX_AGENT_HOME": str(self.home),
+        }):
             preview = io.StringIO()
             with contextlib.redirect_stdout(preview):
                 self.assertEqual(0, main(["install", "agentskills", "--scope", "user", "--project", str(self.project), "--dry-run", "--json"]))
@@ -202,6 +300,11 @@ class InstallerRoundTripTests(unittest.TestCase):
             "capabilities": ["scout"],
             "commands": [],
             "detect_commands": [],
+            "invocation": {"kind": "skill", "prefix": ""},
+            "minimum_version": None,
+            "last_tested_version": None,
+            "version_probe": None,
+            "install_mode": "portable",
             "user_root": "{config_root}/fixture",
             "project_root": "{project}/.fixture",
             "artifacts": [{"source": "adapter.md", "destination": "skills/adapter.md"}],
@@ -248,6 +351,25 @@ class InstallerRoundTripTests(unittest.TestCase):
         with self.assertRaises(InstallerConflictError):
             self.installer.plan("install", ["claude"], "user", self.project)
 
+    def test_update_refuses_a_symlink_even_when_it_resolves_to_owned_identical_bytes(self):
+        definition = self.registry.definitions()["claude"]
+        artifact = definition.artifacts[0]
+        target = definition.artifact_destination("user", self.project, artifact)
+        plan = self.installer.plan("install", ["claude"], "user", self.project)
+        self.assertEqual(
+            "applied", self.installer.execute(
+                plan, confirmed=plan.preview["preview_hash"]
+            ).status,
+        )
+        outside = self.root / "outside-identical.md"
+        outside.write_bytes(target.read_bytes())
+        target.unlink()
+        target.symlink_to(outside)
+
+        with self.assertRaisesRegex(ValueError, "unsafe target leaf"):
+            self.installer.plan("update", ["claude"], "user", self.project)
+        self.assertEqual(artifact.source.read_bytes(), outside.read_bytes())
+
     def test_cli_without_a_provider_lists_detected_choices_instead_of_installing_all(self):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
@@ -257,6 +379,21 @@ class InstallerRoundTripTests(unittest.TestCase):
         self.assertEqual("install", payload["operation"])
         self.assertTrue(payload["data"]["selection_required"])
         self.assertFalse((self.project / ".claude").exists())
+
+    def test_human_preview_surfaces_explicit_provider_compatibility_diagnostics(self):
+        output = io.StringIO()
+        with patch("mlx_agent.providers.shutil.which", return_value=None), patch.dict(
+            os.environ,
+            {"MLX_AGENT_CONFIG_ROOT": str(self.config), "MLX_AGENT_HOME": str(self.home)},
+        ), contextlib.redirect_stdout(output):
+            self.assertEqual(0, main([
+                "install", "gemini", "--scope", "project", "--project", str(self.project),
+                "--dry-run",
+            ]))
+        text = output.getvalue()
+        self.assertIn("gemini: absent", text)
+        self.assertIn("provider executable was not found", text)
+        self.assertFalse((self.project / ".gemini").exists())
 
     def test_cli_applies_only_the_separately_reviewed_preview(self):
         preview_output = io.StringIO()
@@ -272,7 +409,7 @@ class InstallerRoundTripTests(unittest.TestCase):
             ]))
         receipt = json.loads(apply_output.getvalue())["data"]["result"]
         self.assertEqual("applied", receipt["status"])
-        self.assertTrue((self.project / ".claude" / "skills" / "mlx-scout" / "SKILL.md").is_file())
+        self.assertTrue((self.project / ".claude" / "plugins" / "mlx-agent" / "commands" / "mlx-scout.md").is_file())
 
     def _two_artifact_installer(self):
         manifest = json.loads((ROOT / "plugin.json").read_text())
@@ -280,6 +417,9 @@ class InstallerRoundTripTests(unittest.TestCase):
         (self.root / "two.md").write_text("two-v1\n")
         manifest["providers"] = {"fixture": {
             "native": False, "capabilities": ["scout"], "commands": [], "detect_commands": [],
+            "invocation": {"kind": "skill", "prefix": ""},
+            "minimum_version": None, "last_tested_version": None,
+            "version_probe": None, "install_mode": "portable",
             "user_root": "{config_root}/fixture", "project_root": "{project}/.fixture",
             "artifacts": [
                 {"source": "one.md", "destination": "skills/one.md"},
@@ -310,7 +450,7 @@ class InstallerRoundTripTests(unittest.TestCase):
         plan = installer.plan("install", ["claude", "codex"], "user", self.project)
         receipt = installer.execute(plan, confirmed=plan.preview["preview_hash"])
         self.assertEqual("rolled_back", receipt.status)
-        self.assertFalse((self.config / ".claude" / "skills" / "mlx-scout" / "SKILL.md").exists())
+        self.assertFalse((self.home / ".claude" / "plugins" / "mlx-agent" / "commands" / "mlx-scout.md").exists())
         self.assertFalse((self.home / "plugins" / "mlx-agent" / "skills" / "mlx-scout" / "SKILL.md").exists())
         self.assertTrue(Path(receipt.batch_path).is_file())
         self.assertEqual("rolled_back", json.loads(Path(receipt.batch_path).read_text())["status"])
@@ -331,7 +471,7 @@ class InstallerRoundTripTests(unittest.TestCase):
         plan = installer.plan("install", ["claude", "codex"], "user", self.project)
         receipt = installer.execute(plan, confirmed=plan.preview["preview_hash"])
         self.assertEqual("recovery_required", receipt.status)
-        self.assertTrue((self.config / ".claude" / "skills" / "mlx-scout" / "SKILL.md").is_file())
+        self.assertTrue((self.home / ".claude" / "plugins" / "mlx-agent" / "commands" / "mlx-scout.md").is_file())
         self.assertEqual("recovery_required", json.loads(Path(receipt.batch_path).read_text())["status"])
 
     def test_partial_two_artifact_update_keeps_per_artifact_history_for_doctor_and_uninstall(self):
@@ -353,7 +493,7 @@ class InstallerRoundTripTests(unittest.TestCase):
         install = self.installer.plan("install", ["claude"], "user", self.project)
         self.installer.execute(install, confirmed=install.preview["preview_hash"])
         removal = self.installer.plan("uninstall", ["claude"], "user", self.project)
-        target = self.config / ".claude" / "skills" / "mlx-scout" / "SKILL.md"
+        target = self.home / ".claude" / "plugins" / "mlx-agent" / "commands" / "mlx-scout.md"
 
         def mutate_then_rollback(receipt_path, **kwargs):
             target.write_text("changed after uninstall preflight\n")
@@ -363,6 +503,29 @@ class InstallerRoundTripTests(unittest.TestCase):
         with self.assertRaises(InstallerConflictError):
             installer.execute(removal, confirmed=removal.preview["preview_hash"])
         self.assertEqual("changed after uninstall preflight\n", target.read_text())
+
+    def test_uninstall_rechecks_complete_receipt_binding_under_rollback_lock(self):
+        install = self.installer.plan("install", ["claude"], "user", self.project)
+        self.installer.execute(install, confirmed=install.preview["preview_hash"])
+        removal = self.installer.plan("uninstall", ["claude"], "user", self.project)
+        target = self.home / ".claude" / "plugins" / "mlx-agent" / "commands" / "mlx-scout.md"
+
+        def mutate_receipt_then_rollback(receipt_path, **kwargs):
+            value = json.loads(Path(receipt_path).read_text())
+            alternate_lock_root = self.root / "alternate-locks"
+            alternate_lock_root.mkdir()
+            value["lock_root"] = str(alternate_lock_root)
+            Path(receipt_path).write_text(json.dumps(value))
+            return rollback(receipt_path, **kwargs)
+
+        installer = Installer(
+            self.registry,
+            project_root=self.project,
+            rollback_func=mutate_receipt_then_rollback,
+        )
+        with self.assertRaisesRegex(InstallerConflictError, "receipt changed"):
+            installer.execute(removal, confirmed=removal.preview["preview_hash"])
+        self.assertTrue(target.is_file())
 
     def test_uninstall_later_failed_child_is_journaled_and_requires_recovery(self):
         install = self.installer.plan("install", ["claude", "codex"], "user", self.project)
@@ -380,7 +543,7 @@ class InstallerRoundTripTests(unittest.TestCase):
         installer = Installer(self.registry, project_root=self.project, rollback_func=fail_second_rollback)
         with self.assertRaises(InstallerConflictError):
             installer.execute(removal, confirmed=removal.preview["preview_hash"])
-        self.assertTrue((self.config / ".claude" / "skills" / "mlx-scout" / "SKILL.md").is_file())
+        self.assertTrue((self.home / ".claude" / "plugins" / "mlx-agent" / "commands" / "mlx-scout.md").is_file())
         self.assertFalse((self.home / "plugins" / "mlx-agent" / "skills" / "mlx-scout" / "SKILL.md").exists())
         journals = [json.loads(path.read_text()) for path in (self.config / "mlx-agent" / "installer-receipts" / "batches").glob("*/batch.json")]
         self.assertIn("recovery_required", [item["status"] for item in journals])
@@ -400,7 +563,7 @@ class InstallerRoundTripTests(unittest.TestCase):
         installer = Installer(self.registry, project_root=self.project, rollback_func=fail_first_rollback)
         with self.assertRaises(InstallerConflictError):
             installer.execute(removal, confirmed=removal.preview["preview_hash"])
-        self.assertFalse((self.config / ".claude" / "skills" / "mlx-scout" / "SKILL.md").exists())
+        self.assertFalse((self.home / ".claude" / "plugins" / "mlx-agent" / "commands" / "mlx-scout.md").exists())
         self.assertTrue((self.home / "plugins" / "mlx-agent" / "skills" / "mlx-scout" / "SKILL.md").is_file())
         journals = [json.loads(path.read_text()) for path in (self.config / "mlx-agent" / "installer-receipts" / "batches").glob("*/batch.json")]
         self.assertIn("recovery_required", [item["status"] for item in journals])
@@ -432,7 +595,7 @@ class InstallerRoundTripTests(unittest.TestCase):
     def test_doctor_rejects_leaf_and_ancestor_symlink_artifacts(self):
         install = self.installer.plan("install", ["claude"], "user", self.project)
         self.installer.execute(install, confirmed=install.preview["preview_hash"])
-        target = self.config / ".claude" / "skills" / "mlx-scout" / "SKILL.md"
+        target = self.home / ".claude" / "plugins" / "mlx-agent" / "commands" / "mlx-scout.md"
         external = self.root / "external.md"
         external.write_text(target.read_text())
         target.unlink()
@@ -520,7 +683,7 @@ class InstallerRoundTripTests(unittest.TestCase):
         install = self.installer.plan("install", ["claude", "codex"], "user", self.project)
         self.installer.execute(install, confirmed=install.preview["preview_hash"])
         removal = self.installer.plan("uninstall", ["claude", "codex"], "user", self.project)
-        target = self.config / ".claude" / "skills" / "mlx-scout" / "SKILL.md"
+        target = self.home / ".claude" / "plugins" / "mlx-agent" / "commands" / "mlx-scout.md"
         calls = []
 
         def edit_then_fail(receipt_path, **kwargs):
@@ -543,7 +706,7 @@ class InstallerRoundTripTests(unittest.TestCase):
         install = self.installer.plan("install", ["claude", "codex"], "user", self.project)
         self.installer.execute(install, confirmed=install.preview["preview_hash"])
         removal = self.installer.plan("uninstall", ["claude", "codex"], "user", self.project)
-        target = self.config / ".claude" / "skills" / "mlx-scout" / "SKILL.md"
+        target = self.home / ".claude" / "plugins" / "mlx-agent" / "commands" / "mlx-scout.md"
         factory_calls, expected_states = [], []
 
         class EditingCompensationTransaction(Transaction):

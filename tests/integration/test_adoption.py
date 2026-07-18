@@ -12,12 +12,14 @@ from mlx_agent.adoption import (
     PHASES,
     AdoptionRequest,
     AdoptionState,
+    AdoptionStateConflictError,
     AdoptionWorkflow,
 )
 from mlx_agent.cli import main
 from mlx_agent.contracts import ResultEnvelope
 from mlx_agent.host import HostInventory
 from mlx_agent.verification import EvidenceStrength, VerificationEvidence
+from mlx_agent.transactions import _target_locks
 
 
 def candidate(repo, role, reasoning=False, rank_score=1):
@@ -122,6 +124,69 @@ class AdoptionWorkflowTests(unittest.TestCase):
             resumed = workflow.resume(path)
             self.assertEqual(resumed.phase, "verify")
             self.assertEqual(resumed.completed_phases, ["inspect", "discover", "shortlist"])
+
+    def test_state_revision_uses_compare_and_swap_for_concurrent_resumes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "adoption.json"
+            workflow = AdoptionWorkflow(
+                discovery_service=FakeDiscoveryService(32, []),
+                verifier=TrackingVerifier(),
+            )
+            started = workflow.start(
+                AdoptionRequest(roles=("general",), state_path=path)
+            )
+            self.assertEqual(1, started.revision)
+            first = workflow.resume(path)
+            stale = workflow.resume(path)
+            workflow.advance(first)
+            durable = path.read_bytes()
+            self.assertEqual(2, json.loads(durable)["revision"])
+
+            with self.assertRaises(AdoptionStateConflictError):
+                workflow.advance(stale)
+            self.assertEqual(durable, path.read_bytes())
+
+    def test_state_lock_contention_fails_without_mutating_the_handoff(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "adoption.json"
+            workflow = AdoptionWorkflow(
+                discovery_service=FakeDiscoveryService(32, []),
+                verifier=TrackingVerifier(),
+            )
+            workflow.start(AdoptionRequest(roles=("general",), state_path=path))
+            state = workflow.resume(path)
+            durable = path.read_bytes()
+            with _target_locks([path]):
+                with self.assertRaises(AdoptionStateConflictError):
+                    workflow.advance(state)
+            self.assertEqual(durable, path.read_bytes())
+
+    def test_state_paths_never_follow_leaf_or_ancestor_symlinks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workflow = AdoptionWorkflow(
+                discovery_service=FakeDiscoveryService(32, []),
+                verifier=TrackingVerifier(),
+            )
+            referent = root / "referent.json"
+            referent.write_text("external bytes\n")
+            leaf = root / "state.json"
+            leaf.symlink_to(referent)
+            with self.assertRaises(ValueError):
+                workflow.resume(leaf)
+            with self.assertRaises((ValueError, AdoptionStateConflictError)):
+                workflow.start(AdoptionRequest(roles=("general",), state_path=leaf))
+
+            outside = root / "outside"
+            outside.mkdir()
+            ancestor = root / "linked"
+            ancestor.symlink_to(outside, target_is_directory=True)
+            with self.assertRaises(ValueError):
+                workflow.start(AdoptionRequest(
+                    roles=("general",), state_path=ancestor / "state.json"
+                ))
+            self.assertEqual("external bytes\n", referent.read_text())
+            self.assertEqual([], list(outside.iterdir()))
 
     def test_request_and_saved_state_reject_unbounded_or_secret_fields(self):
         self.assertEqual(AdoptionRequest(roles="general").roles, ("general",))

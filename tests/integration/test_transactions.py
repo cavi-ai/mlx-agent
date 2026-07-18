@@ -12,13 +12,17 @@ from unittest.mock import patch
 from mlx_agent.cli import main
 from mlx_agent.transactions import (
     ConcurrentTransactionError, Receipt, Transaction, _target_lock_digest,
-    _target_lock_name, legacy_lock_problem, rollback,
+    _target_lock_name, legacy_lock_problem, preview_rollback, rollback,
 )
 
 
 class TransactionTests(unittest.TestCase):
     def _change(self, path, content, endpoint=None):
         return {"path": str(path), "content": content, "runtime": "mlx_lm", "endpoint": endpoint}
+
+    def _confirmed_rollback(self, receipt_path):
+        preview = preview_rollback(receipt_path)
+        return rollback(receipt_path, preview_hash=preview["preview_hash"])
 
     def test_preview_refuses_symlinks_and_apply_requires_confirmation(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -36,11 +40,34 @@ class TransactionTests(unittest.TestCase):
                 transaction.apply(False)
             self.assertEqual('{"providers": []}\n', target.read_text())
 
-    def test_apply_preserves_mode_and_manual_rollback_restores_exact_bytes(self):
+    def test_secret_bearing_existing_target_fails_before_output_receipt_or_backup(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             target = root / "providers.json"
-            before = b'{"providers": [], "token": "do-not-store"}\n'
+            secret = "terminal-json-receipt-backup-secret"
+            target.write_text(json.dumps({"api_key": secret, "providers": []}) + "\n")
+            receipts = root / "receipts"
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(2, main([
+                    "wire", "render", "mlx-community/Test-4bit", "--target", "mlx_lm",
+                    "--path", str(target), "--json",
+                ]))
+            self.assertNotIn(secret, output.getvalue())
+            self.assertFalse(receipts.exists())
+
+            transaction = Transaction(receipts_dir=receipts)
+            with self.assertRaisesRegex(ValueError, "resolved secret-bearing fields") as captured:
+                transaction.preview([self._change(target, '{"providers": []}\n')])
+            self.assertNotIn(secret, str(captured.exception))
+            self.assertFalse(receipts.exists())
+            self.assertEqual([], list(root.glob("**/backup-*.bin")))
+
+    def test_apply_preserves_mode_and_preview_confirmed_rollback_restores_exact_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            before = b'{"providers": []}\n'
             target.write_bytes(before)
             os.chmod(target, 0o640)
             transaction = Transaction(receipts_dir=root / "receipts")
@@ -48,11 +75,93 @@ class TransactionTests(unittest.TestCase):
             receipt = transaction.apply(True)
             self.assertEqual(0o640, target.stat().st_mode & 0o777)
             self.assertTrue(Path(receipt.backup_paths[str(target)]).is_file())
-            self.assertNotIn("do-not-store", json.dumps(receipt.to_dict()))
-            restored = rollback(receipt.receipt_path)
+            preview = preview_rollback(receipt.receipt_path)
+            self.assertTrue(preview["requires_confirmation"])
+            restored = rollback(receipt.receipt_path, preview_hash=preview["preview_hash"])
             self.assertEqual("rolled_back", restored.status)
             self.assertEqual(before, target.read_bytes())
             self.assertEqual(hashlib.sha256(before).hexdigest(), restored.after_hashes[str(target)])
+
+    def test_normal_rollback_requires_reviewed_hash_and_refuses_post_apply_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text('{"before": true}\n')
+            transaction = Transaction(receipts_dir=root / "receipts")
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            receipt = transaction.apply(True)
+
+            preview = preview_rollback(receipt.receipt_path)
+            with self.assertRaises(PermissionError):
+                rollback(receipt.receipt_path)
+            with self.assertRaises(PermissionError):
+                rollback(receipt.receipt_path, preview_hash="0" * 64)
+
+            target.write_text('{"user": "edit"}\n')
+            with self.assertRaisesRegex(ValueError, "differs from recorded after-state"):
+                rollback(receipt.receipt_path, preview_hash=preview["preview_hash"])
+            self.assertEqual('{"user": "edit"}\n', target.read_text())
+
+    def test_rollback_preview_binds_the_complete_restore_plan(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text("")
+            os.chmod(target, 0o600)
+            transaction = Transaction(receipts_dir=root / "receipts")
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            receipt = transaction.apply(True)
+            preview = preview_rollback(receipt.receipt_path)
+            restore = preview["restore"][0]
+            self.assertEqual(str(target), restore["path"])
+            self.assertTrue(restore["exists"])
+            self.assertEqual(0o600, restore["mode"])
+            self.assertEqual(hashlib.sha256(b"").hexdigest(), restore["hash"])
+
+            value = json.loads(Path(receipt.receipt_path).read_text())
+            value["target_modes"][str(target)] = 0o644
+            Path(receipt.receipt_path).write_text(json.dumps(value))
+            with self.assertRaisesRegex(PermissionError, "preview hash"):
+                rollback(receipt.receipt_path, preview_hash=preview["preview_hash"])
+            self.assertEqual('{"after": true}\n', target.read_text())
+            self.assertEqual(0o600, target.stat().st_mode & 0o777)
+
+    def test_receipt_requires_backup_presence_to_match_before_existence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text("")
+            transaction = Transaction(receipts_dir=root / "receipts")
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            receipt = transaction.apply(True)
+            value = json.loads(Path(receipt.receipt_path).read_text())
+            value["backup_paths"][str(target)] = None
+            with self.assertRaisesRegex(ValueError, "backup presence"):
+                Receipt.from_dict(value, receipt.receipt_path)
+
+    def test_cli_rollback_previews_then_binds_confirmation_to_hash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "providers.json"
+            target.write_text("{}\n")
+            transaction = Transaction(receipts_dir=root / "receipts")
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            receipt = transaction.apply(True)
+
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(2, main(["wire", "rollback", receipt.receipt_path, "--json"]))
+            payload = json.loads(output.getvalue())
+            preview_hash = payload["data"]["preview"]["preview_hash"]
+            self.assertTrue(payload["data"]["preview"]["requires_confirmation"])
+
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(0, main([
+                    "wire", "rollback", receipt.receipt_path, "--confirm",
+                    "--preview-hash", preview_hash, "--json",
+                ]))
+            self.assertEqual("rolled_back", json.loads(output.getvalue())["data"]["receipt"]["status"])
 
     def test_explicit_lock_root_is_persisted_outside_target_and_reused_by_rollback(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -68,7 +177,7 @@ class TransactionTests(unittest.TestCase):
             self.assertEqual(str(locks), receipt.lock_root)
             self.assertFalse(list(artifacts.glob(".mlx-agent-wire-*.lock")))
             self.assertTrue(list(locks.glob(".mlx-agent-wire-*.lock")))
-            self.assertEqual("rolled_back", rollback(receipt.receipt_path).status)
+            self.assertEqual("rolled_back", self._confirmed_rollback(receipt.receipt_path).status)
             self.assertFalse(list(artifacts.glob(".mlx-agent-wire-*.lock")))
 
     def test_explicit_lock_root_refuses_symlink(self):
@@ -327,7 +436,8 @@ class TransactionTests(unittest.TestCase):
             journals = list((root / "receipts").glob("*/receipt.json"))
             self.assertEqual(1, len(journals))
             self.assertEqual("pending", json.loads(journals[0].read_text())["status"])
-            receipt = rollback(journals[0])
+            pending = Receipt.from_dict(json.loads(journals[0].read_text()), str(journals[0]))
+            receipt = rollback(journals[0], expected_after_hashes=pending.after_hashes)
             self.assertEqual("rolled_back", receipt.status)
             self.assertEqual('{"before": 1}\n', first.read_text())
             self.assertEqual('{"before": 2}\n', second.read_text())
@@ -365,7 +475,10 @@ class TransactionTests(unittest.TestCase):
             self.assertEqual("recovery_required", receipt.status)
             self.assertEqual(before, target.read_bytes())
             self.assertEqual("pending", json.loads(Path(receipt.receipt_path).read_text())["status"])
-            self.assertEqual("rolled_back", rollback(receipt.receipt_path).status)
+            pending = Receipt.from_dict(json.loads(Path(receipt.receipt_path).read_text()), receipt.receipt_path)
+            self.assertEqual("rolled_back", rollback(
+                receipt.receipt_path, expected_after_hashes=pending.after_hashes
+            ).status)
 
     def test_rollback_rejects_tampered_or_missing_backup_without_claiming_success(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -376,7 +489,7 @@ class TransactionTests(unittest.TestCase):
             transaction.preview([self._change(target, '{"after": true}\n')])
             receipt = transaction.apply(True)
             Path(receipt.backup_paths[str(target)]).write_text("tampered\n")
-            restored = rollback(receipt.receipt_path)
+            restored = self._confirmed_rollback(receipt.receipt_path)
             self.assertIn(restored.status, {"rollback_failed", "recovery_required"})
 
     def test_rollback_restore_write_failure_never_claims_success(self):
@@ -393,12 +506,12 @@ class TransactionTests(unittest.TestCase):
                     raise OSError("simulated restore write failure")
                 return real_atomic(directory, name, *args, **kwargs)
             with patch("mlx_agent.transactions._atomic_in_directory", side_effect=fail_target):
-                restored = rollback(receipt.receipt_path)
+                restored = self._confirmed_rollback(receipt.receipt_path)
             self.assertIn(restored.status, {"rollback_failed", "recovery_required"})
             self.assertEqual('{"after": true}\n', target.read_text())
             self.assertEqual('{"after": true}\n', target.read_text())
             Path(receipt.backup_paths[str(target)]).unlink()
-            restored = rollback(receipt.receipt_path)
+            restored = self._confirmed_rollback(receipt.receipt_path)
             self.assertIn(restored.status, {"rollback_failed", "recovery_required"})
 
     def test_receipt_rejects_ancestor_symlink_traversal_and_unknown_fields(self):
@@ -470,7 +583,14 @@ class TransactionTests(unittest.TestCase):
             self.assertEqual("applied", json.loads(output.getvalue())["data"]["receipt"]["status"])
             output = StringIO()
             with redirect_stdout(output):
-                self.assertEqual(0, main(["wire", "rollback", receipt_path, "--confirm", "--json"]))
+                self.assertEqual(2, main(["wire", "rollback", receipt_path, "--json"]))
+            rollback_hash = json.loads(output.getvalue())["data"]["preview"]["preview_hash"]
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(0, main([
+                    "wire", "rollback", receipt_path, "--confirm",
+                    "--preview-hash", rollback_hash, "--json",
+                ]))
             self.assertEqual("rolled_back", json.loads(output.getvalue())["data"]["receipt"]["status"])
 
     def test_cli_apply_requires_prior_preview_hash_across_invocations(self):
@@ -526,7 +646,7 @@ class TransactionTests(unittest.TestCase):
                 ]))
             self.assertEqual("preview_stale", json.loads(output.getvalue())["error"]["code"])
 
-    def test_repeated_rollback_rechecks_current_bytes(self):
+    def test_repeated_rollback_is_idempotent_only_while_before_state_is_unchanged(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             target = root / "providers.json"
@@ -535,10 +655,12 @@ class TransactionTests(unittest.TestCase):
             transaction = Transaction(receipts_dir=root / "receipts")
             transaction.preview([self._change(target, '{"after": true}\n')])
             receipt = transaction.apply(True)
-            self.assertEqual("rolled_back", rollback(receipt.receipt_path).status)
+            self.assertEqual("rolled_back", self._confirmed_rollback(receipt.receipt_path).status)
+            self.assertEqual("rolled_back", self._confirmed_rollback(receipt.receipt_path).status)
             target.write_text('{"later": true}\n')
-            self.assertEqual("rolled_back", rollback(receipt.receipt_path).status)
-            self.assertEqual(before, target.read_bytes())
+            with self.assertRaisesRegex(ValueError, "differs from recorded before-state"):
+                preview_rollback(receipt.receipt_path)
+            self.assertEqual(b'{"later": true}\n', target.read_bytes())
 
     def test_ancestor_swap_hook_refuses_without_external_write(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -622,7 +744,7 @@ class TransactionTests(unittest.TestCase):
                 transaction.apply(True)
             self.assertEqual(0o600, target.stat().st_mode & 0o777)
 
-    def test_repeated_rollback_restores_mode_after_later_chmod(self):
+    def test_repeated_rollback_refuses_later_mode_change(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             target = root / "providers.json"
@@ -631,10 +753,11 @@ class TransactionTests(unittest.TestCase):
             transaction = Transaction(receipts_dir=root / "receipts")
             transaction.preview([self._change(target, '{"after": true}\n')])
             receipt = transaction.apply(True)
-            self.assertEqual("rolled_back", rollback(receipt.receipt_path).status)
+            self.assertEqual("rolled_back", self._confirmed_rollback(receipt.receipt_path).status)
             os.chmod(target, 0o600)
-            self.assertEqual("rolled_back", rollback(receipt.receipt_path).status)
-            self.assertEqual(0o640, target.stat().st_mode & 0o777)
+            with self.assertRaisesRegex(ValueError, "differs from recorded before-state"):
+                preview_rollback(receipt.receipt_path)
+            self.assertEqual(0o600, target.stat().st_mode & 0o777)
 
     def test_cli_render_refuses_leaf_and_ancestor_symlink_targets(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -752,6 +875,24 @@ class TransactionTests(unittest.TestCase):
                 self.assertEqual('{"before": true}\n', target.read_text())
             self.assertEqual("applied", second.apply(True).status)
 
+    def test_case_aliases_contend_for_the_same_target_on_case_insensitive_filesystems(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "Providers.json"
+            alias_target = root / "pROVIDERS.JSON"
+            target.write_text('{"before": true}\n')
+            if not alias_target.exists():
+                self.skipTest("requires a case-insensitive filesystem")
+            first = Transaction(receipts_dir=root / "receipts-a")
+            second = Transaction(receipts_dir=root / "receipts-b")
+            first.preview([self._change(target, '{"first": true}\n')])
+            second.preview([self._change(alias_target, '{"second": true}\n')])
+            with first._advisory_lock():
+                with self.assertRaises(ConcurrentTransactionError):
+                    second.apply(True)
+                self.assertEqual('{"before": true}\n', target.read_text())
+            self.assertEqual("applied", second.apply(True).status)
+
     def test_rollback_contends_with_apply_using_different_receipt_directories(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -765,7 +906,7 @@ class TransactionTests(unittest.TestCase):
             with holder._advisory_lock():
                 with self.assertRaises(ConcurrentTransactionError):
                     rollback(receipt.receipt_path)
-            self.assertEqual("rolled_back", rollback(receipt.receipt_path).status)
+            self.assertEqual("rolled_back", self._confirmed_rollback(receipt.receipt_path).status)
 
     def test_overlapping_multi_target_locks_sort_and_fail_without_partial_mutation(self):
         with tempfile.TemporaryDirectory() as directory:

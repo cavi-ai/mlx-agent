@@ -1,6 +1,7 @@
 import json
 import unittest
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 from mlx_agent.discovery import DiscoveryRequest, DiscoveryService
 from mlx_agent.host import HostInventory
@@ -59,3 +60,33 @@ class DiscoveryModelTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual(set(result["data"]), {"host", "fast", "roles"})
+
+    def test_list_provenance_records_the_exact_filtered_ranked_request_url(self):
+        requested = []
+
+        def capture_http_get(url, timeout=10.0):
+            del timeout
+            requested.append(url)
+            return [{"id": "allowed/Open-Coder-7B-4bit", "downloads": 3, "likes": 2}]
+
+        service = DiscoveryService(
+            host=HostInventory(ram_gb=32, chip="Apple Test"),
+            huggingface=HuggingFaceClient(http_get=capture_http_get),
+        )
+        candidate = service.discover(
+            DiscoveryRequest(role="coding", fast=True, new=True, limit=1)
+        ).to_dict()["data"]["roles"]["coding"][0]
+        source = next(
+            record for record in candidate["provenance"]
+            if record["source"] == "huggingface_model_list"
+        )
+        self.assertEqual(requested[0], source["url"])
+        self.assertEqual(
+            {
+                "filter": ["mlx"],
+                "sort": ["lastModified"],
+                "direction": ["-1"],
+                "limit": ["300"],
+            },
+            parse_qs(urlsplit(source["url"]).query),
+        )

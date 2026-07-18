@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
+import hashlib
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -13,10 +12,16 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from .discovery import DiscoveryRequest, DiscoveryService
+from .transactions import (
+    ConcurrentTransactionError,
+    _atomic_in_directory,
+    _read_target,
+    _target_locks,
+)
 from .verification import EvidenceStrength, VerificationEvidence, Verifier
 
 
-ADOPTION_SCHEMA_VERSION = "1.0"
+ADOPTION_SCHEMA_VERSION = "1.1"
 PHASES = ("inspect", "discover", "shortlist", "verify", "compare", "recommend", "complete")
 UTILITY_ROLES = {"general", "embedding"}
 ALLOWED_ROLES = {"general", "coding", "reasoning", "vision", "embedding"}
@@ -26,6 +31,10 @@ EVIDENCE_SCORES = {
     EvidenceStrength.METADATA_ONLY.value: 200,
     EvidenceStrength.HEURISTIC_ONLY.value: 100,
 }
+
+
+class AdoptionStateConflictError(ValueError):
+    """A persisted handoff changed or is locked by another workflow."""
 
 
 def _utc_now():
@@ -137,6 +146,7 @@ class AdoptionState:
     status: str
     request: Dict[str, Any]
     state_path: Path = field(repr=False)
+    revision: int = 0
     completed_phases: List[str] = field(default_factory=list)
     host: Dict[str, Any] = field(default_factory=dict)
     discovery: Dict[str, Any] = field(default_factory=dict)
@@ -149,11 +159,13 @@ class AdoptionState:
     created_at: str = field(default_factory=_utc_now)
     updated_at: str = field(default_factory=_utc_now)
     schema_version: str = ADOPTION_SCHEMA_VERSION
+    _source_hash: object = field(default=None, repr=False, compare=False)
 
     def to_dict(self):
         return {
             "schema_version": self.schema_version,
             "workflow_id": self.workflow_id,
+            "revision": self.revision,
             "phase": self.phase,
             "status": self.status,
             "request": self.request,
@@ -175,6 +187,7 @@ class AdoptionState:
         _validate_state(value)
         return cls(
             workflow_id=value["workflow_id"],
+            revision=value["revision"],
             phase=value["phase"],
             status=value["status"],
             request=dict(value["request"]),
@@ -240,8 +253,12 @@ class AdoptionWorkflow:
 
     def resume(self, path):
         state_path = Path(path)
-        value = json.loads(state_path.read_text(encoding="utf-8"))
+        content, exists, _mode = _read_target(state_path)
+        if not exists:
+            raise ValueError("adoption state does not exist")
+        value = json.loads(content.decode("utf-8"))
         state = AdoptionState.from_dict(value, state_path)
+        state._source_hash = hashlib.sha256(content).hexdigest()
         state.phase = _first_incomplete(state.completed_phases)
         state.status = "complete" if state.phase == "complete" else "running"
         return state
@@ -379,25 +396,58 @@ class AdoptionWorkflow:
         state.recommendations = recommendations
 
     def _persist(self, state):
-        state.updated_at = _utc_now()
-        value = state.to_dict()
-        _validate_state(value)
         destination = state.state_path
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        temporary_name = None
         try:
-            with tempfile.NamedTemporaryFile(
-                "w", encoding="utf-8", dir=str(destination.parent), delete=False
-            ) as temporary:
-                json.dump(value, temporary, sort_keys=True)
-                temporary.write("\n")
-                temporary.flush()
-                os.fsync(temporary.fileno())
-                temporary_name = temporary.name
-            os.replace(temporary_name, destination)
-        finally:
-            if temporary_name and os.path.exists(temporary_name):
-                os.unlink(temporary_name)
+            with _target_locks([destination], create_parents=True):
+                current, exists, _mode = _read_target(destination)
+                if state._source_hash is None:
+                    if state.revision != 0 or exists:
+                        raise AdoptionStateConflictError(
+                            "adoption state already exists or lacks a CAS baseline"
+                        )
+                else:
+                    if not exists or hashlib.sha256(current).hexdigest() != state._source_hash:
+                        raise AdoptionStateConflictError(
+                            "adoption state changed after it was resumed"
+                        )
+                    try:
+                        current_value = json.loads(current.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                        raise AdoptionStateConflictError(
+                            "adoption state changed after it was resumed"
+                        ) from error
+                    if current_value.get("revision") != state.revision:
+                        raise AdoptionStateConflictError(
+                            "adoption state revision changed after it was resumed"
+                        )
+
+                next_revision = state.revision + 1
+                next_updated_at = _utc_now()
+                value = state.to_dict()
+                value["revision"] = next_revision
+                value["updated_at"] = next_updated_at
+                _validate_state(value)
+                content = (
+                    json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n"
+                ).encode("utf-8")
+
+                def validate_staged(text):
+                    _validate_state(json.loads(text))
+
+                _atomic_in_directory(
+                    destination.parent,
+                    destination.name,
+                    content,
+                    0o600,
+                    validator=validate_staged,
+                )
+                state.revision = next_revision
+                state.updated_at = next_updated_at
+                state._source_hash = hashlib.sha256(content).hexdigest()
+        except ConcurrentTransactionError as error:
+            raise AdoptionStateConflictError(
+                "another adoption workflow is updating this handoff"
+            ) from error
 
 
 def verification_concurrency(ram_gb):
@@ -418,7 +468,7 @@ def _first_incomplete(completed):
 
 def _validate_state(value):
     required = {
-        "schema_version", "workflow_id", "phase", "status", "request",
+        "schema_version", "workflow_id", "revision", "phase", "status", "request",
         "completed_phases", "host", "discovery", "shortlist", "evidence",
         "comparisons", "recommendations", "warnings", "errors", "created_at", "updated_at",
     }
@@ -434,6 +484,12 @@ def _validate_state(value):
         raise ValueError("unsupported adoption state schema version")
     if not isinstance(value["workflow_id"], str) or not value["workflow_id"]:
         raise ValueError("workflow_id must be a non-empty string")
+    if (
+        not isinstance(value["revision"], int)
+        or isinstance(value["revision"], bool)
+        or value["revision"] < 1
+    ):
+        raise ValueError("revision must be a positive integer")
     if value["phase"] not in PHASES:
         raise ValueError("invalid adoption phase")
     if value["status"] not in ("running", "complete"):

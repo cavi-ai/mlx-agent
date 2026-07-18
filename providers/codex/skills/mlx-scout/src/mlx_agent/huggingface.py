@@ -25,9 +25,13 @@ class HuggingFaceClient:
     def http_get(self):
         return self._http_get
 
-    def list_models(self, sort="trendingScore", limit_fetch=300):
+    @staticmethod
+    def list_models_url(sort="trendingScore", limit_fetch=300):
         query = urllib.parse.urlencode({"filter": "mlx", "sort": sort, "direction": "-1", "limit": limit_fetch})
-        return self._http_get("{0}?{1}".format(HF_API, query))
+        return "{0}?{1}".format(HF_API, query)
+
+    def list_models(self, sort="trendingScore", limit_fetch=300):
+        return self._http_get(self.list_models_url(sort=sort, limit_fetch=limit_fetch))
 
     def inspect_model(self, repo):
         quoted = urllib.parse.quote(repo)

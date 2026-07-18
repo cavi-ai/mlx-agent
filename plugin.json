@@ -1,6 +1,7 @@
 {
   "$schema": "schemas/plugin.schema.json",
   "schema_version": "1.0",
+  "version": "0.2.0",
   "identity": "mlx-agent",
   "scopes": [
     "user",
@@ -18,65 +19,86 @@
     "scout": {
       "command": "mlx-scout",
       "description": "Discover MLX models suitable for the current host.",
-      "arguments": [
-        {
-          "name": "role",
-          "type": "string",
-          "required": false
-        },
-        {
-          "name": "limit",
-          "type": "integer",
-          "required": false
-        },
-        {
-          "name": "offline",
-          "type": "boolean",
-          "required": false
+      "actions": {
+        "discover": {
+          "arguments": [
+            {"name": "role", "flag": "--role", "kind": "option", "type": "string", "required": false},
+            {"name": "limit", "flag": "--limit", "kind": "option", "type": "integer", "required": false},
+            {"name": "memory_gb", "flag": "--memory-gb", "kind": "option", "type": "number", "required": false},
+            {"name": "quantization", "flag": "--quantization", "kind": "option", "type": "string", "required": false},
+            {"name": "license", "flag": "--license", "kind": "option", "type": "string", "required": false, "repeatable": true},
+            {"name": "publisher", "flag": "--publisher", "kind": "option", "type": "string", "required": false, "repeatable": true},
+            {"name": "runtime", "flag": "--runtime", "kind": "option", "type": "string", "required": false},
+            {"name": "exclude_gated", "flag": "--exclude-gated", "kind": "option", "type": "boolean", "required": false},
+            {"name": "include_gated", "flag": "--include-gated", "kind": "option", "type": "boolean", "required": false},
+            {"name": "refresh", "flag": "--refresh", "kind": "option", "type": "boolean", "required": false},
+            {"name": "offline", "flag": "--offline", "kind": "option", "type": "boolean", "required": false},
+            {"name": "state_dir", "flag": "--state-dir", "kind": "option", "type": "string", "required": false},
+            {"name": "new", "flag": "--new", "kind": "option", "type": "boolean", "required": false},
+            {"name": "fast", "flag": "--fast", "kind": "option", "type": "boolean", "required": false},
+            {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false},
+            {"name": "wire", "flag": "--wire", "kind": "option", "type": "string", "required": false},
+            {"name": "target", "flag": "--target", "kind": "option", "type": "string", "required": false},
+            {"name": "port", "flag": "--port", "kind": "option", "type": "integer", "required": false}
+          ]
         }
-      ]
+      }
     },
     "adopt": {
       "command": "mlx-adopt",
       "description": "Verify and recommend an MLX model for a requested role.",
-      "arguments": [
-        {
-          "name": "role",
-          "type": "string",
-          "required": false
-        },
-        {
-          "name": "offline",
-          "type": "boolean",
-          "required": false
-        }
-      ]
+      "actions": {
+        "start": {"arguments": [
+          {"name": "state", "flag": "--state", "kind": "option", "type": "string", "required": false},
+          {"name": "role", "flag": "--role", "kind": "option", "type": "string", "required": false, "repeatable": true},
+          {"name": "shortlist_limit", "flag": "--shortlist-limit", "kind": "option", "type": "integer", "required": false},
+          {"name": "offline", "flag": "--offline", "kind": "option", "type": "boolean", "required": false},
+          {"name": "refresh", "flag": "--refresh", "kind": "option", "type": "boolean", "required": false},
+          {"name": "fast", "flag": "--fast", "kind": "option", "type": "boolean", "required": false},
+          {"name": "no_network", "flag": "--no-network", "kind": "option", "type": "boolean", "required": false},
+          {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false}
+        ]},
+        "resume": {"arguments": [
+          {"name": "state", "flag": "--state", "kind": "option", "type": "string", "required": false},
+          {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false}
+        ]},
+        "status": {"arguments": [
+          {"name": "state", "flag": "--state", "kind": "option", "type": "string", "required": false},
+          {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false}
+        ]}
+      }
     },
     "wire": {
       "command": "mlx-wire",
       "description": "Preview and confirm wiring a chosen MLX model.",
-      "arguments": [
-        {
-          "name": "model",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "target",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "scope",
-          "type": "string",
-          "required": false
-        },
-        {
-          "name": "confirm",
-          "type": "boolean",
-          "required": false
-        }
-      ]
+      "actions": {
+        "render": {"arguments": [
+          {"name": "model", "kind": "positional", "type": "string", "required": true},
+          {"name": "target", "flag": "--target", "kind": "option", "type": "string", "required": false},
+          {"name": "path", "flag": "--path", "kind": "option", "type": "string", "required": true},
+          {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false}
+        ]},
+        "apply": {"arguments": [
+          {"name": "model", "kind": "positional", "type": "string", "required": true},
+          {"name": "target", "flag": "--target", "kind": "option", "type": "string", "required": false},
+          {"name": "path", "flag": "--path", "kind": "option", "type": "string", "required": true},
+          {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false},
+          {"name": "confirm", "flag": "--confirm", "kind": "option", "type": "boolean", "required": false},
+          {"name": "preview_hash", "flag": "--preview-hash", "kind": "option", "type": "string", "required": false},
+          {"name": "receipts_dir", "flag": "--receipts-dir", "kind": "option", "type": "string", "required": false},
+          {"name": "endpoint", "flag": "--endpoint", "kind": "option", "type": "string", "required": false}
+        ]},
+        "status": {"arguments": [
+          {"name": "receipt", "kind": "positional", "type": "string", "required": true},
+          {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false}
+        ]},
+        "rollback": {"arguments": [
+          {"name": "receipt", "kind": "positional", "type": "string", "required": true},
+          {"name": "confirm", "flag": "--confirm", "kind": "option", "type": "boolean", "required": false},
+          {"name": "preview_hash", "flag": "--preview-hash", "kind": "option", "type": "string", "required": false},
+          {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false}
+        ]}
+      }
     }
   },
   "providers": {
@@ -96,10 +118,14 @@
         "kind": "command",
         "prefix": "/"
       },
+      "minimum_version": "2.1.143",
+      "last_tested_version": "2.1.198",
+      "version_probe": {"args": ["--version"], "timeout_seconds": 5},
+      "install_mode": "staged",
       "detect_commands": ["claude"],
-      "user_root": "{config_root}/.claude",
-      "project_root": "{project}/.claude",
-      "artifacts": [{"source": "skills/mlx-scout/SKILL.md", "destination": "skills/mlx-scout/SKILL.md"}],
+      "user_root": "{home}/.claude/plugins/mlx-agent",
+      "project_root": "{project}/.claude/plugins/mlx-agent",
+      "artifacts": [{"source": "providers/claude", "destination": "."}],
       "config_paths": []
     },
     "codex": {
@@ -118,6 +144,10 @@
         "kind": "skill",
         "prefix": "$"
       },
+      "minimum_version": "0.137.0",
+      "last_tested_version": "0.137.0",
+      "version_probe": {"args": ["--version"], "timeout_seconds": 5},
+      "install_mode": "staged",
       "detect_commands": ["codex"],
       "user_root": "{home}/plugins/mlx-agent",
       "project_root": "{project}/plugins/mlx-agent",
@@ -145,11 +175,17 @@
         "kind": "command",
         "prefix": "/"
       },
+      "minimum_version": "0.46.0",
+      "last_tested_version": "0.46.0",
+      "version_probe": {"args": ["--version"], "timeout_seconds": 5},
+      "install_mode": "direct",
       "detect_commands": ["gemini"],
       "user_root": "{home}/.gemini/extensions/mlx-agent",
       "project_root": "{project}/.gemini/extensions/mlx-agent",
       "artifacts": [
         {"source": "providers/gemini/gemini-extension.json", "destination": "gemini-extension.json"},
+        {"source": "providers/gemini/scripts", "destination": "scripts"},
+        {"source": "providers/gemini/src", "destination": "src"},
         {"source": "providers/gemini/commands", "destination": "commands"},
         {"source": "providers/gemini/skills/mlx-scout", "destination": "skills/mlx-scout"},
         {"source": "providers/gemini/skills/mlx-adopt", "destination": "skills/mlx-adopt"},
@@ -177,6 +213,10 @@
         "kind": "command",
         "prefix": "/"
       },
+      "minimum_version": "1.17.7",
+      "last_tested_version": null,
+      "version_probe": {"args": ["--version"], "timeout_seconds": 5},
+      "install_mode": "direct",
       "detect_commands": ["opencode"],
       "user_root": "{home}/.config/opencode",
       "project_root": "{project}/.opencode",
@@ -203,8 +243,12 @@
         "kind": "skill",
         "prefix": ""
       },
+      "minimum_version": null,
+      "last_tested_version": null,
+      "version_probe": null,
+      "install_mode": "portable",
       "detect_commands": [],
-      "user_root": "{config_root}/.agents",
+      "user_root": "{home}/.agents",
       "project_root": "{project}/.agents",
       "artifacts": [
         {"source": "providers/agentskills/mlx-scout", "destination": "skills/mlx-scout"},

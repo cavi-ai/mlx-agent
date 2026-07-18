@@ -16,16 +16,23 @@ import hashlib
 import json
 import os
 import stat
+import unicodedata
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from contextlib import contextmanager, nullcontext
 
-from .wiring import ConfigAdapter, redact_endpoint, redact_secrets
+from .wiring import (
+    ConfigAdapter,
+    redact_endpoint,
+    redact_secrets,
+    require_secret_free_config,
+    validate_health_endpoint,
+)
 
 
-RECEIPT_SCHEMA_VERSION = "2.0"
+RECEIPT_SCHEMA_VERSION = "2.1"
 MAX_PREVIEW_CHARS = 12000
 _STATUSES = {"pending", "applied", "failed", "rolled_back", "rollback_failed", "recovery_required"}
 _HASH = __import__("re").compile(r"^[0-9a-f]{64}$")
@@ -109,12 +116,27 @@ def _assert_safe_directory(path, create=False):
 
 
 def _target_lock_name(target):
+    """Return the target-adjacent v1 lock name used by migration checks."""
     return ".mlx-agent-wire-{0}.lock".format(_target_lock_digest(target))
 
 
 def _target_lock_digest(target):
-    """Identity shared by legacy locks, scoped locks, and migration state."""
+    """Return the path-spelling v1 identity used only for legacy migration."""
     return _sha256(str(_physical_absolute(target)).encode("utf-8"))
+
+
+def _filesystem_target_lock_digest(target, parent_fd):
+    """Bind a lock to the opened parent filesystem object and canonical leaf."""
+    item = os.fstat(parent_fd)
+    leaf = unicodedata.normalize("NFC", _physical_absolute(target).name).casefold()
+    identity = "{0}:{1}:{2}".format(item.st_dev, item.st_ino, leaf)
+    return _sha256(identity.encode("utf-8"))
+
+
+def _filesystem_target_lock_name(target, parent_fd):
+    return ".mlx-agent-wire-{0}.lock".format(
+        _filesystem_target_lock_digest(target, parent_fd)
+    )
 
 
 def _legacy_lock_entries(targets):
@@ -305,21 +327,38 @@ def legacy_lock_problem(targets, lock_root):
 
 @contextmanager
 def _target_locks(targets, create_parents=False, lock_root=None):
-    """Acquire target-adjacent physical locks in canonical order to avoid deadlocks."""
+    """Acquire filesystem-identity locks in canonical order to avoid deadlocks."""
     canonical = sorted({_physical_absolute(target) for target in targets}, key=str)
+    identities = {}
     held = []
     try:
         for target in canonical:
-            if lock_root is None:
-                _parent, directory_fd = _walk_directory(target.parent, create=create_parents)
-            else:
-                _target_parent, target_parent_fd = _walk_directory(target.parent, create=create_parents)
+            _parent, target_parent_fd = _walk_directory(
+                target.parent, create=create_parents
+            )
+            digest = _filesystem_target_lock_digest(target, target_parent_fd)
+            if digest in identities:
                 os.close(target_parent_fd)
+                continue
+            identities[digest] = {
+                "target": target,
+                "target_parent_fd": target_parent_fd,
+            }
+        for digest in sorted(identities):
+            identity = identities[digest]
+            target = identity["target"]
+            target_parent_fd = identity["target_parent_fd"]
+            if lock_root is None:
+                directory_fd = target_parent_fd
+                identity["target_parent_fd"] = None
+            else:
+                os.close(target_parent_fd)
+                identity["target_parent_fd"] = None
                 _parent, directory_fd = _walk_directory(lock_root, create=True)
             lock_fd = None
             try:
                 lock_fd = os.open(
-                    _target_lock_name(target),
+                    ".mlx-agent-wire-{0}.lock".format(digest),
                     os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW,
                     0o600,
                     dir_fd=directory_fd,
@@ -349,6 +388,9 @@ def _target_locks(targets, create_parents=False, lock_root=None):
             finally:
                 os.close(lock_fd)
                 os.close(directory_fd)
+        for identity in identities.values():
+            if identity["target_parent_fd"] is not None:
+                os.close(identity["target_parent_fd"])
 
 
 def _assert_safe_target(path):
@@ -461,6 +503,7 @@ class Receipt:
     targets: list
     target_roots: dict
     target_modes: dict
+    after_modes: dict
     before_hashes: dict
     after_hashes: dict
     backup_paths: dict
@@ -485,7 +528,7 @@ class Receipt:
     def from_dict(cls, value, receipt_path=""):
         required = {
             "schema_version", "transaction_id", "adapter_version", "timestamp", "transaction_root",
-            "targets", "target_roots", "target_modes", "before_hashes", "after_hashes", "backup_paths",
+            "targets", "target_roots", "target_modes", "after_modes", "before_hashes", "after_hashes", "backup_paths",
             "validations", "status", "preview", "preview_hash",
         }
         if not isinstance(value, dict) or not required.issubset(value) or set(value) - (required | {"lock_root", "lock_migration"}):
@@ -519,10 +562,13 @@ class Receipt:
         if migration is not None and (lock_root is None or migration != LEGACY_LOCK_MIGRATION):
             raise ValueError("receipt lock migration is malformed")
         targets = value["targets"]
-        maps = (value["target_roots"], value["target_modes"], value["before_hashes"], value["after_hashes"], value["backup_paths"])
+        maps = (
+            value["target_roots"], value["target_modes"], value["after_modes"],
+            value["before_hashes"], value["after_hashes"], value["backup_paths"],
+        )
         if not isinstance(targets, list) or not targets or not all(isinstance(item, str) for item in targets) or len(targets) != len(set(targets)) or not all(isinstance(item, dict) for item in maps):
             raise ValueError("receipt targets are malformed")
-        if set(targets) != set(value["target_roots"]) or set(targets) != set(value["target_modes"]) or set(targets) != set(value["before_hashes"]) or set(targets) != set(value["after_hashes"]) or set(targets) != set(value["backup_paths"]):
+        if any(set(targets) != set(item) for item in maps):
             raise ValueError("receipt target maps do not match")
         for index, target_name in enumerate(targets):
             target = _assert_safe_target(target_name)
@@ -531,11 +577,18 @@ class Receipt:
             mode = value["target_modes"][target_name]
             if mode is not None and (not isinstance(mode, int) or mode < 0 or mode > 0o777):
                 raise ValueError("receipt mode is malformed")
+            after_mode = value["after_modes"][target_name]
+            if after_mode is not None and (
+                not isinstance(after_mode, int) or after_mode < 0 or after_mode > 0o777
+            ):
+                raise ValueError("receipt after mode is malformed")
             for hashes in (value["before_hashes"], value["after_hashes"]):
                 if not isinstance(hashes[target_name], str) or not _HASH.fullmatch(hashes[target_name]):
                     raise ValueError("receipt hash is malformed")
             backup = value["backup_paths"][target_name]
             expected_backup = root / "backup-{0}.bin".format(index)
+            if (backup is None) != (mode is None):
+                raise ValueError("receipt backup presence does not match before existence")
             if backup is None:
                 if value["before_hashes"][target_name] != _sha256(b""):
                     raise ValueError("missing backup has a non-empty hash")
@@ -591,21 +644,27 @@ class Transaction:
             if not isinstance(content, str):
                 raise TypeError("change content must be text")
             adapter = change.get("adapter") or ConfigAdapter.detect(path, runtime=change.get("runtime"))
-            adapter.validate(content)
             try:
                 before, existed, mode = _read_target(path, self.path_race_hook)
             except ValueError as error:
                 if not self.create_target_parents or not str(error).startswith("path component does not exist:"):
                     raise
                 before, existed, mode = b"", False, None
-            after = content.encode("utf-8")
             before_text = before.decode("utf-8")
+            if not getattr(adapter, "secret_scan_exempt", False):
+                require_secret_free_config(before_text)
+                require_secret_free_config(content)
+            endpoint = change.get("endpoint")
+            if endpoint:
+                validate_health_endpoint(endpoint)
+            adapter.validate(content)
+            after = content.encode("utf-8")
             diffs.append("".join(difflib.unified_diff(
                 redact_secrets(before_text).splitlines(True), redact_secrets(content).splitlines(True),
                 fromfile=str(path), tofile=str(path), lineterm="",
             )))
-            binding.append({"path": str(path), "before": _sha256(before), "after": _sha256(after), "exists": existed, "mode": mode, "endpoint": _sha256(str(change.get("endpoint") or "").encode("utf-8"))})
-            prepared.append({"path": path, "content": content, "adapter": adapter, "endpoint": change.get("endpoint"), "before_hash": _sha256(before), "existed": existed, "mode": mode})
+            binding.append({"path": str(path), "before": _sha256(before), "after": _sha256(after), "exists": existed, "mode": mode, "endpoint": _sha256(str(endpoint or "").encode("utf-8"))})
+            prepared.append({"path": path, "content": content, "adapter": adapter, "endpoint": endpoint, "before_hash": _sha256(before), "existed": existed, "mode": mode})
         self._changes = prepared
         self._expected_current = self._normalize_expected_current(expected_current)
         self._preview = self._bounded("\n".join(diffs))
@@ -670,12 +729,19 @@ class Transaction:
                     raise ValueError("preview is stale; target changed before replacement")
                 mutation_started = True
                 self._replace_target(path, change["content"].encode("utf-8"), change["adapter"], receipt.target_modes[str(path)])
+                receipt.after_hashes[str(path)] = _sha256(change["content"].encode("utf-8"))
+                receipt.after_modes[str(path)] = (
+                    receipt.target_modes[str(path)]
+                    if receipt.target_modes[str(path)] is not None else 0o600
+                )
+                self._persist(receipt)
                 self._fault("after_replace:{0}".format(index))
                 change["adapter"].validate(_read_regular(path).decode("utf-8"))
                 after, after_exists, after_mode = _read_target(path)
                 if not after_exists or (receipt.target_modes[str(path)] is not None and after_mode != receipt.target_modes[str(path)]):
                     raise ValueError("replacement mode does not match the reviewed target mode")
                 receipt.after_hashes[str(path)] = _sha256(after)
+                receipt.after_modes[str(path)] = after_mode
                 receipt.validations[str(path)] = {"pre": True, "post": True, "passed": True}
                 self._persist(receipt)
             receipt.validations["health_check"] = self._run_health_checks()
@@ -749,6 +815,7 @@ class Transaction:
             timestamp=_timestamp(), transaction_root=str(root), targets=targets,
             target_roots={str(change["path"]): str(change["path"].parent) for change in self._changes},
             target_modes={str(change["path"]): captured[index][2] for index, change in enumerate(self._changes)},
+            after_modes={str(change["path"]): captured[index][2] for index, change in enumerate(self._changes)},
             before_hashes={}, after_hashes={}, backup_paths={}, validations={
                 "concurrency": {"scope": "advisory_cooperative_target_scoped", "note": COOPERATIVE_CONCURRENCY_NOTE, "passed": True},
             }, status="pending",
@@ -783,7 +850,7 @@ class Transaction:
         _atomic_in_directory(root, "receipt.json", (json.dumps(receipt.to_dict(), indent=2, sort_keys=True) + "\n").encode("utf-8"), 0o600)
 
     def _finish_restore(self, receipt):
-        if _restore_receipt(receipt):
+        if _restore_receipt(receipt, expected_current=_receipt_after_state(receipt)):
             receipt.status = "rolled_back"
         else:
             receipt.status = "recovery_required"
@@ -812,11 +879,15 @@ class Transaction:
         return value if len(value) <= MAX_PREVIEW_CHARS else value[:MAX_PREVIEW_CHARS] + "\n... [preview truncated]"
 
 
-def _restore_receipt(receipt):
+def _restore_receipt(receipt, expected_current=None):
     """Preflight every backup, then restore and prove byte-for-byte hashes."""
     planned = []
     try:
         root = _assert_safe_directory(receipt.transaction_root)
+        if expected_current is not None:
+            _assert_expected_states(
+                receipt.targets, expected_current, "rollback target changed before recovery"
+            )
         for index, target_name in enumerate(receipt.targets):
             target = _assert_safe_target(target_name)
             expected = receipt.before_hashes[target_name]
@@ -845,6 +916,7 @@ def _restore_receipt(receipt):
             if actual != expected or actual_exists != (mode is not None) or actual_mode != mode:
                 raise ValueError("restore hash does not match receipt")
             receipt.after_hashes[str(target)] = actual
+            receipt.after_modes[str(target)] = actual_mode
         receipt.validations["rollback"] = {"passed": True, "targets": [str(item[0]) for item in planned]}
         return True
     except Exception as error:
@@ -868,8 +940,132 @@ def _remove_target(path):
         os.close(directory)
 
 
-def rollback(receipt_path, expected_after_hashes=None):
-    """Restore a receipt, optionally proving reviewed current hashes under its lock."""
+def _current_state(target_name):
+    content, exists, mode = _read_target(target_name)
+    return {"hash": _sha256(content), "exists": exists, "mode": mode}
+
+
+def _receipt_after_state(receipt):
+    return {
+        target: {
+            "hash": receipt.after_hashes[target],
+            "exists": receipt.after_modes[target] is not None,
+            "mode": receipt.after_modes[target],
+        }
+        for target in receipt.targets
+    }
+
+
+def _rollback_restore_plan(receipt):
+    return [
+        {
+            "path": target,
+            "root": receipt.target_roots[target],
+            "hash": receipt.before_hashes[target],
+            "exists": receipt.target_modes[target] is not None,
+            "mode": receipt.target_modes[target],
+            "backup_path": receipt.backup_paths[target],
+        }
+        for target in receipt.targets
+    ]
+
+
+def _rollback_receipt_binding(receipt):
+    """Return every validated receipt field that can change rollback behavior."""
+    return {
+        "transaction_id": receipt.transaction_id,
+        "transaction_root": receipt.transaction_root,
+        "targets": list(receipt.targets),
+        "restore": _rollback_restore_plan(receipt),
+        "lock_root": receipt.lock_root,
+        "lock_migration": receipt.lock_migration,
+    }
+
+
+def _rollback_receipt_hash(receipt):
+    return _sha256(
+        json.dumps(
+            _rollback_receipt_binding(receipt),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
+
+
+def _assert_expected_states(targets, expected, message):
+    if not isinstance(expected, dict) or set(expected) != set(targets):
+        raise ValueError("reviewed rollback state does not match receipt targets")
+    for target in targets:
+        if _current_state(target) != expected[target]:
+            raise ValueError(message)
+
+
+def _rollback_preview_locked(receipt, location):
+    if receipt.status == "rolled_back":
+        state = {
+            target: {
+                "hash": receipt.before_hashes[target],
+                "exists": receipt.target_modes[target] is not None,
+                "mode": receipt.target_modes[target],
+            }
+            for target in receipt.targets
+        }
+        _assert_expected_states(
+            receipt.targets, state, "rollback target differs from recorded before-state"
+        )
+    else:
+        if receipt.status not in {"applied", "rollback_failed", "recovery_required"}:
+            raise ValueError("normal rollback requires an applied receipt")
+        state = _receipt_after_state(receipt)
+        _assert_expected_states(
+            receipt.targets, state, "rollback target differs from recorded after-state"
+        )
+    restore = _rollback_restore_plan(receipt)
+    receipt_binding = _rollback_receipt_binding(receipt)
+    binding = {
+        "operation": "wire-rollback",
+        "receipt_path": str(location),
+        "receipt_status": receipt.status,
+        "current": state,
+        "operational_receipt": receipt_binding,
+    }
+    return {
+        "targets": [{"path": target, **state[target]} for target in receipt.targets],
+        "restore": restore,
+        "operational_receipt_hash": _rollback_receipt_hash(receipt),
+        "preview_hash": _sha256(
+            json.dumps(binding, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ),
+        "requires_confirmation": receipt.status != "rolled_back",
+        "already_rolled_back": receipt.status == "rolled_back",
+    }
+
+
+def preview_rollback(receipt_path):
+    """Return a hash-bound, non-secret snapshot of the current rollback targets."""
+    location = _assert_safe_target(receipt_path)
+    initial = Receipt.from_dict(
+        json.loads(_read_regular(location).decode("utf-8")), str(location)
+    )
+    lock_context = (
+        _migrate_legacy_target_locks(initial.targets, initial.lock_root)
+        if initial.lock_root is not None else nullcontext()
+    )
+    with lock_context:
+        with _target_locks(initial.targets, lock_root=initial.lock_root):
+            receipt = Receipt.from_dict(
+                json.loads(_read_regular(location).decode("utf-8")), str(location)
+            )
+            return _rollback_preview_locked(receipt, location)
+
+
+def rollback(
+    receipt_path,
+    preview_hash=None,
+    expected_after_hashes=None,
+    expected_receipt_hash=None,
+):
+    """Restore a receipt through a user preview hash or installer-internal CAS."""
     location = _assert_safe_target(receipt_path)
     initial = Receipt.from_dict(json.loads(_read_regular(location).decode("utf-8")), str(location))
     lock_context = (
@@ -879,6 +1075,11 @@ def rollback(receipt_path, expected_after_hashes=None):
     with lock_context:
         with _target_locks(initial.targets, lock_root=initial.lock_root):
             receipt = Receipt.from_dict(json.loads(_read_regular(location).decode("utf-8")), str(location))
+            if (
+                expected_receipt_hash is not None
+                and _rollback_receipt_hash(receipt) != expected_receipt_hash
+            ):
+                raise ValueError("rollback receipt changed after the reviewed plan")
             if expected_after_hashes is not None:
                 if not isinstance(expected_after_hashes, dict) or set(expected_after_hashes) != set(receipt.targets):
                     raise ValueError("reviewed rollback hashes do not match receipt targets")
@@ -886,6 +1087,18 @@ def rollback(receipt_path, expected_after_hashes=None):
                     current, exists, _mode = _read_target(target_name)
                     if not exists or _sha256(current) != expected_after_hashes[target_name]:
                         raise ValueError("receipt target changed after reviewed rollback preview")
+            else:
+                if preview_hash is None:
+                    raise PermissionError(
+                        "rollback requires the hash from a reviewed rollback preview"
+                    )
+                preview = _rollback_preview_locked(receipt, location)
+                if preview["already_rolled_back"]:
+                    return receipt
+                if preview_hash != preview["preview_hash"]:
+                    raise PermissionError(
+                        "rollback preview hash does not match current target state"
+                    )
             if receipt.status == "rolled_back":
                 current_matches = True
                 for target_name in receipt.targets:
@@ -896,7 +1109,8 @@ def rollback(receipt_path, expected_after_hashes=None):
                         break
                 if current_matches:
                     return receipt
-            if _restore_receipt(receipt):
+            expected_current = _receipt_after_state(receipt)
+            if _restore_receipt(receipt, expected_current=expected_current):
                 receipt.status = "rolled_back"
             else:
                 receipt.status = "rollback_failed"

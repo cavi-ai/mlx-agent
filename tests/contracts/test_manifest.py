@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from mlx_agent import __version__
 from scripts.validate_contracts import validate_manifest
 
 
@@ -27,6 +28,35 @@ class ManifestTests(unittest.TestCase):
             ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire"],
             manifest["providers"]["codex"]["commands"],
         )
+
+    def test_canonical_version_matches_every_native_provider_manifest(self):
+        manifest = json.loads((ROOT / "plugin.json").read_text())
+        version = manifest["version"]
+        self.assertEqual(__version__, version)
+        self.assertEqual(
+            version,
+            json.loads((ROOT / "compatibility" / "providers.json").read_text())["plugin_version"],
+        )
+        self.assertEqual(
+            version,
+            json.loads((ROOT / "compatibility" / "release-evidence.json").read_text())["plugin_version"],
+        )
+        native_manifests = (
+            ROOT / ".claude-plugin" / "plugin.json",
+            ROOT / "providers" / "claude" / ".claude-plugin" / "plugin.json",
+            ROOT / "providers" / "codex" / ".codex-plugin" / "plugin.json",
+            ROOT / "providers" / "gemini" / "gemini-extension.json",
+        )
+        for path in native_manifests:
+            with self.subTest(path=path):
+                self.assertEqual(version, json.loads(path.read_text())["version"])
+        marketplaces = (
+            ROOT / ".claude-plugin" / "marketplace.json",
+            ROOT / "providers" / "claude" / ".claude-plugin" / "marketplace.json",
+        )
+        for path in marketplaces:
+            with self.subTest(path=path):
+                self.assertEqual(version, json.loads(path.read_text())["plugins"][0]["version"])
 
     def test_manifest_validator_reports_native_command_drift(self):
         manifest = json.loads((ROOT / "plugin.json").read_text())
@@ -60,8 +90,9 @@ class ManifestTests(unittest.TestCase):
         manifest["safety"]["unexpected"] = True
         manifest["capabilities"]["scout"]["description"] = ""
         manifest["capabilities"]["scout"]["unexpected"] = True
-        manifest["capabilities"]["scout"]["arguments"][0]["name"] = ""
-        manifest["capabilities"]["scout"]["arguments"][0]["unexpected"] = True
+        argument = manifest["capabilities"]["scout"]["actions"]["discover"]["arguments"][0]
+        argument["name"] = ""
+        argument["unexpected"] = True
         manifest["providers"]["claude"]["unexpected"] = True
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "plugin.json"
@@ -73,9 +104,9 @@ class ManifestTests(unittest.TestCase):
         self.assertIn("safety has unexpected keys: ['unexpected']", errors)
         self.assertIn("capabilities.scout.description must not be empty", errors)
         self.assertIn("capabilities.scout has unexpected keys: ['unexpected']", errors)
-        self.assertIn("capabilities.scout.arguments[0].name must not be empty", errors)
+        self.assertIn("capabilities.scout.actions.discover.arguments[0].name must not be empty", errors)
         self.assertIn(
-            "capabilities.scout.arguments[0] has unexpected keys: ['unexpected']",
+            "capabilities.scout.actions.discover.arguments[0] has unexpected keys: ['unexpected']",
             errors,
         )
         self.assertIn("providers.claude has unexpected keys: ['unexpected']", errors)

@@ -19,4 +19,4 @@ python3 scripts/mlx-agent uninstall gemini --scope user --dry-run --json
 python3 scripts/mlx-agent doctor gemini --scope user --json
 ```
 
-User scope installs to `~/.gemini/extensions/mlx-agent`. Project scope also projects receipt-owned command TOML and skills to `<project>/.gemini/commands` and `<project>/.gemini/skills` so workspace discovery can find them. Gemini CLI 0.46.0 validated install/remove plus user and project skill discovery. `/commands list` and model routing are opt-in; no model-backed slash-command response is claimed.
+User scope installs to `~/.gemini/extensions/mlx-agent`. Project scope also projects receipt-owned command TOML and skills to `<project>/.gemini/commands` and `<project>/.gemini/skills` so workspace discovery can find them. The extension owns a bounded `mlx_agent_execute` MCP tool; command arguments never pass through `run_shell_command`. Gemini CLI 0.46.0 validated install/remove plus user and project skill discovery. `/commands list` and model routing were not run, so the recorded evidence remains fixture-level and no model-backed slash-command response is claimed.

@@ -121,8 +121,14 @@ class DiscoveryService:
             return ResultEnvelope.ok("discover", self._response_data(request, cache[0], "fresh"))
 
         host = self.host
+        list_sort = "lastModified" if request.new else "trendingScore"
+        list_url_builder = getattr(self._huggingface, "list_models_url", None)
+        list_url = (
+            list_url_builder(sort=list_sort, limit_fetch=300)
+            if callable(list_url_builder) else None
+        )
         try:
-            raw = self._huggingface.list_models(sort="lastModified" if request.new else "trendingScore")
+            raw = self._huggingface.list_models(sort=list_sort)
         except Exception as error:
             return ResultEnvelope.fail(
                 "discover",
@@ -132,11 +138,11 @@ class DiscoveryService:
                 retryable=True,
             )
 
-        data = self._build_response(request, raw, host.to_dict())
+        data = self._build_response(request, raw, host.to_dict(), list_url=list_url)
         self._write_cache(request, data)
         return ResultEnvelope.ok("discover", self._response_data(request, data, "refreshed" if request.refresh else "miss"))
 
-    def _build_response(self, request, raw, host_data):
+    def _build_response(self, request, raw, host_data, list_url=None):
         buckets = {role: [] for role, _keywords, _label in ROLES}
         rejected = {}
         seen_repo, seen_base = set(), {}
@@ -150,7 +156,9 @@ class DiscoveryService:
             if request.role and role != request.role:
                 continue
             enrichment = {} if request.fast else self._huggingface.inspect_model(repo)
-            candidate = self._candidate(repo, model, role, host_data, enrichment, request)
+            candidate = self._candidate(
+                repo, model, role, host_data, enrichment, request, list_url
+            )
             reasons = self._rejection_reasons(candidate, request)
             candidate["rejection_reasons"] = reasons
             if reasons:
@@ -180,7 +188,7 @@ class DiscoveryService:
             "request": request.cache_request(),
         }
 
-    def _candidate(self, repo, model, role, host_data, enrichment, request):
+    def _candidate(self, repo, model, role, host_data, enrichment, request, list_url=None):
         ram, ram_source = resolve_ram(repo, enrichment)
         reasoning, reason_source = resolve_reasoning(repo, enrichment)
         publisher = repo.split("/", 1)[0].lower()
@@ -225,18 +233,20 @@ class DiscoveryService:
             "facts": facts,
             "estimates": {"ram_gb": ram, "memory_budget_gb": budget, "headroom_fraction": 0.2},
             "heuristics": {"role": role, "quantization": quantization, "trusted_publisher": trusted},
-            "provenance": self._provenance(repo, enrichment, request.fast, ram_source, reason_source),
+            "provenance": self._provenance(
+                repo, enrichment, request.fast, ram_source, reason_source, list_url
+            ),
             "rank_score": rank_score,
             "selection_reasons": self._selection_reasons(role, quantization, trusted, fits),
             "rejection_reasons": [],
         }
 
     @staticmethod
-    def _provenance(repo, enrichment, fast, ram_source, reason_source):
+    def _provenance(repo, enrichment, fast, ram_source, reason_source, list_url=None):
         encoded = repo.replace("/", "%2F")
         records = [{
             "source": "huggingface_model_list",
-            "url": "https://huggingface.co/api/models",
+            "url": list_url or "https://huggingface.co/api/models",
             "fields": ["repository", "downloads", "likes"],
         }]
         if not fast and enrichment.get("metadata_available") is True:

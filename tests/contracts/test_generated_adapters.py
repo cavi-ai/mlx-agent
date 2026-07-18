@@ -68,21 +68,81 @@ class GeneratedAdapterTests(unittest.TestCase):
             unrelated = Path(directory) / "unrelated"
             unrelated.mkdir()
             environment = dict(os.environ, MLX_AGENT_FIXTURE=str(fixture))
-            executables = [output_root / "providers" / "claude" / "scripts" / "mlx-agent"]
             config_root = Path(directory) / "config"
             project_root = Path(directory) / "project"
             project_root.mkdir()
-            installer = Installer(ProviderRegistry(ROOT / "plugin.json", home=Path(directory) / "home", config_root=config_root), project_root=project_root)
+            home_root = Path(directory) / "home"
+            installer = Installer(ProviderRegistry(ROOT / "plugin.json", home=home_root, config_root=config_root), project_root=project_root)
             plan = installer.plan("install", ["agentskills"], "user", project_root)
             installer.execute(plan, confirmed=plan.preview["preview_hash"])
-            executables.extend(config_root / ".agents" / "skills" / "mlx-{0}".format(capability) / "scripts" / "mlx-agent" for capability in ("scout", "adopt", "wire"))
-            for executable in executables:
+            executions = [
+                (
+                    output_root / "providers" / "claude" / "scripts" / "mlx-agent",
+                    ["discover", "--limit", "1", "--json"],
+                    "discover",
+                ),
+                (
+                    home_root / ".agents" / "skills" / "mlx-scout" / "scripts" / "mlx-agent",
+                    ["discover", "--limit", "1", "--json"],
+                    "discover",
+                ),
+                (
+                    home_root / ".agents" / "skills" / "mlx-adopt" / "scripts" / "mlx-agent",
+                    [
+                        "adopt", "start", "--state", str(unrelated / "adoption.json"),
+                        "--shortlist-limit", "1", "--fast", "--no-network", "--json",
+                    ],
+                    "adopt-start",
+                ),
+                (
+                    home_root / ".agents" / "skills" / "mlx-wire" / "scripts" / "mlx-agent",
+                    [
+                        "wire", "render", "mlx-community/Test-4bit", "--target", "mlx_lm",
+                        "--path", str(unrelated / "mlx-lm.json"), "--json",
+                    ],
+                    "wire-render",
+                ),
+            ]
+            for executable, arguments, operation in executions:
                 result = subprocess.run(
-                    [sys.executable, str(executable), "discover", "--limit", "1", "--json"],
+                    [sys.executable, str(executable)] + arguments,
                     cwd=str(unrelated), env=environment, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 )
                 self.assertEqual(0, result.returncode, result.stderr)
-                self.assertEqual("discover", json.loads(result.stdout)["operation"])
+                self.assertEqual(operation, json.loads(result.stdout)["operation"])
+
+    def test_generated_provider_mcp_transport_runs_from_an_isolated_bundle(self):
+        generator = load_generator()
+        fixture = ROOT / "tests" / "fixtures" / "scout_responses.json"
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory) / "package"
+            generator.generate(("claude", "gemini"), output_root)
+            unrelated = Path(directory) / "unrelated"
+            unrelated.mkdir()
+            environment = dict(os.environ, MLX_AGENT_FIXTURE=str(fixture))
+            request = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "mlx_agent_execute",
+                    "arguments": {"capability": "scout", "arguments": "--limit 1 --json"},
+                },
+            }
+            for provider in ("claude", "gemini"):
+                executable = output_root / "providers" / provider / "scripts" / "mlx-agent-mcp"
+                result = subprocess.run(
+                    [sys.executable, str(executable)], input=json.dumps(request) + "\n",
+                    cwd=str(unrelated), env=environment, text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                response = json.loads(result.stdout)
+                self.assertEqual(1, response["id"])
+                self.assertFalse(response["result"]["isError"])
+                payload = json.loads(response["result"]["content"][0]["text"])
+                self.assertEqual("ok", payload["status"])
+                self.assertEqual("discover", json.loads(payload["stdout"])["operation"])
 
     def test_generation_removes_only_hash_matched_stale_inventoried_files(self):
         generator = load_generator()
@@ -299,7 +359,7 @@ class GeneratedAdapterTests(unittest.TestCase):
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("Ran 4 tests", result.stderr)
+        self.assertIn("Ran 5 tests", result.stderr)
 
     def test_prompts_are_capability_parity_wrappers_over_the_structured_cli(self):
         generator = load_generator()

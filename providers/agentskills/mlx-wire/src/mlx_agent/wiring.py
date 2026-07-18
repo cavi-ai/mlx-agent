@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 import urllib.error
@@ -12,16 +13,105 @@ from pathlib import Path
 
 _RUNTIMES = {"ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm"}
 _MODEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,191}$")
-_SECRET_NAMES = {"apikey", "token", "secret", "authorization"}
+_SECRET_NAMES = {
+    "accesskey", "accesstoken", "apikey", "auth", "authorization", "clientsecret", "credential",
+    "credentials", "idtoken", "passwd", "password", "privatekey",
+    "refreshtoken", "secret", "secretkey", "token",
+}
 _ASSIGNMENT_SECRET = re.compile(
-    r"(?im)(^|[\s,{&])([\"']?(?:api[_-]?key|token|secret|authorization)[\"']?\s*[:=]\s*)([^\s,}\]\r\n]+|\"(?:\\.|[^\"])*\"|'(?:\\.|[^'])*')"
+    r"(?im)(^|[\s,{&?;])([\"']?(?:"
+    r"[a-z0-9_-]*(?:token|secret|passw(?:or)?d|authorization|credentials?|auth)|"
+    r"[a-z0-9_-]*(?:api|access|private)[_-]?key"
+    r")[\"']?\s*[:=]\s*)"
+    r"([^\s,}\]\r\n]+|\"(?:\\.|[^\"])*\"|'(?:\\.|[^'])*')"
 )
 _URL_USERINFO = re.compile(r"(https?://)([^/@\s]+@)", re.I)
 _OLLAMA = re.compile(r"\A# MLX_AGENT_WIRE v1\nFROM (" + _MODEL.pattern[1:-1] + r")\n\Z")
+_ENV_REFERENCE = re.compile(
+    r"^(?:os\.environ(?:\[[\"'][A-Z][A-Z0-9_]{0,127}[\"']\]|/[A-Z][A-Z0-9_]{0,127})|"
+    r"\$\{[A-Z][A-Z0-9_]{0,127}\}|\$[A-Z][A-Z0-9_]{0,127}|env:[A-Z][A-Z0-9_]{0,127})$"
+)
+_STATE_CHANGING_PATH_PARTS = {
+    "admin", "create", "delete", "install", "kill", "mutate", "pull", "push",
+    "reload", "remove", "reset", "restart", "shutdown", "update", "write",
+}
 
 
 def _secret_name(name):
-    return re.sub(r"[_-]", "", str(name)).lower() in _SECRET_NAMES
+    raw = str(name).lower()
+    collapsed = re.sub(r"[^a-z0-9]", "", raw)
+    if collapsed in _SECRET_NAMES:
+        return True
+    segments = [item for item in re.split(r"[^a-z0-9]+", raw) if item]
+    if any(
+        item in {"auth", "authorization", "credential", "credentials", "passwd", "password", "secret", "token"}
+        for item in segments
+    ):
+        return True
+    return collapsed.endswith(
+        ("accesskey", "apikey", "authorization", "credential", "credentials", "passwd", "password", "privatekey", "secret", "token")
+    )
+
+
+def _environment_reference(value):
+    return isinstance(value, str) and _ENV_REFERENCE.fullmatch(value.strip()) is not None
+
+
+def _json_contains_resolved_secret(value):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if _secret_name(key) and not _environment_reference(item):
+                return True
+            if _json_contains_resolved_secret(item):
+                return True
+        return False
+    if isinstance(value, list):
+        return any(_json_contains_resolved_secret(item) for item in value)
+    if isinstance(value, str):
+        try:
+            parsed = urllib.parse.urlsplit(value)
+        except ValueError:
+            return False
+        if parsed.scheme not in {"http", "https"}:
+            return False
+        if parsed.username is not None or parsed.password is not None:
+            return True
+        return any(
+            _secret_name(key) and not _environment_reference(item)
+            for key, item in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        )
+    return False
+
+
+def contains_resolved_secrets(content):
+    """Return whether configuration text contains a resolved credential value."""
+    if not isinstance(content, str):
+        raise TypeError("configuration content must be text")
+    try:
+        parsed = json.loads(content)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        parsed = None
+    if parsed is not None and _json_contains_resolved_secret(parsed):
+        return True
+    if _URL_USERINFO.search(content):
+        return True
+    for match in _ASSIGNMENT_SECRET.finditer(content):
+        raw = match.group(3).strip()
+        if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {"\"", "'"}:
+            raw = raw[1:-1]
+        if not _environment_reference(raw):
+            return True
+    return False
+
+
+def require_secret_free_config(content):
+    """Fail closed without echoing a resolved secret-bearing value."""
+    if contains_resolved_secrets(content):
+        raise ValueError(
+            "existing configuration contains resolved secret-bearing fields; "
+            "move secrets to environment references or a secret-free managed fragment"
+        )
+    return content
 
 
 def _redact_json(value):
@@ -72,6 +162,56 @@ def redact_secrets(content):
     return text
 
 
+def validate_health_endpoint(endpoint):
+    """Validate one credential-free, read-only loopback HTTP(S) health URL."""
+    if not isinstance(endpoint, str) or not endpoint:
+        raise ValueError("health endpoint must be a non-empty URL")
+    try:
+        parsed = urllib.parse.urlsplit(endpoint)
+        port = parsed.port
+    except ValueError as error:
+        raise ValueError("health endpoint has an invalid port") from error
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("health endpoint must use HTTP(S)")
+    if parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment:
+        raise ValueError("health endpoint must not contain credentials, query, or fragment")
+    if port is not None and not 1 <= port <= 65535:
+        raise ValueError("health endpoint port is outside 1-65535")
+    hostname = parsed.hostname.lower().rstrip(".")
+    if hostname != "localhost":
+        try:
+            address = ipaddress.ip_address(hostname)
+        except ValueError as error:
+            raise ValueError("health endpoint must use localhost or a loopback IP literal") from error
+        if not address.is_loopback:
+            raise ValueError("health endpoint must resolve only to loopback")
+    decoded_path = urllib.parse.unquote(parsed.path or "/").lower()
+    parts = {part for part in decoded_path.split("/") if part}
+    if parts & _STATE_CHANGING_PATH_PARTS:
+        raise ValueError("health endpoint path appears state-changing")
+    return endpoint
+
+
+def _endpoint_origin(endpoint):
+    parsed = urllib.parse.urlsplit(validate_health_endpoint(endpoint))
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    return parsed.scheme.lower(), parsed.hostname.lower().rstrip("."), port
+
+
+class _SameLoopbackOriginRedirect(urllib.request.HTTPRedirectHandler):
+    def __init__(self, origin):
+        super().__init__()
+        self.origin = origin
+
+    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+        destination = urllib.parse.urljoin(request.full_url, new_url)
+        if _endpoint_origin(destination) != self.origin:
+            raise urllib.error.URLError("health redirect left the reviewed loopback origin")
+        return super().redirect_request(
+            request, file_pointer, code, message, headers, destination
+        )
+
+
 class ConfigAdapter:
     """A small format adapter using only documented, exact stdlib-safe subsets."""
 
@@ -106,6 +246,7 @@ class ConfigAdapter:
         self._validate_model(model)
         if not isinstance(existing, str):
             raise TypeError("existing config content must be text")
+        require_secret_free_config(existing)
         if selected == "ollama":
             if existing and existing != self._render_ollama(model):
                 raise ValueError("Ollama Wire accepts only its exact managed configuration")
@@ -167,6 +308,7 @@ class ConfigAdapter:
     def validate(self, content):
         if not isinstance(content, str):
             raise TypeError("configuration content must be text")
+        require_secret_free_config(content)
         if self.runtime in {"lmstudio", "mlx_lm", "mlx-vlm"}:
             value = json.loads(content)
             if not isinstance(value, dict):
@@ -199,11 +341,13 @@ class ConfigAdapter:
         if not endpoint:
             return True
         try:
-            parsed = urllib.parse.urlsplit(endpoint)
-            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-                return False
+            endpoint = validate_health_endpoint(endpoint)
             request = urllib.request.Request(endpoint, method="GET")
-            with urllib.request.urlopen(request, timeout=timeout) as response:
+            opener = urllib.request.build_opener(
+                urllib.request.ProxyHandler({}),
+                _SameLoopbackOriginRedirect(_endpoint_origin(endpoint))
+            )
+            with opener.open(request, timeout=timeout) as response:
                 return 200 <= response.status < 400
         except (OSError, ValueError, urllib.error.URLError):
             return False

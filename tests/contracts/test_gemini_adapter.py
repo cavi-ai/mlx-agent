@@ -90,8 +90,17 @@ class GeminiAdapterContractTests(unittest.TestCase):
             extension_root = output_root / "providers" / "gemini"
             manifest = json.loads((extension_root / "gemini-extension.json").read_text(encoding="utf-8"))
             self.assertEqual("mlx-agent", manifest["name"])
-            self.assertEqual("0.1.0", manifest["version"])
+            self.assertEqual("0.2.0", manifest["version"])
             self.assertIsInstance(manifest["description"], str)
+            self.assertEqual(
+                {
+                    "command": "python3",
+                    "args": ["${extensionPath}/scripts/mlx-agent-mcp"],
+                },
+                manifest["mcpServers"]["mlx-agent"],
+            )
+            self.assertTrue((extension_root / "scripts" / "mlx-agent-mcp").is_file())
+            self.assertTrue((extension_root / "src" / "mlx_agent" / "mcp_server.py").is_file())
             self.assertEqual([], generator._check(("gemini",), output_root))
             for capability in CAPABILITIES:
                 command = parse_command_toml(
@@ -110,17 +119,14 @@ class GeminiAdapterContractTests(unittest.TestCase):
                 self.assertTrue(skill.is_file())
                 skill_text = skill.read_text(encoding="utf-8")
                 self.assertIn("canonical capability ID: mlx-agent.{}".format(capability), skill_text)
-                self.assertIn("mlx_agent.gemini_executor", skill_text)
-                self.assertIn("non-shell file-writing tool/API", skill_text)
-                self.assertIn("never interpolate raw", skill_text.lower())
+                self.assertIn("mlx_agent_execute", skill_text)
+                self.assertIn("extension-owned MCP tool", skill_text)
+                self.assertIn("without a shell", skill_text)
                 self.assertNotIn("<arguments>", skill_text)
                 self.assertNotIn("scripts/mlx-agent", skill_text)
                 self.assertNotIn("python3 <skill-dir>/scripts", skill_text)
-                self.assertIn("any bundled core launcher", skill_text)
-                self.assertIn("program: `python3`", skill_text)
-                self.assertIn("argv: `['-m','mlx_agent.gemini_executor'", skill_text)
-                self.assertIn("environment: `{'PYTHONPATH': skillDir + '/src'}`", skill_text)
-                self.assertIn("shell: `false`", skill_text)
+                self.assertIn("bundled launcher directly", skill_text)
+                self.assertIn("Never use `run_shell_command`", skill_text)
                 self.assertNotIn("PYTHONPATH=", skill_text)
                 self.assertNotRegex(skill_text, r"(?m)^\s*[A-Za-z_][A-Za-z0-9_]*=")
                 self.assertNotIn("|", skill_text)
@@ -157,6 +163,15 @@ class GeminiAdapterContractTests(unittest.TestCase):
                 plan = installer.plan("install", ["gemini"], scope, project)
                 installer.execute(plan, confirmed=plan.preview["preview_hash"])
                 self.assertTrue((extension_root / "gemini-extension.json").is_file())
+                self.assertTrue((extension_root / "scripts" / "mlx-agent-mcp").is_file())
+                self.assertTrue((extension_root / "src" / "mlx_agent" / "mcp_server.py").is_file())
+                mcp = subprocess.run(
+                    [sys.executable, str(extension_root / "scripts" / "mlx-agent-mcp")],
+                    input=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}) + "\n",
+                    cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                self.assertEqual(0, mcp.returncode, mcp.stderr)
+                self.assertEqual("mlx_agent_execute", json.loads(mcp.stdout)["result"]["tools"][0]["name"])
                 for capability in CAPABILITIES:
                     self.assertTrue((extension_root / "commands" / "mlx-{}.toml".format(capability)).is_file())
             for capability in CAPABILITIES:
@@ -190,6 +205,12 @@ class GeminiAdapterContractTests(unittest.TestCase):
         self.assertEqual(
             ["wire", "render", "mlx-community/Qwen3-8B-4bit", "--target", "mlx_lm", "--path", "config/providers.json", "--json"],
             parse_gemini_arguments("wire", "render mlx-community/Qwen3-8B-4bit --target mlx_lm --path config/providers.json --json"),
+        )
+        self.assertEqual(
+            ["wire", "rollback", "receipts/receipt.json", "--confirm", "--preview-hash", "a" * 64, "--json"],
+            parse_gemini_arguments(
+                "wire", "rollback receipts/receipt.json --confirm --preview-hash {0} --json".format("a" * 64)
+            ),
         )
 
     def test_gemini_argument_parser_rejects_hostile_or_unknown_input_without_execution(self):
@@ -290,6 +311,14 @@ class GeminiAdapterContractTests(unittest.TestCase):
                     execute_gemini_command("scout", args_file, core=lambda argv: calls.append(argv))
                 self.assertEqual([], calls)
                 self.assertFalse(args_file.exists())
+
+    def test_gemini_executor_reports_core_nonzero_as_an_error(self):
+        args_file = self._args_file("--limit 1 --json")
+        result = execute_gemini_command("scout", args_file, core=lambda argv: 7)
+        self.assertEqual(
+            {"status": "error", "capability": "scout", "exit_code": 7}, result
+        )
+        self.assertFalse(args_file.exists())
 
     def test_gemini_executor_rejects_unsafe_argument_files_without_invoking_core(self):
         calls = []

@@ -1,6 +1,7 @@
 """Focused standard-library validation for the canonical MLX agent contracts."""
 
 import json
+import argparse
 import re
 from datetime import datetime
 from pathlib import Path
@@ -8,7 +9,13 @@ from typing import Any, Dict, Iterable, List
 
 
 SCHEMA_VERSION = "1.0"
+PLUGIN_VERSION = "0.2.0"
 CAPABILITIES = ("scout", "adopt", "wire")
+CAPABILITY_ACTIONS = {
+    "scout": ("discover",),
+    "adopt": ("start", "resume", "status"),
+    "wire": ("render", "apply", "status", "rollback"),
+}
 NATIVE_PROVIDERS = ("claude", "codex", "gemini", "opencode")
 PROVIDERS = NATIVE_PROVIDERS + ("agentskills",)
 PROVIDER_INVOCATIONS = {
@@ -28,6 +35,7 @@ PROVIDER_COMMANDS = {
 DATE_TIME_PATTERN = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"
 )
+SEMVER_PATTERN = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 
 
 def _is_dict(value: Any) -> bool:
@@ -126,14 +134,24 @@ def _validate_argument(value: Any, prefix: str, errors: List[str]) -> None:
     if not _is_dict(value):
         errors.append("{0} must be an object".format(prefix))
         return
-    keys = ("name", "type", "required")
-    _require_keys(value, keys, prefix, errors)
-    _unexpected_keys(value, keys, prefix, errors)
+    required_keys = ("name", "kind", "type", "required")
+    allowed_keys = required_keys + ("flag", "repeatable")
+    _require_keys(value, required_keys, prefix, errors)
+    _unexpected_keys(value, allowed_keys, prefix, errors)
     _require_string(value, "name", prefix, errors)
-    if value.get("type") not in ("string", "integer", "boolean"):
-        errors.append("{0}.type must be one of ['string', 'integer', 'boolean']".format(prefix))
+    if value.get("type") not in ("string", "integer", "number", "boolean"):
+        errors.append("{0}.type is invalid".format(prefix))
+    if value.get("kind") not in ("positional", "option"):
+        errors.append("{0}.kind is invalid".format(prefix))
+    if value.get("kind") == "option":
+        if not isinstance(value.get("flag"), str) or not re.fullmatch(r"--[a-z][a-z0-9-]*", value["flag"]):
+            errors.append("{0}.flag must be a long option".format(prefix))
+    elif "flag" in value:
+        errors.append("{0}.flag is not allowed for positional arguments".format(prefix))
     if not isinstance(value.get("required"), bool):
         errors.append("{0}.required must be a boolean".format(prefix))
+    if "repeatable" in value and not isinstance(value["repeatable"], bool):
+        errors.append("{0}.repeatable must be a boolean".format(prefix))
 
 
 def _validate_capability(value: Any, name: str, errors: List[str]) -> None:
@@ -141,18 +159,25 @@ def _validate_capability(value: Any, name: str, errors: List[str]) -> None:
     if not _is_dict(value):
         errors.append("{0} must be an object".format(prefix))
         return
-    keys = ("command", "description", "arguments")
+    keys = ("command", "description", "actions")
     _require_keys(value, keys, prefix, errors)
     _unexpected_keys(value, keys, prefix, errors)
     if value.get("command") != "mlx-{0}".format(name):
         errors.append("{0}.command must equal 'mlx-{1}'".format(prefix, name))
     _require_string(value, "description", prefix, errors)
-    arguments = value.get("arguments")
-    if not isinstance(arguments, list):
-        errors.append("{0}.arguments must be an array".format(prefix))
+    actions = value.get("actions")
+    if not isinstance(actions, dict):
+        errors.append("{0}.actions must be an object".format(prefix))
         return
-    for index, argument in enumerate(arguments):
-        _validate_argument(argument, "{0}.arguments[{1}]".format(prefix, index), errors)
+    if tuple(actions) != CAPABILITY_ACTIONS[name]:
+        errors.append("{0}.actions must equal {1}".format(prefix, list(CAPABILITY_ACTIONS[name])))
+    for action_name, action in actions.items():
+        action_prefix = "{0}.actions.{1}".format(prefix, action_name)
+        if not isinstance(action, dict) or set(action) != {"arguments"} or not isinstance(action.get("arguments"), list):
+            errors.append("{0} must contain only an arguments array".format(action_prefix))
+            continue
+        for index, argument in enumerate(action["arguments"]):
+            _validate_argument(argument, "{0}.arguments[{1}]".format(action_prefix, index), errors)
 
 
 def _validate_provider(value: Any, name: str, errors: List[str]) -> None:
@@ -160,7 +185,11 @@ def _validate_provider(value: Any, name: str, errors: List[str]) -> None:
     if not _is_dict(value):
         errors.append("{0} must be an object".format(prefix))
         return
-    keys = ("native", "capabilities", "commands", "detect_commands", "user_root", "project_root", "invocation", "artifacts", "config_paths")
+    keys = (
+        "native", "capabilities", "commands", "detect_commands", "user_root",
+        "project_root", "invocation", "minimum_version", "last_tested_version",
+        "version_probe", "install_mode", "artifacts", "config_paths",
+    )
     _require_keys(value, keys, prefix, errors)
     _unexpected_keys(value, keys, prefix, errors)
     if value.get("capabilities") != list(CAPABILITIES):
@@ -186,6 +215,24 @@ def _validate_provider(value: Any, name: str, errors: List[str]) -> None:
         errors.append("{0}.config_paths must be an array of strings".format(prefix))
     if value.get("invocation") != PROVIDER_INVOCATIONS[name]:
         errors.append("{0}.invocation must equal {1}".format(prefix, PROVIDER_INVOCATIONS[name]))
+    for key in ("minimum_version", "last_tested_version"):
+        version = value.get(key)
+        if version is not None and (not isinstance(version, str) or not SEMVER_PATTERN.fullmatch(version)):
+            errors.append("{0}.{1} must be a SemVer core or null".format(prefix, key))
+    probe = value.get("version_probe")
+    if probe is not None and (
+        not isinstance(probe, dict)
+        or set(probe) != {"args", "timeout_seconds"}
+        or not isinstance(probe["args"], list)
+        or not 1 <= len(probe["args"]) <= 4
+        or not all(isinstance(item, str) and item for item in probe["args"])
+        or not isinstance(probe["timeout_seconds"], (int, float))
+        or isinstance(probe["timeout_seconds"], bool)
+        or not 0 < probe["timeout_seconds"] <= 5
+    ):
+        errors.append("{0}.version_probe is invalid".format(prefix))
+    if value.get("install_mode") not in ("direct", "staged", "portable"):
+        errors.append("{0}.install_mode is invalid".format(prefix))
     if name in NATIVE_PROVIDERS:
         if value.get("native") is not True:
             errors.append("{0}.native must be true".format(prefix))
@@ -196,6 +243,100 @@ def _validate_provider(value: Any, name: str, errors: List[str]) -> None:
             errors.append("{0}.native must be false".format(prefix))
         if value.get("commands") != PROVIDER_COMMANDS[name]:
             errors.append("{0}.commands must equal []".format(prefix))
+
+
+def _subparsers(parser):
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            return action.choices
+    return {}
+
+
+def _parser_argument_contract(parser):
+    result = []
+    for action in parser._actions:
+        if action.dest == "help" or isinstance(action, argparse._SubParsersAction):
+            continue
+        if action.option_strings:
+            flag = next((item for item in action.option_strings if item.startswith("--")), action.option_strings[0])
+            kind = "option"
+            name = flag[2:].replace("-", "_")
+            required = bool(action.required)
+        else:
+            flag = None
+            kind = "positional"
+            name = action.dest
+            required = action.nargs not in ("?", "*")
+        if isinstance(action, (argparse._StoreTrueAction, argparse._StoreFalseAction)):
+            value_type = "boolean"
+        elif action.type is int:
+            value_type = "integer"
+        elif action.type is float:
+            value_type = "number"
+        else:
+            value_type = "string"
+        item = {
+            "name": name,
+            "kind": kind,
+            "type": value_type,
+            "required": required,
+        }
+        if flag is not None:
+            item["flag"] = flag
+        if isinstance(action, argparse._AppendAction):
+            item["repeatable"] = True
+        result.append(item)
+    return result
+
+
+def _validate_cli_parity(value, errors):
+    try:
+        from mlx_agent.cli import build_parser
+        root = _subparsers(build_parser())
+        parser_actions = {
+            "scout": {"discover": root["discover"]},
+            "adopt": _subparsers(root["adopt"]),
+            "wire": _subparsers(root["wire"]),
+        }
+    except Exception as error:
+        errors.append("could not inspect CLI parser: {0}".format(error))
+        return
+    capabilities = value.get("capabilities")
+    if not isinstance(capabilities, dict):
+        return
+    for capability, actions in parser_actions.items():
+        manifest_actions = capabilities.get(capability, {}).get("actions")
+        if not isinstance(manifest_actions, dict):
+            continue
+        for action_name, parser in actions.items():
+            if action_name not in manifest_actions:
+                continue
+            expected = manifest_actions[action_name].get("arguments")
+            actual = _parser_argument_contract(parser)
+            if expected != actual:
+                errors.append(
+                    "capabilities.{0}.actions.{1}.arguments do not match the CLI parser: expected {2}, actual {3}".format(
+                        capability, action_name, expected, actual
+                    )
+                )
+
+
+def _validate_version_parity(value, errors):
+    try:
+        from mlx_agent import __version__
+    except Exception as error:
+        errors.append("could not inspect core version: {0}".format(error))
+        return
+    if value.get("version") != __version__:
+        errors.append("manifest version does not match mlx_agent.__version__")
+    matrix_path = Path(__file__).resolve().parents[1] / "compatibility" / "providers.json"
+    try:
+        matrix = json.loads(matrix_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        errors.append("could not inspect compatibility version: {0}".format(error))
+        return
+    if matrix.get("plugin_version") != value.get("version"):
+        errors.append("compatibility plugin_version does not match manifest version")
 
 
 def validate_manifest(path: Path) -> List[str]:
@@ -211,6 +352,7 @@ def validate_manifest(path: Path) -> List[str]:
     manifest_keys = (
         "$schema",
         "schema_version",
+        "version",
         "identity",
         "scopes",
         "requirements",
@@ -222,11 +364,14 @@ def validate_manifest(path: Path) -> List[str]:
     _unexpected_keys(value, manifest_keys, "manifest", errors)
     _require_string(value, "$schema", "manifest", errors)
     _require_string(value, "schema_version", "manifest", errors)
+    _require_string(value, "version", "manifest", errors)
     _require_string(value, "identity", "manifest", errors)
     if value.get("schema_version") != SCHEMA_VERSION:
         errors.append("schema_version must equal '1.0'")
     if value.get("identity") != "mlx-agent":
         errors.append("identity must equal 'mlx-agent'")
+    if value.get("version") != PLUGIN_VERSION:
+        errors.append("version must equal '{0}'".format(PLUGIN_VERSION))
 
     scopes = value.get("scopes")
     if not isinstance(scopes, list):
@@ -277,6 +422,9 @@ def validate_manifest(path: Path) -> List[str]:
         for provider in PROVIDERS:
             if provider in providers:
                 _validate_provider(providers[provider], provider, errors)
+
+    _validate_cli_parity(value, errors)
+    _validate_version_parity(value, errors)
 
     return errors
 

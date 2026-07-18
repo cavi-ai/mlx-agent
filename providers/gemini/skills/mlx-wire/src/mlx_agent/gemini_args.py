@@ -85,20 +85,23 @@ def _decimal(value, label, minimum, maximum):
 
 
 def _endpoint(value):
-    parsed = urllib.parse.urlsplit(value)
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        hostname = parsed.hostname
+        username = parsed.username
+        password = parsed.password
+        port = parsed.port
+    except (UnicodeError, ValueError) as error:
+        raise GeminiArgumentError("endpoint is not a valid local HTTP URL") from error
     if (
         parsed.scheme not in {"http", "https"}
-        or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
-        or parsed.username is not None
-        or parsed.password is not None
+        or hostname not in {"127.0.0.1", "localhost", "::1"}
+        or username is not None
+        or password is not None
         or parsed.query
         or parsed.fragment
     ):
         raise GeminiArgumentError("endpoint must be a credential-free local HTTP URL")
-    try:
-        port = parsed.port
-    except ValueError as error:
-        raise GeminiArgumentError("endpoint has an invalid port: {0}".format(error))
     if port is not None and not 1 <= port <= 65535:
         raise GeminiArgumentError("endpoint port must be between 1 and 65535")
     return value
@@ -198,7 +201,11 @@ def _parse_wire(tokens):
             raise GeminiArgumentError("Wire {0} requires a receipt path".format(action))
         argv.append(_path(tokens[index], "receipt"))
         index += 1
-        allowed = {"--json"} if action == "status" else {"--confirm", "--json"}
+        allowed = (
+            {"--json"}
+            if action == "status"
+            else {"--confirm", "--preview-hash", "--json"}
+        )
     else:
         if index >= len(tokens):
             raise GeminiArgumentError("Wire {0} requires a model".format(action))

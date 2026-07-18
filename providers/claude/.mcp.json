@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "mlx-agent": {
+      "command": "python3",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/scripts/mlx-agent-mcp"
+      ]
+    }
+  }
+}

@@ -116,7 +116,11 @@ def execute_gemini_command(capability, args_file, core=None):
     except Exception as error:
         raise GeminiCommandError("Gemini command execution failed") from error
     exit_code = 0 if result is None else int(result)
-    return {"status": "ok", "capability": capability, "exit_code": exit_code}
+    return {
+        "status": "ok" if exit_code == 0 else "error",
+        "capability": capability,
+        "exit_code": exit_code,
+    }
 
 
 def main(argv=None):
@@ -125,10 +129,11 @@ def main(argv=None):
     parser.add_argument("--args-file", required=True)
     arguments = parser.parse_args(argv)
     try:
-        print(json.dumps(execute_gemini_command(arguments.capability, arguments.args_file), sort_keys=True))
+        result = execute_gemini_command(arguments.capability, arguments.args_file)
+        print(json.dumps(result, sort_keys=True))
     except GeminiCommandError:
         parser.error("Gemini command arguments were rejected")
-    return 0
+    return result["exit_code"]
 
 
 if __name__ == "__main__":

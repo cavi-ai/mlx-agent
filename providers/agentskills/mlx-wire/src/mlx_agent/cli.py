@@ -7,7 +7,7 @@ import sys
 import urllib.parse
 from pathlib import Path
 
-from .adoption import AdoptionRequest, AdoptionWorkflow
+from .adoption import ADOPTION_SCHEMA_VERSION, AdoptionRequest, AdoptionWorkflow
 from .contracts import ErrorDetail, ResultEnvelope
 from .discovery import DiscoveryRequest, DiscoveryService
 from .host import HostInventory
@@ -15,7 +15,16 @@ from .huggingface import HuggingFaceClient
 from .installer import Installer, InstallerConflictError
 from .models import ROLES, render_md, wire
 from .providers import ProviderRegistry
-from .transactions import COOPERATIVE_CONCURRENCY_NOTE, ConcurrentTransactionError, Receipt, Transaction, _assert_safe_target, _read_regular, rollback
+from .transactions import (
+    COOPERATIVE_CONCURRENCY_NOTE,
+    ConcurrentTransactionError,
+    Receipt,
+    Transaction,
+    _assert_safe_target,
+    _read_regular,
+    preview_rollback,
+    rollback,
+)
 from .verification import Verifier
 from .wiring import ConfigAdapter
 
@@ -212,7 +221,9 @@ def _run_adoption(arguments):
                 operation,
                 "adoption_state_invalid",
                 "Adoption state could not be read: {0}".format(error),
-                "Check --state PATH and restore a schema-version 1.0 adoption handoff.",
+                "Check --state PATH and restore a schema-version {0} adoption handoff.".format(
+                    ADOPTION_SCHEMA_VERSION
+                ),
             ), arguments.json)
         return _emit_adoption_result(
             ResultEnvelope.ok(operation, {"state": state.to_dict()}), arguments.json
@@ -332,11 +343,26 @@ def _run_wire(arguments):
             return _emit_wire_result(_wire_ok(operation, {"receipt": _receipt_data(receipt)}), arguments.json)
         if arguments.wire_command == "rollback":
             if not arguments.confirm:
+                preview = preview_rollback(arguments.receipt)
+                result = _wire_ok(
+                    operation, {"preview": preview, "requires_confirmation": True}
+                )
+                if arguments.json:
+                    print(json.dumps(result.to_dict(), indent=2))
+                else:
+                    print(json.dumps(preview, indent=2))
+                    print(
+                        "Confirmation required: rerun with --confirm --preview-hash PREVIEW_HASH."
+                    )
+                return 2
+            if not arguments.preview_hash:
                 return _emit_wire_result(_wire_failure(
-                    operation, "confirmation_required", "Rollback was not started without --confirm.",
-                    "Review the receipt with 'wire status RECEIPT', then run 'wire rollback RECEIPT --confirm'.",
+                    operation,
+                    "preview_hash_required",
+                    "--confirm requires the hash from a reviewed rollback preview.",
+                    "Run wire rollback without --confirm, inspect the current-state preview, then pass --preview-hash.",
                 ), arguments.json)
-            receipt = rollback(arguments.receipt)
+            receipt = rollback(arguments.receipt, preview_hash=arguments.preview_hash)
             result = _wire_ok(operation, {"receipt": _receipt_data(receipt)}) if receipt.status == "rolled_back" else _wire_failure(
                 operation, receipt.status, "Rollback did not complete; receipt status is {0}.".format(receipt.status),
                 "Inspect the receipt validations and restore the verified backup manually.", {"receipt": _receipt_data(receipt)},
@@ -410,6 +436,7 @@ def _add_wire_arguments(parser):
     restore = actions.add_parser("rollback", help="restore a Wire receipt's exact backup")
     restore.add_argument("receipt")
     restore.add_argument("--confirm", action="store_true", help="explicitly authorize this rollback")
+    restore.add_argument("--preview-hash", help="hash returned by the separately reviewed rollback preview")
     restore.add_argument("--json", action="store_true")
 
 
@@ -442,6 +469,16 @@ def _installer_result(operation, data, as_json, status="ok", error=None):
             available = [item["id"] for item in data["providers"] if item["available"]]
             print("No provider was selected. Detected providers: {0}".format(", ".join(available) if available else "none"))
         elif "preview" in data:
+            compatibility = data.get("plan", {}).get("compatibility", [])
+            if compatibility:
+                print("Provider compatibility:")
+                for item in compatibility:
+                    details = "{0}: {1}".format(item["id"], item["state"])
+                    if item.get("version"):
+                        details += " (version {0})".format(item["version"])
+                    if item.get("error"):
+                        details += " - {0}".format(item["error"])
+                    print(details)
             print(data["preview"]["diff"])
             print("Confirmation required: rerun with --confirm --preview-hash PREVIEW_HASH.")
         else:
@@ -499,7 +536,7 @@ def legacy_scout_main(argv=None):
     return _run_discovery(parser.parse_args(argv), legacy=True)
 
 
-def main(argv=None):
+def build_parser():
     parser = argparse.ArgumentParser(description="MLX agent command-line core.")
     subcommands = parser.add_subparsers(dest="command", required=True)
     discover = subcommands.add_parser("discover", help="discover MLX models for this host")
@@ -515,6 +552,11 @@ def main(argv=None):
     for name in ("install", "update", "uninstall", "doctor"):
         installer_command = subcommands.add_parser(name, help="{0} declared provider artifacts safely".format(name))
         _add_installer_arguments(installer_command)
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
     arguments = parser.parse_args(argv)
     if arguments.command == "adopt":
         return _run_adoption(arguments)

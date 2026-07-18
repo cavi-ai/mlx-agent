@@ -1,5 +1,6 @@
 {
   "schema_version": "1.0",
+  "plugin_version": "0.2.0",
   "generated_from": "Task 12 release-candidate validation evidence (2026-07-17)",
   "allowed_evidence_statuses": ["supported", "not-run", "blocked", "static", "fixture"],
   "providers": {
@@ -7,10 +8,10 @@
       "id": "claude",
       "display_name": "Claude Code",
       "documentation": "docs/install/claude.md",
-      "minimum_version": "not established",
+      "minimum_version": "2.1.143",
       "last_tested_version": "2.1.198",
       "scopes": ["user", "project"],
-      "config_paths": ["~/.claude", "<project>/.claude"],
+      "config_paths": ["~/.claude/plugins/mlx-agent", "<project>/.claude/plugins/mlx-agent"],
       "capabilities": {
         "scout": {"command": "mlx-scout", "invocation": "/mlx-scout"},
         "adopt": {"command": "mlx-adopt", "invocation": "/mlx-adopt"},
@@ -62,13 +63,13 @@
         "adopt": {"command": "mlx-adopt", "invocation": "/mlx-adopt"},
         "wire": {"command": "mlx-wire", "invocation": "/mlx-wire"}
       },
-      "last_smoke_test": {"status": "supported", "date": "2026-07-17", "summary": "Gemini CLI 0.46.0 validation/install, user and project skill discovery, fixture-backed Scout, and cleanup passed in a disposable HOME; command-list routing and model invocation were not run."},
-      "release_evidence": {"id": "rc-2026-07-17-gemini", "status": "supported", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, disposable HOME", "cli_version": "0.46.0", "scopes_tested": ["user", "project"], "native_discovery": "skills listed in both scopes", "fixture_bundle": "passed", "uninstall": "passed"},
+      "last_smoke_test": {"status": "fixture", "date": "2026-07-17", "summary": "Gemini CLI 0.46.0 validation/install, user and project skill discovery, fixture-backed Scout, and cleanup passed in a disposable HOME; command-list routing and model invocation were not run."},
+      "release_evidence": {"id": "rc-2026-07-17-gemini", "status": "fixture", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, disposable HOME", "cli_version": "0.46.0", "scopes_tested": ["user", "project"], "native_discovery": "skills listed in both scopes; slash-command discovery not run", "fixture_bundle": "passed", "uninstall": "passed"},
       "evidence": {
         "schema": {"status": "supported", "summary": "Extension, command TOML, and structured transport contracts are covered by tests."},
         "install_round_trip": {"status": "supported", "summary": "Isolated user extension install/remove and project installer round trip passed."},
-        "native_discovery": {"status": "supported", "summary": "User and project bundled skills were discovered; the model-routable /commands list probe remained disabled."},
-        "bundle_execution": {"status": "supported", "summary": "Installed launcher executed fixture-backed Scout."},
+        "native_discovery": {"status": "fixture", "summary": "User and project bundled skills were discovered; the model-routable /commands list probe remained disabled."},
+        "bundle_execution": {"status": "fixture", "summary": "Installed launcher executed fixture-backed Scout; no native slash command was invoked."},
         "model_backed_invocation": {"status": "not-run", "summary": "No Gemini model-backed slash-command response is claimed."}
       }
     },
@@ -76,7 +77,7 @@
       "id": "opencode",
       "display_name": "OpenCode",
       "documentation": "docs/install/opencode.md",
-      "minimum_version": "not established",
+      "minimum_version": "1.17.7",
       "last_tested_version": "not recorded",
       "scopes": ["user", "project"],
       "config_paths": ["~/.config/opencode", "<project>/.opencode"],

@@ -7,6 +7,7 @@
   "required": [
     "$schema",
     "schema_version",
+    "version",
     "identity",
     "scopes",
     "requirements",
@@ -21,6 +22,10 @@
     },
     "schema_version": {
       "const": "1.0"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
     },
     "identity": {
       "const": "mlx-agent"
@@ -123,6 +128,7 @@
       "additionalProperties": false,
       "required": [
         "name",
+        "kind",
         "type",
         "required"
       ],
@@ -135,11 +141,40 @@
           "enum": [
             "string",
             "integer",
+            "number",
             "boolean"
           ]
         },
+        "kind": {
+          "enum": ["positional", "option"]
+        },
+        "flag": {
+          "type": "string",
+          "pattern": "^--[a-z][a-z0-9-]*$"
+        },
         "required": {
           "type": "boolean"
+        },
+        "repeatable": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "option"}}},
+          "then": {"required": ["flag"]},
+          "else": {"not": {"required": ["flag"]}}
+        }
+      ]
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["arguments"],
+      "properties": {
+        "arguments": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/argument"}
         }
       }
     },
@@ -149,7 +184,7 @@
       "required": [
         "command",
         "description",
-        "arguments"
+        "actions"
       ],
       "properties": {
         "command": {
@@ -160,11 +195,11 @@
           "type": "string",
           "minLength": 1
         },
-        "arguments": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/argument"
-          }
+        "actions": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"$ref": "#/$defs/action"},
+          "propertyNames": {"pattern": "^[a-z][a-z0-9-]*$"}
         }
       }
     },
@@ -175,6 +210,11 @@
         "native",
         "capabilities",
         "commands",
+        "invocation",
+        "minimum_version",
+        "last_tested_version",
+        "version_probe",
+        "install_mode",
         "detect_commands",
         "user_root",
         "project_root",
@@ -194,7 +234,9 @@
               "wire"
             ]
           },
-          "uniqueItems": true
+          "uniqueItems": true,
+          "minItems": 3,
+          "maxItems": 3
         },
         "commands": {
           "type": "array",
@@ -203,6 +245,53 @@
           },
           "uniqueItems": true
         },
+        "invocation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "prefix"],
+          "properties": {
+            "kind": {"enum": ["command", "skill"]},
+            "prefix": {"enum": ["/", "$", ""]}
+          },
+          "allOf": [
+            {
+              "if": {"properties": {"kind": {"const": "command"}}},
+              "then": {"properties": {"prefix": {"const": "/"}}}
+            },
+            {
+              "if": {"properties": {"kind": {"const": "skill"}}},
+              "then": {"properties": {"prefix": {"enum": ["$", ""]}}}
+            }
+          ]
+        },
+        "minimum_version": {
+          "type": ["string", "null"],
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "last_tested_version": {
+          "type": ["string", "null"],
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "version_probe": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["args", "timeout_seconds"],
+              "properties": {
+                "args": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 4,
+                  "items": {"type": "string", "minLength": 1, "maxLength": 64}
+                },
+                "timeout_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 5}
+              }
+            }
+          ]
+        },
+        "install_mode": {"enum": ["direct", "staged", "portable"]},
         "detect_commands": {
           "type": "array",
           "items": {"type": "string"},
@@ -235,7 +324,34 @@
           "type": "array",
           "items": {"type": "string"}
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"native": {"const": true}}},
+          "then": {
+            "properties": {
+              "commands": {"minItems": 1},
+              "detect_commands": {"minItems": 1},
+              "minimum_version": {"type": "string"},
+              "version_probe": {"type": "object"},
+              "install_mode": {"enum": ["direct", "staged"]}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"native": {"const": false}}},
+          "then": {
+            "properties": {
+              "commands": {"maxItems": 0},
+              "detect_commands": {"maxItems": 0},
+              "minimum_version": {"type": "null"},
+              "last_tested_version": {"type": "null"},
+              "version_probe": {"type": "null"},
+              "install_mode": {"const": "portable"}
+            }
+          }
+        }
+      ]
     }
   }
 }

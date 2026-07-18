@@ -30,6 +30,7 @@ class DocumentationContractTests(unittest.TestCase):
         self.readme = README_PATH.read_text(encoding="utf-8")
 
     def test_matrix_records_complete_evidence_for_every_provider(self):
+        self.assertEqual("0.2.0", self.matrix["plugin_version"])
         self.assertEqual(set(PROVIDERS), set(self.matrix["providers"]))
         self.assertEqual(
             {"supported", "not-run", "blocked", "static", "fixture"},
@@ -65,6 +66,7 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertTrue(RELEASE_EVIDENCE_PATH.is_file())
         evidence = json.loads(RELEASE_EVIDENCE_PATH.read_text(encoding="utf-8"))
         self.assertEqual("1.0", evidence["schema_version"])
+        self.assertEqual(self.matrix["plugin_version"], evidence["plugin_version"])
         self.assertEqual(self.matrix["allowed_evidence_statuses"], evidence["allowed_evidence_statuses"])
         self.assertEqual(set(PROVIDERS), set(evidence["providers"]))
         for provider_id, matrix_entry in self.matrix["providers"].items():
@@ -132,6 +134,7 @@ class DocumentationContractTests(unittest.TestCase):
             entry["last_tested_version"] for entry in self.matrix["providers"].values()
             if re.fullmatch(r"\d+\.\d+\.\d+", entry["last_tested_version"])
         }
+        matrix_versions.add(self.matrix["plugin_version"])
         self.assertTrue(documented_versions.issubset(matrix_versions))
 
     def test_compatibility_block_is_rendered_from_the_matrix_and_current(self):
@@ -180,7 +183,8 @@ class DocumentationContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             release_evidence = Path(directory) / "release-evidence.json"
             evidence = json.loads(RELEASE_EVIDENCE_PATH.read_text(encoding="utf-8"))
-            evidence["providers"]["gemini"]["status"] = "fixture"
+            current = evidence["providers"]["gemini"]["status"]
+            evidence["providers"]["gemini"]["status"] = "verified" if current != "verified" else "fixture"
             release_evidence.write_text(json.dumps(evidence), encoding="utf-8")
             result = subprocess.run(
                 ["python3", str(RENDERER_PATH), "--check", "--release-evidence", str(release_evidence)],

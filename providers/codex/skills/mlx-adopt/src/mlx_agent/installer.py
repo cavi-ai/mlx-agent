@@ -12,7 +12,8 @@ from pathlib import Path
 from .providers import detect_providers
 from .transactions import (
     LegacyLockError, Receipt, Transaction, _assert_safe_directory, _assert_safe_target,
-    _atomic_in_directory, _read_regular, _walk_directory, legacy_lock_problem, rollback,
+    _atomic_in_directory, _read_regular, _read_target, _walk_directory,
+    _rollback_receipt_hash, legacy_lock_problem, rollback,
 )
 from .wiring import redact_secrets
 
@@ -41,6 +42,7 @@ class _SourceCodeArtifactAdapter:
     """Source modules may contain secret-pattern examples but never persisted values."""
 
     version = "installer-source-1.0"
+    secret_scan_exempt = True
 
     def validate(self, content):
         if not isinstance(content, str):
@@ -89,6 +91,7 @@ class InstallPlan:
     uninstall_hashes: dict = field(default_factory=dict)
     restore_changes: tuple = field(default_factory=tuple)
     binding: dict = field(default_factory=dict)
+    compatibility: tuple = field(default_factory=tuple)
     noop: bool = False
 
     def to_dict(self):
@@ -98,6 +101,7 @@ class InstallPlan:
             "scope": self.scope,
             "project_root": str(self.project_root),
             "preview": self.preview,
+            "compatibility": list(self.compatibility),
             "noop": self.noop,
         }
 
@@ -116,21 +120,51 @@ def _digest(value):
     return _sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8"))
 
 
+def _read_optional_target(path):
+    """Read an artifact without following links; missing parent paths mean absent."""
+    try:
+        content, exists, _mode = _read_target(path)
+        return content if exists else None
+    except ValueError as error:
+        if str(error).startswith("path component does not exist:"):
+            return None
+        raise
+
+
+def _adapter_for_artifact(artifact):
+    is_runtime_source = "src" in artifact.source.parts and "mlx_agent" in artifact.source.parts
+    return _SourceCodeArtifactAdapter() if is_runtime_source else _ArtifactAdapter()
+
+
 class Installer:
     """Plan first; execute only the exact reviewed transaction previews."""
 
     def __init__(self, registry, project_root=None, executable_lookup=None, env=None,
-                 transaction_factory=None, rollback_func=None):
+                 transaction_factory=None, rollback_func=None, probe_runner=None):
         self.registry = registry
         self.project_root = Path(project_root).resolve() if project_root else Path.cwd().resolve()
         self.executable_lookup = executable_lookup
         self.env = env
         self.transaction_factory = transaction_factory or Transaction
         self.rollback_func = rollback_func or rollback
+        self.probe_runner = probe_runner
 
     def detected(self):
         return detect_providers(
-            self.registry.definitions().values(), self.env, executable_lookup=self.executable_lookup
+            self.registry.definitions().values(), self.env,
+            executable_lookup=self.executable_lookup,
+            probe_runner=self.probe_runner,
+        )
+
+    def _compatibility(self, provider_ids):
+        definitions = self.registry.definitions()
+        return tuple(
+            item.to_dict() for item in detect_providers(
+                [definitions[provider_id] for provider_id in provider_ids],
+                self.env,
+                executable_lookup=self.executable_lookup,
+                probe_runner=self.probe_runner,
+            )
         )
 
     def plan(self, action, providers, scope="user", project_root=None):
@@ -200,7 +234,11 @@ class Installer:
         try:
             for receipt in plan.rollback_receipts:
                 self._batch_update(batch_path, "pending", attempted, active={"provider": "uninstall", "transaction_id": receipt.transaction_id, "expected_receipt_path": receipt.receipt_path})
-                result = self.rollback_func(receipt.receipt_path, expected_after_hashes=receipt.after_hashes)
+                result = self.rollback_func(
+                    receipt.receipt_path,
+                    expected_after_hashes=receipt.after_hashes,
+                    expected_receipt_hash=_rollback_receipt_hash(receipt),
+                )
                 recorded = self._rollback_result(result, receipt, plan.scope, plan.project_root)
                 attempted.append(recorded)
                 self._batch_update(batch_path, "pending", attempted)
@@ -235,16 +273,21 @@ class Installer:
                 if not definition.applies_to(scope, artifact):
                     continue
                 target = definition.artifact_destination(scope, project, artifact)
-                desired = artifact.source.read_text(encoding="utf-8")
-                current = target.read_bytes() if target.is_file() else None
+                desired_bytes, source_exists, _source_mode = _read_target(artifact.source)
+                if not source_exists:
+                    raise ValueError("provider artifact source disappeared: {0}".format(artifact.source))
+                try:
+                    desired = desired_bytes.decode("utf-8")
+                except UnicodeDecodeError as error:
+                    raise ValueError("provider artifact source must be UTF-8") from error
+                current = _read_optional_target(target)
                 if current is not None:
                     history = self._artifact_history(definition, target, scope, project)
                     if not history or _sha256(current) != history[-1].after_hashes[str(target)]:
                         raise InstallerConflictError("refusing to overwrite unowned or modified artifact: {0}".format(target))
                     if current == desired.encode("utf-8"):
                         continue
-                is_runtime_source = "src" in artifact.source.parts and "mlx_agent" in artifact.source.parts
-                adapter = _SourceCodeArtifactAdapter() if is_runtime_source else _ArtifactAdapter()
+                adapter = _adapter_for_artifact(artifact)
                 changes.append({"path": str(target), "content": desired, "adapter": adapter})
             if changes:
                 transaction = self._new_transaction(scope, project)
@@ -275,7 +318,11 @@ class Installer:
                 if _sha256(content) != latest.after_hashes[target_name]:
                     raise InstallerConflictError("refusing to remove user-modified artifact: {0}".format(target))
                 uninstall_hashes[target_name] = latest.after_hashes[target_name]
-                restore_changes.setdefault(provider_id, []).append({"path": target_name, "content": content.decode("utf-8"), "adapter": _ArtifactAdapter()})
+                restore_changes.setdefault(provider_id, []).append({
+                    "path": target_name,
+                    "content": content.decode("utf-8"),
+                    "adapter": _adapter_for_artifact(artifact),
+                })
                 provider_steps.extend(history)
             for receipt in sorted({item.receipt_path: item for item in provider_steps}.values(), key=lambda item: item.timestamp, reverse=True):
                 if receipt.receipt_path not in seen:
@@ -322,10 +369,19 @@ class Installer:
                     current = current.parent
 
     def _doctor(self, plan):
-        problems, checked = [], []
+        problems, checked, provider_states = [], [], []
         definitions = self.registry.definitions()
+        detections = {
+            item.id: item for item in detect_providers(
+                [definitions[provider_id] for provider_id in plan.provider_ids],
+                self.env,
+                executable_lookup=self.executable_lookup,
+                probe_runner=self.probe_runner,
+            )
+        }
         for provider_id in plan.provider_ids:
             definition = definitions[provider_id]
+            artifact_problems = []
             for artifact in definition.artifacts:
                 if not definition.applies_to(plan.scope, artifact):
                     continue
@@ -339,7 +395,35 @@ class Installer:
                     if not history or _sha256(_read_regular(location)) != history[-1].after_hashes[str(target)]:
                         raise ValueError("artifact hash is not receipt-owned")
                 except (OSError, ValueError):
-                    problems.append({"provider": provider_id, "code": "artifact_invalid", "path": str(target)})
+                    problem = {"provider": provider_id, "code": "artifact_invalid", "path": str(target)}
+                    problems.append(problem)
+                    artifact_problems.append(problem)
+            detection = detections[provider_id]
+            if definition.install_mode == "portable":
+                integration_state = "portable"
+            elif definition.install_mode == "staged":
+                integration_state = "staged"
+                problems.append({
+                    "provider": provider_id,
+                    "code": "provider_staged",
+                    "message": "artifacts are staged but native host visibility is not proven",
+                })
+            elif detection.state == "native-visible":
+                integration_state = "native-visible"
+            else:
+                integration_state = "staged"
+                code = "provider_unsupported" if detection.state == "unsupported" else "provider_absent"
+                problems.append({
+                    "provider": provider_id,
+                    "code": code,
+                    "message": detection.error or "provider compatibility could not be proven",
+                })
+            provider_states.append({
+                "provider": provider_id,
+                "artifact_state": "invalid" if artifact_problems else "installed",
+                "integration_state": integration_state,
+                "compatibility": detection.to_dict(),
+            })
         problems.extend(self._batch_problems(plan.scope, plan.project_root))
         lock_root = self._receipts_dir(plan.scope, plan.project_root) / "locks"
         for provider_id in plan.provider_ids:
@@ -356,6 +440,7 @@ class Installer:
                 continue
             problems.extend({"provider": provider_id, **item} for item in legacy_problem)
         return {"healthy": not problems, "problems": problems, "checked": checked,
+                "providers": provider_states,
                 "cooperative_concurrency": "Transaction advisory locks protect cooperative writers."}
 
     def _batch_problems(self, scope, project):
@@ -390,18 +475,20 @@ class Installer:
     def _make_plan(self, action, selected, scope, project, transactions=(), rollback_receipts=(),
                    uninstall_hashes=None, restore_changes=(), summary=(), definitions=None):
         definitions = definitions or self.registry.definitions()
+        compatibility = self._compatibility(selected)
         destinations = [{"provider": provider_id, "targets": [str(definitions[provider_id].artifact_destination(scope, project, artifact)) for artifact in definitions[provider_id].artifacts if definitions[provider_id].applies_to(scope, artifact)]} for provider_id in selected]
         binding = {
             "action": action, "providers": list(selected), "scope": scope, "project": str(project),
             "destinations": destinations,
             "inner_previews": [{"provider": item.provider_id, "hash": item.preview_hash, "targets": list(item.destinations)} for item in transactions],
             "rollback_chain": [self._receipt_identity(item) for item in rollback_receipts],
+            "compatibility": list(compatibility),
         }
         preview = {"changes": sum(item["changes"] for item in summary), "providers": list(selected),
                    "diff": "\n".join(item["diff"] for item in summary), "preview_hash": _digest(binding),
                    "requires_confirmation": action != "doctor"}
         return InstallPlan(action, selected, scope, project, preview, list(transactions), list(rollback_receipts),
-                           dict(uninstall_hashes or {}), tuple(restore_changes), binding,
+                           dict(uninstall_hashes or {}), tuple(restore_changes), binding, compatibility,
                            noop=not transactions and not rollback_receipts)
 
     def _verify_plan_binding(self, plan):
@@ -412,6 +499,7 @@ class Installer:
             "destinations": [{"provider": provider_id, "targets": [str(definitions[provider_id].artifact_destination(plan.scope, plan.project_root, artifact)) for artifact in definitions[provider_id].artifacts if definitions[provider_id].applies_to(plan.scope, artifact)]} for provider_id in plan.provider_ids],
             "inner_previews": [{"provider": item.provider_id, "hash": item.preview_hash, "targets": list(item.destinations)} for item in plan.transactions],
             "rollback_chain": [self._receipt_identity(self._load_receipt(item.receipt_path, plan.scope, plan.project_root)) for item in plan.rollback_receipts],
+            "compatibility": list(self._compatibility(plan.provider_ids)),
         }
         if binding != plan.binding or _digest(binding) != plan.preview["preview_hash"]:
             raise PermissionError("installer preview is stale; regenerate and review it before confirmation")
@@ -466,7 +554,8 @@ class Installer:
     def _receipt_identity(receipt):
         return {"transaction_id": receipt.transaction_id, "receipt_path": receipt.receipt_path,
                 "targets": list(receipt.targets), "before_hashes": receipt.before_hashes,
-                "after_hashes": receipt.after_hashes, "backup_paths": receipt.backup_paths}
+                "after_hashes": receipt.after_hashes, "backup_paths": receipt.backup_paths,
+                "rollback_receipt_hash": _rollback_receipt_hash(receipt)}
 
     def _rollback_result(self, result, planned, scope, project):
         if all(hasattr(result, field) for field in ("transaction_id", "receipt_path", "targets", "before_hashes", "after_hashes", "backup_paths")):
@@ -482,8 +571,13 @@ class Installer:
     def _compensate_install(self, receipts):
         unresolved = []
         for receipt in reversed(receipts):
+            if receipt.status == "rolled_back":
+                continue
             try:
-                expected = {"expected_after_hashes": receipt.after_hashes} if receipt.status == "applied" else {}
+                expected = {
+                    "expected_after_hashes": receipt.after_hashes,
+                    "expected_receipt_hash": _rollback_receipt_hash(receipt),
+                } if receipt.status == "applied" else {}
                 result = self.rollback_func(receipt.receipt_path, **expected)
                 if result.status != "rolled_back":
                     unresolved.append({"paths": list(receipt.targets), "message": "Could not recover child receipt: {0}".format(receipt.receipt_path)})

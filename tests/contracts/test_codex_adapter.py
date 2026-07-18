@@ -190,7 +190,7 @@ esac
                 (plugin_root / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
             )
             self.assertEqual("mlx-agent", metadata["name"])
-            self.assertEqual("0.1.0", metadata["version"])
+            self.assertEqual("0.2.0", metadata["version"])
             self.assertEqual("./skills/", metadata["skills"])
             self.assertEqual("Sasan Sotoodehfar", metadata["author"]["name"])
             self.assertIn("interface", metadata)

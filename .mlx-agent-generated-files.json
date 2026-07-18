@@ -2,11 +2,15 @@
   "files": [
     {
       "path": ".claude-plugin/marketplace.json",
-      "sha256": "dd54a4bc64e913e7c9d9a0fd652bb0ace1ae56f152acf655cb8683cef04f65bb"
+      "sha256": "3e09ffeaf4769afb41ed1ee8259627f23a3bd9e00d582bd3c040a301d28dab2e"
     },
     {
       "path": ".claude-plugin/plugin.json",
-      "sha256": "51bcc7c125d342fffc9e02b2742b69314c51c4c432473b31860bbd3c14fdb52c"
+      "sha256": "7c724aecccc204b8fd4d744d22dd96dc67c24cf9d359d6b16e4b9d4daf91055f"
+    },
+    {
+      "path": ".mcp.json",
+      "sha256": "3925fe13e423a9a3dc8601a600bac6fade495945189fbf746f20ce45a92b088c"
     },
     {
       "path": "agents/mlx-advisor.md",
@@ -14,15 +18,15 @@
     },
     {
       "path": "commands/mlx-adopt.md",
-      "sha256": "93b7256bb66ae1ceab424dd1a43933bcdef3bfb6eb5e1a038a78354faaf5a744"
+      "sha256": "87950e2f92f47c4bf5afb1816db718b0d8a05fcd9a6effb50e845d05fd9e7fac"
     },
     {
       "path": "commands/mlx-scout.md",
-      "sha256": "366457a5ecc6d70d6fe453f135526d88fb685cb16df0f1df59d1a3380524e33d"
+      "sha256": "23ea2080e01d12f13766264c41dce13e03f01f912b0f487e09d7526710e1e7c4"
     },
     {
       "path": "commands/mlx-wire.md",
-      "sha256": "a82dca45b1350b0486d1b599f3e1d9c24d941d262ddc813491315b1abf7759d1"
+      "sha256": "77cc74a96e1d9421b6152394f05131b311d04e2f5630e9e3e723a43b86cd8fe8"
     },
     {
       "path": "scripts/mlx-adopt.workflow.mjs",

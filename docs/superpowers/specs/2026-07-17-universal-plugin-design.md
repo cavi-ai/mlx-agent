@@ -4,7 +4,7 @@
 
 **Date:** 2026-07-17
 
-**Target release:** Universal provider support following v0.1.0
+**Target release:** v0.2.0 universal provider support following v0.1.0
 
 ## Summary
 

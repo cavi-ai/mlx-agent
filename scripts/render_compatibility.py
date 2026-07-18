@@ -36,6 +36,8 @@ def _load_matrix(path):
         raise ValueError("could not read compatibility matrix: {0}".format(error))
     if not isinstance(matrix, dict) or not isinstance(matrix.get("providers"), dict):
         raise ValueError("compatibility matrix must contain providers")
+    if not isinstance(matrix.get("plugin_version"), str):
+        raise ValueError("compatibility matrix must contain plugin_version")
     statuses = matrix.get("allowed_evidence_statuses")
     if not isinstance(statuses, list) or not all(isinstance(item, str) for item in statuses):
         raise ValueError("compatibility matrix must declare allowed evidence statuses")
@@ -90,6 +92,8 @@ def _load_release_evidence(path, matrix):
         raise ValueError("release evidence has an unsupported schema")
     if evidence.get("allowed_evidence_statuses") != matrix["allowed_evidence_statuses"]:
         raise ValueError("release evidence status vocabulary differs from the compatibility matrix")
+    if evidence.get("plugin_version") != matrix["plugin_version"]:
+        raise ValueError("release evidence plugin version differs from the compatibility matrix")
     providers = evidence.get("providers")
     if not isinstance(providers, dict) or set(providers) != set(matrix["providers"]):
         raise ValueError("release evidence providers differ from the compatibility matrix")

@@ -10,9 +10,9 @@ Task 12 was retargeted by user authorization from evidence-only validation to re
 
 ### legacy-lock migration evidence
 
-- New installer transactions and rollback scan all deterministic legacy target-adjacent lock paths before taking scoped receipt-storage locks.
-- A busy legacy lock fails closed as `legacy_lock_busy`; a stale regular lock is removed only while exclusively held and its canonical physical-target digest is added to the versioned, target-specific `legacy-target-locks-v1` scoped state map and receipt version.
-- A recreated target-adjacent lock fails closed as `legacy_lock_recreated` only when that exact target digest is already migrated; another unmigrated target remains independently migratable. `doctor` reports both states and remediation.
+- New installer transactions and rollback enumerate every strict legacy lock candidate descriptor-relatively under each opened physical target parent while holding the exclusive migration window.
+- All candidates must be current-user regular files and must be acquired nonblocking before any unlink; a busy candidate fails closed as `legacy_lock_busy`, while stale candidates are removed only while exclusively held and the physical parent identity is added to the versioned `legacy-target-locks-v1` state map and receipt version.
+- Any strict candidate recreated under a migrated parent fails closed as `legacy_lock_recreated`; invalid lookalike filenames remain untouched and another unmigrated parent remains independently migratable. `doctor` reports both states and remediation.
 - Upgrade requires all older mlx-agent processes stopped. After migration, an older binary is unsupported; this check can reject a recreated legacy lock but cannot coordinate a future process that ignores the scoped-lock upgrade.
 
 ## Provider smoke evidence

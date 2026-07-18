@@ -122,7 +122,7 @@ The generated `providers/agentskills/mlx-scout/`, `providers/agentskills/mlx-ado
 
 ## Contributing
 
-Issues and PRs welcome. The core is a single dependency-free Python file — easy to read, easy to extend (add a role, a runtime target, or a better heuristic).
+Issues and PRs welcome. The core is a dependency-free Python package, and `skills/mlx-scout/scripts/scout.py` is its legacy compatibility wrapper — easy to read, easy to extend (add a role, a runtime target, or a better heuristic).
 
 ## License
 

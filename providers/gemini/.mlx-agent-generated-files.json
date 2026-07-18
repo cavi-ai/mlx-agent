@@ -106,7 +106,7 @@
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/transactions.py",
-      "sha256": "8ddb7376c28145bf3c5b1cd5d6f1572fbf437c6f2ee1e962f511393ea188fdf1"
+      "sha256": "7ffa94dc11efa8b019671b669c039e4c7c71d451bece6ff4e4721cd677d3cb78"
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/verification.py",
@@ -198,7 +198,7 @@
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/transactions.py",
-      "sha256": "8ddb7376c28145bf3c5b1cd5d6f1572fbf437c6f2ee1e962f511393ea188fdf1"
+      "sha256": "7ffa94dc11efa8b019671b669c039e4c7c71d451bece6ff4e4721cd677d3cb78"
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/verification.py",
@@ -290,7 +290,7 @@
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/transactions.py",
-      "sha256": "8ddb7376c28145bf3c5b1cd5d6f1572fbf437c6f2ee1e962f511393ea188fdf1"
+      "sha256": "7ffa94dc11efa8b019671b669c039e4c7c71d451bece6ff4e4721cd677d3cb78"
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/verification.py",
@@ -370,7 +370,7 @@
     },
     {
       "path": "src/mlx_agent/transactions.py",
-      "sha256": "8ddb7376c28145bf3c5b1cd5d6f1572fbf437c6f2ee1e962f511393ea188fdf1"
+      "sha256": "7ffa94dc11efa8b019671b669c039e4c7c71d451bece6ff4e4721cd677d3cb78"
     },
     {
       "path": "src/mlx_agent/verification.py",

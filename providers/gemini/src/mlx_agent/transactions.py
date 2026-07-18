@@ -36,6 +36,7 @@ RECEIPT_SCHEMA_VERSION = "2.1"
 MAX_PREVIEW_CHARS = 12000
 _STATUSES = {"pending", "applied", "failed", "rolled_back", "rollback_failed", "recovery_required"}
 _HASH = __import__("re").compile(r"^[0-9a-f]{64}$")
+_LEGACY_LOCK_NAME = __import__("re").compile(r"^\.mlx-agent-wire-([0-9a-f]{64})\.lock$")
 COOPERATIVE_CONCURRENCY_NOTE = "Advisory lock protects accidental/cooperative writers; a malicious process ignoring it can still race the final rename."
 LEGACY_LOCK_MIGRATION = "legacy-target-locks-v1"
 _LEGACY_LOCK_MARKER = "legacy-lock-migration-v1.json"
@@ -128,6 +129,9 @@ def _target_lock_digest(target):
 def _filesystem_target_lock_digest(target, parent_fd):
     """Bind a lock to the opened parent filesystem object and canonical leaf."""
     item = os.fstat(parent_fd)
+    # The stdlib does not expose a stable descriptor-bound filesystem
+    # case-sensitivity capability. Fold conservatively rather than derive an
+    # identity from mutable directory contents and risk split alias locks.
     leaf = unicodedata.normalize("NFC", _physical_absolute(target).name).casefold()
     identity = "{0}:{1}:{2}".format(item.st_dev, item.st_ino, leaf)
     return _sha256(identity.encode("utf-8"))
@@ -139,73 +143,259 @@ def _filesystem_target_lock_name(target, parent_fd):
     )
 
 
-def _legacy_lock_entries(targets):
-    """Open existing legacy locks without creating target parents or lock files."""
-    held = []
-    for target in sorted({_physical_absolute(item) for item in targets}, key=str):
-        try:
-            _parent, directory_fd = _walk_directory(target.parent)
-        except ValueError as error:
-            if str(error).startswith("path component does not exist:"):
-                continue
-            raise
-        descriptor = None
-        name = _target_lock_name(target)
-        try:
+def _filesystem_parent_digest(directory_fd):
+    item = os.fstat(directory_fd)
+    return _sha256("{0}:{1}".format(item.st_dev, item.st_ino).encode("utf-8"))
+
+
+def _legacy_parent_scopes(targets, create=False):
+    """Open and deduplicate physical target parents without following aliases."""
+    scopes = {}
+    try:
+        for target in sorted({_physical_absolute(item) for item in targets}, key=str):
             try:
-                descriptor = os.open(name, os.O_RDWR | os.O_NOFOLLOW, dir_fd=directory_fd)
-            except FileNotFoundError:
+                _parent, directory_fd = _walk_directory(target.parent, create=create)
+            except ValueError as error:
+                if str(error).startswith("path component does not exist:"):
+                    continue
+                raise
+            try:
+                item = os.fstat(directory_fd)
+                identity = (item.st_dev, item.st_ino)
+                if identity in scopes:
+                    os.close(directory_fd)
+                    scopes[identity]["targets"].append(target)
+                    continue
+                scopes[identity] = {
+                    "digest": _filesystem_parent_digest(directory_fd),
+                    "directory_fd": directory_fd,
+                    "identity": identity,
+                    "parent": target.parent,
+                    "targets": [target],
+                }
+            except BaseException:
                 os.close(directory_fd)
+                raise
+        return [scopes[key] for key in sorted(scopes)]
+    except BaseException:
+        for scope in scopes.values():
+            os.close(scope["directory_fd"])
+        raise
+
+
+def _close_legacy_parent_scopes(scopes):
+    for scope in reversed(scopes):
+        os.close(scope["directory_fd"])
+
+
+def _merge_legacy_parent_scopes(scopes, additions):
+    """Merge newly created/opened parents without retaining duplicate fds."""
+    existing = {scope["identity"]: scope for scope in scopes}
+    added = []
+    for addition in additions:
+        current = existing.get(addition["identity"])
+        if current is not None:
+            current["targets"] = sorted(set(current["targets"] + addition["targets"]), key=str)
+            os.close(addition["directory_fd"])
+            continue
+        existing[addition["identity"]] = addition
+        scopes.append(addition)
+        added.append(addition)
+    scopes.sort(key=lambda scope: scope["identity"])
+    return added
+
+
+def _legacy_candidate_names(directory_fd):
+    """List only exact v1 lock names; unrelated directory entries stay opaque."""
+    try:
+        names = os.listdir(directory_fd)
+    except OSError as error:
+        raise ValueError("could not safely enumerate legacy target transaction locks: {0}".format(error))
+    candidates = []
+    for name in names:
+        match = _LEGACY_LOCK_NAME.fullmatch(name)
+        if match is not None:
+            candidates.append((name, match.group(1)))
+    return sorted(candidates)
+
+
+def _validate_legacy_candidate_item(item):
+    if not stat.S_ISREG(item.st_mode):
+        raise ValueError("legacy target transaction lock is not a regular file")
+    if hasattr(os, "geteuid") and item.st_uid != os.geteuid():
+        raise ValueError("legacy target transaction lock is not owned by the current user")
+
+
+def _open_legacy_candidate(scope, name, digest, writable):
+    descriptor = None
+    flags = (os.O_RDWR if writable else os.O_RDONLY) | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+    try:
+        try:
+            descriptor = os.open(name, flags, dir_fd=scope["directory_fd"])
+        except FileNotFoundError:
+            return None
+        except OSError as error:
+            raise ValueError("could not safely open legacy target transaction lock: {0}".format(error))
+        item = os.fstat(descriptor)
+        _validate_legacy_candidate_item(item)
+        try:
+            current = os.stat(name, dir_fd=scope["directory_fd"], follow_symlinks=False)
+        except FileNotFoundError:
+            os.close(descriptor)
+            return None
+        if (current.st_dev, current.st_ino) != (item.st_dev, item.st_ino):
+            raise ValueError("legacy target transaction lock changed while it was opened")
+        return {
+            "descriptor": descriptor,
+            "digest": digest,
+            "identity": (item.st_dev, item.st_ino),
+            "name": name,
+            "path": str(scope["parent"] / name),
+            "scope": scope,
+        }
+    except BaseException:
+        if descriptor is not None:
+            os.close(descriptor)
+        raise
+
+
+def _release_legacy_candidates(candidates):
+    for candidate in reversed(candidates):
+        try:
+            fcntl.flock(candidate["descriptor"], fcntl.LOCK_UN)
+        finally:
+            os.close(candidate["descriptor"])
+
+
+def _acquire_legacy_candidates(scopes):
+    """Acquire a stable snapshot of every strict candidate before mutation."""
+    held = []
+    current = {}
+    try:
+        for _attempt in range(32):
+            for scope in scopes:
+                for name, digest in _legacy_candidate_names(scope["directory_fd"]):
+                    key = (scope["digest"], name)
+                    existing = current.get(key)
+                    if existing is not None:
+                        try:
+                            item = os.stat(name, dir_fd=scope["directory_fd"], follow_symlinks=False)
+                        except FileNotFoundError:
+                            current.pop(key, None)
+                        else:
+                            if (item.st_dev, item.st_ino) == existing["identity"]:
+                                continue
+                    candidate = _open_legacy_candidate(scope, name, digest, writable=True)
+                    if candidate is None:
+                        current.pop(key, None)
+                        continue
+                    try:
+                        fcntl.flock(candidate["descriptor"], fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except OSError as error:
+                        os.close(candidate["descriptor"])
+                        if error.errno in (errno.EACCES, errno.EAGAIN):
+                            raise LegacyLockError("legacy_lock_busy: stop older mlx-agent processes before upgrading scoped locks")
+                        raise ValueError("could not safely acquire legacy target transaction lock: {0}".format(error))
+                    held.append(candidate)
+                    current[key] = candidate
+
+            stable = True
+            present = set()
+            for scope in scopes:
+                for name, _digest in _legacy_candidate_names(scope["directory_fd"]):
+                    key = (scope["digest"], name)
+                    present.add(key)
+                    candidate = current.get(key)
+                    try:
+                        item = os.stat(name, dir_fd=scope["directory_fd"], follow_symlinks=False)
+                    except FileNotFoundError:
+                        stable = False
+                        continue
+                    if candidate is None or (item.st_dev, item.st_ino) != candidate["identity"]:
+                        stable = False
+            for key in list(current):
+                if key not in present:
+                    current.pop(key)
+                    stable = False
+            if stable:
+                return held, [current[key] for key in sorted(current)]
+        raise ValueError("legacy target transaction lock set changed repeatedly during migration")
+    except BaseException:
+        _release_legacy_candidates(held)
+        raise
+
+
+def _inspect_legacy_candidates(scopes):
+    """Open strict candidates no-follow for a read-only doctor snapshot."""
+    candidates = []
+    for scope in scopes:
+        for name, digest in _legacy_candidate_names(scope["directory_fd"]):
+            candidate = _open_legacy_candidate(scope, name, digest, writable=False)
+            if candidate is None:
                 continue
-            except OSError as error:
-                raise ValueError("could not safely open legacy target transaction lock: {0}".format(error))
-            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-                raise ValueError("legacy target transaction lock is not a regular file")
-            try:
-                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError as error:
-                if error.errno in (errno.EACCES, errno.EAGAIN):
-                    raise LegacyLockError("legacy_lock_busy: stop older mlx-agent processes before upgrading scoped locks")
-                raise ValueError("could not safely acquire legacy target transaction lock: {0}".format(error))
-            held.append((descriptor, directory_fd, name, str(target.parent / name), _target_lock_digest(target)))
-        except BaseException:
-            if descriptor is not None:
-                os.close(descriptor)
-            os.close(directory_fd)
-            for held_descriptor, held_directory, _held_name, _held_path, _held_digest in reversed(held):
-                try:
-                    fcntl.flock(held_descriptor, fcntl.LOCK_UN)
-                finally:
-                    os.close(held_descriptor)
-                    os.close(held_directory)
-            raise
-    return held
+            os.close(candidate.pop("descriptor"))
+            candidates.append(candidate)
+    return candidates
+
+
+def _legacy_scope_was_migrated(scope, candidates, state):
+    if state["unscoped"]:
+        return True
+    if scope["digest"] in state["parents"]:
+        return True
+    migrated = state["targets"]
+    if any(entry.get("parent") == scope["digest"] for entry in migrated.values()):
+        return True
+    relevant = {_target_lock_digest(target) for target in scope["targets"]}
+    relevant.update(candidate["digest"] for candidate in candidates)
+    if relevant.intersection(migrated):
+        return True
+    # Old markers cannot map a one-way spelling digest back to a parent. A
+    # strict candidate in that ambiguous upgrade state must fail closed.
+    return any("parent" not in entry for entry in migrated.values())
 
 
 def _read_legacy_migration_state(lock_root):
-    """Read validated target-specific scoped legacy-lock migration state."""
+    """Read validated parent-scoped legacy-lock migration state."""
     try:
         _root, directory_fd = _walk_directory(lock_root)
     except ValueError as error:
         if str(error).startswith("path component does not exist:"):
-            return {"version": LEGACY_LOCK_MIGRATION, "targets": {}}
+            return {"version": LEGACY_LOCK_MIGRATION, "targets": {}, "parents": {}, "unscoped": False}
         raise
     descriptor = None
     try:
         try:
             descriptor = os.open(_LEGACY_LOCK_MARKER, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
         except FileNotFoundError:
-            return {"version": LEGACY_LOCK_MIGRATION, "targets": {}}
+            return {"version": LEGACY_LOCK_MIGRATION, "targets": {}, "parents": {}, "unscoped": False}
         if not stat.S_ISREG(os.fstat(descriptor).st_mode):
             raise ValueError("legacy lock migration marker is not a regular file")
         value = json.loads(os.read(descriptor, 1048576).decode("utf-8"))
         # The prior release-candidate marker had no target map. Treat it as
-        # an empty target-specific map: it cannot prove which targets migrated.
+        # an unscoped barrier: it cannot prove which physical parents migrated.
         if value == {"version": LEGACY_LOCK_MIGRATION}:
-            return {"version": LEGACY_LOCK_MIGRATION, "targets": {}}
-        if not isinstance(value, dict) or set(value) != {"version", "targets"} or value["version"] != LEGACY_LOCK_MIGRATION or not isinstance(value["targets"], dict):
+            return {"version": LEGACY_LOCK_MIGRATION, "targets": {}, "parents": {}, "unscoped": True}
+        allowed_fields = (
+            {"version", "targets"},
+            {"version", "targets", "parents"},
+            {"version", "targets", "parents", "unscoped"},
+        )
+        if not isinstance(value, dict) or set(value) not in allowed_fields or value["version"] != LEGACY_LOCK_MIGRATION or not isinstance(value["targets"], dict):
             raise ValueError("legacy lock migration marker is malformed")
         for digest, entry in value["targets"].items():
+            if not isinstance(digest, str) or not _HASH.fullmatch(digest) or not isinstance(entry, dict) or set(entry) not in ({"migrated_at"}, {"migrated_at", "parent"}) or not isinstance(entry["migrated_at"], str) or ("parent" in entry and (not isinstance(entry["parent"], str) or not _HASH.fullmatch(entry["parent"]))):
+                raise ValueError("legacy lock migration marker is malformed")
+            try:
+                if datetime.fromisoformat(entry["migrated_at"].replace("Z", "+00:00")).tzinfo is None:
+                    raise ValueError("missing timezone")
+            except ValueError:
+                raise ValueError("legacy lock migration marker is malformed")
+        parents = value.get("parents", {})
+        unscoped = value.get("unscoped", False)
+        if not isinstance(parents, dict) or not isinstance(unscoped, bool):
+            raise ValueError("legacy lock migration marker is malformed")
+        for digest, entry in parents.items():
             if not isinstance(digest, str) or not _HASH.fullmatch(digest) or not isinstance(entry, dict) or set(entry) != {"migrated_at"} or not isinstance(entry["migrated_at"], str):
                 raise ValueError("legacy lock migration marker is malformed")
             try:
@@ -213,6 +403,8 @@ def _read_legacy_migration_state(lock_root):
                     raise ValueError("missing timezone")
             except ValueError:
                 raise ValueError("legacy lock migration marker is malformed")
+        value["parents"] = parents
+        value["unscoped"] = unscoped
         return value
     except OSError as error:
         raise ValueError("could not safely read legacy lock migration marker: {0}".format(error))
@@ -233,7 +425,7 @@ def _write_legacy_migration_state(lock_root, state):
 
 @contextmanager
 def _legacy_migration_window(lock_root):
-    """Serialize target-map upgrades so multi-target writes cannot lose entries."""
+    """Serialize parent-map upgrades so multi-target writes cannot lose entries."""
     _root, directory_fd = _walk_directory(lock_root, create=True)
     descriptor = None
     try:
@@ -257,69 +449,95 @@ def _legacy_migration_window(lock_root):
 
 
 @contextmanager
-def _migrate_legacy_target_locks(targets, lock_root):
+def _migrate_legacy_target_locks(targets, lock_root, create_parents=False):
     """Upgrade target-adjacent legacy locks before entering scoped lock storage."""
-    held = _legacy_lock_entries(targets)
-    try:
-        canonical = sorted({_physical_absolute(item) for item in targets}, key=str)
-        with _legacy_migration_window(lock_root):
+    canonical = sorted({_physical_absolute(item) for item in targets}, key=str)
+    with _legacy_migration_window(lock_root):
+        scopes = _legacy_parent_scopes(canonical)
+        held = []
+        try:
+            held, candidates = _acquire_legacy_candidates(scopes)
             state = _read_legacy_migration_state(lock_root)
             migrated = state["targets"]
-            if any(digest in migrated for _descriptor, _directory_fd, _name, _path, digest in held):
+            initial_by_parent = {scope["digest"]: [] for scope in scopes}
+            for candidate in candidates:
+                initial_by_parent[candidate["scope"]["digest"]].append(candidate)
+            if any(initial_by_parent[scope["digest"]] and _legacy_scope_was_migrated(scope, initial_by_parent[scope["digest"]], state) for scope in scopes):
                 raise LegacyLockError("legacy_lock_recreated: stop older mlx-agent processes and remove recreated legacy locks before continuing")
-            for _descriptor, directory_fd, name, _path, _digest in held:
-                os.unlink(name, dir_fd=directory_fd)
-                os.fsync(directory_fd)
-            changed = False
-            for target in canonical:
-                digest = _target_lock_digest(target)
-                if digest not in migrated:
-                    migrated[digest] = {"migrated_at": _timestamp()}
-                    changed = True
+
+            opened_targets = {target for scope in scopes for target in scope["targets"]}
+            missing_targets = [target for target in canonical if target not in opened_targets]
+            if create_parents and missing_targets:
+                additions = _legacy_parent_scopes(missing_targets, create=True)
+                added_scopes = _merge_legacy_parent_scopes(scopes, additions)
+                added_held, added_candidates = _acquire_legacy_candidates(added_scopes)
+                held.extend(added_held)
+                candidates.extend(added_candidates)
+                added_by_parent = {scope["digest"]: [] for scope in added_scopes}
+                for candidate in added_candidates:
+                    added_by_parent[candidate["scope"]["digest"]].append(candidate)
+                if any(added_by_parent[scope["digest"]] and _legacy_scope_was_migrated(scope, added_by_parent[scope["digest"]], state) for scope in added_scopes):
+                    raise LegacyLockError("legacy_lock_recreated: stop older mlx-agent processes and remove recreated legacy locks before continuing")
+
+            by_parent = {scope["digest"]: [] for scope in scopes}
+            for candidate in candidates:
+                by_parent[candidate["scope"]["digest"]].append(candidate)
+
+            for candidate in candidates:
+                try:
+                    item = os.stat(candidate["name"], dir_fd=candidate["scope"]["directory_fd"], follow_symlinks=False)
+                except FileNotFoundError:
+                    raise ValueError("legacy target transaction lock changed before migration")
+                if (item.st_dev, item.st_ino) != candidate["identity"]:
+                    raise ValueError("legacy target transaction lock changed before migration")
+            touched = set()
+            for candidate in candidates:
+                os.unlink(candidate["name"], dir_fd=candidate["scope"]["directory_fd"])
+                touched.add(candidate["scope"]["digest"])
+            for scope in scopes:
+                if scope["digest"] in touched:
+                    os.fsync(scope["directory_fd"])
+
+            stamp = _timestamp()
+            for scope in scopes:
+                state["parents"].setdefault(scope["digest"], {"migrated_at": stamp})
+                for target in scope["targets"]:
+                    digest = _target_lock_digest(target)
+                    entry = migrated.setdefault(digest, {"migrated_at": stamp, "parent": scope["digest"]})
+                    entry.setdefault("parent", scope["digest"])
+                for candidate in by_parent[scope["digest"]]:
+                    entry = migrated.setdefault(candidate["digest"], {"migrated_at": stamp, "parent": scope["digest"]})
+                    entry.setdefault("parent", scope["digest"])
             _write_legacy_migration_state(lock_root, state)
             yield
-    finally:
-        for descriptor, directory_fd, _name, _path, _digest in reversed(held):
-            try:
-                fcntl.flock(descriptor, fcntl.LOCK_UN)
-            finally:
-                os.close(descriptor)
-                os.close(directory_fd)
+        finally:
+            _release_legacy_candidates(held)
+            _close_legacy_parent_scopes(scopes)
 
 
 def legacy_lock_problem(targets, lock_root):
     """Describe legacy-lock state for installer doctor without mutating it."""
-    migrated = _read_legacy_migration_state(lock_root)["targets"]
+    state = _read_legacy_migration_state(lock_root)
     paths = {"legacy_lock_recreated": [], "legacy_lock_migration_required": []}
-    for target in sorted({_physical_absolute(item) for item in targets}, key=str):
-        try:
-            _parent, directory_fd = _walk_directory(target.parent)
-        except ValueError as error:
-            if str(error).startswith("path component does not exist:"):
+    scopes = _legacy_parent_scopes(targets)
+    try:
+        candidates = _inspect_legacy_candidates(scopes)
+        by_parent = {scope["digest"]: [] for scope in scopes}
+        for candidate in candidates:
+            by_parent[candidate["scope"]["digest"]].append(candidate)
+        for scope in scopes:
+            scope_candidates = by_parent[scope["digest"]]
+            if not scope_candidates:
                 continue
-            raise
-        try:
-            name = _target_lock_name(target)
-            try:
-                descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
-            except FileNotFoundError:
-                continue
-            except OSError as error:
-                raise ValueError("could not safely open legacy target transaction lock: {0}".format(error))
-            try:
-                if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-                    raise ValueError("legacy target transaction lock is not a regular file")
-                code = "legacy_lock_recreated" if _target_lock_digest(target) in migrated else "legacy_lock_migration_required"
-                paths[code].append(str(target.parent / name))
-            finally:
-                os.close(descriptor)
-        finally:
-            os.close(directory_fd)
+            code = "legacy_lock_recreated" if _legacy_scope_was_migrated(scope, scope_candidates, state) else "legacy_lock_migration_required"
+            paths[code].extend(candidate["path"] for candidate in scope_candidates)
+    finally:
+        _close_legacy_parent_scopes(scopes)
     return [
         {
             "code": code,
-            "paths": affected,
-            "remediation": "stop older mlx-agent processes; after target-specific scoped-lock migration, do not run an older binary and remove only recreated legacy locks.",
+            "paths": sorted(set(affected)),
+            "remediation": "stop older mlx-agent processes; after parent-scoped legacy-lock migration, do not run an older binary and remove only recreated legacy locks.",
         }
         for code, affected in paths.items() if affected
     ]
@@ -691,7 +909,10 @@ class Transaction:
             with _target_locks(self._lock_targets(), create_parents=self.create_target_parents):
                 yield
             return
-        with _migrate_legacy_target_locks(self._lock_targets(), lock_root):
+        with _migrate_legacy_target_locks(
+            self._lock_targets(), lock_root,
+            create_parents=self.create_target_parents,
+        ):
             with _target_locks(self._lock_targets(), create_parents=self.create_target_parents, lock_root=lock_root):
                 yield
 

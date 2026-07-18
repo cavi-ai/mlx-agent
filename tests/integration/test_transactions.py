@@ -11,8 +11,9 @@ from unittest.mock import patch
 
 from mlx_agent.cli import main
 from mlx_agent.transactions import (
-    ConcurrentTransactionError, Receipt, Transaction, _target_lock_digest,
-    _target_lock_name, legacy_lock_problem, preview_rollback, rollback,
+    ConcurrentTransactionError, Receipt, Transaction, _filesystem_target_lock_digest,
+    _target_lock_digest, _target_lock_name, legacy_lock_problem, preview_rollback,
+    rollback,
 )
 
 
@@ -23,6 +24,12 @@ class TransactionTests(unittest.TestCase):
     def _confirmed_rollback(self, receipt_path):
         preview = preview_rollback(receipt_path)
         return rollback(receipt_path, preview_hash=preview["preview_hash"])
+
+    def _case_alias(self, target):
+        alias = target.with_name(target.name.swapcase())
+        if not alias.exists():
+            self.skipTest("requires a case-insensitive filesystem")
+        return alias
 
     def test_preview_refuses_symlinks_and_apply_requires_confirmation(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -213,6 +220,240 @@ class TransactionTests(unittest.TestCase):
             finally:
                 fcntl.flock(descriptor, fcntl.LOCK_UN)
                 os.close(descriptor)
+
+    def test_parent_scoped_migration_rejects_valid_symlink_without_unlinking_other_candidates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "artifacts" / "providers.json"
+            target.parent.mkdir()
+            target.write_text('{"before": true}\n')
+            stale = target.parent / (".mlx-agent-wire-" + ("0" * 64) + ".lock")
+            stale.write_text("stale\n")
+            outside = root / "outside.lock"
+            outside.write_text("outside\n")
+            linked = target.parent / (".mlx-agent-wire-" + ("f" * 64) + ".lock")
+            linked.symlink_to(outside)
+
+            transaction = Transaction(receipts_dir=root / "receipts", lock_root=root / "locks")
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            with self.assertRaises(ValueError):
+                transaction.apply(True)
+            self.assertTrue(stale.exists())
+            self.assertTrue(linked.is_symlink())
+            self.assertEqual("outside\n", outside.read_text())
+            self.assertEqual('{"before": true}\n', target.read_text())
+
+    def test_scoped_lock_root_refuses_busy_legacy_lock_from_another_case_spelling(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "artifacts" / "Providers.json"
+            target.parent.mkdir()
+            target.write_text('{"before": true}\n')
+            alias = self._case_alias(target)
+            legacy = target.parent / _target_lock_name(target)
+            legacy.write_text("legacy\n")
+            descriptor = os.open(legacy, os.O_RDWR | os.O_NOFOLLOW)
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                transaction = Transaction(receipts_dir=root / "receipts", lock_root=root / "locks")
+                transaction.preview([self._change(alias, '{"after": true}\n')])
+                with self.assertRaisesRegex(ConcurrentTransactionError, "legacy_lock_busy"):
+                    transaction.apply(True)
+                self.assertEqual('{"before": true}\n', target.read_text())
+            finally:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+                os.close(descriptor)
+
+    def test_scoped_lock_root_migrates_stale_legacy_lock_from_another_case_spelling(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "artifacts" / "Providers.json"
+            target.parent.mkdir()
+            target.write_text('{"before": true}\n')
+            alias = self._case_alias(target)
+            legacy = target.parent / _target_lock_name(target)
+            legacy.write_text("stale legacy lock\n")
+            transaction = Transaction(receipts_dir=root / "receipts", lock_root=root / "locks")
+            transaction.preview([self._change(alias, '{"after": true}\n')])
+            transaction.apply(True)
+            self.assertFalse(legacy.exists())
+            self.assertEqual('{"after": true}\n', target.read_text())
+
+    def test_recreated_case_alias_legacy_lock_blocks_doctor_and_operation_after_marker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "artifacts" / "Providers.json"
+            target.parent.mkdir()
+            target.write_text('{"before": true}\n')
+            alias = self._case_alias(target)
+            locks = root / "locks"
+            transaction = Transaction(receipts_dir=root / "receipts-a", lock_root=locks)
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            transaction.apply(True)
+
+            recreated = target.parent / _target_lock_name(alias)
+            recreated.write_text("recreated alias legacy lock\n")
+            problems = legacy_lock_problem([str(target)], locks)
+            self.assertEqual(["legacy_lock_recreated"], [item["code"] for item in problems])
+            self.assertEqual([recreated.name], [Path(item).name for item in problems[0]["paths"]])
+
+            second = Transaction(receipts_dir=root / "receipts-b", lock_root=locks)
+            second.preview([self._change(target, '{"second": true}\n')])
+            with self.assertRaisesRegex(ConcurrentTransactionError, "legacy_lock_recreated"):
+                second.apply(True)
+            self.assertEqual('{"after": true}\n', target.read_text())
+
+    def test_parent_scoped_migration_acquires_all_valid_candidates_before_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "a" / "first.json"
+            second = root / "b" / "second.json"
+            for target in (first, second):
+                target.parent.mkdir()
+                target.write_text('{"before": true}\n')
+            stale = first.parent / _target_lock_name(first)
+            stale.write_text("stale\n")
+            busy = second.parent / _target_lock_name(second.parent / "unrelated.json")
+            busy.write_text("busy\n")
+            descriptor = os.open(busy, os.O_RDWR | os.O_NOFOLLOW)
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                transaction = Transaction(receipts_dir=root / "receipts", lock_root=root / "locks")
+                transaction.preview([
+                    self._change(first, '{"first": true}\n'),
+                    self._change(second, '{"second": true}\n'),
+                ])
+                with self.assertRaisesRegex(ConcurrentTransactionError, "legacy_lock_busy"):
+                    transaction.apply(True)
+                self.assertTrue(stale.exists())
+                self.assertEqual('{"before": true}\n', first.read_text())
+                self.assertEqual('{"before": true}\n', second.read_text())
+            finally:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+                os.close(descriptor)
+            self.assertEqual("applied", transaction.apply(True).status)
+            self.assertFalse(stale.exists())
+            self.assertFalse(busy.exists())
+
+    def test_parent_scoped_migration_ignores_invalid_names_and_migrates_every_valid_candidate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "artifacts" / "providers.json"
+            target.parent.mkdir()
+            target.write_text('{"before": true}\n')
+            valid = target.parent / _target_lock_name(target.parent / "other.json")
+            valid.write_text("valid stale candidate\n")
+            invalid_regular = target.parent / (".mlx-agent-wire-" + ("a" * 63) + ".lock")
+            invalid_regular.write_text("unrelated\n")
+            outside = root / "outside.lock"
+            outside.write_text("outside\n")
+            invalid_symlink = target.parent / (".mlx-agent-wire-" + ("A" * 64) + ".lock")
+            invalid_symlink.symlink_to(outside)
+
+            transaction = Transaction(receipts_dir=root / "receipts", lock_root=root / "locks")
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            transaction.apply(True)
+
+            self.assertFalse(valid.exists())
+            self.assertEqual("unrelated\n", invalid_regular.read_text())
+            self.assertTrue(invalid_symlink.is_symlink())
+            self.assertEqual("outside\n", outside.read_text())
+
+    def test_parent_marker_treats_any_later_valid_candidate_as_recreated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "artifacts" / "providers.json"
+            target.parent.mkdir()
+            target.write_text('{"before": true}\n')
+            locks = root / "locks"
+            transaction = Transaction(receipts_dir=root / "receipts", lock_root=locks)
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            transaction.apply(True)
+
+            recreated = target.parent / _target_lock_name(target.parent / "different-target.json")
+            recreated.write_text("recreated\n")
+            problems = legacy_lock_problem([str(target)], locks)
+            self.assertEqual(["legacy_lock_recreated"], [item["code"] for item in problems])
+            self.assertEqual([recreated.name], [Path(item).name for item in problems[0]["paths"]])
+
+            second = Transaction(receipts_dir=root / "second-receipts", lock_root=locks)
+            second.preview([self._change(target, '{"second": true}\n')])
+            with self.assertRaisesRegex(ConcurrentTransactionError, "legacy_lock_recreated"):
+                second.apply(True)
+            self.assertEqual('{"after": true}\n', target.read_text())
+
+    def test_version_only_marker_treats_any_valid_candidate_as_recreated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "artifacts" / "providers.json"
+            target.parent.mkdir()
+            target.write_text('{"before": true}\n')
+            locks = root / "locks"
+            locks.mkdir()
+            (locks / "legacy-lock-migration-v1.json").write_text(
+                json.dumps({"version": "legacy-target-locks-v1"}) + "\n"
+            )
+            recreated = target.parent / _target_lock_name(target.parent / "unknown-old-target.json")
+            recreated.write_text("recreated after unscoped marker\n")
+
+            problems = legacy_lock_problem([str(target)], locks)
+            self.assertEqual(["legacy_lock_recreated"], [item["code"] for item in problems])
+            transaction = Transaction(receipts_dir=root / "receipts", lock_root=locks)
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            with self.assertRaisesRegex(ConcurrentTransactionError, "legacy_lock_recreated"):
+                transaction.apply(True)
+            self.assertTrue(recreated.exists())
+            self.assertEqual('{"before": true}\n', target.read_text())
+
+    def test_old_unscoped_target_map_fails_closed_for_unknown_parent_candidate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "artifacts" / "providers.json"
+            target.parent.mkdir()
+            target.write_text('{"before": true}\n')
+            locks = root / "locks"
+            locks.mkdir()
+            old_digest = _target_lock_digest(root / "historical" / "unknown.json")
+            (locks / "legacy-lock-migration-v1.json").write_text(json.dumps({
+                "version": "legacy-target-locks-v1",
+                "targets": {old_digest: {"migrated_at": "2026-07-17T12:00:00+00:00"}},
+            }) + "\n")
+            candidate = target.parent / _target_lock_name(target.parent / "another.json")
+            candidate.write_text("unknown old candidate\n")
+
+            problems = legacy_lock_problem([str(target)], locks)
+            self.assertEqual(["legacy_lock_recreated"], [item["code"] for item in problems])
+            transaction = Transaction(receipts_dir=root / "receipts", lock_root=locks)
+            transaction.preview([self._change(target, '{"after": true}\n')])
+            with self.assertRaisesRegex(ConcurrentTransactionError, "legacy_lock_recreated"):
+                transaction.apply(True)
+            self.assertTrue(candidate.exists())
+            self.assertEqual('{"before": true}\n', target.read_text())
+
+    def test_fresh_missing_parent_marker_does_not_block_unrelated_stale_parent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            locks = root / "locks"
+            fresh = root / "fresh" / "providers.json"
+            first = Transaction(
+                receipts_dir=root / "receipts-a",
+                lock_root=locks,
+                create_target_parents=True,
+            )
+            first.preview([self._change(fresh, '{"fresh": true}\n')])
+            first.apply(True)
+            self.assertEqual('{"fresh": true}\n', fresh.read_text())
+
+            existing = root / "existing" / "providers.json"
+            existing.parent.mkdir()
+            existing.write_text('{"before": true}\n')
+            stale = existing.parent / _target_lock_name(existing)
+            stale.write_text("stale\n")
+            second = Transaction(receipts_dir=root / "receipts-b", lock_root=locks)
+            second.preview([self._change(existing, '{"after": true}\n')])
+            second.apply(True)
+            self.assertFalse(stale.exists())
+            self.assertEqual('{"after": true}\n', existing.read_text())
 
     def test_scoped_lock_root_migrates_stale_legacy_locks_and_rollback_rejects_recreated_legacy_lock(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -892,6 +1133,38 @@ class TransactionTests(unittest.TestCase):
                     second.apply(True)
                 self.assertEqual('{"before": true}\n', target.read_text())
             self.assertEqual("applied", second.apply(True).status)
+
+    def test_case_distinct_targets_conservatively_contend_on_case_sensitive_filesystems(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            upper = root / "Providers.json"
+            lower = root / "providers.json"
+            upper.write_text('{"upper": true}\n')
+            if lower.exists():
+                self.skipTest("requires a case-sensitive filesystem")
+            lower.write_text('{"lower": true}\n')
+            first = Transaction(receipts_dir=root / "receipts-a")
+            second = Transaction(receipts_dir=root / "receipts-b")
+            first.preview([self._change(upper, '{"first": true}\n')])
+            second.preview([self._change(lower, '{"second": true}\n')])
+            with first._advisory_lock():
+                with self.assertRaises(ConcurrentTransactionError):
+                    second.apply(True)
+            self.assertEqual('{"upper": true}\n', upper.read_text())
+            self.assertEqual("applied", second.apply(True).status)
+            self.assertEqual('{"second": true}\n', lower.read_text())
+
+    def test_casefolded_lock_identity_is_stable_when_case_distinct_entries_appear(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                with patch("mlx_agent.transactions.os.listdir", return_value=["Providers.json", "providers.json"]):
+                    upper = _filesystem_target_lock_digest(root / "Providers.json", descriptor)
+                    lower = _filesystem_target_lock_digest(root / "providers.json", descriptor)
+                self.assertEqual(upper, lower)
+            finally:
+                os.close(descriptor)
 
     def test_rollback_contends_with_apply_using_different_receipt_directories(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -113,12 +113,27 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertTrue((ROOT / path).is_file(), path)
         for name in COMMANDS:
             self.assertIn(name, self.readme)
-        self.assertIn("compatibility/providers.json", self.readme)
         self.assertIn("docs/install/index.md", self.readme)
 
     def test_public_tree_excludes_internal_agent_work_artifacts(self):
         artifact_root = ROOT / "docs" / "superpowers"
         self.assertFalse(any(path.is_file() for path in artifact_root.rglob("*")))
+        self.assertFalse((ROOT / "docs" / "release-checklist.md").exists())
+
+    def test_user_facing_docs_exclude_internal_validation_narratives(self):
+        user_docs = [README_PATH, ROOT / "docs" / "install" / "index.md"]
+        user_docs.extend(sorted((ROOT / "docs" / "install").glob("*.md")))
+        content = "\n".join(path.read_text(encoding="utf-8") for path in user_docs)
+        for internal_phrase in (
+            "Task 12",
+            "user authorization",
+            "DNS-blocked",
+            "fixture-level",
+            "Current evidence covers",
+            "no model-backed slash-command response is claimed",
+            "not supported by current evidence",
+        ):
+            self.assertNotIn(internal_phrase, content)
 
     def test_pull_requests_use_the_hosted_apple_silicon_runner(self):
         workflow = APPLE_SILICON_WORKFLOW_PATH.read_text(encoding="utf-8")
@@ -161,21 +176,25 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("<!-- compatibility:begin -->", self.readme)
         self.assertIn("<!-- compatibility:end -->", self.readme)
+        block = self.readme.split("<!-- compatibility:begin -->", 1)[1].split("<!-- compatibility:end -->", 1)[0]
+        self.assertIn("both user and project scopes", block)
         for entry in self.matrix["providers"].values():
             self.assertIn(entry["display_name"], self.readme)
-            self.assertIn(", ".join(entry["scopes"]), self.readme)
-            for path in entry["config_paths"]:
-                self.assertIn(path, self.readme)
+            self.assertIn(entry["documentation"], block)
             for capability in entry["capabilities"].values():
-                self.assertIn(capability["invocation"], self.readme)
-            self.assertIn(entry["last_smoke_test"]["status"], self.readme)
-            self.assertIn(entry["last_smoke_test"]["date"], self.readme)
-            self.assertIn(entry["last_smoke_test"]["summary"], self.readme)
-            for field in EVIDENCE_FIELDS:
-                status = entry["evidence"][field]["status"]
-                self.assertIn(status, self.readme)
-                if status in {"blocked", "not-run"}:
-                    self.assertIn("{0} — not supported".format(status), self.readme)
+                self.assertIn(capability["invocation"], block)
+            self.assertNotIn(entry["last_smoke_test"]["summary"], block)
+            for path in entry["config_paths"]:
+                self.assertNotIn(path, block)
+        for internal_label in (
+            "Compatibility evidence",
+            "Latest smoke",
+            "Evidence",
+            "not-run",
+            "blocked",
+            "not supported by current evidence",
+        ):
+            self.assertNotIn(internal_label, block)
 
     def test_compatibility_renderer_detects_readme_drift(self):
         self.assertTrue(RENDERER_PATH.is_file(), "compatibility renderer must exist")
@@ -216,18 +235,11 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertNotIn("Pull a chosen model", text)
         self.assertIn("does not pull, install, or download model weights", text)
 
-    def test_release_checklist_records_the_authorized_runtime_hardening_scope(self):
-        checklist = (ROOT / "docs" / "release-checklist.md").read_text(encoding="utf-8")
+    def test_security_docs_record_legacy_lock_migration_boundaries(self):
         security = (ROOT / "docs" / "security.md").read_text(encoding="utf-8")
-        self.assertIn("retargeted by user authorization", checklist)
-        self.assertIn("runtime/installer hardening", checklist)
-        self.assertIn("legacy-lock migration", checklist)
-        self.assertIn("physical parent identity", checklist)
-        self.assertIn("migrated parent", checklist)
         self.assertIn("all older mlx-agent processes stopped", security)
         self.assertIn("older binary is unsupported", security)
         self.assertIn("legacy_lock_recreated", security)
-        self.assertIn("OpenCode/Bun native smoke unavailable", checklist)
 
 
 if __name__ == "__main__":

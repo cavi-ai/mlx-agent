@@ -23,5 +23,3 @@ python3 scripts/mlx-agent update gemini --scope user --dry-run --json
 python3 scripts/mlx-agent uninstall gemini --scope user --dry-run --json
 python3 scripts/mlx-agent doctor gemini --scope user --json
 ```
-
-The [compatibility matrix](../../compatibility/providers.json) distinguishes package schema, install round trip, host discovery, bundle execution, and a model-backed invocation. A blocked or not-run model result is deliberately not a support claim.

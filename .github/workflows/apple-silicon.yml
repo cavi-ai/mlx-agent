@@ -9,11 +9,12 @@ on:
 jobs:
   fixture-backed-pr-verification:
     if: github.event_name != 'push'
-    runs-on: [self-hosted, macOS, ARM64, apple-silicon]
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - name: Inventory the actual Apple Silicon host
+      - name: Require and inventory the hosted Apple Silicon runner
         run: |
+          test "$(uname -m)" = "arm64"
           uname -a
           sysctl -n hw.memsize
           python3 --version

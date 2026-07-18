@@ -17,6 +17,7 @@ MATRIX_PATH = ROOT / "compatibility" / "providers.json"
 RELEASE_EVIDENCE_PATH = ROOT / "compatibility" / "release-evidence.json"
 README_PATH = ROOT / "README.md"
 RENDERER_PATH = ROOT / "scripts" / "render_compatibility.py"
+APPLE_SILICON_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "apple-silicon.yml"
 PROVIDERS = ("claude", "codex", "gemini", "opencode", "agentskills")
 NATIVE_PROVIDERS = ("claude", "codex", "gemini", "opencode")
 COMMANDS = ("mlx-scout", "mlx-adopt", "mlx-wire")
@@ -114,6 +115,18 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertIn(name, self.readme)
         self.assertIn("compatibility/providers.json", self.readme)
         self.assertIn("docs/install/index.md", self.readme)
+
+    def test_public_tree_excludes_internal_agent_work_artifacts(self):
+        artifact_root = ROOT / "docs" / "superpowers"
+        self.assertFalse(any(path.is_file() for path in artifact_root.rglob("*")))
+
+    def test_pull_requests_use_the_hosted_apple_silicon_runner(self):
+        workflow = APPLE_SILICON_WORKFLOW_PATH.read_text(encoding="utf-8")
+        fixture_job, release_job = workflow.split("  release-live-runtime-health:", 1)
+        self.assertIn("runs-on: macos-15", fixture_job)
+        self.assertIn('test "$(uname -m)" = "arm64"', fixture_job)
+        self.assertNotIn("self-hosted", fixture_job)
+        self.assertIn("runs-on: [self-hosted, macOS, ARM64, apple-silicon]", release_job)
 
     def test_readme_claims_only_providers_in_compatibility_matrix(self):
         provider_docs = {

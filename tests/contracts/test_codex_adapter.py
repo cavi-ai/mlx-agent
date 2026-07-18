@@ -161,15 +161,15 @@ esac
             self.assertEqual(9, result.returncode)
             self.assertIn("plugin remove", log.read_text(encoding="utf-8"))
 
-    def test_readme_and_approved_design_record_the_codex_skill_invocation_correction(self):
+    def test_public_docs_record_the_codex_skill_invocation_correction(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        design = (ROOT / "docs" / "superpowers" / "specs" / "2026-07-17-universal-plugin-design.md").read_text(encoding="utf-8")
-        for content in (readme, design):
+        install_guide = (ROOT / "docs" / "install" / "codex.md").read_text(encoding="utf-8")
+        for content in (readme, install_guide):
             normalized = " ".join(content.split())
             self.assertIn("$mlx-agent:mlx-scout", normalized)
             self.assertIn("$mlx-agent:mlx-adopt", normalized)
             self.assertIn("$mlx-agent:mlx-wire", normalized)
-            self.assertIn("does not support custom slash commands", normalized)
+            self.assertRegex(normalized, r"(?:does not support|not) custom slash commands")
 
     def test_manifest_declares_codex_skills_not_unsupported_slash_commands(self):
         manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))

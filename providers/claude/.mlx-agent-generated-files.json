@@ -6,7 +6,7 @@
     },
     {
       "path": ".claude-plugin/plugin.json",
-      "sha256": "7c724aecccc204b8fd4d744d22dd96dc67c24cf9d359d6b16e4b9d4daf91055f"
+      "sha256": "d2812065267e96bd2102f384cfb99b4d3528ec278689cd695634c64742404ebb"
     },
     {
       "path": ".mcp.json",
@@ -86,7 +86,7 @@
     },
     {
       "path": "src/mlx_agent/huggingface.py",
-      "sha256": "94f20da9d7b216485e6e84c5c2b1509f36c0f103ef7b86976118b6c0ac51e7b6"
+      "sha256": "c17e6b0ec0a84a2420da726b7ea0360a716e9f312315ae2123adb552f9d9a074"
     },
     {
       "path": "src/mlx_agent/installer.py",

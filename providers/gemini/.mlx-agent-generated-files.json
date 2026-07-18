@@ -82,7 +82,7 @@
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/huggingface.py",
-      "sha256": "94f20da9d7b216485e6e84c5c2b1509f36c0f103ef7b86976118b6c0ac51e7b6"
+      "sha256": "c17e6b0ec0a84a2420da726b7ea0360a716e9f312315ae2123adb552f9d9a074"
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/installer.py",
@@ -174,7 +174,7 @@
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/huggingface.py",
-      "sha256": "94f20da9d7b216485e6e84c5c2b1509f36c0f103ef7b86976118b6c0ac51e7b6"
+      "sha256": "c17e6b0ec0a84a2420da726b7ea0360a716e9f312315ae2123adb552f9d9a074"
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/installer.py",
@@ -266,7 +266,7 @@
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/huggingface.py",
-      "sha256": "94f20da9d7b216485e6e84c5c2b1509f36c0f103ef7b86976118b6c0ac51e7b6"
+      "sha256": "c17e6b0ec0a84a2420da726b7ea0360a716e9f312315ae2123adb552f9d9a074"
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/installer.py",
@@ -346,7 +346,7 @@
     },
     {
       "path": "src/mlx_agent/huggingface.py",
-      "sha256": "94f20da9d7b216485e6e84c5c2b1509f36c0f103ef7b86976118b6c0ac51e7b6"
+      "sha256": "c17e6b0ec0a84a2420da726b7ea0360a716e9f312315ae2123adb552f9d9a074"
     },
     {
       "path": "src/mlx_agent/installer.py",

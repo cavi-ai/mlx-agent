@@ -5,7 +5,7 @@ Existing Claude users can keep the marketplace installation and continue using `
 Before changing an existing installation, inspect it and create a no-write plan:
 
 ```bash
-claude plugin marketplace add sasan1200/mlx-agent
+claude plugin marketplace add cavi-ai/mlx-agent
 claude plugin install mlx-agent
 python3 scripts/mlx-agent install claude --scope user --dry-run --json
 ```

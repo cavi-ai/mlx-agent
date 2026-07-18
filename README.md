@@ -50,7 +50,7 @@ Most tools do **one** of: *run* a model (Ollama, mlx-knife), *calculate* if it f
 ## Claude marketplace install
 
 ```bash
-claude plugin marketplace add sasan1200/mlx-agent
+claude plugin marketplace add cavi-ai/mlx-agent
 claude plugin install mlx-agent
 ```
 

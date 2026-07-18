@@ -5,7 +5,7 @@ Claude Code exposes the three native commands: `/mlx-scout`, `/mlx-adopt`, and `
 Install from the marketplace:
 
 ```bash
-claude plugin marketplace add sasan1200/mlx-agent
+claude plugin marketplace add cavi-ai/mlx-agent
 claude plugin install mlx-agent
 ```
 

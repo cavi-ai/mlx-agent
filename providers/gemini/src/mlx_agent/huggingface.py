@@ -8,7 +8,7 @@ from .models import REASONER_HINTS, TEMPLATE_REASON
 
 
 HF_API = "https://huggingface.co/api/models"
-UA = {"User-Agent": "mlx-scout/0.2 (+https://github.com/sasan1200/mlx-agent)"}
+UA = {"User-Agent": "mlx-scout/0.2 (+https://github.com/cavi-ai/mlx-agent)"}
 
 
 def http_json(url, timeout=10.0):

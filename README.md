@@ -3,17 +3,17 @@
 > Discover, verify, and **wire** local MLX-optimized models on Apple Silicon — for your coding agent.
 
 <!-- compatibility:begin -->
-## Compatibility evidence
+## Provider support
 
-This block is generated from [`compatibility/providers.json`](compatibility/providers.json). `not-run` and `blocked` mean **not supported by current evidence**.
+First-class adapters are included for each provider below. The universal installer supports both user and project scopes.
 
-| Provider | Scopes | Config paths | Native capability invocation | Latest smoke | Evidence |
-| --- | --- | --- | --- | --- | --- |
-| Claude Code | user, project | ~/.claude/plugins/mlx-agent<br><project>/.claude/plugins/mlx-agent | scout: `/mlx-scout`<br>adopt: `/mlx-adopt`<br>wire: `/mlx-wire` | fixture (2026-07-17; 2.1.198; scopes: user): Claude Code 2.1.198 added a disposable user marketplace, installed and uninstalled mlx-agent, and listed all three skills. Claude details did not expose slash-command discovery; the generated launcher returned fixture-backed Scout evidence. | schema: supported<br>install round trip: supported<br>native discovery: not-run — not supported<br>bundle execution: fixture<br>model backed invocation: not-run — not supported |
-| Codex CLI | user, project | ~/plugins/mlx-agent<br><project>/plugins/mlx-agent<br>~/.agents/plugins/marketplace.json<br><project>/.agents/plugins/marketplace.json | scout: `$mlx-agent:mlx-scout`<br>adopt: `$mlx-agent:mlx-adopt`<br>wire: `$mlx-agent:mlx-wire` | blocked — not supported (2026-07-17; 0.137.0; scopes: user): Codex CLI 0.137.0 isolated marketplace registration, install, and namespaced-skill prompt injection passed. The authorized fixture-only Scout session was DNS-blocked before a model response. | schema: supported<br>install round trip: supported<br>native discovery: supported<br>bundle execution: fixture<br>model backed invocation: blocked — not supported |
-| Gemini CLI | user, project | ~/.gemini/extensions/mlx-agent<br><project>/.gemini/extensions/mlx-agent<br><project>/.gemini/commands<br><project>/.gemini/skills | scout: `/mlx-scout`<br>adopt: `/mlx-adopt`<br>wire: `/mlx-wire` | fixture (2026-07-17; 0.46.0; scopes: user, project): Gemini CLI 0.46.0 validation/install, user and project skill discovery, fixture-backed Scout, and cleanup passed in a disposable HOME; command-list routing and model invocation were not run. | schema: supported<br>install round trip: supported<br>native discovery: fixture<br>bundle execution: fixture<br>model backed invocation: not-run — not supported |
-| OpenCode | user, project | ~/.config/opencode<br><project>/.opencode | scout: `/mlx-scout`<br>adopt: `/mlx-adopt`<br>wire: `/mlx-wire` | not-run — not supported (2026-07-17; unavailable; scopes: user, project): OpenCode and Bun were unavailable, so native smoke was not run. Isolated user/project package install, equivalent argv/stdin fixture transport, and owned-artifact cleanup passed separately. | schema: static<br>install round trip: fixture<br>native discovery: not-run — not supported<br>bundle execution: fixture<br>model backed invocation: not-run — not supported |
-| AgentSkills-compatible hosts | user, project | ~/.agents/skills<br><project>/.agents/skills | scout: `mlx-scout skill`<br>adopt: `mlx-adopt skill`<br>wire: `mlx-wire skill` | fixture (2026-07-17; portable format; scopes: user, project): Disposable AgentSkills user/project installation, installed fixture-backed Scout, and clean receipt-owned uninstall passed with scoped transaction locks. | schema: supported<br>install round trip: fixture<br>native discovery: not-run — not supported<br>bundle execution: fixture<br>model backed invocation: not-run — not supported |
+| Provider | Package | Invoke |
+| --- | --- | --- |
+| [Claude Code](docs/install/claude.md) | Native plugin | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire` |
+| [Codex CLI](docs/install/codex.md) | Native plugin | `$mlx-agent:mlx-scout`<br>`$mlx-agent:mlx-adopt`<br>`$mlx-agent:mlx-wire` |
+| [Gemini CLI](docs/install/gemini.md) | Native extension | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire` |
+| [OpenCode](docs/install/opencode.md) | Native plugin | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire` |
+| [AgentSkills-compatible hosts](docs/install/index.md) | Portable skills | `mlx-scout skill`<br>`mlx-adopt skill`<br>`mlx-wire skill` |
 <!-- compatibility:end -->
 
 ### Universal installer

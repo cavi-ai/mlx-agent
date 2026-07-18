@@ -17,12 +17,13 @@ BEGIN = "<!-- compatibility:begin -->"
 END = "<!-- compatibility:end -->"
 EVIDENCE_FIELDS = ("schema", "install_round_trip", "native_discovery", "bundle_execution", "model_backed_invocation")
 RELEASE_EVIDENCE_FIELDS = ("id", "status", "date", "environment", "cli_version", "scopes_tested", "native_discovery", "fixture_bundle", "uninstall")
-
-
-def _status(status):
-    if status in {"blocked", "not-run"}:
-        return "{0} — not supported".format(status)
-    return status
+PACKAGE_TYPES = {
+    "claude": "Native plugin",
+    "codex": "Native plugin",
+    "gemini": "Native extension",
+    "opencode": "Native plugin",
+    "agentskills": "Portable skills",
+}
 
 
 def _cell(value):
@@ -48,6 +49,8 @@ def _load_matrix(path):
             raise ValueError("provider {0} has invalid scopes".format(provider_id))
         if not isinstance(entry.get("config_paths"), list) or not entry["config_paths"]:
             raise ValueError("provider {0} has invalid config paths".format(provider_id))
+        if not isinstance(entry.get("documentation"), str) or not entry["documentation"]:
+            raise ValueError("provider {0} has invalid documentation".format(provider_id))
         capabilities = entry.get("capabilities")
         if not isinstance(capabilities, dict) or set(capabilities) != {"scout", "adopt", "wire"}:
             raise ValueError("provider {0} has invalid capabilities".format(provider_id))
@@ -106,34 +109,23 @@ def _load_release_evidence(path, matrix):
 def render(matrix):
     lines = [
         BEGIN,
-        "## Compatibility evidence",
+        "## Provider support",
         "",
-        "This block is generated from [`compatibility/providers.json`](compatibility/providers.json). `not-run` and `blocked` mean **not supported by current evidence**.",
+        "First-class adapters are included for each provider below. The universal installer supports both user and project scopes.",
         "",
-        "| Provider | Scopes | Config paths | Native capability invocation | Latest smoke | Evidence |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| Provider | Package | Invoke |",
+        "| --- | --- | --- |",
     ]
-    for entry in matrix["providers"].values():
+    for provider_id, entry in matrix["providers"].items():
         capabilities = "<br>".join(
-            "{0}: `{1}`".format(name, entry["capabilities"][name]["invocation"])
+            "`{0}`".format(entry["capabilities"][name]["invocation"])
             for name in ("scout", "adopt", "wire")
         )
-        release = entry["release_evidence"]
-        latest = "{0} ({1}; {2}; scopes: {3}): {4}".format(
-            _status(release["status"]), release["date"], release["cli_version"],
-            ", ".join(release["scopes_tested"]) or "none", entry["last_smoke_test"]["summary"],
-        )
-        evidence = "<br>".join(
-            "{0}: {1}".format(field.replace("_", " "), _status(entry["evidence"][field]["status"]))
-            for field in EVIDENCE_FIELDS
-        )
-        lines.append("| {0} | {1} | {2} | {3} | {4} | {5} |".format(
-            _cell(entry["display_name"]),
-            _cell(", ".join(entry["scopes"])),
-            _cell("<br>".join(entry["config_paths"])),
+        provider = "[{0}]({1})".format(entry["display_name"], entry["documentation"])
+        lines.append("| {0} | {1} | {2} |".format(
+            _cell(provider),
+            _cell(PACKAGE_TYPES[provider_id]),
             _cell(capabilities),
-            _cell(latest),
-            _cell(evidence),
         ))
     lines.extend([END, ""])
     return "\n".join(lines)

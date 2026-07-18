@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mlx-agent.dev/schemas/receipt.schema.json",
+  "title": "MLX Agent durable transactional Wire receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "transaction_id", "adapter_version", "timestamp", "transaction_root", "targets", "target_roots", "target_modes", "after_modes", "before_hashes", "after_hashes", "backup_paths", "validations", "status", "preview", "preview_hash"],
+  "properties": {
+    "schema_version": {"const": "2.1"},
+    "transaction_id": {"type": "string", "format": "uuid"},
+    "adapter_version": {"type": "string", "minLength": 1},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "transaction_root": {"type": "string", "minLength": 1},
+    "lock_root": {"type": "string", "minLength": 1},
+    "lock_migration": {"const": "legacy-target-locks-v1"},
+    "targets": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "target_roots": {"type": "object", "additionalProperties": {"type": "string"}},
+    "target_modes": {"type": "object", "additionalProperties": {"type": ["integer", "null"], "minimum": 0, "maximum": 511}},
+    "after_modes": {"type": "object", "additionalProperties": {"type": ["integer", "null"], "minimum": 0, "maximum": 511}},
+    "before_hashes": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+    "after_hashes": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+    "backup_paths": {"type": "object", "additionalProperties": {"type": ["string", "null"]}},
+    "validations": {"type": "object"},
+    "status": {"enum": ["pending", "applied", "failed", "rolled_back", "rollback_failed", "recovery_required"]},
+    "preview": {"type": "string", "maxLength": 12032},
+    "preview_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

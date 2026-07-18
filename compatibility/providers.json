@@ -1,0 +1,123 @@
+{
+  "schema_version": "1.0",
+  "plugin_version": "0.2.0",
+  "generated_from": "Task 12 release-candidate validation evidence (2026-07-17)",
+  "allowed_evidence_statuses": ["supported", "not-run", "blocked", "static", "fixture"],
+  "providers": {
+    "claude": {
+      "id": "claude",
+      "display_name": "Claude Code",
+      "documentation": "docs/install/claude.md",
+      "minimum_version": "2.1.143",
+      "last_tested_version": "2.1.198",
+      "scopes": ["user", "project"],
+      "config_paths": ["~/.claude/plugins/mlx-agent", "<project>/.claude/plugins/mlx-agent"],
+      "capabilities": {
+        "scout": {"command": "mlx-scout", "invocation": "/mlx-scout"},
+        "adopt": {"command": "mlx-adopt", "invocation": "/mlx-adopt"},
+        "wire": {"command": "mlx-wire", "invocation": "/mlx-wire"}
+      },
+      "last_smoke_test": {"status": "fixture", "date": "2026-07-17", "summary": "Claude Code 2.1.198 added a disposable user marketplace, installed and uninstalled mlx-agent, and listed all three skills. Claude details did not expose slash-command discovery; the generated launcher returned fixture-backed Scout evidence."},
+      "release_evidence": {"id": "rc-2026-07-17-claude", "status": "fixture", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, disposable HOME", "cli_version": "2.1.198", "scopes_tested": ["user"], "native_discovery": "skills listed; slash-command session not run", "fixture_bundle": "passed", "uninstall": "passed"},
+      "evidence": {
+        "schema": {"status": "supported", "summary": "Generated Claude package contract is covered by adapter tests."},
+        "install_round_trip": {"status": "supported", "summary": "Claude Code 2.1.198 marketplace add, user-scope install, and uninstall passed in a disposable HOME."},
+        "native_discovery": {"status": "not-run", "summary": "Claude plugin details listed mlx-adopt, mlx-scout, and mlx-wire skills, but no slash-command discovery surface was exercised without a model session."},
+        "bundle_execution": {"status": "fixture", "summary": "The generated Claude launcher returned fixture-backed Scout output; this is not a model-backed Claude invocation."},
+        "model_backed_invocation": {"status": "not-run", "summary": "No model-backed Claude invocation was tested."}
+      }
+    },
+    "codex": {
+      "id": "codex",
+      "display_name": "Codex CLI",
+      "documentation": "docs/install/codex.md",
+      "minimum_version": "0.137.0",
+      "last_tested_version": "0.137.0",
+      "scopes": ["user", "project"],
+      "config_paths": ["~/plugins/mlx-agent", "<project>/plugins/mlx-agent", "~/.agents/plugins/marketplace.json", "<project>/.agents/plugins/marketplace.json"],
+      "capabilities": {
+        "scout": {"command": "mlx-scout", "invocation": "$mlx-agent:mlx-scout"},
+        "adopt": {"command": "mlx-adopt", "invocation": "$mlx-agent:mlx-adopt"},
+        "wire": {"command": "mlx-wire", "invocation": "$mlx-agent:mlx-wire"}
+      },
+      "last_smoke_test": {"status": "blocked", "date": "2026-07-17", "summary": "Codex CLI 0.137.0 isolated marketplace registration, install, and namespaced-skill prompt injection passed. The authorized fixture-only Scout session was DNS-blocked before a model response."},
+      "release_evidence": {"id": "rc-2026-07-17-codex", "status": "blocked", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, isolated CODEX_HOME", "cli_version": "0.137.0", "scopes_tested": ["user"], "native_discovery": "namespaced skills injected", "fixture_bundle": "passed", "uninstall": "passed after DNS-blocked exec"},
+      "evidence": {
+        "schema": {"status": "supported", "summary": "Native plugin manifest and skills contract are covered by tests."},
+        "install_round_trip": {"status": "supported", "summary": "Codex CLI 0.137.0 marketplace registration and plugin install passed in an isolated home; cleanup is guaranteed after a DNS-blocked fixture-only session."},
+        "native_discovery": {"status": "supported", "summary": "Codex prompt input exposed all three installed namespaced skills."},
+        "bundle_execution": {"status": "fixture", "summary": "The generated Codex Scout launcher returned fixture-backed output; the smoke's installed-bundle launcher step was not reached after the DNS-blocked session."},
+        "model_backed_invocation": {"status": "blocked", "summary": "Authenticated Codex model response was blocked by DNS policy and is not claimed."}
+      }
+    },
+    "gemini": {
+      "id": "gemini",
+      "display_name": "Gemini CLI",
+      "documentation": "docs/install/gemini.md",
+      "minimum_version": "0.46.0",
+      "last_tested_version": "0.46.0",
+      "scopes": ["user", "project"],
+      "config_paths": ["~/.gemini/extensions/mlx-agent", "<project>/.gemini/extensions/mlx-agent", "<project>/.gemini/commands", "<project>/.gemini/skills"],
+      "capabilities": {
+        "scout": {"command": "mlx-scout", "invocation": "/mlx-scout"},
+        "adopt": {"command": "mlx-adopt", "invocation": "/mlx-adopt"},
+        "wire": {"command": "mlx-wire", "invocation": "/mlx-wire"}
+      },
+      "last_smoke_test": {"status": "fixture", "date": "2026-07-17", "summary": "Gemini CLI 0.46.0 validation/install, user and project skill discovery, fixture-backed Scout, and cleanup passed in a disposable HOME; command-list routing and model invocation were not run."},
+      "release_evidence": {"id": "rc-2026-07-17-gemini", "status": "fixture", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, disposable HOME", "cli_version": "0.46.0", "scopes_tested": ["user", "project"], "native_discovery": "skills listed in both scopes; slash-command discovery not run", "fixture_bundle": "passed", "uninstall": "passed"},
+      "evidence": {
+        "schema": {"status": "supported", "summary": "Extension, command TOML, and structured transport contracts are covered by tests."},
+        "install_round_trip": {"status": "supported", "summary": "Isolated user extension install/remove and project installer round trip passed."},
+        "native_discovery": {"status": "fixture", "summary": "User and project bundled skills were discovered; the model-routable /commands list probe remained disabled."},
+        "bundle_execution": {"status": "fixture", "summary": "Installed launcher executed fixture-backed Scout; no native slash command was invoked."},
+        "model_backed_invocation": {"status": "not-run", "summary": "No Gemini model-backed slash-command response is claimed."}
+      }
+    },
+    "opencode": {
+      "id": "opencode",
+      "display_name": "OpenCode",
+      "documentation": "docs/install/opencode.md",
+      "minimum_version": "1.17.7",
+      "last_tested_version": "not recorded",
+      "scopes": ["user", "project"],
+      "config_paths": ["~/.config/opencode", "<project>/.opencode"],
+      "capabilities": {
+        "scout": {"command": "mlx-scout", "invocation": "/mlx-scout"},
+        "adopt": {"command": "mlx-adopt", "invocation": "/mlx-adopt"},
+        "wire": {"command": "mlx-wire", "invocation": "/mlx-wire"}
+      },
+      "last_smoke_test": {"status": "not-run", "date": "2026-07-17", "summary": "OpenCode and Bun were unavailable, so native smoke was not run. Isolated user/project package install, equivalent argv/stdin fixture transport, and owned-artifact cleanup passed separately."},
+      "release_evidence": {"id": "rc-2026-07-17-opencode", "status": "not-run", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64", "cli_version": "unavailable", "scopes_tested": ["user", "project"], "native_discovery": "not-run: opencode and bun unavailable", "fixture_bundle": "passed", "uninstall": "passed"},
+      "evidence": {
+        "schema": {"status": "static", "summary": "Generated TypeScript plugin and command contracts are statically validated."},
+        "install_round_trip": {"status": "fixture", "summary": "Receipt-owned install/update/uninstall lifecycle is tested without an OpenCode CLI."},
+        "native_discovery": {"status": "not-run", "summary": "No OpenCode executable was available for native plugin discovery."},
+        "bundle_execution": {"status": "fixture", "summary": "Equivalent no-shell argv/stdin transport reached the bundled executor; shipped TypeScript/Bun plugin was not loaded."},
+        "model_backed_invocation": {"status": "not-run", "summary": "No OpenCode model-backed invocation is claimed."}
+      }
+    },
+    "agentskills": {
+      "id": "agentskills",
+      "display_name": "AgentSkills-compatible hosts",
+      "documentation": "docs/install/index.md",
+      "minimum_version": "not established",
+      "last_tested_version": "not recorded",
+      "scopes": ["user", "project"],
+      "config_paths": ["~/.agents/skills", "<project>/.agents/skills"],
+      "capabilities": {
+        "scout": {"command": "mlx-scout", "invocation": "mlx-scout skill"},
+        "adopt": {"command": "mlx-adopt", "invocation": "mlx-adopt skill"},
+        "wire": {"command": "mlx-wire", "invocation": "mlx-wire skill"}
+      },
+      "last_smoke_test": {"status": "fixture", "date": "2026-07-17", "summary": "Disposable AgentSkills user/project installation, installed fixture-backed Scout, and clean receipt-owned uninstall passed with scoped transaction locks."},
+      "release_evidence": {"id": "rc-2026-07-17-agentskills", "status": "fixture", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, disposable config root", "cli_version": "portable format", "scopes_tested": ["user", "project"], "native_discovery": "not applicable", "fixture_bundle": "passed", "uninstall": "passed; no artifact lock files"},
+      "evidence": {
+        "schema": {"status": "supported", "summary": "Portable skill package contract is covered by generated-adapter tests."},
+        "install_round_trip": {"status": "fixture", "summary": "Fixture user/project install and uninstall completed with locks held under scoped installer receipt storage, not artifact directories."},
+        "native_discovery": {"status": "not-run", "summary": "AgentSkills is a portable format, not one native host."},
+        "bundle_execution": {"status": "fixture", "summary": "The installed portable mlx-scout launcher returned fixture-backed Scout output."},
+        "model_backed_invocation": {"status": "not-run", "summary": "No host model invocation is claimed."}
+      }
+    }
+  }
+}

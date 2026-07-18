@@ -1,7 +1,7 @@
 ---
 name: mlx-scout
 description: "Discover MLX-optimized models on HuggingFace suited to this Apple Silicon host, routed by role (general, coding, reasoning, vision, embedding)."
-homepage: https://github.com/sasan1200/mlx-agent
+homepage: https://github.com/cavi-ai/mlx-agent
 license: MIT
 metadata:
   openclaw:

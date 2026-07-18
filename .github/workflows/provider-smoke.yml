@@ -1,0 +1,69 @@
+name: Provider smoke evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: Optional authenticated provider smoke to run
+        required: true
+        default: none
+        type: choice
+        options: [none, codex, gemini, all]
+      run_live:
+        description: Run an authenticated provider CLI smoke; credentials and license consent must already be configured on the runner.
+        required: true
+        default: false
+        type: boolean
+  schedule:
+    - cron: "17 5 * * 1"
+
+jobs:
+  portable-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Run deterministic provider contracts
+        run: |
+          mkdir -p smoke-results
+          PYTHONPATH=src python -m unittest tests.contracts.test_codex_adapter tests.contracts.test_gemini_adapter tests.contracts.test_opencode_adapter -v >/dev/null
+          printf 'deterministic provider contracts: passed\n' > smoke-results/contracts.txt
+          bash tests/smoke/opencode.sh >/dev/null
+          printf 'OpenCode equivalent no-shell argv/stdin fixture: passed\n' > smoke-results/opencode-equivalent-transport.txt
+      - name: Upload non-secret smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-smoke-${{ github.run_id }}
+          path: smoke-results
+          if-no-files-found: error
+
+  opted-in-native-cli:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_live == true && inputs.provider != 'none'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record selected native smoke without installing a provider CLI
+        run: |
+          mkdir -p smoke-results
+          printf 'provider=%s\n' '${{ inputs.provider }}' > smoke-results/selection.txt
+          printf 'Native CLIs are never installed by this workflow. The runner must already satisfy the provider license and authentication requirements.\n' >> smoke-results/selection.txt
+      - name: Codex isolated lifecycle smoke
+        if: inputs.provider == 'codex' || inputs.provider == 'all'
+        run: |
+          bash tests/smoke/codex.sh >/dev/null
+          printf 'Codex isolated lifecycle: passed\n' > smoke-results/codex.txt
+      - name: Gemini isolated lifecycle smoke
+        if: inputs.provider == 'gemini' || inputs.provider == 'all'
+        run: |
+          bash tests/smoke/gemini.sh >/dev/null
+          printf 'Gemini isolated lifecycle: passed\n' > smoke-results/gemini.txt
+      - name: Upload non-secret smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opted-in-provider-smoke-${{ github.run_id }}
+          path: smoke-results
+          if-no-files-found: error

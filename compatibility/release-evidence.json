@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "plugin_version": "0.2.0",
+  "evidence_id": "task-12-rc-2026-07-17",
+  "allowed_evidence_statuses": ["supported", "not-run", "blocked", "static", "fixture"],
+  "providers": {
+    "claude": {"id": "rc-2026-07-17-claude", "status": "fixture", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, disposable HOME", "cli_version": "2.1.198", "scopes_tested": ["user"], "native_discovery": "skills listed; slash-command session not run", "fixture_bundle": "passed", "uninstall": "passed"},
+    "codex": {"id": "rc-2026-07-17-codex", "status": "blocked", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, isolated CODEX_HOME", "cli_version": "0.137.0", "scopes_tested": ["user"], "native_discovery": "namespaced skills injected", "fixture_bundle": "passed", "uninstall": "passed after DNS-blocked exec"},
+    "gemini": {"id": "rc-2026-07-17-gemini", "status": "fixture", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, disposable HOME", "cli_version": "0.46.0", "scopes_tested": ["user", "project"], "native_discovery": "skills listed in both scopes; slash-command discovery not run", "fixture_bundle": "passed", "uninstall": "passed"},
+    "opencode": {"id": "rc-2026-07-17-opencode", "status": "not-run", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64", "cli_version": "unavailable", "scopes_tested": ["user", "project"], "native_discovery": "not-run: opencode and bun unavailable", "fixture_bundle": "passed", "uninstall": "passed"},
+    "agentskills": {"id": "rc-2026-07-17-agentskills", "status": "fixture", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, disposable config root", "cli_version": "portable format", "scopes_tested": ["user", "project"], "native_discovery": "not applicable", "fixture_bundle": "passed", "uninstall": "passed; no artifact lock files"}
+  },
+  "commands": [
+    {"id": "inspect-host", "command": "PYTHONPATH=src python3 scripts/mlx-agent inspect-host --json", "exit_status": 0, "result": "bounded local inventory; environment warnings recorded"},
+    {"id": "discover-live", "command": "PYTHONPATH=src python3 scripts/mlx-agent discover --limit 1 --state-dir <temporary-dir> --json", "exit_status": 2, "result": "blocked: Hugging Face DNS"},
+    {"id": "unit-suite", "command": "PYTHONPATH=src python3 -m unittest discover -s tests -v", "exit_status": 0, "result": "passed"},
+    {"id": "contracts", "command": "PYTHONPATH=src python3 scripts/validate_contracts.py", "exit_status": 0, "result": "passed"},
+    {"id": "adapters", "command": "PYTHONPATH=src python3 scripts/generate_adapters.py --check", "exit_status": 0, "result": "passed"},
+    {"id": "renderer", "command": "python3 scripts/render_compatibility.py --check", "exit_status": 0, "result": "passed"},
+    {"id": "diff-check", "command": "git diff --check", "exit_status": 0, "result": "passed"},
+    {"id": "git-status", "command": "git status --short", "exit_status": 0, "output": "", "clean": true, "result": "clean"}
+  ],
+  "wire_transaction": {"before_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "after_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "receipt_secret_scan": {"passed": true, "result": "no fixture secret value persisted"}},
+  "gates": {"diff_check": "passed", "publish": "not performed"}
+}

@@ -1,0 +1,40 @@
+name: Apple Silicon evidence
+
+on:
+  pull_request:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  fixture-backed-pr-verification:
+    if: github.event_name != 'push'
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inventory the actual Apple Silicon host
+        run: |
+          uname -a
+          sysctl -n hw.memsize
+          python3 --version
+      - name: Run fixture-backed provider and host verification
+        run: |
+          PYTHONPATH=src python3 -m unittest tests.integration.test_scout_compatibility tests.contracts.test_docs -v
+          MLX_AGENT_FIXTURE=tests/fixtures/scout_responses.json PYTHONPATH=src python3 -m mlx_agent discover --fast --limit 1 --json
+
+  release-live-runtime-health:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon]
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require a configured live supported-runtime endpoint
+        env:
+          MLX_AGENT_RUNTIME_HEALTH_ENDPOINT: ${{ secrets.MLX_AGENT_RUNTIME_HEALTH_ENDPOINT }}
+        run: |
+          test -n "$MLX_AGENT_RUNTIME_HEALTH_ENDPOINT"
+          curl --fail --silent --show-error --max-time 15 "$MLX_AGENT_RUNTIME_HEALTH_ENDPOINT"
+      - name: Verify the release package after the health check
+        run: |
+          PYTHONPATH=src python3 scripts/validate_contracts.py
+          PYTHONPATH=src python3 scripts/generate_adapters.py --check

@@ -12,7 +12,7 @@
     "channel": "source-checkout"
   },
   "links": {
-    "repository": "https://github.com/sasan1200/mlx-agent",
+    "repository": "https://github.com/cavi-ai/mlx-agent",
     "installation": "docs/install/index.md",
     "documentation": "README.md"
   },

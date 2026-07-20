@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/sasan1200/mlx-agent/schemas/site-catalog.schema.json",
+  "$id": "https://github.com/cavi-ai/mlx-agent/schemas/site-catalog.schema.json",
   "title": "MLX Agent site catalog record",
   "type": "object",
   "additionalProperties": false,
@@ -47,7 +47,7 @@
       "additionalProperties": false,
       "required": ["repository", "installation", "documentation"],
       "properties": {
-        "repository": {"type": "string", "format": "uri"},
+        "repository": {"const": "https://github.com/cavi-ai/mlx-agent"},
         "installation": {"type": "string", "minLength": 1},
         "documentation": {"type": "string", "minLength": 1}
       }
@@ -65,8 +65,14 @@
     },
     "capabilities": {
       "type": "array",
+      "maxItems": 3,
       "minItems": 3,
-      "items": {"$ref": "#/$defs/capability"}
+      "items": {"$ref": "#/$defs/capability"},
+      "allOf": [
+        {"contains": {"properties": {"slug": {"const": "scout"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"slug": {"const": "adopt"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"slug": {"const": "wire"}}}, "minContains": 1, "maxContains": 1}
+      ]
     },
     "skills": {
       "type": "array",

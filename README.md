@@ -2,6 +2,8 @@
 
 > Discover, verify, and **wire** local MLX-optimized models on Apple Silicon — for your coding agent.
 
+Current package version: **0.3.0**.
+
 <!-- compatibility:begin -->
 ## Provider support
 
@@ -34,15 +36,15 @@ The installer is receipt-owned and confirmation-gated: it does not install a hos
 
 The MLX model landscape moves weekly. `mlx-agent` queries the HuggingFace Hub live, matches models to your machine's memory and installed runtimes, tells you which are reasoning models (so you don't put one in a fast/cheap slot), and emits the exact config to wire a pick into your agent.
 
-Most tools do **one** of: *run* a model (Ollama, mlx-knife), *calculate* if it fits (VRAM calculators), or *serve* it (mlx_lm). `mlx-agent` is the only headless, agent-native tool that does the whole loop: **discover → verify → wire**.
+Most tools focus on running, sizing, or serving models. `mlx-agent` connects those concerns into an agent-oriented **discover → verify → wire** workflow.
 
 ## What's inside
 
 | Component | What it does |
 | --- | --- |
-| **`/mlx-scout`** command | Discovery: MLX models on HuggingFace bucketed by role for this host. |
-| **`/mlx-adopt`** command | Adoption **workflow** — discover → verify (test-generate) → recommend a per-role routing config. |
-| **`/mlx-wire`** command | Render, preview, and apply a runtime/provider configuration transaction (confirmation-gated). |
+| **Scout** | Discover MLX models on Hugging Face, bucketed by role for this host. |
+| **Adopt** | Resume a discover → verify → recommend workflow with durable evidence. |
+| **Wire** | Render, preview, and apply a confirmation-gated configuration transaction. |
 | **`mlx-scout`** skill | Auto-activates on "which local model?"; wraps the discovery script + runtime reference. |
 | **`mlx-advisor`** agent | On-demand expert for picking + wiring a local model for a role. |
 | **`scout.py`** | The stdlib-only discovery/wiring core — runs standalone, too. |
@@ -55,6 +57,8 @@ claude plugin install mlx-agent
 ```
 
 Then use `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, or just ask *"what local model should I use for coding?"*
+
+OpenCode users with a relocated harness should set `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`, and `XDG_CACHE_HOME` consistently before installing and launching OpenCode. See the [OpenCode guide](docs/install/opencode.md).
 
 ## Provider invocation
 

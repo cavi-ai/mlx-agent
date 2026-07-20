@@ -20,3 +20,5 @@ python3 scripts/mlx-agent doctor gemini --scope user --json
 ```
 
 User scope installs to `~/.gemini/extensions/mlx-agent`. Project scope also projects receipt-owned command TOML and skills to `<project>/.gemini/commands` and `<project>/.gemini/skills` so workspace discovery can find them. The extension owns a bounded `mlx_agent_execute` MCP tool; command arguments never pass through `run_shell_command`.
+
+Verify with `gemini extensions list`, restart Gemini CLI or reload commands, and run `/mlx-scout --fast --limit 1`. Update with `gemini extensions update mlx-agent`; uninstall with `gemini extensions uninstall mlx-agent`.

@@ -443,8 +443,12 @@ def _add_wire_arguments(parser):
 def _installer_registry():
     root = Path(__file__).resolve().parents[2]
     home = os.environ.get("MLX_AGENT_HOME")
-    config_root = os.environ.get("MLX_AGENT_CONFIG_ROOT")
-    return ProviderRegistry(root / "plugin.json", home=home, config_root=config_root)
+    config_root = os.environ.get("MLX_AGENT_CONFIG_ROOT") or os.environ.get("XDG_STATE_HOME")
+    xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
+    return ProviderRegistry(
+        root / "plugin.json", home=home, config_root=config_root,
+        xdg_config_home=xdg_config_home,
+    )
 
 
 def _add_installer_arguments(parser, include_providers=True):

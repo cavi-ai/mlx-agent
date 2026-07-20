@@ -2,11 +2,11 @@
   "files": [
     {
       "path": ".claude-plugin/marketplace.json",
-      "sha256": "3e09ffeaf4769afb41ed1ee8259627f23a3bd9e00d582bd3c040a301d28dab2e"
+      "sha256": "d6458ce74b077123d0912ce19552a11070e13441dc904a1f4f809cc1ba979844"
     },
     {
       "path": ".claude-plugin/plugin.json",
-      "sha256": "d2812065267e96bd2102f384cfb99b4d3528ec278689cd695634c64742404ebb"
+      "sha256": "e2f3bc874bb938d6112fb61ebd7f8635388933c96029a380dc189a08ed70a61c"
     },
     {
       "path": ".mcp.json",
@@ -42,7 +42,7 @@
     },
     {
       "path": "src/mlx_agent/__init__.py",
-      "sha256": "e9d7d28e34fa8dc0ad377a16132dd169bffd0429d4b76aa1ff15f1686cb93798"
+      "sha256": "813127f0d5124b8a84e2bbc22a9f98ade86f9a5f04b2c37f5545d05757c31858"
     },
     {
       "path": "src/mlx_agent/__main__.py",
@@ -54,7 +54,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "ca23bace287d488b64109dea99110a4c2cd8d09d71f429a0aa9bd3f882269800"
+      "sha256": "b78847c513e7a0a1511f7b0dd8dc0e800edfd05554cc0e6dff417ceeaca84e9f"
     },
     {
       "path": "src/mlx_agent/command_executor.py",
@@ -102,7 +102,7 @@
     },
     {
       "path": "src/mlx_agent/providers.py",
-      "sha256": "434e35ca644baada9daa1c763114c271ec18bf1a93064b311a52bb42ec4b1b1b"
+      "sha256": "8581be6c086a9e2b7667fda9d3010538f150b42dc4b757fa6b22e239f55ee5bb"
     },
     {
       "path": "src/mlx_agent/resources/adapter-runtime.json",

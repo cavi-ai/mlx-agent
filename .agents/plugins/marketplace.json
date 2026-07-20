@@ -1,0 +1,20 @@
+{
+  "name": "mlx-agent",
+  "interface": {
+    "displayName": "MLX Agent"
+  },
+  "plugins": [
+    {
+      "name": "mlx-agent",
+      "source": {
+        "source": "local",
+        "path": "./providers/codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

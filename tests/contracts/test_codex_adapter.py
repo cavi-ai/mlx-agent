@@ -40,6 +40,15 @@ def load_generator():
 
 
 class CodexAdapterContractTests(unittest.TestCase):
+    def test_repository_is_a_directly_installable_codex_marketplace(self):
+        marketplace = json.loads(
+            (ROOT / ".agents" / "plugins" / "marketplace.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual("mlx-agent", marketplace["name"])
+        entry = marketplace["plugins"][0]
+        self.assertEqual("mlx-agent", entry["name"])
+        self.assertEqual("./providers/codex", entry["source"]["path"])
+
     def test_smoke_script_proves_codex_skill_discovery_and_noninteractive_execution(self):
         smoke = ROOT / "tests" / "smoke" / "codex.sh"
         content = smoke.read_text(encoding="utf-8")
@@ -190,7 +199,7 @@ esac
                 (plugin_root / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
             )
             self.assertEqual("mlx-agent", metadata["name"])
-            self.assertEqual("0.2.0", metadata["version"])
+            self.assertEqual("0.3.0", metadata["version"])
             self.assertEqual("./skills/", metadata["skills"])
             self.assertEqual("Sasan Sotoodehfar", metadata["author"]["name"])
             self.assertIn("interface", metadata)

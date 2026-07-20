@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from mlx_agent.installer import Installer, InstallerConflictError
 from mlx_agent.providers import ProviderRegistry
-from mlx_agent.cli import main
+from mlx_agent.cli import _installer_registry, main
 from mlx_agent.transactions import Transaction, _target_lock_name, rollback
 
 
@@ -34,6 +34,21 @@ class InstallerRoundTripTests(unittest.TestCase):
 
     def tearDown(self):
         self.temporary.cleanup()
+
+    def test_cli_registry_routes_opencode_and_receipts_to_xdg_roots(self):
+        native_home = self.root / "native-home"
+        xdg_config = self.root / "mirza-config"
+        xdg_state = self.root / "mirza-state"
+        with patch.dict(os.environ, {
+            "MLX_AGENT_HOME": str(native_home),
+            "XDG_CONFIG_HOME": str(xdg_config),
+            "XDG_STATE_HOME": str(xdg_state),
+        }, clear=False):
+            registry = _installer_registry()
+            definition = registry.definitions()["opencode"]
+
+        self.assertEqual((xdg_config / "opencode").resolve(), definition.user_root)
+        self.assertEqual(xdg_state.resolve(), registry.config_root)
 
     def test_multi_provider_install_is_confirmed_and_doctor_reports_clean_install(self):
         plan = self.installer.plan("install", ["claude", "codex"], "user", self.project)

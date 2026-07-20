@@ -9,6 +9,8 @@ claude plugin marketplace add cavi-ai/mlx-agent
 claude plugin install mlx-agent
 ```
 
+Verify with `claude plugin list`, restart Claude Code, and run `/mlx-scout --fast --limit 1`. Update with `claude plugin update mlx-agent`; uninstall with `claude plugin uninstall mlx-agent`.
+
 For a receipt-owned local package, preview then confirm the universal installer:
 
 ```bash

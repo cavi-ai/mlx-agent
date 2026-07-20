@@ -14,7 +14,6 @@ from pathlib import Path
 
 
 _GEMINI_EXTENSION_SUFFIX = Path(".gemini") / "extensions" / "mlx-agent"
-_OPENCODE_CONFIG_SUFFIX = Path(".config") / "opencode"
 
 
 @dataclass(frozen=True)
@@ -101,11 +100,15 @@ def _safe_relative(value, field, allow_current=False):
 class ProviderRegistry:
     """Load immutable installation data from the canonical plugin manifest."""
 
-    def __init__(self, manifest_path, home=None, config_root=None):
+    def __init__(self, manifest_path, home=None, config_root=None, xdg_config_home=None):
         self.manifest_path = Path(manifest_path).resolve()
         self.home = Path(home).expanduser().resolve() if home else Path.home().resolve()
         self.config_root = (
             Path(config_root).expanduser().resolve() if config_root else self.home
+        )
+        self.xdg_config_home = (
+            Path(xdg_config_home).expanduser().resolve()
+            if xdg_config_home else (self.home / ".config").resolve()
         )
 
     def definitions(self):
@@ -258,8 +261,8 @@ class ProviderRegistry:
 
     def _validate_opencode_layout(self, user_root, project_root, artifacts):
         """Keep OpenCode's documented global and project discovery locations exact."""
-        if user_root != (self.home / _OPENCODE_CONFIG_SUFFIX).resolve():
-            raise ValueError("provider opencode.user_root must target home/.config/opencode")
+        if user_root != (self.xdg_config_home / "opencode").resolve():
+            raise ValueError("provider opencode.user_root must target the OpenCode XDG config directory")
         if project_root != Path(".opencode"):
             raise ValueError("provider opencode.project_root must target .opencode")
         if not any(item.destination == Path("commands/mlx-scout.md") for item in artifacts):
@@ -279,12 +282,15 @@ class ProviderRegistry:
         if not isinstance(template, str) or "{project}" in template:
             raise ValueError("provider {0}.user_root is invalid".format(provider_id))
         try:
-            path = Path(template.format(home=str(self.home), config_root=str(self.config_root))).resolve()
+            path = Path(template.format(
+                home=str(self.home), config_root=str(self.config_root),
+                xdg_config_home=str(self.xdg_config_home),
+            )).resolve()
         except (KeyError, ValueError) as error:
             raise ValueError("provider {0}.user_root is invalid: {1}".format(provider_id, error))
-        allowed_roots = (self.home, self.config_root)
+        allowed_roots = (self.home, self.config_root, self.xdg_config_home)
         if not any(root == path or root in path.parents for root in allowed_roots):
-            raise ValueError("provider {0}.user_root must be under home or config_root".format(provider_id))
+            raise ValueError("provider {0}.user_root must be under an approved user configuration root".format(provider_id))
         return path
 
     def _project_root(self, template, provider_id):
@@ -292,7 +298,10 @@ class ProviderRegistry:
             raise ValueError("provider {0}.project_root is invalid".format(provider_id))
         marker = Path("/__mlx_agent_project_marker__")
         try:
-            rendered = Path(template.format(project=str(marker), home=str(self.home), config_root=str(self.config_root))).resolve()
+            rendered = Path(template.format(
+                project=str(marker), home=str(self.home), config_root=str(self.config_root),
+                xdg_config_home=str(self.xdg_config_home),
+            )).resolve()
             return rendered.relative_to(marker)
         except (KeyError, ValueError):
             raise ValueError("provider {0}.project_root is invalid".format(provider_id))

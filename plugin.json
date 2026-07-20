@@ -1,7 +1,7 @@
 {
   "$schema": "schemas/plugin.schema.json",
   "schema_version": "1.0",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "identity": "mlx-agent",
   "scopes": [
     "user",
@@ -214,11 +214,11 @@
         "prefix": "/"
       },
       "minimum_version": "1.17.7",
-      "last_tested_version": null,
+      "last_tested_version": "1.18.3",
       "version_probe": {"args": ["--version"], "timeout_seconds": 5},
       "install_mode": "direct",
       "detect_commands": ["opencode"],
-      "user_root": "{home}/.config/opencode",
+      "user_root": "{xdg_config_home}/opencode",
       "project_root": "{project}/.opencode",
       "artifacts": [
         {"source": "providers/opencode/commands", "destination": "commands"},

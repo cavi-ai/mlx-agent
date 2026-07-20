@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "plugin_version": "0.2.0",
-  "generated_from": "Task 12 release-candidate validation evidence (2026-07-17)",
+  "plugin_version": "0.3.0",
+  "generated_from": "v0.3.0 provider validation evidence (2026-07-20)",
   "allowed_evidence_statuses": ["supported", "not-run", "blocked", "static", "fixture"],
   "providers": {
     "claude": {
@@ -78,22 +78,22 @@
       "display_name": "OpenCode",
       "documentation": "docs/install/opencode.md",
       "minimum_version": "1.17.7",
-      "last_tested_version": "not recorded",
+      "last_tested_version": "1.18.3",
       "scopes": ["user", "project"],
-      "config_paths": ["~/.config/opencode", "<project>/.opencode"],
+      "config_paths": ["$XDG_CONFIG_HOME/opencode", "<project>/.opencode"],
       "capabilities": {
         "scout": {"command": "mlx-scout", "invocation": "/mlx-scout"},
         "adopt": {"command": "mlx-adopt", "invocation": "/mlx-adopt"},
         "wire": {"command": "mlx-wire", "invocation": "/mlx-wire"}
       },
-      "last_smoke_test": {"status": "not-run", "date": "2026-07-17", "summary": "OpenCode and Bun were unavailable, so native smoke was not run. Isolated user/project package install, equivalent argv/stdin fixture transport, and owned-artifact cleanup passed separately."},
-      "release_evidence": {"id": "rc-2026-07-17-opencode", "status": "not-run", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64", "cli_version": "unavailable", "scopes_tested": ["user", "project"], "native_discovery": "not-run: opencode and bun unavailable", "fixture_bundle": "passed", "uninstall": "passed"},
+      "last_smoke_test": {"status": "blocked", "date": "2026-07-20", "summary": "OpenCode 1.18.3 discovered all three commands from an isolated XDG configuration and completed the receipt-owned package lifecycle. The model-backed invocation reached the configured provider but network access was unavailable."},
+      "release_evidence": {"id": "rc-2026-07-20-opencode", "status": "blocked", "date": "2026-07-20", "environment": "macOS arm64, isolated XDG roots", "cli_version": "1.18.3", "scopes_tested": ["user", "project"], "native_discovery": "all three commands visible in the native command palette", "fixture_bundle": "passed", "uninstall": "passed"},
       "evidence": {
         "schema": {"status": "static", "summary": "Generated TypeScript plugin and command contracts are statically validated."},
         "install_round_trip": {"status": "fixture", "summary": "Receipt-owned install/update/uninstall lifecycle is tested without an OpenCode CLI."},
-        "native_discovery": {"status": "not-run", "summary": "No OpenCode executable was available for native plugin discovery."},
-        "bundle_execution": {"status": "fixture", "summary": "Equivalent no-shell argv/stdin transport reached the bundled executor; shipped TypeScript/Bun plugin was not loaded."},
-        "model_backed_invocation": {"status": "not-run", "summary": "No OpenCode model-backed invocation is claimed."}
+        "native_discovery": {"status": "supported", "summary": "OpenCode 1.18.3 displayed /mlx-scout, /mlx-adopt, and /mlx-wire from the isolated XDG configuration."},
+        "bundle_execution": {"status": "fixture", "summary": "Equivalent no-shell argv/stdin transport reached the bundled executor."},
+        "model_backed_invocation": {"status": "blocked", "summary": "The native invocation reached the configured provider, but the provider response was blocked by unavailable network access."}
       }
     },
     "agentskills": {

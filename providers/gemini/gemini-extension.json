@@ -1,6 +1,6 @@
 {
   "name": "mlx-agent",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Structured local MLX discovery, adoption, and confirmation-gated wiring for Apple Silicon agents.",
   "mcpServers": {
     "mlx-agent": {

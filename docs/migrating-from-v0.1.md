@@ -1,6 +1,6 @@
-# Migrate from the v0.1 Claude marketplace package
+# Migrate from the v0.1 Claude marketplace package to v0.3
 
-Existing Claude users can keep the marketplace installation and continue using `/mlx-scout`, `/mlx-adopt`, and `/mlx-wire`. The universal package adds provider-specific layouts and receipt-owned install/update/uninstall workflows; it does not ask you to hand-edit a Claude marketplace file.
+Existing Claude users can update the marketplace installation and continue using `/mlx-scout`, `/mlx-adopt`, and `/mlx-wire`. Version 0.3 adds provider-specific layouts, receipt-owned install/update/uninstall workflows, native OpenCode 1.18.3 discovery evidence, and XDG-aware OpenCode placement; it does not ask you to hand-edit a Claude marketplace file.
 
 Before changing an existing installation, inspect it and create a no-write plan:
 

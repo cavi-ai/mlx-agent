@@ -3,4 +3,4 @@
 from .contracts import ResultEnvelope
 
 __all__ = ["ResultEnvelope"]
-__version__ = "0.2.0"
+__version__ = "0.3.0"

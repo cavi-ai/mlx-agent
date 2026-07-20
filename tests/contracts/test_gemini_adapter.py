@@ -90,7 +90,7 @@ class GeminiAdapterContractTests(unittest.TestCase):
             extension_root = output_root / "providers" / "gemini"
             manifest = json.loads((extension_root / "gemini-extension.json").read_text(encoding="utf-8"))
             self.assertEqual("mlx-agent", manifest["name"])
-            self.assertEqual("0.2.0", manifest["version"])
+            self.assertEqual("0.3.0", manifest["version"])
             self.assertIsInstance(manifest["description"], str)
             self.assertEqual(
                 {

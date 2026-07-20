@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterable, List
 
 
 SCHEMA_VERSION = "1.0"
-PLUGIN_VERSION = "0.2.0"
+PLUGIN_VERSION = "0.3.0"
 CAPABILITIES = ("scout", "adopt", "wire")
 CAPABILITY_ACTIONS = {
     "scout": ("discover",),

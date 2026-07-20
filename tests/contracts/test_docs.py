@@ -31,7 +31,7 @@ class DocumentationContractTests(unittest.TestCase):
         self.readme = README_PATH.read_text(encoding="utf-8")
 
     def test_matrix_records_complete_evidence_for_every_provider(self):
-        self.assertEqual("0.2.0", self.matrix["plugin_version"])
+        self.assertEqual("0.3.0", self.matrix["plugin_version"])
         self.assertEqual(set(PROVIDERS), set(self.matrix["providers"]))
         self.assertEqual(
             {"supported", "not-run", "blocked", "static", "fixture"},

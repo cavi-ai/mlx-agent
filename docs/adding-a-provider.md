@@ -1,6 +1,6 @@
 # Add a provider
 
-1. Add the provider to canonical `plugin.json` with the shared `scout`, `adopt`, and `wire` capability mapping, user/project roots, artifacts, and the documented invocation form.
+1. Add the provider to canonical `plugin.json` with the shared `scout`, `adopt`, and `wire` capability mapping, user/project roots, artifacts, and the documented invocation form. Use `{xdg_config_home}` only for hosts whose documented configuration discovery follows `XDG_CONFIG_HOME`; do not move unrelated providers with it.
 2. Extend `src/mlx_agent/providers.py` only when that host needs a layout invariant. Keep the installer receipt-owned; do not mutate the host's unrelated configuration or install its CLI.
 3. Teach `scripts/generate_adapters.py` to render deterministic artifacts and inventory every generated file. Run `PYTHONPATH=src python3 scripts/generate_adapters.py --check`.
 4. Write adapter and installer contracts first, including hostile transport input, user/project isolation, update/uninstall, and an unrelated working-directory bundle launch.

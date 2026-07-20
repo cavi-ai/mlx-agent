@@ -12,4 +12,14 @@ python3 scripts/mlx-agent uninstall codex --scope user --dry-run --json
 python3 scripts/mlx-agent doctor codex --scope user --json
 ```
 
-The staged package is under `~/plugins/mlx-agent` (or `<project>/plugins/mlx-agent`). Register and install it through the Codex marketplace CLI; Codex owns its marketplace configuration rather than the MLX installer editing it. The marketplace files are `~/.agents/plugins/marketplace.json` and `<project>/.agents/plugins/marketplace.json`.
+For the native Codex plugin lifecycle, register this checkout as a local marketplace and install the package:
+
+```bash
+codex plugin marketplace add "$PWD"
+codex plugin add mlx-agent@mlx-agent
+codex plugin list
+```
+
+Restart Codex, then invoke `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, or `$mlx-agent:mlx-wire`. Update the checkout and run `codex plugin marketplace upgrade mlx-agent`; remove the package with `codex plugin remove mlx-agent@mlx-agent` and, if desired, `codex plugin marketplace remove mlx-agent`.
+
+The universal installer stages the package under `~/plugins/mlx-agent` (or `<project>/plugins/mlx-agent`) but deliberately does not edit Codex-owned marketplace configuration. The repository-level `.agents/plugins/marketplace.json` is the installable local marketplace entrypoint.

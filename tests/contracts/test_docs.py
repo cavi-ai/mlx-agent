@@ -115,6 +115,20 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertIn(name, self.readme)
         self.assertIn("docs/install/index.md", self.readme)
 
+    def test_readme_gives_canonical_install_commands_for_every_provider(self):
+        commands = (
+            "claude plugin marketplace add cavi-ai/mlx-agent",
+            "claude plugin install mlx-agent@mlx-agent",
+            "codex plugin marketplace add cavi-ai/mlx-agent --ref v0.3.0",
+            "codex plugin add mlx-agent@mlx-agent",
+            "gemini extensions install ./mlx-agent/providers/gemini",
+            "python3 scripts/mlx-agent install opencode --scope user --dry-run --json",
+            "cp -R providers/agentskills/mlx-scout providers/agentskills/mlx-adopt providers/agentskills/mlx-wire",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertIn(command, self.readme)
+
     def test_public_tree_excludes_internal_agent_work_artifacts(self):
         artifact_root = ROOT / "docs" / "superpowers"
         self.assertFalse(any(path.is_file() for path in artifact_root.rglob("*")))

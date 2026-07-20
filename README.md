@@ -18,17 +18,6 @@ First-class adapters are included for each provider below. The universal install
 | [AgentSkills-compatible hosts](docs/install/index.md) | Portable skills | `mlx-scout skill`<br>`mlx-adopt skill`<br>`mlx-wire skill` |
 <!-- compatibility:end -->
 
-### Universal installer
-
-```bash
-python3 scripts/mlx-agent providers --json
-python3 scripts/mlx-agent install gemini --scope user --dry-run --json
-# Inspect preview.preview_hash, then explicitly confirm that exact plan:
-python3 scripts/mlx-agent install gemini --scope user --confirm --preview-hash <preview-hash> --json
-```
-
-The installer is receipt-owned and confirmation-gated: it does not install a host CLI, download model weights, persist secrets, or overwrite unowned files. See the [install overview](docs/install/index.md), [Scout](docs/guides/scout.md), [Adopt](docs/guides/adopt.md), [Wire](docs/guides/wire.md), [security and recovery](docs/security.md), and [v0.1 Claude migration](docs/migrating-from-v0.1.md).
-
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)
 ![Platform: Apple Silicon](https://img.shields.io/badge/platform-Apple%20Silicon-black.svg)
@@ -37,6 +26,84 @@ The installer is receipt-owned and confirmation-gated: it does not install a hos
 The MLX model landscape moves weekly. `mlx-agent` queries the HuggingFace Hub live, matches models to your machine's memory and installed runtimes, tells you which are reasoning models (so you don't put one in a fast/cheap slot), and emits the exact config to wire a pick into your agent.
 
 Most tools focus on running, sizing, or serving models. `mlx-agent` connects those concerns into an agent-oriented **discover → verify → wire** workflow.
+
+## Install
+
+Install the package for the coding-agent host you use. The host CLI must already be installed; `mlx-agent` does not install provider CLIs or model runtimes.
+
+### Claude Code
+
+```bash
+claude plugin marketplace add cavi-ai/mlx-agent
+claude plugin install mlx-agent@mlx-agent
+claude plugin list
+```
+
+Restart Claude Code, then run `/mlx-scout`, `/mlx-adopt`, or `/mlx-wire`.
+
+### Codex CLI
+
+```bash
+codex plugin marketplace add cavi-ai/mlx-agent --ref v0.3.0
+codex plugin add mlx-agent@mlx-agent
+codex plugin list
+```
+
+Restart Codex, then invoke `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, or `$mlx-agent:mlx-wire`. Codex does not support custom slash commands.
+
+### Gemini CLI
+
+Gemini installs this extension from its packaged provider directory:
+
+```bash
+git clone --depth 1 --branch v0.3.0 https://github.com/cavi-ai/mlx-agent.git
+gemini extensions install ./mlx-agent/providers/gemini
+gemini extensions list
+```
+
+Restart Gemini CLI, then run `/mlx-scout`, `/mlx-adopt`, or `/mlx-wire`.
+
+### OpenCode
+
+OpenCode uses the confirmation-gated universal installer. Run these commands from a release checkout:
+
+```bash
+git clone --depth 1 --branch v0.3.0 https://github.com/cavi-ai/mlx-agent.git
+cd mlx-agent
+python3 scripts/mlx-agent install opencode --scope user --dry-run --json
+# Copy data.preview.preview_hash from the output, then confirm that exact plan:
+python3 scripts/mlx-agent install opencode --scope user --confirm --preview-hash <preview-hash> --json
+python3 scripts/mlx-agent doctor opencode --scope user --json
+```
+
+Restart OpenCode, press `Ctrl+P`, filter for `mlx`, then run `/mlx-scout`, `/mlx-adopt`, or `/mlx-wire`. If OpenCode lives on another volume, set its XDG directories before both installation and launch; see the [OpenCode guide](docs/install/opencode.md).
+
+### AgentSkills-compatible hosts
+
+From a release checkout, copy all three self-contained packages into the host's user skills directory:
+
+```bash
+mkdir -p ~/.agents/skills
+cp -R providers/agentskills/mlx-scout providers/agentskills/mlx-adopt providers/agentskills/mlx-wire ~/.agents/skills/
+```
+
+For project scope, copy them to `<project>/.agents/skills/` instead. Restart the host and confirm that `mlx-scout`, `mlx-adopt`, and `mlx-wire` appear in its skills list.
+
+### Universal installer and lifecycle
+
+The universal installer supports `claude`, `codex`, `gemini`, and `opencode` in both user and project scopes:
+
+```bash
+python3 scripts/mlx-agent providers --json
+python3 scripts/mlx-agent install gemini --scope user --dry-run --json
+# Copy data.preview.preview_hash from the output, then confirm that exact plan:
+python3 scripts/mlx-agent install gemini --scope user --confirm --preview-hash <preview-hash> --json
+python3 scripts/mlx-agent doctor gemini --scope user --json
+```
+
+Use the same preview-then-confirm sequence for `update` and `uninstall`. Project installs add `--scope project --project /absolute/project/path`. The installer changes only receipt-owned files; it does not download models, persist secrets, overwrite unowned configuration, or modify a provider's marketplace registry.
+
+See the [complete install and lifecycle guide](docs/install/index.md), [Scout](docs/guides/scout.md), [Adopt](docs/guides/adopt.md), [Wire](docs/guides/wire.md), [security and recovery](docs/security.md), and [v0.1 Claude migration](docs/migrating-from-v0.1.md).
 
 ## What's inside
 
@@ -48,25 +115,6 @@ Most tools focus on running, sizing, or serving models. `mlx-agent` connects tho
 | **`mlx-scout`** skill | Auto-activates on "which local model?"; wraps the discovery script + runtime reference. |
 | **`mlx-advisor`** agent | On-demand expert for picking + wiring a local model for a role. |
 | **`scout.py`** | The stdlib-only discovery/wiring core — runs standalone, too. |
-
-## Claude marketplace install
-
-```bash
-claude plugin marketplace add cavi-ai/mlx-agent
-claude plugin install mlx-agent
-```
-
-Then use `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, or just ask *"what local model should I use for coding?"*
-
-OpenCode users with a relocated harness should set `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`, and `XDG_CACHE_HOME` consistently before installing and launching OpenCode. See the [OpenCode guide](docs/install/opencode.md).
-
-## Provider invocation
-
-- **Codex:** install the native plugin, then invoke `$mlx-agent:mlx-scout`,
-  `$mlx-agent:mlx-adopt`, or `$mlx-agent:mlx-wire`. Codex does not support
-  custom slash commands, so `/mlx-scout` is incorrect there.
-- **Claude Code, Gemini CLI, and OpenCode:** use `/mlx-scout`, `/mlx-adopt`, or
-  `/mlx-wire` where their native command adapters are installed.
 
 ## Quick look
 
@@ -108,7 +156,7 @@ Roles: `general`, `coding`, `reasoning`, `vision`, `embedding`. `--limit N` sets
 - **License / gated** — surfaces the license and flags gated repos before any external runtime fetch.
 - **Verify-before-recommend** — `/mlx-adopt` test-generates a candidate against your local runtime to confirm behavior before wiring it.
 
-## Use anywhere (OpenClaw / Hermes / any agent)
+## Use anywhere
 
 The generated `providers/agentskills/mlx-scout/`, `providers/agentskills/mlx-adopt/`, and `providers/agentskills/mlx-wire/` directories are self-contained [AgentSkills](https://agentskills.io) packages. Copy the complete provider directory you need into an isolated compatible host skills path; each contains its own launcher and runtime. The legacy root `skills/mlx-scout/` is repository-relative compatibility code and is not the portable package.
 

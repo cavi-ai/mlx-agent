@@ -1,0 +1,139 @@
+{
+  "$schema": "../schemas/site-catalog.schema.json",
+  "schema_version": "1.0",
+  "product": {
+    "slug": "mlx-agent",
+    "name": "MLX Agent",
+    "description": "Discover, adopt, and safely wire local MLX models.",
+    "license": "MIT"
+  },
+  "release": {
+    "version": "0.3.0",
+    "channel": "source-checkout"
+  },
+  "links": {
+    "repository": "https://github.com/cavi-ai/mlx-agent",
+    "installation": "docs/install/index.md",
+    "documentation": "README.md"
+  },
+  "requirements": {
+    "python": ">=3.9",
+    "platform": "macOS on Apple Silicon for host inspection and MLX execution",
+    "provider_clis": "Optional and never installed automatically",
+    "model_runtimes": "Optional and never installed automatically"
+  },
+  "capabilities": [
+    {
+      "slug": "scout",
+      "command": "mlx-scout",
+      "description": "Discover suitable MLX models.",
+      "arguments": ["role", "memory", "runtime", "offline"]
+    },
+    {
+      "slug": "adopt",
+      "command": "mlx-adopt",
+      "description": "Verify and recommend models with resumable evidence.",
+      "arguments": ["role", "state"]
+    },
+    {
+      "slug": "wire",
+      "command": "mlx-wire",
+      "description": "Preview and transactionally apply runtime configuration.",
+      "arguments": ["model", "runtime", "target"]
+    }
+  ],
+  "skills": [
+    {"slug": "mlx-scout", "activation": "natural-language"},
+    {"slug": "mlx-adopt", "activation": "natural-language"},
+    {"slug": "mlx-wire", "activation": "natural-language"}
+  ],
+  "runtimes": [
+    {"slug": "ollama", "optional": true},
+    {"slug": "lmstudio", "optional": true},
+    {"slug": "mlx_lm", "optional": true},
+    {"slug": "mlx-vlm", "optional": true},
+    {"slug": "litellm", "optional": true}
+  ],
+  "providers": {
+    "claude": {
+      "install_guide": "docs/install/claude.md",
+      "minimum_version": "2.1.143",
+      "last_tested_version": "2.1.198",
+      "scopes": ["user", "project"],
+      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire"]
+    },
+    "codex": {
+      "install_guide": "docs/install/codex.md",
+      "minimum_version": "0.137.0",
+      "last_tested_version": "0.137.0",
+      "scopes": ["user", "project"],
+      "commands": ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire"]
+    },
+    "gemini": {
+      "install_guide": "docs/install/gemini.md",
+      "minimum_version": "0.46.0",
+      "last_tested_version": "0.46.0",
+      "scopes": ["user", "project"],
+      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire"]
+    },
+    "opencode": {
+      "install_guide": "docs/install/opencode.md",
+      "minimum_version": "1.17.7",
+      "last_tested_version": "1.18.3",
+      "scopes": ["user", "project"],
+      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire"]
+    },
+    "agentskills": {
+      "install_guide": "docs/install/index.md",
+      "minimum_version": "not established",
+      "last_tested_version": "not recorded",
+      "scopes": ["user", "project"],
+      "commands": []
+    }
+  },
+  "scopes": ["user", "project"],
+  "lifecycle_commands": {
+    "install": "python3 scripts/mlx-agent install claude codex gemini opencode agentskills --scope user --dry-run --json",
+    "verify": "python3 scripts/mlx-agent doctor claude codex gemini opencode agentskills --scope user --json",
+    "update": "python3 scripts/mlx-agent update claude codex gemini opencode agentskills --scope user --dry-run --json",
+    "uninstall": "python3 scripts/mlx-agent uninstall claude codex gemini opencode agentskills --scope user --dry-run --json"
+  },
+  "verification_evidence": {
+    "compatibility_matrix": "compatibility/providers.json",
+    "core": {
+      "host": "Apple M5 Max",
+      "ram_gb": 128,
+      "live_discovery": "passed",
+      "fixture_adopt": "passed-metadata-only-no-download",
+      "reversible_wire": "passed-byte-exact-rollback",
+      "tested_at": "2026-07-18"
+    },
+    "provider_contracts": {
+      "claude": {
+        "schema_validation": "supported",
+        "cli_smoke": "fixture",
+        "last_tested": "2026-07-17"
+      },
+      "codex": {
+        "schema_validation": "supported",
+        "cli_smoke": "blocked",
+        "last_tested": "2026-07-17"
+      },
+      "gemini": {
+        "schema_validation": "supported",
+        "cli_smoke": "fixture",
+        "last_tested": "2026-07-17"
+      },
+      "opencode": {
+        "schema_validation": "static",
+        "cli_smoke": "blocked",
+        "last_tested": "2026-07-20"
+      },
+      "agentskills": {
+        "schema_validation": "supported",
+        "cli_smoke": "fixture",
+        "last_tested": "2026-07-17"
+      }
+    }
+  }
+}

@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sasan1200/mlx-agent/schemas/site-catalog.schema.json",
+  "title": "MLX Agent site catalog record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "product",
+    "release",
+    "links",
+    "requirements",
+    "capabilities",
+    "skills",
+    "runtimes",
+    "providers",
+    "scopes",
+    "lifecycle_commands",
+    "verification_evidence"
+  ],
+  "properties": {
+    "$schema": {"const": "../schemas/site-catalog.schema.json"},
+    "schema_version": {"const": "1.0"},
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slug", "name", "description", "license"],
+      "properties": {
+        "slug": {"const": "mlx-agent"},
+        "name": {"const": "MLX Agent"},
+        "description": {"type": "string", "minLength": 1},
+        "license": {"const": "MIT"}
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "channel"],
+      "properties": {
+        "version": {"const": "0.2.0"},
+        "channel": {"const": "source-checkout"}
+      }
+    },
+    "links": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "installation", "documentation"],
+      "properties": {
+        "repository": {"type": "string", "format": "uri"},
+        "installation": {"type": "string", "minLength": 1},
+        "documentation": {"type": "string", "minLength": 1}
+      }
+    },
+    "requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["python", "platform", "provider_clis", "model_runtimes"],
+      "properties": {
+        "python": {"const": ">=3.9"},
+        "platform": {"type": "string", "minLength": 1},
+        "provider_clis": {"type": "string", "minLength": 1},
+        "model_runtimes": {"type": "string", "minLength": 1}
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 3,
+      "items": {"$ref": "#/$defs/capability"}
+    },
+    "skills": {
+      "type": "array",
+      "minItems": 3,
+      "items": {"$ref": "#/$defs/skill"}
+    },
+    "runtimes": {
+      "type": "array",
+      "minItems": 5,
+      "items": {"$ref": "#/$defs/runtime"}
+    },
+    "providers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claude", "codex", "gemini", "opencode", "agentskills"],
+      "properties": {
+        "claude": {"$ref": "#/$defs/provider"},
+        "codex": {"$ref": "#/$defs/provider"},
+        "gemini": {"$ref": "#/$defs/provider"},
+        "opencode": {"$ref": "#/$defs/provider"},
+        "agentskills": {"$ref": "#/$defs/provider"}
+      }
+    },
+    "scopes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"enum": ["user", "project"]}
+    },
+    "lifecycle_commands": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["install", "verify", "update", "uninstall"],
+      "properties": {
+        "install": {"type": "string", "minLength": 1},
+        "verify": {"type": "string", "minLength": 1},
+        "update": {"type": "string", "minLength": 1},
+        "uninstall": {"type": "string", "minLength": 1}
+      }
+    },
+    "verification_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["compatibility_matrix", "core", "provider_contracts"],
+      "properties": {
+        "compatibility_matrix": {"const": "compatibility/providers.json"},
+        "core": {"$ref": "#/$defs/coreEvidence"},
+        "provider_contracts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["claude", "codex", "gemini", "opencode", "agentskills"],
+          "properties": {
+            "claude": {"$ref": "#/$defs/providerEvidence"},
+            "codex": {"$ref": "#/$defs/providerEvidence"},
+            "gemini": {"$ref": "#/$defs/providerEvidence"},
+            "opencode": {"$ref": "#/$defs/providerEvidence"},
+            "agentskills": {"$ref": "#/$defs/providerEvidence"}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slug", "command", "description", "arguments"],
+      "properties": {
+        "slug": {"enum": ["scout", "adopt", "wire"]},
+        "command": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "arguments": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "skill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slug", "activation"],
+      "properties": {
+        "slug": {"enum": ["mlx-scout", "mlx-adopt", "mlx-wire"]},
+        "activation": {"const": "natural-language"}
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slug", "optional"],
+      "properties": {
+        "slug": {"enum": ["ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm"]},
+        "optional": {"const": true}
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["install_guide", "minimum_version", "last_tested_version", "scopes", "commands"],
+      "properties": {
+        "install_guide": {"type": "string", "minLength": 1},
+        "minimum_version": {"type": ["string", "null"]},
+        "last_tested_version": {"type": ["string", "null"]},
+        "scopes": {"type": "array", "items": {"enum": ["user", "project"]}},
+        "commands": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "coreEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "ram_gb", "live_discovery", "fixture_adopt", "reversible_wire", "tested_at"],
+      "properties": {
+        "host": {"type": "string"},
+        "ram_gb": {"type": "integer"},
+        "live_discovery": {"type": "string"},
+        "fixture_adopt": {"type": "string"},
+        "reversible_wire": {"type": "string"},
+        "tested_at": {"type": "string"}
+      }
+    },
+    "providerEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_validation", "cli_smoke", "last_tested"],
+      "properties": {
+        "schema_validation": {"type": "string"},
+        "cli_smoke": {"type": "string"},
+        "last_tested": {"type": "string"}
+      }
+    }
+  }
+}

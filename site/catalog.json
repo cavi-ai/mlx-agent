@@ -1,0 +1,139 @@
+{
+  "$schema": "../schemas/site-catalog.schema.json",
+  "schema_version": "1.0",
+  "product": {
+    "slug": "mlx-agent",
+    "name": "MLX Agent",
+    "description": "Discover, adopt, and safely wire local MLX models.",
+    "license": "MIT"
+  },
+  "release": {
+    "version": "0.2.0",
+    "channel": "source-checkout"
+  },
+  "links": {
+    "repository": "https://github.com/sasan1200/mlx-agent",
+    "installation": "docs/install/index.md",
+    "documentation": "README.md"
+  },
+  "requirements": {
+    "python": ">=3.9",
+    "platform": "macOS on Apple Silicon for host inspection and MLX execution",
+    "provider_clis": "Optional and never installed automatically",
+    "model_runtimes": "Optional and never installed automatically"
+  },
+  "capabilities": [
+    {
+      "slug": "scout",
+      "command": "mlx-scout",
+      "description": "Discover suitable MLX models.",
+      "arguments": ["role", "memory", "runtime", "offline"]
+    },
+    {
+      "slug": "adopt",
+      "command": "mlx-adopt",
+      "description": "Verify and recommend models with resumable evidence.",
+      "arguments": ["role", "state"]
+    },
+    {
+      "slug": "wire",
+      "command": "mlx-wire",
+      "description": "Preview and transactionally apply runtime configuration.",
+      "arguments": ["model", "runtime", "target"]
+    }
+  ],
+  "skills": [
+    {"slug": "mlx-scout", "activation": "natural-language"},
+    {"slug": "mlx-adopt", "activation": "natural-language"},
+    {"slug": "mlx-wire", "activation": "natural-language"}
+  ],
+  "runtimes": [
+    {"slug": "ollama", "optional": true},
+    {"slug": "lmstudio", "optional": true},
+    {"slug": "mlx_lm", "optional": true},
+    {"slug": "mlx-vlm", "optional": true},
+    {"slug": "litellm", "optional": true}
+  ],
+  "providers": {
+    "claude": {
+      "install_guide": "docs/install/claude.md",
+      "minimum_version": "not-established",
+      "last_tested_version": "2.1.198",
+      "scopes": ["user", "project"],
+      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire"]
+    },
+    "codex": {
+      "install_guide": "docs/install/codex.md",
+      "minimum_version": "not-established",
+      "last_tested_version": "0.137.0",
+      "scopes": ["user", "project"],
+      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire"]
+    },
+    "gemini": {
+      "install_guide": "docs/install/gemini.md",
+      "minimum_version": "not-established",
+      "last_tested_version": "0.46.0",
+      "scopes": ["user", "project"],
+      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire"]
+    },
+    "opencode": {
+      "install_guide": "docs/install/opencode.md",
+      "minimum_version": "not-established",
+      "last_tested_version": null,
+      "scopes": ["user", "project"],
+      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire"]
+    },
+    "agentskills": {
+      "install_guide": "docs/install/agentskills.md",
+      "minimum_version": "AgentSkills-compatible",
+      "last_tested_version": null,
+      "scopes": ["user", "project"],
+      "commands": []
+    }
+  },
+  "scopes": ["user", "project"],
+  "lifecycle_commands": {
+    "install": "./scripts/mlx-agent install claude codex gemini opencode agentskills --scope user --confirm",
+    "verify": "./scripts/mlx-agent doctor claude codex gemini opencode agentskills --scope user",
+    "update": "./scripts/mlx-agent update claude codex gemini opencode agentskills --scope user --confirm",
+    "uninstall": "./scripts/mlx-agent uninstall claude codex gemini opencode agentskills --scope user --confirm"
+  },
+  "verification_evidence": {
+    "compatibility_matrix": "compatibility/providers.json",
+    "core": {
+      "host": "Apple M5 Max",
+      "ram_gb": 128,
+      "live_discovery": "passed",
+      "fixture_adopt": "passed-metadata-only-no-download",
+      "reversible_wire": "passed-byte-exact-rollback",
+      "tested_at": "2026-07-18"
+    },
+    "provider_contracts": {
+      "claude": {
+        "schema_validation": "passed",
+        "cli_smoke": "not-run",
+        "last_tested": "2026-07-18"
+      },
+      "codex": {
+        "schema_validation": "passed-by-contract-tests",
+        "cli_smoke": "isolated-install-list-remove-passed",
+        "last_tested": "2026-07-18"
+      },
+      "gemini": {
+        "schema_validation": "passed",
+        "cli_smoke": "not-run",
+        "last_tested": "2026-07-18"
+      },
+      "opencode": {
+        "schema_validation": "passed-by-contract-tests",
+        "cli_smoke": "not-run",
+        "last_tested": "2026-07-18"
+      },
+      "agentskills": {
+        "schema_validation": "passed-by-contract-tests",
+        "cli_smoke": "not-applicable",
+        "last_tested": "2026-07-18"
+      }
+    }
+  }
+}

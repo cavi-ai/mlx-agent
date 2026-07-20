@@ -8,7 +8,7 @@
     "license": "MIT"
   },
   "release": {
-    "version": "0.2.0",
+    "version": "0.3.0",
     "channel": "source-checkout"
   },
   "links": {
@@ -57,46 +57,46 @@
   "providers": {
     "claude": {
       "install_guide": "docs/install/claude.md",
-      "minimum_version": "not-established",
+      "minimum_version": "2.1.143",
       "last_tested_version": "2.1.198",
       "scopes": ["user", "project"],
       "commands": ["mlx-scout", "mlx-adopt", "mlx-wire"]
     },
     "codex": {
       "install_guide": "docs/install/codex.md",
-      "minimum_version": "not-established",
+      "minimum_version": "0.137.0",
       "last_tested_version": "0.137.0",
       "scopes": ["user", "project"],
-      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire"]
+      "commands": ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire"]
     },
     "gemini": {
       "install_guide": "docs/install/gemini.md",
-      "minimum_version": "not-established",
+      "minimum_version": "0.46.0",
       "last_tested_version": "0.46.0",
       "scopes": ["user", "project"],
       "commands": ["mlx-scout", "mlx-adopt", "mlx-wire"]
     },
     "opencode": {
       "install_guide": "docs/install/opencode.md",
-      "minimum_version": "not-established",
-      "last_tested_version": null,
+      "minimum_version": "1.17.7",
+      "last_tested_version": "1.18.3",
       "scopes": ["user", "project"],
       "commands": ["mlx-scout", "mlx-adopt", "mlx-wire"]
     },
     "agentskills": {
-      "install_guide": "docs/install/agentskills.md",
-      "minimum_version": "AgentSkills-compatible",
-      "last_tested_version": null,
+      "install_guide": "docs/install/index.md",
+      "minimum_version": "not established",
+      "last_tested_version": "not recorded",
       "scopes": ["user", "project"],
       "commands": []
     }
   },
   "scopes": ["user", "project"],
   "lifecycle_commands": {
-    "install": "./scripts/mlx-agent install claude codex gemini opencode agentskills --scope user --confirm",
-    "verify": "./scripts/mlx-agent doctor claude codex gemini opencode agentskills --scope user",
-    "update": "./scripts/mlx-agent update claude codex gemini opencode agentskills --scope user --confirm",
-    "uninstall": "./scripts/mlx-agent uninstall claude codex gemini opencode agentskills --scope user --confirm"
+    "install": "python3 scripts/mlx-agent install claude codex gemini opencode agentskills --scope user --dry-run --json",
+    "verify": "python3 scripts/mlx-agent doctor claude codex gemini opencode agentskills --scope user --json",
+    "update": "python3 scripts/mlx-agent update claude codex gemini opencode agentskills --scope user --dry-run --json",
+    "uninstall": "python3 scripts/mlx-agent uninstall claude codex gemini opencode agentskills --scope user --dry-run --json"
   },
   "verification_evidence": {
     "compatibility_matrix": "compatibility/providers.json",
@@ -110,29 +110,29 @@
     },
     "provider_contracts": {
       "claude": {
-        "schema_validation": "passed",
-        "cli_smoke": "not-run",
-        "last_tested": "2026-07-18"
+        "schema_validation": "supported",
+        "cli_smoke": "fixture",
+        "last_tested": "2026-07-17"
       },
       "codex": {
-        "schema_validation": "passed-by-contract-tests",
-        "cli_smoke": "isolated-install-list-remove-passed",
-        "last_tested": "2026-07-18"
+        "schema_validation": "supported",
+        "cli_smoke": "blocked",
+        "last_tested": "2026-07-17"
       },
       "gemini": {
-        "schema_validation": "passed",
-        "cli_smoke": "not-run",
-        "last_tested": "2026-07-18"
+        "schema_validation": "supported",
+        "cli_smoke": "fixture",
+        "last_tested": "2026-07-17"
       },
       "opencode": {
-        "schema_validation": "passed-by-contract-tests",
-        "cli_smoke": "not-run",
-        "last_tested": "2026-07-18"
+        "schema_validation": "static",
+        "cli_smoke": "blocked",
+        "last_tested": "2026-07-20"
       },
       "agentskills": {
-        "schema_validation": "passed-by-contract-tests",
-        "cli_smoke": "not-applicable",
-        "last_tested": "2026-07-18"
+        "schema_validation": "supported",
+        "cli_smoke": "fixture",
+        "last_tested": "2026-07-17"
       }
     }
   }

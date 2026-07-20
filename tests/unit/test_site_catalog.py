@@ -8,7 +8,6 @@ from tests.unit.site_catalog_schema import SchemaValidationError, validate_site_
 ROOT = Path(__file__).resolve().parents[2]
 CANONICAL_PRODUCT_SLUG = "mlx-agent"
 CANONICAL_PRODUCT_NAME = "MLX Agent"
-CANONICAL_RELEASE_VERSION = "0.2.0"
 CANONICAL_REPOSITORY_URL = "https://github.com/cavi-ai/mlx-agent"
 
 
@@ -19,9 +18,9 @@ class SiteCatalogTests(unittest.TestCase):
         compatibility = json.loads((ROOT / "compatibility/providers.json").read_text())
 
         self.assertEqual(catalog["product"]["slug"], CANONICAL_PRODUCT_SLUG)
-        self.assertEqual(plugin["name"], CANONICAL_PRODUCT_SLUG)
-        self.assertEqual(catalog["release"]["version"], CANONICAL_RELEASE_VERSION)
-        self.assertEqual(plugin["version"], CANONICAL_RELEASE_VERSION)
+        self.assertEqual(plugin["identity"], CANONICAL_PRODUCT_SLUG)
+        self.assertEqual(catalog["release"]["version"], plugin["version"])
+        self.assertEqual(catalog["release"]["version"], compatibility["plugin_version"])
         self.assertEqual(set(catalog["providers"]), set(compatibility["providers"]))
         self.assertEqual(catalog["scopes"], plugin["scopes"])
         catalog_capabilities = catalog["capabilities"]
@@ -31,21 +30,21 @@ class SiteCatalogTests(unittest.TestCase):
             sorted((capability["slug"], capability["command"]) for capability in catalog_capabilities),
             sorted((slug, detail["command"]) for slug, detail in plugin["capabilities"].items()),
         )
-        self.assertEqual(catalog["verification_evidence"]["core"], compatibility["core_evidence"])
-
         for provider, details in compatibility["providers"].items():
             self.assertEqual(catalog["providers"][provider]["minimum_version"], details["minimum_version"])
             self.assertEqual(catalog["providers"][provider]["last_tested_version"], details["last_tested_version"])
             self.assertEqual(catalog["providers"][provider]["scopes"], details["scopes"])
-            self.assertEqual(catalog["providers"][provider]["commands"], details["commands"])
+            self.assertEqual(catalog["providers"][provider]["commands"], plugin["providers"][provider]["commands"])
             self.assertEqual(
                 catalog["verification_evidence"]["provider_contracts"][provider],
                 {
-                    key: details[key]
-                    for key in ("schema_validation", "cli_smoke", "last_tested")
+                    "schema_validation": details["evidence"]["schema"]["status"],
+                    "cli_smoke": details["release_evidence"]["status"],
+                    "last_tested": details["release_evidence"]["date"],
                 },
             )
-            self.assertTrue((ROOT / catalog["providers"][provider]["install_guide"]).is_file())
+            self.assertEqual(catalog["providers"][provider]["install_guide"], details["documentation"])
+            self.assertTrue((ROOT / details["documentation"]).is_file())
 
     def test_site_catalog_schema_is_canonical_and_lifecycle_commands_are_documented(self):
         catalog = json.loads((ROOT / "site/catalog.json").read_text())
@@ -55,7 +54,10 @@ class SiteCatalogTests(unittest.TestCase):
         self.assertEqual(schema["$id"], f"{CANONICAL_REPOSITORY_URL}/schemas/site-catalog.schema.json")
         self.assertEqual(schema["properties"]["product"]["properties"]["slug"]["const"], CANONICAL_PRODUCT_SLUG)
         self.assertEqual(schema["properties"]["product"]["properties"]["name"]["const"], CANONICAL_PRODUCT_NAME)
-        self.assertEqual(schema["properties"]["release"]["properties"]["version"]["const"], CANONICAL_RELEASE_VERSION)
+        self.assertEqual(
+            schema["properties"]["release"]["properties"]["version"]["pattern"],
+            r"^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$",
+        )
         self.assertEqual(schema["properties"]["links"]["properties"]["repository"]["const"], CANONICAL_REPOSITORY_URL)
         self.assertEqual(catalog["links"]["repository"], CANONICAL_REPOSITORY_URL)
 

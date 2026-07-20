@@ -8,6 +8,7 @@ It deliberately raises for schema keywords it does not understand.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping, Sequence
 from urllib.parse import urlsplit
 
@@ -33,6 +34,7 @@ _VALIDATION_KEYWORDS = {
     "minItems",
     "minLength",
     "properties",
+    "pattern",
     "required",
     "type",
     "uniqueItems",
@@ -61,6 +63,8 @@ def _validate(instance: object, schema: Mapping[str, object], root: Mapping[str,
         raise SchemaValidationError(f"{path}: must be one of {schema['enum']!r}")
     if "minLength" in schema and isinstance(instance, str) and len(instance) < schema["minLength"]:
         raise SchemaValidationError(f"{path}: must have at least {schema['minLength']} characters")
+    if "pattern" in schema and isinstance(instance, str) and re.search(schema["pattern"], instance) is None:
+        raise SchemaValidationError(f"{path}: must match {schema['pattern']!r}")
     if "format" in schema and isinstance(instance, str):
         _validate_format(instance, schema["format"], path)
 

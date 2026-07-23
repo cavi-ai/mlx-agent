@@ -79,3 +79,9 @@ HTTPS host (models and datasets APIs), redirect- and proxy-hardened, with a
 strict byte cap. It writes only inside `<project>/mlx-research` and refuses paths
 that resolve outside that folder or through a symlink. No model, adapter, or
 dataset is downloaded, verified, or wired.
+
+## Worked examples
+
+- [Legal as document-vision composition](../examples/legal-research-pack.md)
+- [Audio foundation (ASR / TTS / music)](../examples/audio-research-pack.md)
+- [Video foundation (understanding / generation / action)](../examples/video-research-pack.md)

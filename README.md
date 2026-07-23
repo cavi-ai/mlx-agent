@@ -103,7 +103,7 @@ python3 scripts/mlx-agent doctor gemini --scope user --json
 
 Use the same preview-then-confirm sequence for `update` and `uninstall`. Project installs add `--scope project --project /absolute/project/path`. The installer changes only receipt-owned files; it does not download models, persist secrets, overwrite unowned configuration, or modify a provider's marketplace registry.
 
-See the [complete install and lifecycle guide](docs/install/index.md), [Scout](docs/guides/scout.md), [Adopt](docs/guides/adopt.md), [Wire](docs/guides/wire.md), [Research](docs/guides/research.md) ([legal](docs/examples/legal-research-pack.md) · [audio](docs/examples/audio-research-pack.md) · [video](docs/examples/video-research-pack.md)), [security and recovery](docs/security.md), and [v0.1 Claude migration](docs/migrating-from-v0.1.md).
+See the [complete install and lifecycle guide](docs/install/index.md), [Scout](docs/guides/scout.md), [Adopt](docs/guides/adopt.md), [Wire](docs/guides/wire.md), [Research](docs/guides/research.md) ([legal](docs/examples/legal-research-pack.md) · [audio](docs/examples/audio-research-pack.md) · [video](docs/examples/video-research-pack.md)), [Blueprint](docs/guides/blueprint.md), [security and recovery](docs/security.md), and [v0.1 Claude migration](docs/migrating-from-v0.1.md).
 
 ## What's inside
 
@@ -113,6 +113,7 @@ See the [complete install and lifecycle guide](docs/install/index.md), [Scout](d
 | **Adopt** | Resume a discover → verify → recommend workflow with durable evidence. |
 | **Wire** | Render, preview, and apply a confirmation-gated configuration transaction. |
 | **Research** | Build a read-only domain research pack: foundational modalities seed intent; models/adapters/datasets are ranked into markdown + JSON; packs include a justified MLX-native runtime preference (Ollama remains a valid alternate). |
+| **Blueprint** | Emit a guidance-only MLX project design pack (quant/train/LoRA/MTX/study notes) under `mlx-blueprints/`. No scaffolding or training. |
 | **`mlx-scout`** skill | Auto-activates on "which local model?"; wraps the discovery script + runtime reference. |
 | **`mlx-advisor`** agent | On-demand expert for picking + wiring a local model for a role. |
 | **`scout.py`** | The stdlib-only discovery/wiring core — runs standalone, too. |
@@ -158,6 +159,15 @@ python3 scripts/mlx-agent research --interview
 ```
 
 Packs land under `./mlx-research/` as markdown + JSON. See the [research guide](docs/guides/research.md).
+
+Project design packs (guidance only; no scaffolding or training):
+
+```bash
+python3 scripts/mlx-agent blueprint --goal "On-device legal OCR assistant" --modality document-vision
+python3 scripts/mlx-agent blueprint --goal "Meeting ASR notes" --modality audio --memory-gb 64
+```
+
+Design packs land under `./mlx-blueprints/` as markdown + JSON. See the [blueprint guide](docs/guides/blueprint.md).
 
 ## How it works
 

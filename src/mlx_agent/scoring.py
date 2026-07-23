@@ -102,7 +102,7 @@ def _keyword_signal(
     if not intent.keywords:
         return _signal("keyword_match", False, None, 0.0, "no keywords requested")
     tags = " ".join(str(tag).lower() for tag in (metadata.get("tags") or []))
-    haystack = "{0} {1} {2}".format((card_text or "").lower(), tags, intent.domain.lower())
+    haystack = "{0} {1}".format((card_text or "").lower(), tags)
     matched = [keyword for keyword in intent.keywords if keyword in haystack]
     fraction = len(matched) / len(intent.keywords)
     return _signal(
@@ -114,7 +114,7 @@ def _keyword_signal(
 def _popularity_signal(metadata: Mapping[str, object]) -> Signal:
     downloads = metadata.get("downloads") or 0
     try:
-        downloads = int(downloads)
+        downloads = max(0, int(downloads))
     except (TypeError, ValueError):
         downloads = 0
     fraction = min(1.0, math.log10(downloads + 1) / _POPULARITY_LOG_CEILING)

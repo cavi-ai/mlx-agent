@@ -86,6 +86,33 @@ class ScoreCandidateTests(unittest.TestCase):
         self.assertNotIn("license_ok", provenance_fields)
         self.assertIn("role_match", provenance_fields)
 
+    def test_negative_downloads_does_not_crash(self):
+        intent = _intent(keywords=())
+        result = score_candidate(intent, {"roles": ["vision"], "downloads": -5}, None)
+        by_id = {signal.id: signal for signal in result.signals}
+        self.assertFalse(by_id["popularity"].matched)
+        self.assertEqual(by_id["popularity"].contribution, 0.0)
+
+    def test_keyword_matches_via_tags(self):
+        intent = _intent()
+        result = score_candidate(
+            intent, {"roles": ["vision"], "downloads": 0, "tags": ["ocr"]}, None
+        )
+        by_id = {signal.id: signal for signal in result.signals}
+        self.assertTrue(by_id["keyword_match"].matched)
+
+    def test_keyword_does_not_match_domain_text(self):
+        intent = DomainIntent(domain="ocr contract tooling", roles=("vision",), keywords=("ocr",))
+        result = score_candidate(intent, {"roles": ["vision"], "downloads": 0}, None)
+        by_id = {signal.id: signal for signal in result.signals}
+        self.assertFalse(by_id["keyword_match"].matched)
+
+    def test_multi_role_partial_fraction(self):
+        intent = _intent(roles=("vision", "general"), keywords=())
+        result = score_candidate(intent, {"roles": ["vision"], "downloads": 0}, None)
+        by_id = {signal.id: signal for signal in result.signals}
+        self.assertAlmostEqual(by_id["role_match"].contribution, 15.0)
+
     def test_weights_are_fixed_and_documented(self):
         self.assertEqual(
             set(SIGNAL_WEIGHTS),

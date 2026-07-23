@@ -59,9 +59,33 @@ Any other constraints or notes? (optional)
   - keyword_match: matched keywords: ocr
   - license_ok: license: apache-2.0
   - memory_fit: est_ram_gb ... vs budget 32.0
+
+## Adapters / LoRAs
+
+### 1. `org/<legal-ocr-lora>` — score 71.0/100
+
+- Kind: adapter
+- Why it ranked:
+  - keyword_match: matched keywords: ocr, contracts
+
+## Datasets
+
+No datasets matched this intent on the Hub. See the dataset blueprint below.
+
+## Dataset blueprint
+
+No Hub datasets ranked for this intent. Use this guidance-only blueprint
+to create a local dataset — nothing is downloaded or trained by research.
+
+### Goal
+
+Create a small, domain-specific dataset for **On-device legal contract review...**
 ```
 
 The OCR emphasis comes entirely from the interview answers and card/keyword
 scoring — the engine itself is domain-agnostic. Swap the answers (for example
 "audio transcription" with `asr, whisper` keywords) and the same engine produces
-an audio pack with no code change.
+an audio pack with no code change. When Hub datasets are empty, the pack still
+includes an explicit dataset blueprint so another agent can draft labeled data
+locally without any download or training from research.
+

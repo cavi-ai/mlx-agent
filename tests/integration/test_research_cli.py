@@ -38,7 +38,33 @@ class ResearchCliTests(unittest.TestCase):
             written = Path(payload["data"]["path"])
             self.assertTrue(written.exists())
             self.assertEqual(written.parent, (Path(project) / "mlx-research").resolve())
-            self.assertIn("# MLX Research Pack: legal contract review", written.read_text())
+            markdown = written.read_text()
+            self.assertIn("# MLX Research Pack: legal contract review", markdown)
+            self.assertIn("## Adapters / LoRAs", markdown)
+            self.assertIn("## Datasets", markdown)
+            self.assertIn("## Dataset blueprint", markdown)
+            sidecar = written.with_suffix(".json")
+            self.assertTrue(sidecar.is_file())
+            pack = json.loads(sidecar.read_text())
+            self.assertIn("adapters", pack)
+            self.assertIn("datasets", pack)
+            self.assertIsNotNone(pack["dataset_blueprint"])
+
+    def test_research_fixture_mode_stays_offline_for_catalog(self):
+        """Empty fixture adapters/datasets must not require network."""
+        with TemporaryDirectory() as project:
+            code, output = self._run([
+                "research", "--domain", "offline catalog",
+                "--role", "vision", "--keyword", "ocr",
+                "--project", project, "--json",
+            ])
+            self.assertEqual(code, 0)
+            payload = json.loads(output)
+            pack = payload["data"]["pack"]
+            self.assertEqual(pack["adapters"], [])
+            self.assertEqual(pack["datasets"], [])
+            self.assertIsNotNone(pack["dataset_blueprint"])
+            self.assertEqual(payload["status"], "ok")
 
     def test_research_requires_domain(self):
         code, output = self._run(["research", "--json"])

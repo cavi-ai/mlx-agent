@@ -6,4 +6,5 @@ node_modules/
 .superpowers/
 docs/superpowers/
 .claude/
+.cursor/
 .code-review-graph/

@@ -91,6 +91,15 @@ class HttpCardTextTests(unittest.TestCase):
                 connection_factory=factory,
             )
 
+    def test_rejects_oversized_streamed_body_without_content_length(self):
+        response = FakeCardResponse(body=b"x" * (MODEL_CARD_MAX_BYTES + 1024))
+        factory, _ = self._factory(response)
+        with self.assertRaises(ValueError):
+            http_card_text(
+                "https://huggingface.co/acme/x/raw/main/README.md",
+                connection_factory=factory,
+            )
+
 
 class FetchModelCardTests(unittest.TestCase):
     def test_fetch_returns_text_via_injected_getter(self):

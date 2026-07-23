@@ -223,31 +223,19 @@ def _http_text_operation(connection, target, deadline, clock):
                 raise ValueError("invalid card Content-Length") from error
             if declared_length < 0 or declared_length > MODEL_CARD_MAX_BYTES:
                 raise ValueError("card response exceeds size limit")
-        body = _read_bounded_card_body(response, connection, deadline, clock)
+        body = _read_bounded_body(
+            response,
+            connection,
+            deadline,
+            clock,
+            max_bytes=MODEL_CARD_MAX_BYTES,
+        )
         return body.decode("utf-8", errors="replace")
     finally:
         connection.close()
 
 
-def _read_bounded_card_body(response, connection, deadline, clock):
-    chunks = []
-    total = 0
-    while True:
-        _set_connection_timeout(connection, _deadline_remaining(deadline, clock))
-        chunk = response.read(
-            min(_HTTP_READ_CHUNK_BYTES, MODEL_CARD_MAX_BYTES - total + 1)
-        )
-        _deadline_remaining(deadline, clock)
-        if not chunk:
-            break
-        total += len(chunk)
-        if total > MODEL_CARD_MAX_BYTES:
-            raise ValueError("card response exceeds size limit")
-        chunks.append(chunk)
-    return b"".join(chunks)
-
-
-def _read_bounded_body(response, connection, deadline, clock):
+def _read_bounded_body(response, connection, deadline, clock, max_bytes=HF_RESPONSE_MAX_BYTES):
     chunks = []
     total = 0
     while True:
@@ -256,13 +244,13 @@ def _read_bounded_body(response, connection, deadline, clock):
             _deadline_remaining(deadline, clock),
         )
         chunk = response.read(
-            min(_HTTP_READ_CHUNK_BYTES, HF_RESPONSE_MAX_BYTES - total + 1)
+            min(_HTTP_READ_CHUNK_BYTES, max_bytes - total + 1)
         )
         _deadline_remaining(deadline, clock)
         if not chunk:
             break
         total += len(chunk)
-        if total > HF_RESPONSE_MAX_BYTES:
+        if total > max_bytes:
             raise ValueError("Hugging Face response exceeds size limit")
         chunks.append(chunk)
     return b"".join(chunks)

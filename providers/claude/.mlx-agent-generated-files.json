@@ -54,7 +54,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "e8a1f8af2ca96a5afc282b8e0def23dc99a11b241b4106728aa6904663f17180"
+      "sha256": "c504fc52adde2ad43d22437745d5952ef67fc49c681e78495fb17ae012181989"
     },
     {
       "path": "src/mlx_agent/command_executor.py",
@@ -86,11 +86,15 @@
     },
     {
       "path": "src/mlx_agent/huggingface.py",
-      "sha256": "11c177662ebb6c2a3eea65b436951df0d5779d86950fbd8e00758d8692a349ff"
+      "sha256": "2350b4a0ef8cff8bc0f68691c84ebe1ea121451bd29c999e9c853c76eeab7c49"
     },
     {
       "path": "src/mlx_agent/installer.py",
       "sha256": "3f9ace29a58c735e40e0f5bbfb2ce4a8d94f38f81b86f2bad781988d4c76c4ea"
+    },
+    {
+      "path": "src/mlx_agent/interview.py",
+      "sha256": "3b895de08b9d92635094e372b3f77d909b3075360f3bf38a822531c99fad26b1"
     },
     {
       "path": "src/mlx_agent/mcp_server.py",
@@ -105,8 +109,16 @@
       "sha256": "8581be6c086a9e2b7667fda9d3010538f150b42dc4b757fa6b22e239f55ee5bb"
     },
     {
+      "path": "src/mlx_agent/research.py",
+      "sha256": "22e9fb1c8f6586a766106dee394d860e57f15fc69ea9d7c57d8f8d1a00946cf2"
+    },
+    {
       "path": "src/mlx_agent/resources/adapter-runtime.json",
       "sha256": "3cd3e93f3bb3e90fca33b2371631730dcdc6053e2eb938182ea800fd69860162"
+    },
+    {
+      "path": "src/mlx_agent/scoring.py",
+      "sha256": "ab4b6d3322221209ae4ae78e98bf4966b7c31ec6a777d6de42020c82803ee364"
     },
     {
       "path": "src/mlx_agent/transactions.py",

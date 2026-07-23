@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import urllib.parse
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .adoption import ADOPTION_SCHEMA_VERSION, AdoptionRequest, AdoptionWorkflow
@@ -13,8 +14,10 @@ from .discovery import DiscoveryRequest, DiscoveryService
 from .host import HostInventory
 from .huggingface import HuggingFaceClient
 from .installer import Installer, InstallerConflictError
+from .interview import build_intent, run_interview
 from .models import DISCOVERY_ROLES, render_md, wire
 from .providers import ProviderRegistry
+from .research import generate_pack, render_pack, write_pack
 from .transactions import (
     COOPERATIVE_CONCURRENCY_NOTE,
     ConcurrentTransactionError,
@@ -66,7 +69,10 @@ def _discovery_service_from_environment(state_dir=None):
         )
     service = DiscoveryService(
         host=HostInventory(**payload["host"]),
-        huggingface=HuggingFaceClient(http_get=_fixture_http_get(payload)),
+        huggingface=HuggingFaceClient(
+            http_get=_fixture_http_get(payload),
+            card_get=lambda url, timeout=8: None,
+        ),
         state_dir=state_dir,
         cache_enabled=False,
     )
@@ -302,6 +308,103 @@ def _add_adoption_arguments(parser):
         action = actions.add_parser(name, help="{0} an adoption handoff".format(name))
         action.add_argument("--state", help="adoption handoff path")
         action.add_argument("--json", action="store_true")
+
+
+def _add_research_arguments(parser):
+    parser.add_argument("--domain", help="one-line domain description (required unless --interview)")
+    parser.add_argument("--role", dest="roles", action="append", choices=DISCOVERY_ROLES, help="model role to research (repeatable)")
+    parser.add_argument("--keyword", dest="keywords", action="append", help="domain keyword to prioritize (repeatable)")
+    parser.add_argument("--license", dest="licenses", action="append", help="allow only this license (repeatable)")
+    parser.add_argument("--memory-gb", type=float, help="host memory budget in GB")
+    parser.add_argument("--notes", default="", help="free-form constraints")
+    parser.add_argument("--project", default=str(Path.cwd()), help="project root; the pack is written under <project>/mlx-research")
+    parser.add_argument("--limit", type=int, default=6, help="candidates fetched per role during discovery; the pack is also capped at this many total")
+    parser.add_argument("--interview", action="store_true", help="ask questions interactively on stdin")
+    parser.add_argument("--no-write", dest="write", action="store_false", default=True, help="render the pack without writing a file")
+    parser.add_argument("--json", action="store_true")
+
+
+def _stdin_reader(question):
+    prompt = question["prompt"]
+    if question.get("kind") == "multi":
+        prompt += " [{0}]".format(", ".join(question.get("choices", ())))
+    return input("{0}\n> ".format(prompt))
+
+
+def _emit_research(result, arguments, markdown=None):
+    value = result.to_dict()
+    if arguments.json:
+        print(json.dumps(value, indent=2))
+    elif result.status == "ok":
+        if "path" in result.data:
+            print("Research pack written to {0}".format(result.data["path"]))
+        else:
+            print(markdown if markdown is not None else "Research pack generated.")
+    else:
+        error = value["error"]
+        print("research failed [{0}]: {1}\nremediation: {2}".format(
+            error["code"], error["message"], error["remediation"]
+        ))
+    return 0 if result.status == "ok" else 2
+
+
+def _run_research(arguments):
+    operation = "research"
+    try:
+        if arguments.interview:
+            intent = run_interview(_stdin_reader)
+        elif not arguments.domain:
+            return _emit_research(ResultEnvelope.fail(
+                operation, "domain_required",
+                "No domain description was supplied.",
+                "Pass --domain \"...\" or use --interview.",
+            ), arguments)
+        else:
+            intent = build_intent({
+                "domain": arguments.domain,
+                "roles": arguments.roles or [],
+                "keywords": ",".join(arguments.keywords or []),
+                "license": ",".join(arguments.licenses or []),
+                "memory_gb": arguments.memory_gb,
+                "notes": arguments.notes,
+            })
+    except (ValueError, EOFError) as error:
+        return _emit_research(ResultEnvelope.fail(
+            operation, "invalid_intent", str(error),
+            "Correct the interview answers or flags and retry.",
+        ), arguments)
+
+    service, fixture_warning, fixture_error = _discovery_service_from_environment()
+    if fixture_error:
+        error = fixture_error.to_dict()["error"]
+        return _emit_research(ResultEnvelope.fail(
+            operation, error["code"], error["message"], error["remediation"],
+        ), arguments)
+    hf_client = getattr(service, "_huggingface", None) or HuggingFaceClient()
+    moment = datetime.now(timezone.utc)
+    try:
+        pack = generate_pack(intent, service, hf_client, limit=arguments.limit, now=moment)
+    except (OSError, TypeError, ValueError) as error:
+        return _emit_research(ResultEnvelope.fail(
+            operation, "research_failed",
+            "Research could not complete: {0}".format(error),
+            "Check network access to huggingface.co, or unset MLX_AGENT_FIXTURE.",
+        ), arguments)
+    markdown = render_pack(pack)
+    data = {"pack": pack.to_dict()}
+    if arguments.write:
+        try:
+            data["path"] = str(write_pack(markdown, intent, root=arguments.project, now=moment))
+        except (OSError, ValueError) as error:
+            return _emit_research(ResultEnvelope.fail(
+                operation, "write_failed",
+                "Research pack could not be written: {0}".format(error),
+                "Choose a writable --project directory without a symlinked mlx-research folder.",
+            ), arguments)
+    warnings = [fixture_warning] if fixture_warning else []
+    return _emit_research(
+        ResultEnvelope.ok(operation, data, warnings=warnings), arguments, markdown
+    )
 
 
 def _emit_wire_result(result, as_json, human=None):
@@ -563,6 +666,8 @@ def build_parser():
     inspect_host.add_argument("--json", action="store_true")
     adopt = subcommands.add_parser("adopt", help="run or inspect resumable model adoption")
     _add_adoption_arguments(adopt)
+    research = subcommands.add_parser("research", help="build a read-only domain research pack (markdown)")
+    _add_research_arguments(research)
     wire_command = subcommands.add_parser("wire", help="render, apply, inspect, or roll back runtime wiring")
     _add_wire_arguments(wire_command)
     providers_command = subcommands.add_parser("providers", help="list detected supported provider CLIs")
@@ -584,4 +689,6 @@ def main(argv=None):
         return _run_installer(arguments)
     if arguments.command == "inspect-host":
         return _run_inspect_host(arguments)
+    if arguments.command == "research":
+        return _run_research(arguments)
     return _run_discovery(arguments, legacy=False)

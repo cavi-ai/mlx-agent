@@ -17,6 +17,12 @@ from .installer import Installer, InstallerConflictError
 from .interview import build_intent, run_interview
 from .modality import ALL_FACET_IDS, FOUNDATION_IDS, resolve_facets, resolve_modalities
 from .models import DISCOVERY_ROLES, render_md, wire
+from .project_blueprint import (
+    build_brief,
+    generate_design_pack,
+    render_design_pack,
+    write_design_pack,
+)
 from .providers import ProviderRegistry
 from .research import generate_pack, render_pack, write_pack
 from .transactions import (
@@ -451,6 +457,88 @@ def _run_research(arguments):
     )
 
 
+def _add_blueprint_arguments(parser):
+    parser.add_argument("--goal", help="one-line project goal (required)")
+    parser.add_argument(
+        "--modality",
+        dest="modalities",
+        action="append",
+        choices=list(FOUNDATION_IDS),
+        help="foundational modality to include (repeatable)",
+    )
+    parser.add_argument("--memory-gb", type=float, help="host memory budget in GB")
+    parser.add_argument("--notes", default="", help="free-form constraints")
+    parser.add_argument(
+        "--project",
+        default=str(Path.cwd()),
+        help="project root; the pack is written under <project>/mlx-blueprints",
+    )
+    parser.add_argument(
+        "--no-write",
+        dest="write",
+        action="store_false",
+        default=True,
+        help="render the pack without writing a file",
+    )
+    parser.add_argument("--json", action="store_true")
+
+
+def _emit_blueprint(result, arguments, markdown=None):
+    value = result.to_dict()
+    if arguments.json:
+        print(json.dumps(value, indent=2))
+    elif result.status == "ok":
+        if "path" in result.data:
+            print("Project design pack written to {0}".format(result.data["path"]))
+        else:
+            print(markdown if markdown is not None else "Project design pack generated.")
+    else:
+        error = value["error"]
+        print("blueprint failed [{0}]: {1}\nremediation: {2}".format(
+            error["code"], error["message"], error["remediation"]
+        ))
+    return 0 if result.status == "ok" else 2
+
+
+def _run_blueprint(arguments):
+    operation = "blueprint"
+    try:
+        if not arguments.goal:
+            return _emit_blueprint(ResultEnvelope.fail(
+                operation, "goal_required",
+                "No project goal was supplied.",
+                "Pass --goal \"...\".",
+            ), arguments)
+        brief = build_brief({
+            "goal": arguments.goal,
+            "modalities": arguments.modalities or [],
+            "memory_gb": arguments.memory_gb,
+            "notes": arguments.notes,
+        })
+    except (ValueError, TypeError) as error:
+        return _emit_blueprint(ResultEnvelope.fail(
+            operation, "invalid_brief", str(error),
+            "Correct the flags and retry.",
+        ), arguments)
+
+    moment = datetime.now(timezone.utc)
+    pack = generate_design_pack(brief, now=moment)
+    markdown = render_design_pack(pack)
+    data = {"pack": pack.to_dict()}
+    if arguments.write:
+        try:
+            data["path"] = str(write_design_pack(
+                markdown, brief, root=arguments.project, now=moment, pack=pack,
+            ))
+        except (OSError, ValueError) as error:
+            return _emit_blueprint(ResultEnvelope.fail(
+                operation, "write_failed",
+                "Design pack could not be written: {0}".format(error),
+                "Choose a writable --project directory without a symlinked mlx-blueprints folder.",
+            ), arguments)
+    return _emit_blueprint(ResultEnvelope.ok(operation, data), arguments, markdown)
+
+
 def _emit_wire_result(result, as_json, human=None):
     if as_json:
         print(json.dumps(result.to_dict(), indent=2))
@@ -712,6 +800,11 @@ def build_parser():
     _add_adoption_arguments(adopt)
     research = subcommands.add_parser("research", help="build a read-only domain research pack (markdown)")
     _add_research_arguments(research)
+    blueprint = subcommands.add_parser(
+        "blueprint",
+        help="emit a read-only MLX project design pack (quant/train guidance; no scaffolding)",
+    )
+    _add_blueprint_arguments(blueprint)
     wire_command = subcommands.add_parser("wire", help="render, apply, inspect, or roll back runtime wiring")
     _add_wire_arguments(wire_command)
     providers_command = subcommands.add_parser("providers", help="list detected supported provider CLIs")
@@ -735,4 +828,6 @@ def main(argv=None):
         return _run_inspect_host(arguments)
     if arguments.command == "research":
         return _run_research(arguments)
+    if arguments.command == "blueprint":
+        return _run_blueprint(arguments)
     return _run_discovery(arguments, legacy=False)

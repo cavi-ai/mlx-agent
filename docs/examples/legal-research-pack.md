@@ -60,6 +60,12 @@ Any other constraints or notes? (optional)
 - `document-vision` — Document extraction / vision
   - Facets: `ocr` (OCR / text extraction)
 
+## Runtime preference
+
+- Preferred: `mlx-vlm`
+- Alternates: `lmstudio`
+- Rationale: Vision / document / video workloads need native mlx-vlm; Ollama does not run VLMs.
+
 ## Candidates
 
 ### 1. `mlx-community/<an-ocr-vision-model>` — score 82.0/100

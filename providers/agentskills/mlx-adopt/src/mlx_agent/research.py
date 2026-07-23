@@ -19,6 +19,7 @@ from .blueprint import DatasetBlueprint, build_dataset_blueprint
 from .discovery import DiscoveryRequest
 from .interview import DomainIntent
 from .modality import FACET_CHOICES, facet_label, modality_label
+from .runtime_preference import RuntimePreference, prefer_runtime, wiring_for_preference
 from .scoring import ScoreResult, rank_scored, score_candidate
 
 
@@ -82,6 +83,7 @@ class ResearchPack:
     adapters: Tuple[CatalogItem, ...] = field(default_factory=tuple)
     datasets: Tuple[CatalogItem, ...] = field(default_factory=tuple)
     dataset_blueprint: Optional[DatasetBlueprint] = None
+    runtime_preference: Optional[RuntimePreference] = None
 
     def to_dict(self):
         return {
@@ -93,6 +95,9 @@ class ResearchPack:
             "datasets": [item.to_dict() for item in self.datasets],
             "dataset_blueprint": (
                 self.dataset_blueprint.to_dict() if self.dataset_blueprint else None
+            ),
+            "runtime_preference": (
+                self.runtime_preference.to_dict() if self.runtime_preference else None
             ),
         }
 
@@ -206,6 +211,7 @@ def generate_pack(
     moment = now or datetime.now(timezone.utc)
     seen: Dict[str, Dict[str, object]] = {}
     warnings: List[dict] = []
+    host: Dict[str, object] = {}
     for role in intent.roles:
         request = DiscoveryRequest(
             role=role,
@@ -221,11 +227,19 @@ def generate_pack(
                 "message": "{0}: {1}".format(role, detail.message if detail else "discovery failed"),
             })
             continue
+        if not host and isinstance(envelope.data.get("host"), dict):
+            host = dict(envelope.data["host"])
         for bucket in envelope.data.get("roles", {}).values():
             for candidate in bucket:
                 repo = candidate.get("repo")
                 if repo and repo not in seen:
                     seen[repo] = candidate
+
+    preference = prefer_runtime(
+        host,
+        roles=intent.roles,
+        modalities=intent.modalities,
+    )
 
     scored: List[Tuple[str, ScoreResult]] = []
     detail_by_repo: Dict[str, Dict[str, object]] = {}
@@ -243,11 +257,12 @@ def generate_pack(
     for repo, result in ranked:
         candidate = detail_by_repo[repo]["candidate"]
         card_text = detail_by_repo[repo]["card_text"]
+        role = candidate.get("role", "")
         candidates.append(ResearchCandidate(
             repo=repo,
-            role=candidate.get("role", ""),
+            role=role,
             score=result.score,
-            wiring=candidate.get("wiring", ""),
+            wiring=wiring_for_preference(repo, role, preference),
             signals=tuple(signal.to_dict() for signal in result.signals),
             provenance=result.provenance,
             card_present=bool(card_text),
@@ -296,6 +311,7 @@ def generate_pack(
         adapters=adapters,
         datasets=datasets,
         dataset_blueprint=blueprint,
+        runtime_preference=preference,
     )
 
 
@@ -374,6 +390,29 @@ def render_pack(pack: ResearchPack) -> str:
     else:
         lines.append("No foundational modalities were selected for this pack.")
         lines.append("")
+    lines.extend(["", "## Runtime preference", ""])
+    preference = pack.runtime_preference
+    if preference is not None:
+        lines.append("- Preferred: `{0}`".format(preference.preferred))
+        lines.append(
+            "- Alternates: {0}".format(
+                ", ".join("`{0}`".format(item) for item in preference.alternates)
+                if preference.alternates
+                else "none"
+            )
+        )
+        lines.append("- Rationale: {0}".format(preference.rationale))
+        snapshot = preference.host_snapshot
+        lines.append(
+            "- Host inventory: Ollama {0}; LM Studio {1}".format(
+                "up" if snapshot.get("ollama") else "down",
+                "up" if snapshot.get("lmstudio") else "down",
+            )
+        )
+        lines.append("")
+    else:
+        lines.append("No runtime preference was computed for this pack.")
+        lines.append("")
     lines.extend(["", "## Candidates", ""])
     for index, candidate in enumerate(pack.candidates, start=1):
         lines.append("### {0}. `{1}` — score {2}/100".format(index, candidate.repo, candidate.score))
@@ -413,14 +452,22 @@ def render_pack(pack: ResearchPack) -> str:
         "## Next steps",
         "",
         "1. Review candidates, adapters, and datasets above and pick a local stack.",
-        "2. Install a base model in a supported local runtime (Ollama, LM Studio, or mlx_lm).",
-        "3. Run `mlx-agent adopt start` to verify and wire it — research does not verify or download.",
-        "4. If no datasets matched, follow the dataset blueprint to create labeled data locally.",
+        "2. Prefer the runtime in **Runtime preference** above"
+        + (
+            " (`{0}`)".format(pack.runtime_preference.preferred)
+            if pack.runtime_preference is not None
+            else ""
+        )
+        + "; Ollama remains a valid alternate for curated tags when listed.",
+        "3. Install a base model in that runtime (LM Studio, mlx_lm/mlx-vlm, or Ollama).",
+        "4. Run `mlx-agent adopt start` to verify and wire it — research does not verify or download.",
+        "5. If no datasets matched, follow the dataset blueprint to create labeled data locally.",
         "",
         "## Notes",
         "",
         "This pack is a read-only research artifact intended for ingestion by other agents. "
-        "All scores are estimates with per-signal provenance; verify capability before relying on any model.",
+        "All scores are estimates with per-signal provenance; verify capability before relying on any model. "
+        "Runtime preference is guidance from host inventory and modality/role rules — it does not change scores.",
         "",
     ])
     return "\n".join(lines)

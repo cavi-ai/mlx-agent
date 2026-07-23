@@ -29,6 +29,12 @@ Or detect from domain text containing `video` / `caption`.
 ## Pack excerpt
 
 ```markdown
+## Runtime preference
+
+- Preferred: `mlx-vlm`
+- Alternates: `lmstudio` when its server is up
+- Rationale: Video understanding needs native vision serving; Ollama does not run VLMs.
+
 ## Modality foundations
 
 - `video` — Video

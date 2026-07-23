@@ -22,6 +22,9 @@ HF_API_HOST = "huggingface.co"
 UA = {"User-Agent": "mlx-scout/0.2 (+https://github.com/cavi-ai/mlx-agent)"}
 HF_RESPONSE_MAX_BYTES = 8 * 1024 * 1024
 _HTTP_READ_CHUNK_BYTES = 64 * 1024
+HF_CARD_HOST = "huggingface.co"
+MODEL_CARD_MAX_BYTES = 512 * 1024
+_CARD_PATH_SUFFIX = "/raw/main/README.md"
 
 
 def http_json(
@@ -57,29 +60,23 @@ def http_json(
     target = parsed.path or "/"
     if parsed.query:
         target = "{0}?{1}".format(target, parsed.query)
-    return _run_http_json_worker(
+    return _run_http_worker(
         connection,
-        target,
+        lambda: _http_json_operation(connection, target, deadline, clock),
         deadline,
         clock,
         completion_wait,
     )
 
 
-def _run_http_json_worker(
-    connection,
-    target,
-    deadline,
-    clock,
-    completion_wait,
-):
+def _run_http_worker(connection, operation, deadline, clock, completion_wait):
     results = queue.Queue(maxsize=1)
     completion = threading.Event()
 
     def run():
         try:
-            result = (True, _http_json_operation(connection, target, deadline, clock))
-        except BaseException as error:
+            result = (True, operation())
+        except BaseException as error:  # noqa: BLE001 - propagated to caller
             result = (False, error)
         results.put_nowait(result)
         completion.set()
@@ -166,6 +163,90 @@ def _http_json_operation(connection, target, deadline, clock):
         connection.close()
 
 
+def http_card_text(
+    url,
+    timeout=8.0,
+    connection_factory=None,
+    clock=time.monotonic,
+    completion_wait=None,
+):
+    """Read bounded README/model-card text from the fixed card host."""
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme != "https" or parsed.hostname != HF_CARD_HOST:
+        raise ValueError("card URL must use the fixed HTTPS card host")
+    if parsed.port not in (None, 443):
+        raise ValueError("card URL must use the default HTTPS port")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("card URL must not contain credentials")
+    if parsed.fragment:
+        raise ValueError("card URL must not contain a fragment")
+    if not parsed.path.endswith(_CARD_PATH_SUFFIX) or parsed.path.count("/") != 5:
+        raise ValueError("card URL must target <owner>/<repo>/raw/main/README.md")
+
+    deadline = clock() + timeout
+    remaining = _deadline_remaining(deadline, clock)
+    if connection_factory is None:
+        connection = http.client.HTTPSConnection(HF_CARD_HOST, 443, timeout=remaining)
+    else:
+        connection = connection_factory(HF_CARD_HOST, 443, remaining)
+    target = parsed.path
+    if parsed.query:
+        target = "{0}?{1}".format(target, parsed.query)
+    return _run_http_worker(
+        connection,
+        lambda: _http_text_operation(connection, target, deadline, clock),
+        deadline,
+        clock,
+        completion_wait,
+    )
+
+
+def _http_text_operation(connection, target, deadline, clock):
+    try:
+        connection.request("GET", target, headers=UA)
+        _set_connection_timeout(connection, _deadline_remaining(deadline, clock))
+        response = connection.getresponse()
+        _deadline_remaining(deadline, clock)
+        if 300 <= response.status < 400:
+            raise http.client.HTTPException(
+                "redirect responses are not allowed for card requests"
+            )
+        if not 200 <= response.status < 300:
+            raise http.client.HTTPException(
+                "card host returned HTTP status {0}".format(response.status)
+            )
+        content_length = response.headers.get("Content-Length")
+        if content_length is not None:
+            try:
+                declared_length = int(content_length)
+            except (TypeError, ValueError) as error:
+                raise ValueError("invalid card Content-Length") from error
+            if declared_length < 0 or declared_length > MODEL_CARD_MAX_BYTES:
+                raise ValueError("card response exceeds size limit")
+        body = _read_bounded_card_body(response, connection, deadline, clock)
+        return body.decode("utf-8", errors="replace")
+    finally:
+        connection.close()
+
+
+def _read_bounded_card_body(response, connection, deadline, clock):
+    chunks = []
+    total = 0
+    while True:
+        _set_connection_timeout(connection, _deadline_remaining(deadline, clock))
+        chunk = response.read(
+            min(_HTTP_READ_CHUNK_BYTES, MODEL_CARD_MAX_BYTES - total + 1)
+        )
+        _deadline_remaining(deadline, clock)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MODEL_CARD_MAX_BYTES:
+            raise ValueError("card response exceeds size limit")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def _read_bounded_body(response, connection, deadline, clock):
     chunks = []
     total = 0
@@ -201,12 +282,22 @@ def _set_connection_timeout(connection, timeout):
 
 
 class HuggingFaceClient:
-    def __init__(self, http_get=http_json):
+    def __init__(self, http_get=http_json, card_get=http_card_text):
         self._http_get = http_get
+        self._card_get = card_get
 
     @property
     def http_get(self):
         return self._http_get
+
+    def fetch_model_card(self, repo, timeout=8):
+        """Return bounded README/model-card text, or None on any failure."""
+        quoted = "/".join(urllib.parse.quote(part) for part in repo.split("/"))
+        url = "https://{0}/{1}/raw/main/README.md".format(HF_CARD_HOST, quoted)
+        try:
+            return self._card_get(url, timeout=timeout)
+        except Exception:
+            return None
 
     @staticmethod
     def list_models_url(sort="trendingScore", limit_fetch=300):

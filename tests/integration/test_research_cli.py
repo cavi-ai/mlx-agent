@@ -39,6 +39,10 @@ class ResearchCliTests(unittest.TestCase):
             self.assertTrue(written.exists())
             self.assertEqual(written.parent, (Path(project) / "mlx-research").resolve())
             self.assertIn("# MLX Research Pack: legal contract review", written.read_text())
+            sidecar = Path(payload["data"]["json_path"])
+            self.assertEqual(sidecar, written.with_suffix(".json"))
+            self.assertTrue(sidecar.exists())
+            self.assertIn("intent", json.loads(sidecar.read_text()))
 
     def test_research_requires_domain(self):
         code, output = self._run(["research", "--json"])

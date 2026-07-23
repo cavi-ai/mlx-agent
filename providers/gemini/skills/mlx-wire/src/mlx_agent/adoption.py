@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from .discovery import DiscoveryRequest, DiscoveryService
+from .interview import DomainIntent
+from .research import candidate_metadata
+from .scoring import score_candidate
 from .transactions import (
     ConcurrentTransactionError,
     _atomic_in_directory,
@@ -28,8 +31,10 @@ from .verification import (
 )
 
 
-ADOPTION_SCHEMA_VERSION = "1.2"
+ADOPTION_SCHEMA_VERSION = "1.3"
 LEGACY_ADOPTION_SCHEMA_VERSION = "1.1"
+PRIOR_ADOPTION_SCHEMA_VERSION = "1.2"
+_LEGACY_SCHEMA_VERSIONS = (LEGACY_ADOPTION_SCHEMA_VERSION, PRIOR_ADOPTION_SCHEMA_VERSION)
 PHASES = ("inspect", "discover", "shortlist", "verify", "compare", "recommend", "complete")
 UTILITY_ROLES = {"general", "embedding"}
 ALLOWED_ROLES = {
@@ -68,6 +73,11 @@ class AdoptionRequest:
     publishers: object = None
     runtime: object = None
     fast: bool = False
+    domain: object = None
+    keywords: object = None
+    notes: str = ""
+    source: object = None
+    seeded_candidates: object = None
 
     def __post_init__(self):
         if isinstance(self.roles, str):
@@ -100,7 +110,32 @@ class AdoptionRequest:
             value = getattr(self, name)
             if value is not None and not isinstance(value, str):
                 raise TypeError("{0} must be a string or null".format(name))
+        if self.domain is not None and not isinstance(self.domain, str):
+            raise TypeError("domain must be a string or null")
+        if not isinstance(self.notes, str):
+            raise TypeError("notes must be a string")
+        if self.source is not None and not isinstance(self.source, dict):
+            raise TypeError("source must be an object or null")
+        keywords = tuple(_string_list(self.keywords))
+        if len(keywords) > 50:
+            raise ValueError("keywords must contain at most 50 entries")
+        seeded = self.seeded_candidates
+        if seeded is None:
+            seeded_list: List[Dict[str, Any]] = []
+        elif isinstance(seeded, list):
+            if len(seeded) > 100:
+                raise ValueError("seeded_candidates must contain at most 100 entries")
+            if any(not isinstance(item, dict) for item in seeded):
+                raise TypeError("seeded_candidates must contain objects")
+            seeded_list = [dict(item) for item in seeded]
+        else:
+            raise TypeError("seeded_candidates must be an array or null")
         object.__setattr__(self, "roles", roles)
+        object.__setattr__(self, "keywords", keywords)
+        object.__setattr__(self, "seeded_candidates", tuple(seeded_list))
+        object.__setattr__(self, "notes", self.notes.strip())
+        if self.domain is not None:
+            object.__setattr__(self, "domain", self.domain.strip() or None)
 
     def to_dict(self):
         return {
@@ -116,6 +151,11 @@ class AdoptionRequest:
             "publishers": _string_list(self.publishers),
             "runtime": self.runtime,
             "fast": bool(self.fast),
+            "domain": self.domain,
+            "keywords": list(self.keywords or ()),
+            "notes": self.notes,
+            "source": dict(self.source) if isinstance(self.source, dict) else None,
+            "seeded_candidates": [dict(item) for item in (self.seeded_candidates or ())],
         }
 
     @classmethod
@@ -126,6 +166,7 @@ class AdoptionRequest:
             "roles", "state_path", "state", "shortlist_limit", "limit",
             "allow_network", "offline", "refresh", "memory_gb", "quantization",
             "licenses", "include_gated", "publishers", "runtime", "fast",
+            "domain", "keywords", "notes", "source", "seeded_candidates",
         }
         unknown = sorted(set(value) - allowed)
         if unknown:
@@ -144,7 +185,53 @@ class AdoptionRequest:
             publishers=value.get("publishers"),
             runtime=value.get("runtime"),
             fast=value.get("fast", False),
+            domain=value.get("domain"),
+            keywords=value.get("keywords"),
+            notes=value.get("notes") or "",
+            source=value.get("source"),
+            seeded_candidates=value.get("seeded_candidates"),
         )
+
+
+def adoption_request_from_pack(
+    payload: Dict[str, Any],
+    pack_path: object,
+    state_path: object = None,
+    shortlist_limit: int = 4,
+    allow_network: bool = True,
+    offline: bool = False,
+    refresh: bool = False,
+    fast: bool = False,
+) -> AdoptionRequest:
+    """Build an AdoptionRequest that seeds shortlist from a research pack."""
+    intent = payload["intent"]
+    roles = tuple(intent["roles"])
+    seeded = []
+    for item in payload.get("candidates") or []:
+        if not isinstance(item, dict):
+            continue
+        record = dict(item.get("record") or {})
+        record["repo"] = record.get("repo") or item.get("repo")
+        record["role"] = record.get("role") or item.get("role") or roles[0]
+        record["wiring"] = record.get("wiring") or item.get("wiring") or ""
+        if record.get("repo"):
+            seeded.append(record)
+    return AdoptionRequest(
+        roles=roles,
+        state_path=state_path,
+        shortlist_limit=shortlist_limit,
+        allow_network=allow_network,
+        offline=offline,
+        refresh=refresh,
+        fast=fast,
+        memory_gb=intent.get("memory_gb"),
+        licenses=intent.get("license_allow") or intent.get("licenses"),
+        domain=intent.get("domain"),
+        keywords=intent.get("keywords"),
+        notes=intent.get("notes") or "",
+        source={"type": "research_pack", "path": str(Path(pack_path).resolve())},
+        seeded_candidates=seeded,
+    )
 
 
 @dataclass
@@ -287,6 +374,23 @@ class AdoptionWorkflow:
 
     def _phase_discover(self, state):
         request = state.request
+        seeded = request.get("seeded_candidates") or []
+        if seeded:
+            roles: Dict[str, List[Dict[str, Any]]] = {}
+            for candidate in seeded:
+                if not isinstance(candidate, dict):
+                    continue
+                role = candidate.get("role") or "general"
+                record = dict(candidate)
+                record["role"] = role
+                roles.setdefault(role, []).append(record)
+            state.discovery = {
+                "host": dict(state.host),
+                "fast": True,
+                "roles": roles,
+                "seeded_from_research": True,
+            }
+            return
         roles = request["roles"]
         result = self.discovery_service.discover(DiscoveryRequest(
             role=roles[0] if len(roles) == 1 else None,
@@ -310,8 +414,19 @@ class AdoptionWorkflow:
         state.warnings.extend(result.warnings)
 
     def _phase_shortlist(self, state):
-        requested = set(state.request["roles"])
         limit = state.request["shortlist_limit"]
+        seeded = state.request.get("seeded_candidates") or []
+        if seeded:
+            shortlisted = []
+            for candidate in seeded[:limit]:
+                if not isinstance(candidate, dict):
+                    continue
+                record = dict(candidate)
+                record["role"] = record.get("role") or "general"
+                shortlisted.append(record)
+            state.shortlist = shortlisted
+            return
+        requested = set(state.request["roles"])
         shortlisted = []
         roles = state.discovery.get("roles", {})
         if not isinstance(roles, dict):
@@ -405,9 +520,9 @@ class AdoptionWorkflow:
                 and evidence_status != VerificationStatus.VERIFIED.value
             ):
                 reasons.append("tool_use_not_verified")
+            scoring = _score_shortlist_candidate(state.request, candidate, self.discovery_service)
             score = EVIDENCE_SCORES.get(evidence.get("strength"), 0)
-            score += int(candidate.get("rank_score") or 0)
-            score += 20 if candidate.get("trusted") else 0
+            score += int(round(scoring["score"]))
             comparisons.append({
                 "repo": repo,
                 "role": role,
@@ -417,6 +532,7 @@ class AdoptionWorkflow:
                 "evidence_status": evidence_status,
                 "verification_status": evidence_status,
                 "rejection_reasons": reasons,
+                "scoring": scoring,
             })
         state.comparisons = comparisons
 
@@ -529,43 +645,89 @@ def _first_incomplete(completed):
     return "complete"
 
 
+def _intent_from_request(request: Dict[str, Any]) -> DomainIntent:
+    roles = tuple(request.get("roles") or ("general",))
+    domain = request.get("domain")
+    if not isinstance(domain, str) or not domain.strip():
+        domain = "adoption"
+    keywords = tuple(_string_list(request.get("keywords")))
+    licenses = tuple(_string_list(request.get("licenses")))
+    notes = request.get("notes") if isinstance(request.get("notes"), str) else ""
+    memory = request.get("memory_gb")
+    return DomainIntent(
+        domain=domain.strip(),
+        roles=roles,
+        keywords=keywords,
+        license_allow=licenses,
+        memory_gb=memory,
+        notes=notes.strip(),
+    )
+
+
+def _score_shortlist_candidate(request, candidate, discovery_service) -> Dict[str, Any]:
+    intent = _intent_from_request(request)
+    card_text = None
+    hf_client = getattr(discovery_service, "_huggingface", None)
+    repo = candidate.get("repo") or candidate.get("repository")
+    if hf_client is not None and isinstance(repo, str) and repo:
+        try:
+            card_text = hf_client.fetch_model_card(repo)
+        except Exception:
+            card_text = None
+    result = score_candidate(intent, candidate_metadata(candidate), card_text)
+    return result.to_dict()
+
+
+def _ensure_request_v13_fields(request):
+    if not isinstance(request, dict):
+        return
+    request.setdefault("domain", None)
+    request.setdefault("keywords", [])
+    request.setdefault("notes", "")
+    request.setdefault("source", None)
+    request.setdefault("seeded_candidates", [])
+
+
 def _migrate_state(value):
     if not isinstance(value, dict):
         raise TypeError("adoption state must be an object")
     version = value.get("schema_version")
     if version == ADOPTION_SCHEMA_VERSION:
         return value
-    if version != LEGACY_ADOPTION_SCHEMA_VERSION:
+    if version not in _LEGACY_SCHEMA_VERSIONS:
         raise ValueError("unsupported adoption state schema version")
 
     migrated = deepcopy(value)
-    request = migrated.get("request")
-    legacy_roles = (
-        list(request.get("roles", []))
-        if isinstance(request, dict) and isinstance(request.get("roles", []), list)
-        else []
-    )
-    for collection in ("shortlist", "evidence", "comparisons", "recommendations"):
-        records = migrated.get(collection)
-        if isinstance(records, list):
-            legacy_roles.extend(
-                item.get("role") for item in records if isinstance(item, dict)
-            )
-    if "tool-use" in legacy_roles:
-        raise ValueError("legacy adoption state cannot contain tool-use")
+    if version == LEGACY_ADOPTION_SCHEMA_VERSION:
+        request = migrated.get("request")
+        legacy_roles = (
+            list(request.get("roles", []))
+            if isinstance(request, dict) and isinstance(request.get("roles", []), list)
+            else []
+        )
+        for collection in ("shortlist", "evidence", "comparisons", "recommendations"):
+            records = migrated.get(collection)
+            if isinstance(records, list):
+                legacy_roles.extend(
+                    item.get("role") for item in records if isinstance(item, dict)
+                )
+        if "tool-use" in legacy_roles:
+            raise ValueError("legacy adoption state cannot contain tool-use")
 
-    status_by_strength = {
-        EvidenceStrength.RUNTIME_TESTED.value: VerificationStatus.VERIFIED.value,
-        EvidenceStrength.RUNTIME_INVENTORY.value: VerificationStatus.FAILED.value,
-        EvidenceStrength.METADATA_ONLY.value: VerificationStatus.METADATA_ONLY.value,
-        EvidenceStrength.HEURISTIC_ONLY.value: VerificationStatus.METADATA_ONLY.value,
-    }
-    for item in migrated.get("evidence", []):
-        if not isinstance(item, dict):
-            continue
-        strength = item.get("strength")
-        if strength in status_by_strength:
-            item["status"] = status_by_strength[strength]
+        status_by_strength = {
+            EvidenceStrength.RUNTIME_TESTED.value: VerificationStatus.VERIFIED.value,
+            EvidenceStrength.RUNTIME_INVENTORY.value: VerificationStatus.FAILED.value,
+            EvidenceStrength.METADATA_ONLY.value: VerificationStatus.METADATA_ONLY.value,
+            EvidenceStrength.HEURISTIC_ONLY.value: VerificationStatus.METADATA_ONLY.value,
+        }
+        for item in migrated.get("evidence", []):
+            if not isinstance(item, dict):
+                continue
+            strength = item.get("strength")
+            if strength in status_by_strength:
+                item["status"] = status_by_strength[strength]
+
+    _ensure_request_v13_fields(migrated.get("request"))
     migrated["schema_version"] = ADOPTION_SCHEMA_VERSION
     return migrated
 
@@ -646,7 +808,7 @@ def _validate_request_shape(request):
     required = {
         "roles", "shortlist_limit", "allow_network", "offline", "refresh",
         "memory_gb", "quantization", "licenses", "include_gated", "publishers",
-        "runtime", "fast",
+        "runtime", "fast", "domain", "keywords", "notes", "source", "seeded_candidates",
     }
     if set(request) != required:
         raise ValueError("adoption request does not match the persisted schema")
@@ -667,14 +829,26 @@ def _validate_request_shape(request):
         not isinstance(request["memory_gb"], (int, float)) or isinstance(request["memory_gb"], bool)
     ):
         raise TypeError("request.memory_gb must be a number or null")
-    for key in ("quantization", "runtime"):
+    for key in ("quantization", "runtime", "domain"):
         if request[key] is not None and not isinstance(request[key], str):
             raise TypeError("request.{0} must be a string or null".format(key))
+    if not isinstance(request["notes"], str):
+        raise TypeError("request.notes must be a string")
+    if request["source"] is not None and not isinstance(request["source"], dict):
+        raise TypeError("request.source must be an object or null")
     for key in ("licenses", "publishers"):
         if not isinstance(request[key], list) or len(request[key]) > 20:
             raise ValueError("request.{0} must be a bounded array".format(key))
         if any(not isinstance(item, str) for item in request[key]):
             raise TypeError("request.{0} must contain strings".format(key))
+    if not isinstance(request["keywords"], list) or len(request["keywords"]) > 50:
+        raise ValueError("request.keywords must be a bounded array")
+    if any(not isinstance(item, str) for item in request["keywords"]):
+        raise TypeError("request.keywords must contain strings")
+    if not isinstance(request["seeded_candidates"], list) or len(request["seeded_candidates"]) > 100:
+        raise ValueError("request.seeded_candidates must be a bounded array")
+    if any(not isinstance(item, dict) for item in request["seeded_candidates"]):
+        raise TypeError("request.seeded_candidates must contain objects")
 
 
 def _validate_timestamp(timestamp, field_name):

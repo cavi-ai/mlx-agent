@@ -15,9 +15,25 @@ python3 scripts/mlx-agent research --domain "legal contract review" --role visio
 python3 scripts/mlx-agent research --interview
 ```
 
-The pack is written to `./mlx-research/<domain-slug>-<timestamp>.md`. Pass
-`--project DIR` to change the project root, `--json` for machine output, or
+Each write produces a pair under `./mlx-research/`:
+
+- `<domain-slug>-<timestamp>.md` — human/agent-readable research pack
+- `<domain-slug>-<timestamp>.json` — machine sidecar for `adopt start --from-research`
+
+Pass `--project DIR` to change the project root, `--json` for machine output, or
 `--no-write` to render without writing a file.
+
+## Hand off to Adopt
+
+```bash
+python3 scripts/mlx-agent adopt start \
+  --from-research ./mlx-research/<domain-slug>-<timestamp>.json \
+  --state .mlx-agent/adoption.json \
+  --json
+```
+
+Adopt seeds its shortlist from the pack's ranked order (no rediscovery re-ranking),
+then verifies and recommends. Pass the `.json` sidecar, not the `.md` file.
 
 ## What the interview asks
 
@@ -33,7 +49,9 @@ Each candidate is scored 0–100 from transparent signals with per-signal
 provenance: role match, keyword match (model card text + tags), popularity,
 license fit, memory fit, and model-card quality. Signals you did not ask for
 (for example a license filter you left blank, or a memory budget you did not set)
-are excluded from the score, not penalized. All scores are estimates; verify
+are excluded from the score, not penalized. Adopt's compare phase uses the same
+scoring core (soft-blended under verification evidence strength) so research and
+adoption cite the same provenance shape. All scores are estimates; verify
 capability with `mlx-agent adopt` before relying on any model.
 
 ## Safety

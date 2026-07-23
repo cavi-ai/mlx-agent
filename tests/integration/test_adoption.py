@@ -700,11 +700,11 @@ class AdoptionWorkflowTests(unittest.TestCase):
 
             resumed = workflow.resume(path)
             self.assertEqual(path.read_bytes(), legacy_bytes)
-            self.assertEqual(resumed.schema_version, "1.2")
+            self.assertEqual(resumed.schema_version, ADOPTION_SCHEMA_VERSION)
 
             workflow.advance(resumed)
             persisted = json.loads(path.read_text())
-            self.assertEqual(persisted["schema_version"], "1.2")
+            self.assertEqual(persisted["schema_version"], ADOPTION_SCHEMA_VERSION)
             self.assertEqual(persisted["revision"], 2)
 
     def test_complete_legacy_resume_does_not_rewrite_and_unknown_version_rejects(self):
@@ -868,7 +868,7 @@ class AdoptionWorkflowTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         schema = json.loads((root / "schemas" / "adoption-state.schema.json").read_text())
         self.assertEqual(schema["properties"]["phase"]["enum"], list(PHASES))
-        self.assertEqual(schema["properties"]["schema_version"]["const"], "1.2")
+        self.assertEqual(schema["properties"]["schema_version"]["const"], "1.3")
         self.assertEqual(schema["properties"]["request"]["properties"]["roles"]["maxItems"], 6)
         self.assertEqual(schema["properties"]["recommendations"]["maxItems"], 6)
         self.assertEqual(

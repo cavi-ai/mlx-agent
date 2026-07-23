@@ -8,7 +8,12 @@ import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .adoption import ADOPTION_SCHEMA_VERSION, AdoptionRequest, AdoptionWorkflow
+from .adoption import (
+    ADOPTION_SCHEMA_VERSION,
+    AdoptionRequest,
+    AdoptionWorkflow,
+    adoption_request_from_pack,
+)
 from .contracts import ErrorDetail, ResultEnvelope
 from .discovery import DiscoveryRequest, DiscoveryService
 from .host import HostInventory
@@ -17,7 +22,7 @@ from .installer import Installer, InstallerConflictError
 from .interview import build_intent, run_interview
 from .models import DISCOVERY_ROLES, render_md, wire
 from .providers import ProviderRegistry
-from .research import generate_pack, render_pack, write_pack
+from .research import generate_pack, load_research_pack, render_pack, write_pack
 from .transactions import (
     COOPERATIVE_CONCURRENCY_NOTE,
     ConcurrentTransactionError,
@@ -266,15 +271,38 @@ def _run_adoption(arguments):
     )
     try:
         if arguments.adopt_command == "start":
-            state = workflow.start(AdoptionRequest(
-                roles=tuple(arguments.roles or ("general",)),
-                state_path=state_path,
-                shortlist_limit=arguments.shortlist_limit,
-                allow_network=arguments.allow_network and not arguments.offline,
-                offline=arguments.offline,
-                refresh=arguments.refresh,
-                fast=arguments.fast,
-            ))
+            from_research = getattr(arguments, "from_research", None)
+            if from_research:
+                try:
+                    payload = load_research_pack(from_research)
+                    request = adoption_request_from_pack(
+                        payload,
+                        from_research,
+                        state_path=state_path,
+                        shortlist_limit=arguments.shortlist_limit,
+                        allow_network=arguments.allow_network and not arguments.offline,
+                        offline=arguments.offline,
+                        refresh=arguments.refresh,
+                        fast=arguments.fast,
+                    )
+                except ValueError as error:
+                    return _emit_adoption_result(ResultEnvelope.fail(
+                        operation,
+                        "invalid_research_pack",
+                        str(error),
+                        "Pass --from-research PATH.json (the sibling sidecar written by mlx-agent research).",
+                    ), arguments.json)
+            else:
+                request = AdoptionRequest(
+                    roles=tuple(arguments.roles or ("general",)),
+                    state_path=state_path,
+                    shortlist_limit=arguments.shortlist_limit,
+                    allow_network=arguments.allow_network and not arguments.offline,
+                    offline=arguments.offline,
+                    refresh=arguments.refresh,
+                    fast=arguments.fast,
+                )
+            state = workflow.start(request)
         else:
             state = workflow.resume(state_path)
         while state.phase != "complete":
@@ -303,6 +331,10 @@ def _add_adoption_arguments(parser):
     start.add_argument("--refresh", action="store_true", help="refresh model discovery")
     start.add_argument("--fast", action="store_true", help="use heuristic-only discovery enrichment")
     start.add_argument("--no-network", dest="allow_network", action="store_false", default=True, help="do not inspect missing-model metadata")
+    start.add_argument(
+        "--from-research",
+        help="seed adoption from a research-pack .json sidecar (not the .md file)",
+    )
     start.add_argument("--json", action="store_true")
     for name in ("resume", "status"):
         action = actions.add_parser(name, help="{0} an adoption handoff".format(name))
@@ -394,7 +426,11 @@ def _run_research(arguments):
     data = {"pack": pack.to_dict()}
     if arguments.write:
         try:
-            data["path"] = str(write_pack(markdown, intent, root=arguments.project, now=moment))
+            written = write_pack(
+                markdown, intent, root=arguments.project, now=moment, pack=pack
+            )
+            data["path"] = str(written)
+            data["json_path"] = str(written.with_suffix(".json"))
         except (OSError, ValueError) as error:
             return _emit_research(ResultEnvelope.fail(
                 operation, "write_failed",

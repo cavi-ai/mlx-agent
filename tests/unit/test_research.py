@@ -10,6 +10,7 @@ from mlx_agent.research import (
     ResearchPack,
     candidate_metadata,
     generate_pack,
+    load_research_pack,
     render_pack,
     slugify,
     write_pack,
@@ -197,6 +198,37 @@ class WritePackTests(unittest.TestCase):
             )
             self.assertEqual(path.parent, Path(root).resolve() / "mlx-research")
             self.assertNotIn("..", path.name)
+
+    def test_writes_json_sidecar_with_candidate_records(self):
+        buckets = {"vision": [_candidate("acme/ocr", "vision", downloads=500)]}
+        pack = generate_pack(
+            DomainIntent(domain="Legal", roles=("vision",), keywords=("ocr",)),
+            FakeDiscovery(buckets),
+            FakeHF({"acme/ocr": "OCR usage."}),
+            now=datetime(2026, 7, 22, tzinfo=timezone.utc),
+        )
+        with TemporaryDirectory() as root:
+            path = write_pack(
+                render_pack(pack),
+                pack.intent,
+                root=root,
+                now=datetime(2026, 7, 22, 13, 30, 0, tzinfo=timezone.utc),
+                pack=pack,
+            )
+            sidecar = path.with_suffix(".json")
+            self.assertTrue(sidecar.exists())
+            payload = load_research_pack(sidecar)
+            self.assertEqual(payload["intent"]["domain"], "Legal")
+            self.assertEqual(payload["candidates"][0]["repo"], "acme/ocr")
+            self.assertEqual(payload["candidates"][0]["record"]["repo"], "acme/ocr")
+
+    def test_load_research_pack_rejects_markdown(self):
+        with TemporaryDirectory() as root:
+            path = Path(root) / "pack.md"
+            path.write_text("# pack\n", encoding="utf-8")
+            with self.assertRaises(ValueError) as raised:
+                load_research_pack(path)
+            self.assertIn("sibling .json", str(raised.exception))
 
 
 if __name__ == "__main__":

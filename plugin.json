@@ -94,6 +94,7 @@
           {"name": "refresh", "flag": "--refresh", "kind": "option", "type": "boolean", "required": false},
           {"name": "fast", "flag": "--fast", "kind": "option", "type": "boolean", "required": false},
           {"name": "no_network", "flag": "--no-network", "kind": "option", "type": "boolean", "required": false},
+          {"name": "from_research", "flag": "--from-research", "kind": "option", "type": "string", "required": false},
           {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false}
         ]},
         "resume": {"arguments": [

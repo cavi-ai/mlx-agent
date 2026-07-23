@@ -7,12 +7,13 @@ inside the project-local ``mlx-research`` folder.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .discovery import DiscoveryRequest
 from .interview import DomainIntent
@@ -33,6 +34,7 @@ class ResearchCandidate:
     provenance: Tuple[dict, ...]
     card_present: bool
     card_excerpt: str
+    record: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self):
         return {
@@ -44,6 +46,7 @@ class ResearchCandidate:
             "provenance": [dict(record) for record in self.provenance],
             "card_present": self.card_present,
             "card_excerpt": self.card_excerpt,
+            "record": dict(self.record),
         }
 
 
@@ -136,15 +139,18 @@ def generate_pack(
     for repo, result in ranked:
         candidate = detail_by_repo[repo]["candidate"]
         card_text = detail_by_repo[repo]["card_text"]
+        record = dict(candidate)
+        record["role"] = candidate.get("role") or intent.roles[0]
         candidates.append(ResearchCandidate(
             repo=repo,
-            role=candidate.get("role", ""),
+            role=record["role"],
             score=result.score,
             wiring=candidate.get("wiring", ""),
             signals=tuple(signal.to_dict() for signal in result.signals),
             provenance=result.provenance,
             card_present=bool(card_text),
             card_excerpt=_excerpt(card_text),
+            record=record,
         ))
 
     return ResearchPack(
@@ -201,15 +207,24 @@ def render_pack(pack: ResearchPack) -> str:
         "",
         "1. Review candidates above and pick one to adopt.",
         "2. Install it in a supported local runtime (Ollama, LM Studio, or mlx_lm).",
-        "3. Run `mlx-agent adopt start` to verify and wire it — research does not verify or download.",
+        "3. Run `mlx-agent adopt start --from-research <this-pack>.json --state <state-path>` "
+        "to verify ranked candidates — research does not verify or download.",
         "",
         "## Notes",
         "",
         "This pack is a read-only research artifact intended for ingestion by other agents. "
+        "A sibling `.json` sidecar carries the machine-readable intent and candidate records. "
         "All scores are estimates with per-signal provenance; verify capability before relying on any model.",
         "",
     ])
     return "\n".join(lines)
+
+
+def _assert_pack_path(out_dir: Path, path: Path) -> Path:
+    resolved = path.resolve()
+    if os.path.commonpath([str(out_dir), str(resolved)]) != str(out_dir):
+        raise ValueError("refusing to write research pack outside the project folder")
+    return resolved
 
 
 def write_pack(
@@ -217,8 +232,13 @@ def write_pack(
     intent: DomainIntent,
     root: Optional[object] = None,
     now: Optional[datetime] = None,
+    pack: Optional[ResearchPack] = None,
 ) -> Path:
-    """Write the pack under ``<root>/mlx-research`` and never outside it."""
+    """Write the pack under ``<root>/mlx-research`` and never outside it.
+
+    When ``pack`` is provided, also writes a sibling ``.json`` sidecar with the
+    structured pack payload for ``adopt start --from-research``.
+    """
     moment = now or datetime.now(timezone.utc)
     base = Path(root) if root is not None else Path.cwd()
     out_dir = (base / "mlx-research").resolve()
@@ -226,10 +246,43 @@ def write_pack(
     if unresolved_dir.is_symlink():
         raise ValueError("refusing to write research pack through a symlinked folder")
     timestamp = moment.strftime("%Y%m%dT%H%M%SZ")
-    filename = "{0}-{1}.md".format(slugify(intent.domain), timestamp)
-    path = (out_dir / filename).resolve()
-    if os.path.commonpath([str(out_dir), str(path)]) != str(out_dir):
-        raise ValueError("refusing to write research pack outside the project folder")
+    stem = "{0}-{1}".format(slugify(intent.domain), timestamp)
+    path = _assert_pack_path(out_dir, out_dir / "{0}.md".format(stem))
     out_dir.mkdir(parents=True, exist_ok=True)
     path.write_text(markdown, encoding="utf-8")
+    if pack is not None:
+        json_path = _assert_pack_path(out_dir, out_dir / "{0}.json".format(stem))
+        json_path.write_text(
+            json.dumps(pack.to_dict(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     return path
+
+
+def load_research_pack(path: object) -> Dict[str, Any]:
+    """Load and lightly validate a research-pack JSON sidecar."""
+    pack_path = Path(path)
+    if pack_path.suffix.lower() == ".md":
+        raise ValueError(
+            "research packs for adopt must be the sibling .json sidecar, not the .md file"
+        )
+    if pack_path.suffix.lower() != ".json":
+        raise ValueError("research pack path must be a .json sidecar")
+    try:
+        payload = json.loads(pack_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("research pack could not be read: {0}".format(error)) from error
+    if not isinstance(payload, dict):
+        raise ValueError("research pack must be a JSON object")
+    intent = payload.get("intent")
+    candidates = payload.get("candidates")
+    if not isinstance(intent, dict):
+        raise ValueError("research pack is missing a valid intent object")
+    if not isinstance(candidates, list):
+        raise ValueError("research pack is missing a candidates array")
+    if not str(intent.get("domain") or "").strip():
+        raise ValueError("research pack intent.domain is required")
+    roles = intent.get("roles")
+    if not isinstance(roles, list) or not roles:
+        raise ValueError("research pack intent.roles must be a non-empty array")
+    return payload

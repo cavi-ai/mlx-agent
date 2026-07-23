@@ -66,11 +66,27 @@ Hub rows are mapped into the same scoring contract (memory fit is N/A without an
 estimate) and ranked under stable headings:
 
 - `## Modality foundations`
+- `## Runtime preference` — justified preferred runtime (`mlx-vlm` / `lmstudio` /
+  `mlx_lm`) with alternates; Ollama stays a valid alternate for curated tags when
+  detected. Does **not** change scores. See also
+  [runtimes reference](../../skills/mlx-scout/references/runtimes.md).
 - `## Adapters / LoRAs`
 - `## Datasets`
 - `## Dataset blueprint` — emitted only when no datasets ranked; a deterministic
   guidance template (goal, schema, labeling, splits, license/privacy, MLX next
   steps). It does not create, download, or train data.
+
+## Runtime preference
+
+Preference is computed from host inventory (`ollama` / `lmstudio` probes) plus
+intent roles/modalities:
+
+- Vision / `document-vision` / `video` → prefer `mlx-vlm`
+- Text / audio with LM Studio up → prefer `lmstudio`
+- Otherwise → prefer `mlx_lm`, with Ollama as an alternate when its server is up
+
+Ollama is never removed as a wire target; research only steers toward native MLX
+when quality or Hub-repo flexibility matters.
 
 ## Safety
 

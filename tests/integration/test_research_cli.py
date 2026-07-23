@@ -41,6 +41,7 @@ class ResearchCliTests(unittest.TestCase):
             markdown = written.read_text()
             self.assertIn("# MLX Research Pack: legal contract review", markdown)
             self.assertIn("## Modality foundations", markdown)
+            self.assertIn("## Runtime preference", markdown)
             self.assertIn("document-vision", markdown)
             self.assertIn("## Adapters / LoRAs", markdown)
             self.assertIn("## Datasets", markdown)
@@ -52,6 +53,8 @@ class ResearchCliTests(unittest.TestCase):
             self.assertIn("datasets", pack)
             self.assertIsNotNone(pack["dataset_blueprint"])
             self.assertEqual(pack["intent"]["modalities"], ["document-vision"])
+            self.assertIsNotNone(pack.get("runtime_preference"))
+            self.assertEqual(pack["runtime_preference"]["preferred"], "mlx-vlm")
 
     def test_research_fixture_mode_stays_offline_for_catalog(self):
         """Empty fixture adapters/datasets must not require network."""

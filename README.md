@@ -112,7 +112,7 @@ See the [complete install and lifecycle guide](docs/install/index.md), [Scout](d
 | **Scout** | Discover MLX models on Hugging Face, bucketed by role for this host. |
 | **Adopt** | Resume a discover → verify → recommend workflow with durable evidence. |
 | **Wire** | Render, preview, and apply a confirmation-gated configuration transaction. |
-| **Research** | Build a read-only domain research pack: foundational modalities (`audio`, `video`, `document-vision`) seed intent; models, adapters, and datasets are ranked into project-local markdown + JSON (with a dataset blueprint when none match). |
+| **Research** | Build a read-only domain research pack: foundational modalities seed intent; models/adapters/datasets are ranked into markdown + JSON; packs include a justified MLX-native runtime preference (Ollama remains a valid alternate). |
 | **`mlx-scout`** skill | Auto-activates on "which local model?"; wraps the discovery script + runtime reference. |
 | **`mlx-advisor`** agent | On-demand expert for picking + wiring a local model for a role. |
 | **`scout.py`** | The stdlib-only discovery/wiring core — runs standalone, too. |

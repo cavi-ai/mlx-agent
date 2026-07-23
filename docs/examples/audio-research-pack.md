@@ -30,6 +30,12 @@ Or rely on detection from domain text (`transcription` / `whisper`).
 ## Pack excerpt
 
 ```markdown
+## Runtime preference
+
+- Preferred: `lmstudio` (or `mlx_lm` when LM Studio is down)
+- Alternates: `ollama` when detected
+- Rationale: Audio packs prefer native MLX; Ollama is limited to curated tags.
+
 ## Modality foundations
 
 - `audio` — Audio (ASR / TTS / music)

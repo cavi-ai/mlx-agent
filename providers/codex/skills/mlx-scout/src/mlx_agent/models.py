@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import re
 
+from .runtime_preference import prefer_runtime_for_role, wiring_for_preference
+
 
 ROLES = [
     ("vision", ["-vl", "vision", "vlm", "ocr", "-omni"], "Vision / OCR (needs mlx-vlm)"),
@@ -143,12 +145,8 @@ def resolve_reasoning(repo, enrichment):
 
 
 def wiring(repo, role, host):
-    short = repo.split("/")[-1].lower()
-    if role == "vision":
-        return "mlx-vlm server → `mlxvlm/{0}`".format(repo.split("/")[-1])
-    if host.get("lmstudio"):
-        return "LM Studio → `lmstudio/{0}`".format(short)
-    return "`mlx_lm.server --model {0}` → custom provider".format(repo)
+    preference = prefer_runtime_for_role(role, host or {})
+    return wiring_for_preference(repo, role, preference)
 
 
 def render_md(report):

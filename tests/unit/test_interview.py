@@ -118,6 +118,26 @@ class RunInterviewTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             run_interview(reader, assist=assist)
 
+    def test_assist_preserves_existing_license_filter(self):
+        canned = {
+            "domain": "Legal",
+            "roles": "General chat",
+            "keywords": "contracts",
+            "license": "apache-2.0, mit",
+            "memory_gb": "",
+            "notes": "",
+        }
+
+        def reader(question):
+            return canned[question["id"]]
+
+        def assist(intent):
+            return {"keywords": intent.keywords + ("ocr",)}
+
+        intent = run_interview(reader, assist=assist)
+        self.assertEqual(intent.license_allow, ("apache-2.0", "mit"))
+        self.assertEqual(intent.keywords, ("contracts", "ocr"))
+
 
 if __name__ == "__main__":
     unittest.main()

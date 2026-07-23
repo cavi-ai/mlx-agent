@@ -150,7 +150,9 @@ def build_intent(
         domain=domain,
         roles=_resolve_roles(answers.get("roles")),
         keywords=_split_csv(answers.get("keywords")),
-        license_allow=_split_csv(answers.get("license")),
+        license_allow=_split_csv(
+            answers["license"] if "license" in answers else answers.get("license_allow")
+        ),
         memory_gb=_resolve_memory(answers.get("memory_gb")),
         notes=str(answers.get("notes", "")).strip(),
     )

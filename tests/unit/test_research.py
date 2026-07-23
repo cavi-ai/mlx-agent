@@ -155,6 +155,7 @@ class RenderPackTests(unittest.TestCase):
         markdown = render_pack(pack)
         self.assertIn("# MLX Research Pack: Legal", markdown)
         self.assertIn("## Candidates", markdown)
+        self.assertIn("## Modality foundations", markdown)
         self.assertIn("## Next steps", markdown)
         self.assertIn("`acme/ocr`", markdown)
         self.assertIn("/100", markdown)

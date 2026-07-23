@@ -26,10 +26,14 @@ class BuildIntentTests(unittest.TestCase):
         self.assertIsInstance(first, DomainIntent)
         self.assertEqual(first.domain, "Legal contract review")
         self.assertEqual(first.roles, ("vision", "general"))
-        self.assertEqual(first.keywords, ("ocr", "contracts", "redaction"))
+        self.assertIn("ocr", first.keywords)
+        self.assertIn("contracts", first.keywords)
+        self.assertIn("redaction", first.keywords)
         self.assertEqual(first.license_allow, ("apache-2.0", "mit"))
         self.assertEqual(first.memory_gb, 32.0)
         self.assertEqual(first.notes, "on-device only")
+        self.assertEqual(first.modalities, ("document-vision",))
+        self.assertIn("ocr", first.facets)
 
     def test_build_intent_requires_a_domain(self):
         with self.assertRaises(ValueError):
@@ -46,6 +50,7 @@ class BuildIntentTests(unittest.TestCase):
     def test_build_intent_defaults_role_to_general(self):
         intent = build_intent({"domain": "x", "roles": []})
         self.assertEqual(intent.roles, ("general",))
+        self.assertEqual(intent.modalities, ())
 
     def test_build_intent_rejects_non_numeric_memory(self):
         with self.assertRaises(ValueError):
@@ -59,6 +64,23 @@ class BuildIntentTests(unittest.TestCase):
         for bad in ("-8", "0", "nan", "inf"):
             with self.assertRaises(ValueError):
                 build_intent({"domain": "x", "roles": [], "memory_gb": bad})
+
+    def test_explicit_modalities_seed_roles_and_keywords(self):
+        intent = build_intent({
+            "domain": "billing helper",
+            "roles": [],
+            "keywords": "",
+            "modalities": ["audio"],
+            "facets": ["asr"],
+        })
+        self.assertEqual(intent.modalities, ("audio",))
+        self.assertEqual(intent.facets, ("asr",))
+        self.assertIn("general", intent.roles)
+        self.assertIn("whisper", intent.keywords)
+
+    def test_rejects_unknown_modality(self):
+        with self.assertRaises(ValueError):
+            build_intent({"domain": "x", "modalities": ["smell"]})
 
 
 class RunInterviewTests(unittest.TestCase):
@@ -80,13 +102,65 @@ class RunInterviewTests(unittest.TestCase):
         intent = run_interview(reader)
         self.assertEqual(asked, [question["id"] for question in QUESTIONS])
         self.assertEqual(intent.domain, "Audio transcription")
-        self.assertEqual(intent.roles, ("vision",))
-        self.assertEqual(intent.keywords, ("asr", "whisper"))
+        self.assertEqual(intent.modalities, ("audio",))
+        self.assertIn("asr", intent.facets)
+        self.assertIn("vision", intent.roles)
+        self.assertIn("general", intent.roles)
+        self.assertIn("asr", intent.keywords)
+        self.assertIn("whisper", intent.keywords)
         self.assertIsNone(intent.memory_gb)
+
+    def test_interview_asks_modality_when_undetected(self):
+        canned = {
+            "domain": "billing helper",
+            "modalities": "Audio (ASR / TTS / music)",
+            "facets:audio": "ASR / speech-to-text",
+            "roles": "General chat",
+            "keywords": "",
+            "license": "",
+            "memory_gb": "",
+            "notes": "",
+        }
+        asked = []
+
+        def reader(question):
+            asked.append(question["id"])
+            return canned[question["id"]]
+
+        intent = run_interview(reader)
+        self.assertIn("modalities", asked)
+        self.assertIn("facets:audio", asked)
+        self.assertEqual(intent.modalities, ("audio",))
+        self.assertEqual(intent.facets, ("asr",))
+
+    def test_interview_skips_ask_when_preset_modalities(self):
+        canned = {
+            "domain": "billing helper",
+            "roles": "",
+            "keywords": "",
+            "license": "",
+            "memory_gb": "",
+            "notes": "",
+        }
+        asked = []
+
+        def reader(question):
+            asked.append(question["id"])
+            return canned[question["id"]]
+
+        intent = run_interview(
+            reader,
+            preset_modalities=("video",),
+            preset_facets=("understanding",),
+        )
+        self.assertNotIn("modalities", asked)
+        self.assertTrue(all(not item.startswith("facets:") for item in asked))
+        self.assertEqual(intent.modalities, ("video",))
+        self.assertEqual(intent.facets, ("understanding",))
 
     def test_assist_output_is_revalidated_not_trusted(self):
         canned = {
-            "domain": "Legal",
+            "domain": "Legal OCR contracts",
             "roles": "General chat",
             "keywords": "contracts",
             "license": "",
@@ -98,14 +172,16 @@ class RunInterviewTests(unittest.TestCase):
             return canned[question["id"]]
 
         def assist(intent):
-            return {"keywords": intent.keywords + ("ocr",)}
+            return {"keywords": intent.keywords + ("extra",)}
 
         intent = run_interview(reader, assist=assist)
-        self.assertEqual(intent.keywords, ("contracts", "ocr"))
+        self.assertIn("contracts", intent.keywords)
+        self.assertIn("extra", intent.keywords)
+        self.assertEqual(intent.modalities, ("document-vision",))
 
     def test_assist_cannot_inject_invalid_role(self):
         canned = {
-            "domain": "Legal",
+            "domain": "Legal OCR",
             "roles": "General chat",
             "keywords": "",
             "license": "",
@@ -124,7 +200,7 @@ class RunInterviewTests(unittest.TestCase):
 
     def test_assist_preserves_existing_license_filter(self):
         canned = {
-            "domain": "Legal",
+            "domain": "Legal OCR contracts",
             "roles": "General chat",
             "keywords": "contracts",
             "license": "apache-2.0, mit",
@@ -136,11 +212,12 @@ class RunInterviewTests(unittest.TestCase):
             return canned[question["id"]]
 
         def assist(intent):
-            return {"keywords": intent.keywords + ("ocr",)}
+            return {"keywords": list(intent.keywords) + ["extra"]}
 
         intent = run_interview(reader, assist=assist)
         self.assertEqual(intent.license_allow, ("apache-2.0", "mit"))
-        self.assertEqual(intent.keywords, ("contracts", "ocr"))
+        self.assertIn("contracts", intent.keywords)
+        self.assertIn("extra", intent.keywords)
 
 
 if __name__ == "__main__":

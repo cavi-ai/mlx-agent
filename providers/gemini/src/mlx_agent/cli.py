@@ -13,7 +13,7 @@ from .discovery import DiscoveryRequest, DiscoveryService
 from .host import HostInventory
 from .huggingface import HuggingFaceClient
 from .installer import Installer, InstallerConflictError
-from .models import ROLES, render_md, wire
+from .models import DISCOVERY_ROLES, render_md, wire
 from .providers import ProviderRegistry
 from .transactions import (
     COOPERATIVE_CONCURRENCY_NOTE,
@@ -107,7 +107,7 @@ def _validate_fixture(payload):
 
 
 def _add_discovery_arguments(parser):
-    parser.add_argument("--role", choices=[role for role, _keywords, _label in ROLES])
+    parser.add_argument("--role", choices=DISCOVERY_ROLES)
     parser.add_argument("--limit", type=int, default=6)
     parser.add_argument("--memory-gb", type=float, help="maximum host memory budget in GB (keeps 20%% runtime headroom)")
     parser.add_argument("--quantization", help="normalized quantization such as 4bit or q8")
@@ -191,6 +191,20 @@ def _emit_adoption_result(result, as_json):
         if state["recommendations"]:
             for item in state["recommendations"]:
                 print("{0}: {1} [{2}]".format(item["role"], item["repo"], item["evidence_strength"]))
+        requested_roles = state.get("request", {}).get("roles", [])
+        recommended_roles = {
+            item.get("role") for item in state.get("recommendations", [])
+        }
+        if (
+            state.get("status") == "complete"
+            and "tool-use" in requested_roles
+            and "tool-use" not in recommended_roles
+        ):
+            print("No verified tool-use model was found.")
+            print(
+                "No model was downloaded. Install a shortlisted candidate in a "
+                "supported local runtime and start adoption again."
+            )
     else:
         error = value["error"]
         print("{0} failed [{1}]: {2}\nremediation: {3}".format(
@@ -277,7 +291,7 @@ def _add_adoption_arguments(parser):
     actions = parser.add_subparsers(dest="adopt_command", required=True)
     start = actions.add_parser("start", help="start and durably run a model adoption workflow")
     start.add_argument("--state", help="adoption handoff path")
-    start.add_argument("--role", dest="roles", action="append", choices=[role for role, _keywords, _label in ROLES])
+    start.add_argument("--role", dest="roles", action="append", choices=DISCOVERY_ROLES)
     start.add_argument("--shortlist-limit", type=int, default=4)
     start.add_argument("--offline", action="store_true", help="use cached discovery and no metadata network requests")
     start.add_argument("--refresh", action="store_true", help="refresh model discovery")

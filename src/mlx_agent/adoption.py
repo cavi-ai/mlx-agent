@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,13 +19,22 @@ from .transactions import (
     _read_target,
     _target_locks,
 )
-from .verification import EvidenceStrength, VerificationEvidence, Verifier
+from .verification import (
+    EvidenceStrength,
+    TOOL_USE_PROBE_ID,
+    VerificationEvidence,
+    VerificationStatus,
+    Verifier,
+)
 
 
-ADOPTION_SCHEMA_VERSION = "1.1"
+ADOPTION_SCHEMA_VERSION = "1.2"
+LEGACY_ADOPTION_SCHEMA_VERSION = "1.1"
 PHASES = ("inspect", "discover", "shortlist", "verify", "compare", "recommend", "complete")
 UTILITY_ROLES = {"general", "embedding"}
-ALLOWED_ROLES = {"general", "coding", "reasoning", "vision", "embedding"}
+ALLOWED_ROLES = {
+    "general", "coding", "reasoning", "vision", "embedding", "tool-use"
+}
 EVIDENCE_SCORES = {
     EvidenceStrength.RUNTIME_TESTED.value: 400,
     EvidenceStrength.RUNTIME_INVENTORY.value: 300,
@@ -69,8 +79,8 @@ class AdoptionRequest:
         if any(not isinstance(role, str) or not role for role in supplied_roles):
             raise TypeError("roles must contain non-empty strings")
         roles = tuple(supplied_roles)
-        if not roles or any(role not in ALLOWED_ROLES for role in roles) or len(roles) > 5:
-            raise ValueError("roles must contain one to five supported roles")
+        if not roles or any(role not in ALLOWED_ROLES for role in roles) or len(roles) > 6:
+            raise ValueError("roles must contain one to six supported roles")
         if len(set(roles)) != len(roles):
             raise ValueError("roles must not contain duplicates")
         if not isinstance(self.shortlist_limit, int) or isinstance(self.shortlist_limit, bool):
@@ -184,6 +194,7 @@ class AdoptionState:
 
     @classmethod
     def from_dict(cls, value, state_path):
+        value = _migrate_state(value)
         _validate_state(value)
         return cls(
             workflow_id=value["workflow_id"],
@@ -315,6 +326,9 @@ class AdoptionWorkflow:
         state.shortlist = shortlisted
 
     def _phase_verify(self, state):
+        clear_inventory_cache = getattr(self.verifier, "clear_inventory_cache", None)
+        if callable(clear_inventory_cache):
+            clear_inventory_cache()
         workers = verification_concurrency(state.host.get("ram_gb"))
 
         def verify_one(candidate):
@@ -328,10 +342,33 @@ class AdoptionWorkflow:
                     raise TypeError("verifier returned an invalid evidence record")
                 return evidence.to_dict()
             except Exception as error:
+                repo = str(
+                    candidate.get("repo")
+                    or candidate.get("repository")
+                    or "unknown"
+                )
+                role = str(candidate.get("role") or "general")
+                if role == "tool-use":
+                    return VerificationEvidence(
+                        repo=repo,
+                        role=role,
+                        strength=EvidenceStrength.HEURISTIC_ONLY,
+                        status=VerificationStatus.FAILED,
+                        available_locally=False,
+                        loads=None,
+                        reasoning_confirmed=None,
+                        runtime=None,
+                        note=_bounded("Candidate tool-use verification failed."),
+                        details={
+                            "probe_id": TOOL_USE_PROBE_ID,
+                            "reason": "verification_exception",
+                        },
+                    ).to_dict()
                 return VerificationEvidence(
-                    repo=str(candidate.get("repo") or candidate.get("repository") or "unknown"),
-                    role=str(candidate.get("role") or "general"),
+                    repo=repo,
+                    role=role,
                     strength=EvidenceStrength.HEURISTIC_ONLY,
+                    status=VerificationStatus.FAILED,
                     available_locally=False,
                     loads=None,
                     reasoning_confirmed=None,
@@ -344,51 +381,77 @@ class AdoptionWorkflow:
             state.evidence = list(executor.map(verify_one, state.shortlist))
 
     def _phase_compare(self, state):
-        evidence_by_repo = {item["repo"]: item for item in state.evidence}
+        evidence_by_candidate = {
+            (item["repo"], item["role"]): item for item in state.evidence
+        }
         comparisons = []
         for candidate in state.shortlist:
             repo = candidate.get("repo") or candidate.get("repository")
-            evidence = evidence_by_repo.get(repo, {})
+            role = candidate.get("role")
+            evidence = evidence_by_candidate.get((repo, role), {})
             reasons = []
             if candidate.get("fits") is False:
                 reasons.append("memory_budget")
             if evidence.get("loads") is False:
                 reasons.append("runtime_generation_failed")
-            utility_role = candidate.get("role") in UTILITY_ROLES or state.request.get("fast", False)
+            utility_role = role in UTILITY_ROLES or state.request.get("fast", False)
             if utility_role and evidence.get("reasoning_confirmed") is True:
                 reasons.append("confirmed_reasoner_for_utility_role")
+            evidence_status = evidence.get(
+                "status", VerificationStatus.FAILED.value
+            )
+            if (
+                role == "tool-use"
+                and evidence_status != VerificationStatus.VERIFIED.value
+            ):
+                reasons.append("tool_use_not_verified")
             score = EVIDENCE_SCORES.get(evidence.get("strength"), 0)
             score += int(candidate.get("rank_score") or 0)
             score += 20 if candidate.get("trusted") else 0
             comparisons.append({
                 "repo": repo,
-                "role": candidate.get("role"),
+                "role": role,
                 "eligible": not reasons,
                 "score": score,
                 "evidence_strength": evidence.get("strength", EvidenceStrength.HEURISTIC_ONLY.value),
+                "evidence_status": evidence_status,
+                "verification_status": evidence_status,
                 "rejection_reasons": reasons,
             })
         state.comparisons = comparisons
 
     def _phase_recommend(self, state):
-        candidates_by_repo = {
-            item.get("repo") or item.get("repository"): item for item in state.shortlist
+        candidates_by_candidate = {
+            (
+                item.get("repo") or item.get("repository"),
+                item.get("role"),
+            ): item
+            for item in state.shortlist
         }
         recommendations = []
         for role in state.request["roles"]:
             eligible = [
                 item for item in state.comparisons
                 if item["role"] == role and item["eligible"]
+                and (
+                    role != "tool-use"
+                    or item.get("evidence_status")
+                    == VerificationStatus.VERIFIED.value
+                )
             ]
             eligible.sort(key=lambda item: (-item["score"], item["repo"]))
             if not eligible:
                 continue
             chosen = eligible[0]
-            candidate = candidates_by_repo[chosen["repo"]]
+            candidate = candidates_by_candidate[(chosen["repo"], chosen["role"])]
             recommendations.append({
                 "role": role,
                 "repo": chosen["repo"],
                 "evidence_strength": chosen["evidence_strength"],
+                "evidence_status": chosen.get(
+                    "evidence_status",
+                    chosen.get("verification_status", VerificationStatus.FAILED.value),
+                ),
                 "estimated_ram_gb": candidate.get("est_ram_gb"),
                 "wiring": candidate.get("wiring"),
                 "alternatives": [item["repo"] for item in eligible[1:4]],
@@ -466,6 +529,47 @@ def _first_incomplete(completed):
     return "complete"
 
 
+def _migrate_state(value):
+    if not isinstance(value, dict):
+        raise TypeError("adoption state must be an object")
+    version = value.get("schema_version")
+    if version == ADOPTION_SCHEMA_VERSION:
+        return value
+    if version != LEGACY_ADOPTION_SCHEMA_VERSION:
+        raise ValueError("unsupported adoption state schema version")
+
+    migrated = deepcopy(value)
+    request = migrated.get("request")
+    legacy_roles = (
+        list(request.get("roles", []))
+        if isinstance(request, dict) and isinstance(request.get("roles", []), list)
+        else []
+    )
+    for collection in ("shortlist", "evidence", "comparisons", "recommendations"):
+        records = migrated.get(collection)
+        if isinstance(records, list):
+            legacy_roles.extend(
+                item.get("role") for item in records if isinstance(item, dict)
+            )
+    if "tool-use" in legacy_roles:
+        raise ValueError("legacy adoption state cannot contain tool-use")
+
+    status_by_strength = {
+        EvidenceStrength.RUNTIME_TESTED.value: VerificationStatus.VERIFIED.value,
+        EvidenceStrength.RUNTIME_INVENTORY.value: VerificationStatus.FAILED.value,
+        EvidenceStrength.METADATA_ONLY.value: VerificationStatus.METADATA_ONLY.value,
+        EvidenceStrength.HEURISTIC_ONLY.value: VerificationStatus.METADATA_ONLY.value,
+    }
+    for item in migrated.get("evidence", []):
+        if not isinstance(item, dict):
+            continue
+        strength = item.get("strength")
+        if strength in status_by_strength:
+            item["status"] = status_by_strength[strength]
+    migrated["schema_version"] = ADOPTION_SCHEMA_VERSION
+    return migrated
+
+
 def _validate_state(value):
     required = {
         "schema_version", "workflow_id", "revision", "phase", "status", "request",
@@ -506,7 +610,7 @@ def _validate_state(value):
         "shortlist": 100,
         "evidence": 100,
         "comparisons": 100,
-        "recommendations": 5,
+        "recommendations": 6,
         "warnings": 50,
         "errors": 50,
     }
@@ -548,7 +652,7 @@ def _validate_request_shape(request):
         raise ValueError("adoption request does not match the persisted schema")
     if not isinstance(request["roles"], list) or not request["roles"]:
         raise ValueError("request.roles must be a non-empty array")
-    if len(request["roles"]) > 5 or len(set(request["roles"])) != len(request["roles"]):
+    if len(request["roles"]) > 6 or len(set(request["roles"])) != len(request["roles"]):
         raise ValueError("request.roles must be bounded and unique")
     if any(not isinstance(role, str) or not role for role in request["roles"]):
         raise TypeError("request.roles must contain non-empty strings")
@@ -587,10 +691,11 @@ def _validate_timestamp(timestamp, field_name):
 
 def _validate_evidence(evidence):
     required = {
-        "repo", "role", "strength", "available_locally", "loads",
+        "repo", "role", "strength", "status", "available_locally", "loads",
         "reasoning_confirmed", "runtime", "note", "details",
     }
     strengths = set(EVIDENCE_SCORES)
+    statuses = {status.value for status in VerificationStatus}
     for index, item in enumerate(evidence):
         prefix = "evidence[{0}]".format(index)
         if not isinstance(item, dict):
@@ -604,6 +709,8 @@ def _validate_evidence(evidence):
             raise ValueError("{0}.note exceeds its maximum length".format(prefix))
         if item["strength"] not in strengths:
             raise ValueError("{0}.strength is invalid".format(prefix))
+        if item["status"] not in statuses:
+            raise ValueError("{0}.status is invalid".format(prefix))
         if not isinstance(item["available_locally"], bool):
             raise TypeError("{0}.available_locally must be a boolean".format(prefix))
         for key in ("loads", "reasoning_confirmed"):

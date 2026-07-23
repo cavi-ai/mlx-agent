@@ -18,6 +18,12 @@ RELEASE_EVIDENCE_PATH = ROOT / "compatibility" / "release-evidence.json"
 README_PATH = ROOT / "README.md"
 RENDERER_PATH = ROOT / "scripts" / "render_compatibility.py"
 APPLE_SILICON_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "apple-silicon.yml"
+TOOL_USE_DOC_PATHS = (
+    ROOT / "README.md",
+    ROOT / "docs" / "guides" / "scout.md",
+    ROOT / "docs" / "guides" / "adopt.md",
+    ROOT / "docs" / "security.md",
+)
 PROVIDERS = ("claude", "codex", "gemini", "opencode", "agentskills")
 NATIVE_PROVIDERS = ("claude", "codex", "gemini", "opencode")
 COMMANDS = ("mlx-scout", "mlx-adopt", "mlx-wire")
@@ -115,6 +121,54 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertIn(name, self.readme)
         self.assertIn("docs/install/index.md", self.readme)
 
+    def test_each_canonical_tool_use_doc_states_its_required_contract(self):
+        required_by_document = {
+            "README.md": (
+                r"\btool-use\b",
+                r"primary role",
+                r"metadata.+not verification",
+                r"schema-valid synthetic (?:runtime )?tool call",
+                r"Ollama",
+                r"LM Studio",
+                r"mlx_lm",
+                r"LiteLLM",
+                r"live smoke.+only direct local.+Ollama.+LM Studio.+mlx_lm",
+                r"LiteLLM.+excluded from automatic live selection.+remote or paid",
+            ),
+            "scout.md": (
+                r"\btool-use\b",
+                r"primary role",
+                r"metadata.+not verification",
+                r"metadata-only",
+                r"heuristic-only",
+                r"strength",
+            ),
+            "adopt.md": (
+                r"\btool-use\b",
+                r"schema-valid synthetic (?:runtime )?tool call",
+                r"metadata-only",
+                r"heuristic-only",
+                r"install.+shortlisted candidate",
+                r"start adoption again",
+            ),
+            "security.md": (
+                r"does not pull, install, or download",
+                r"no real user tool",
+                r"synthetic tool definition",
+                r"raw prompt.+response.+endpoint.+credentials.+not persisted",
+                r"mlx-vlm",
+                r"unsupported-runtime",
+                r"live smoke.+only direct local.+Ollama.+LM Studio.+mlx_lm",
+                r"excludes LiteLLM.+auto-selection.+remote or paid",
+            ),
+        }
+        for path in TOOL_USE_DOC_PATHS:
+            text = path.read_text(encoding="utf-8")
+            patterns = required_by_document[path.name]
+            for pattern in patterns:
+                with self.subTest(document=str(path.relative_to(ROOT)), pattern=pattern):
+                    self.assertRegex(text, re.compile(pattern, re.IGNORECASE | re.DOTALL))
+
     def test_readme_gives_canonical_install_commands_for_every_provider(self):
         commands = (
             "claude plugin marketplace add cavi-ai/mlx-agent",
@@ -156,6 +210,12 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('test "$(uname -m)" = "arm64"', fixture_job)
         self.assertNotIn("self-hosted", fixture_job)
         self.assertIn("runs-on: [self-hosted, macOS, ARM64, apple-silicon]", release_job)
+        self.assertIn("vars.MLX_AGENT_LIVE_TOOL_USE == '1'", release_job)
+        self.assertIn("MLX_AGENT_LIVE_TOOL_USE: 1", release_job)
+        self.assertIn("tests.integration.test_tool_use_live", release_job)
+        health_index = release_job.index("Require a configured live supported-runtime endpoint")
+        live_test_index = release_job.index("tests.integration.test_tool_use_live")
+        self.assertGreater(live_test_index, health_index)
 
     def test_readme_claims_only_providers_in_compatibility_matrix(self):
         provider_docs = {

@@ -15,6 +15,23 @@ ROLES = [
 ]
 REASONER_HINTS = re.compile(r"(thinking|reason|-a3b\b|qwq|-r1\b|deepseek-r|gpt-oss)", re.I)
 TEMPLATE_REASON = re.compile(r"(reasoning_effort|<think>|<\|think|channel\|>analysis)", re.I)
+TOOL_USE_HINTS = re.compile(
+    r"\b(?:tool[-_]?use|(?:function|tool)(?:[-_]call|[ -]calling))\b",
+    re.I,
+)
+TEMPLATE_TOOL_USE = re.compile(
+    r"(?:<tool_call>|\btool_calls\b|\bfunction_call\b|\bavailable_tools\b|"
+    r"(?:\{\{|\{%)[^}]*\btools\b[^}]*(?:\}\}|%\}))",
+    re.I,
+)
+TOOL_USE_TAGS = {
+    "tool-use",
+    "tool_use",
+    "function-calling",
+    "function_calling",
+    "tools",
+}
+DISCOVERY_ROLES = tuple(role for role, _keywords, _label in ROLES) + ("tool-use",)
 REPUTABLE = {"mlx-community", "lmstudio-community", "unsloth", "mlx-omni", "mlxvlm", "qwen", "google", "mistralai", "meta-llama", "nvidia"}
 QUANT_TOK = re.compile(r"[-_.]?(mlx|mxfp4|nvfp4|dwq|optiq|turboquant|rotorquant|oq4e?|mtp|q\d(_k(_[ms])?)?|int[48]|fp16|fp8|bf16|\d+\.?\d*bpw|\d+bit|e[24]b|4bit|8bit)$", re.I)
 PARAM_RE = re.compile(r"(\d+(?:\.\d+)?)\s*b(?![a-z])", re.I)
@@ -61,6 +78,33 @@ def classify(repo):
         if any(keyword in low for keyword in keywords):
             return role
     return "general"
+
+
+def classify_roles(repo, enrichment):
+    """Return ordered role memberships and the canonical tool-use signal."""
+    primary = classify(repo)
+    explicit = enrichment.get("tool_use")
+    if explicit is not None:
+        source = enrichment.get("tool_use_src") or "checked"
+        signal = {
+            "supported": bool(explicit),
+            "source": source,
+            "confidence": "weak" if source == "name" else "explicit",
+        }
+    elif TOOL_USE_HINTS.search(repo):
+        signal = {
+            "supported": True,
+            "source": "name",
+            "confidence": "weak",
+        }
+    else:
+        signal = {
+            "supported": False,
+            "source": "none",
+            "confidence": "none",
+        }
+    roles = (primary, "tool-use") if signal["supported"] else (primary,)
+    return roles, signal
 
 
 def base_name(repo):

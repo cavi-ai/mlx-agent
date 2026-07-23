@@ -331,6 +331,37 @@ class GeneratedAdapterTests(unittest.TestCase):
             copies[0].unlink()
             self.assertIn(Path("providers/claude") / relative, generator._check(("claude", "agentskills"), output_root))
 
+    def test_check_detects_uninventoried_stale_file_in_allowed_generated_surface(self):
+        generator = load_generator()
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory)
+            generator.generate(("opencode",), output_root)
+            stale_relative = Path("providers/opencode/opencode.json")
+            stale = output_root / stale_relative
+            inventory = json.loads(
+                (
+                    output_root
+                    / "providers"
+                    / "opencode"
+                    / ".mlx-agent-generated-files.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertNotIn(
+                "opencode.json",
+                {entry["path"] for entry in inventory["files"]},
+            )
+            stale.write_text('{"stale": true}\n', encoding="utf-8")
+            self.assertIn(
+                stale_relative,
+                generator._check(("opencode",), output_root),
+            )
+            generator.generate(("opencode",), output_root)
+            self.assertEqual('{"stale": true}\n', stale.read_text(encoding="utf-8"))
+            self.assertIn(
+                stale_relative,
+                generator._check(("opencode",), output_root),
+            )
+
     def test_manifest_uses_three_portable_agentskills_artifacts(self):
         manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
         artifacts = manifest["providers"]["agentskills"]["artifacts"]
@@ -396,6 +427,7 @@ class GeneratedAdapterTests(unittest.TestCase):
 
     def test_claude_adopt_workflow_only_delegates_to_durable_adoption_state(self):
         generator = load_generator()
+        manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
         with tempfile.TemporaryDirectory() as directory:
             output_root = Path(directory)
             generator.generate(("claude",), output_root)
@@ -408,3 +440,20 @@ class GeneratedAdapterTests(unittest.TestCase):
         self.assertNotIn("model card", workflow.lower())
         self.assertIn("const shellQuote", workflow)
         self.assertIn("const allowedRoles", workflow)
+        encoded_roles = workflow.split("const allowedRoles = new Set(", 1)[1].split(")", 1)[0]
+        expected_roles = [role["id"] for role in manifest["roles"]]
+        self.assertEqual(expected_roles, json.loads(encoded_roles))
+        self.assertEqual(6, len(json.loads(encoded_roles)))
+        self.assertIn("tool-use", json.loads(encoded_roles))
+        self.assertNotIn(
+            "new Set(['general', 'coding', 'reasoning', 'vision', 'embedding'])",
+            workflow,
+        )
+
+    def test_claude_workflow_role_allowlist_is_derived_from_manifest(self):
+        generator = load_generator()
+        manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+        manifest["roles"] = [{"id": "manifest-role"}]
+        workflow = generator._workflow(manifest)
+        encoded_roles = workflow.split("const allowedRoles = new Set(", 1)[1].split(")", 1)[0]
+        self.assertEqual(["manifest-role"], json.loads(encoded_roles))

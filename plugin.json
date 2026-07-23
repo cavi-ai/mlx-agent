@@ -1,11 +1,49 @@
 {
   "$schema": "schemas/plugin.schema.json",
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "version": "0.3.0",
   "identity": "mlx-agent",
   "scopes": [
     "user",
     "project"
+  ],
+  "roles": [
+    {
+      "id": "general",
+      "description": "General instruction-following and chat models.",
+      "membership": "primary",
+      "recommendation_minimum": "any"
+    },
+    {
+      "id": "coding",
+      "description": "Models specialized for code generation and editing.",
+      "membership": "primary",
+      "recommendation_minimum": "any"
+    },
+    {
+      "id": "reasoning",
+      "description": "Models that intentionally spend tokens on hidden or explicit reasoning.",
+      "membership": "primary",
+      "recommendation_minimum": "any"
+    },
+    {
+      "id": "vision",
+      "description": "Vision and OCR models served through mlx-vlm.",
+      "membership": "primary",
+      "recommendation_minimum": "any"
+    },
+    {
+      "id": "embedding",
+      "description": "Models that produce vector embeddings.",
+      "membership": "primary",
+      "recommendation_minimum": "any"
+    },
+    {
+      "id": "tool-use",
+      "description": "Models verified to invoke supplied tools with schema-valid arguments.",
+      "membership": "additional",
+      "recommendation_minimum": "verified"
+    }
   ],
   "requirements": {
     "python3": ">=3.9"

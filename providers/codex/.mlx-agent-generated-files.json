@@ -30,7 +30,7 @@
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/cli.py",
-      "sha256": "4a424627d5ca9216609461f7eeb5d80c62095765199abf08ef13867b59ff5da5"
+      "sha256": "c504fc52adde2ad43d22437745d5952ef67fc49c681e78495fb17ae012181989"
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/command_executor.py",
@@ -134,7 +134,7 @@
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/cli.py",
-      "sha256": "4a424627d5ca9216609461f7eeb5d80c62095765199abf08ef13867b59ff5da5"
+      "sha256": "c504fc52adde2ad43d22437745d5952ef67fc49c681e78495fb17ae012181989"
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/command_executor.py",
@@ -238,7 +238,7 @@
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/cli.py",
-      "sha256": "4a424627d5ca9216609461f7eeb5d80c62095765199abf08ef13867b59ff5da5"
+      "sha256": "c504fc52adde2ad43d22437745d5952ef67fc49c681e78495fb17ae012181989"
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/command_executor.py",

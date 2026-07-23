@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import urllib.parse
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .adoption import ADOPTION_SCHEMA_VERSION, AdoptionRequest, AdoptionWorkflow
@@ -317,7 +318,7 @@ def _add_research_arguments(parser):
     parser.add_argument("--memory-gb", type=float, help="host memory budget in GB")
     parser.add_argument("--notes", default="", help="free-form constraints")
     parser.add_argument("--project", default=str(Path.cwd()), help="project root; the pack is written under <project>/mlx-research")
-    parser.add_argument("--limit", type=int, default=6, help="maximum candidates per role")
+    parser.add_argument("--limit", type=int, default=6, help="candidates fetched per role during discovery; the pack is also capped at this many total")
     parser.add_argument("--interview", action="store_true", help="ask questions interactively on stdin")
     parser.add_argument("--no-write", dest="write", action="store_false", default=True, help="render the pack without writing a file")
     parser.add_argument("--json", action="store_true")
@@ -380,8 +381,9 @@ def _run_research(arguments):
             operation, error["code"], error["message"], error["remediation"],
         ), arguments)
     hf_client = getattr(service, "_huggingface", None) or HuggingFaceClient()
+    moment = datetime.now(timezone.utc)
     try:
-        pack = generate_pack(intent, service, hf_client, limit=arguments.limit)
+        pack = generate_pack(intent, service, hf_client, limit=arguments.limit, now=moment)
     except (OSError, TypeError, ValueError) as error:
         return _emit_research(ResultEnvelope.fail(
             operation, "research_failed",
@@ -392,7 +394,7 @@ def _run_research(arguments):
     data = {"pack": pack.to_dict()}
     if arguments.write:
         try:
-            data["path"] = str(write_pack(markdown, intent, root=arguments.project))
+            data["path"] = str(write_pack(markdown, intent, root=arguments.project, now=moment))
         except (OSError, ValueError) as error:
             return _emit_research(ResultEnvelope.fail(
                 operation, "write_failed",

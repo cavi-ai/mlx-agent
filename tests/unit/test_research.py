@@ -72,6 +72,10 @@ class CandidateMetadataTests(unittest.TestCase):
         self.assertEqual(metadata["downloads"], 100)
         self.assertEqual(metadata["est_ram_gb"], 4.0)
 
+    def test_role_fallback_when_roles_absent(self):
+        metadata = candidate_metadata({"repo": "a/x", "role": "coding"})
+        self.assertEqual(metadata["roles"], ["coding"])
+
 
 class GeneratePackTests(unittest.TestCase):
     def _intent(self):
@@ -117,6 +121,15 @@ class GeneratePackTests(unittest.TestCase):
                       now=datetime(2026, 7, 22, tzinfo=timezone.utc))
         self.assertEqual([r.role for r in discovery.requests], ["vision", "general"])
 
+    def test_repo_in_multiple_roles_is_deduped(self):
+        shared = _candidate("shared/model", "vision")
+        buckets = {"vision": [shared], "general": [dict(shared, role="general")]}
+        intent = DomainIntent(domain="x", roles=("vision", "general"), keywords=())
+        pack = generate_pack(intent, FakeDiscovery(buckets), FakeHF({}),
+                             now=datetime(2026, 7, 22, tzinfo=timezone.utc))
+        repos = [c.repo for c in pack.candidates]
+        self.assertEqual(repos.count("shared/model"), 1)
+
 
 class RenderPackTests(unittest.TestCase):
     def test_stable_headings(self):
@@ -134,8 +147,9 @@ class RenderPackTests(unittest.TestCase):
         self.assertIn("`acme/ocr`", markdown)
         self.assertIn("/100", markdown)
 
-    def test_card_excerpt_is_bounded_and_secret_free(self):
-        long_card = "OCR usage. " + ("secret-token-xyz " * 500)
+    def test_card_excerpt_is_bounded(self):
+        sentinel = "BEYOND-CAP-SENTINEL"
+        long_card = "OCR usage. " + ("filler " * 500) + sentinel
         buckets = {"vision": [_candidate("acme/ocr", "vision", downloads=10)]}
         pack = generate_pack(
             DomainIntent(domain="Legal", roles=("vision",), keywords=("ocr",)),
@@ -145,9 +159,18 @@ class RenderPackTests(unittest.TestCase):
         )
         excerpt = pack.candidates[0].card_excerpt
         self.assertLessEqual(len(excerpt), _CARD_EXCERPT_CHARS)
+        # Content beyond the cap is not copied into the artifact.
+        self.assertNotIn(sentinel, excerpt)
+
+    def test_empty_pack_renders_no_candidates_message(self):
+        pack = generate_pack(
+            DomainIntent(domain="Empty", roles=("vision",)),
+            FakeDiscovery({"vision": []}),
+            FakeHF({}),
+            now=datetime(2026, 7, 22, tzinfo=timezone.utc),
+        )
         markdown = render_pack(pack)
-        self.assertNotIn("apiKey", markdown)
-        self.assertNotIn("api_key", markdown)
+        self.assertIn("No candidates were found", markdown)
 
 
 class WritePackTests(unittest.TestCase):
@@ -163,6 +186,17 @@ class WritePackTests(unittest.TestCase):
             self.assertEqual(path.parent.name, "mlx-research")
             self.assertTrue(path.name.startswith("legal-review-"))
             self.assertEqual(path.read_text(), "# pack\n")
+
+    def test_hostile_domain_stays_contained(self):
+        with TemporaryDirectory() as root:
+            path = write_pack(
+                "# pack\n",
+                DomainIntent(domain="../../etc/passwd", roles=("vision",)),
+                root=root,
+                now=datetime(2026, 7, 22, 13, 30, 0, tzinfo=timezone.utc),
+            )
+            self.assertEqual(path.parent, Path(root).resolve() / "mlx-research")
+            self.assertNotIn("..", path.name)
 
 
 if __name__ == "__main__":

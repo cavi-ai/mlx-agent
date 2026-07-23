@@ -108,10 +108,10 @@ def generate_pack(
         )
         envelope = discovery_service.discover(request)
         if envelope.status != "ok":
-            detail = envelope.to_dict().get("error", {})
+            detail = envelope.error
             warnings.append({
-                "code": detail.get("code", "discovery_failed"),
-                "message": "{0}: {1}".format(role, detail.get("message", "discovery failed")),
+                "code": detail.code if detail else "discovery_failed",
+                "message": "{0}: {1}".format(role, detail.message if detail else "discovery failed"),
             })
             continue
         for bucket in envelope.data.get("roles", {}).values():
@@ -123,7 +123,10 @@ def generate_pack(
     scored: List[Tuple[str, ScoreResult]] = []
     detail_by_repo: Dict[str, Dict[str, object]] = {}
     for repo, candidate in seen.items():
-        card_text = hf_client.fetch_model_card(repo)
+        try:
+            card_text = hf_client.fetch_model_card(repo)
+        except Exception:
+            card_text = None
         result = score_candidate(intent, candidate_metadata(candidate), card_text)
         scored.append((repo, result))
         detail_by_repo[repo] = {"candidate": candidate, "card_text": card_text}
@@ -219,6 +222,9 @@ def write_pack(
     moment = now or datetime.now(timezone.utc)
     base = Path(root) if root is not None else Path.cwd()
     out_dir = (base / "mlx-research").resolve()
+    unresolved_dir = base / "mlx-research"
+    if unresolved_dir.is_symlink():
+        raise ValueError("refusing to write research pack through a symlinked folder")
     timestamp = moment.strftime("%Y%m%dT%H%M%SZ")
     filename = "{0}-{1}.md".format(slugify(intent.domain), timestamp)
     path = (out_dir / filename).resolve()

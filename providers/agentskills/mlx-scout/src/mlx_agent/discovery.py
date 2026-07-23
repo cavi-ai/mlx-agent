@@ -14,10 +14,11 @@ from .contracts import ResultEnvelope
 from .host import HostInventory
 from .huggingface import HuggingFaceClient
 from .models import (
+    DISCOVERY_ROLES,
     REPUTABLE,
-    ROLES,
     base_name,
     classify,
+    classify_roles,
     infer_quantization,
     quant_rank,
     resolve_ram,
@@ -26,7 +27,7 @@ from .models import (
 )
 
 
-CACHE_SCHEMA_VERSION = "1.0"
+CACHE_SCHEMA_VERSION = "2.0"
 CACHE_TTL_SECONDS = 24 * 60 * 60
 
 
@@ -143,7 +144,7 @@ class DiscoveryService:
         return ResultEnvelope.ok("discover", self._response_data(request, data, "refreshed" if request.refresh else "miss"))
 
     def _build_response(self, request, raw, host_data, list_url=None):
-        buckets = {role: [] for role, _keywords, _label in ROLES}
+        buckets = {role: [] for role in DISCOVERY_ROLES}
         rejected = {}
         seen_repo, seen_base = set(), {}
         rejection_limit = max(1, int(request.limit or 1)) * 3
@@ -152,29 +153,52 @@ class DiscoveryService:
             if not repo or repo in seen_repo:
                 continue
             seen_repo.add(repo)
-            role = classify(repo)
-            if request.role and role != request.role:
+            if (
+                request.role
+                and request.role != "tool-use"
+                and classify(repo) != request.role
+            ):
                 continue
             enrichment = {} if request.fast else self._huggingface.inspect_model(repo)
-            candidate = self._candidate(
-                repo, model, role, host_data, enrichment, request, list_url
-            )
-            reasons = self._rejection_reasons(candidate, request)
-            candidate["rejection_reasons"] = reasons
-            if reasons:
+            roles, tool_use = classify_roles(repo, enrichment)
+            selected_roles = (
+                (request.role,) if request.role in roles else ()
+            ) if request.role else roles
+            if not selected_roles:
+                continue
+            accepted = False
+            rejected_candidate = None
+            for role in selected_roles:
+                candidate = self._candidate(
+                    repo,
+                    model,
+                    role,
+                    roles,
+                    tool_use,
+                    host_data,
+                    enrichment,
+                    request,
+                    list_url,
+                )
+                reasons = self._rejection_reasons(candidate, request)
+                candidate["rejection_reasons"] = reasons
+                if reasons:
+                    rejected_candidate = rejected_candidate or candidate
+                    continue
+                accepted = True
+                key = (role, candidate["base"])
+                current = seen_base.get(key)
+                if current is not None:
+                    if self._selection_key(candidate) > self._selection_key(current):
+                        buckets[role].remove(current)
+                        buckets[role].append(candidate)
+                        seen_base[key] = candidate
+                    continue
+                seen_base[key] = candidate
+                buckets[role].append(candidate)
+            if not accepted and rejected_candidate is not None:
                 if len(rejected) < rejection_limit:
-                    rejected[repo] = candidate
-                continue
-            key = (role, candidate["base"])
-            current = seen_base.get(key)
-            if current is not None:
-                if self._selection_key(candidate) > self._selection_key(current):
-                    buckets[role].remove(current)
-                    buckets[role].append(candidate)
-                    seen_base[key] = candidate
-                continue
-            seen_base[key] = candidate
-            buckets[role].append(candidate)
+                    rejected[repo] = rejected_candidate
 
         for role in buckets:
             buckets[role].sort(key=self._selection_key, reverse=True)
@@ -188,7 +212,18 @@ class DiscoveryService:
             "request": request.cache_request(),
         }
 
-    def _candidate(self, repo, model, role, host_data, enrichment, request, list_url=None):
+    def _candidate(
+        self,
+        repo,
+        model,
+        role,
+        roles,
+        tool_use,
+        host_data,
+        enrichment,
+        request,
+        list_url=None,
+    ):
         ram, ram_source = resolve_ram(repo, enrichment)
         reasoning, reason_source = resolve_reasoning(repo, enrichment)
         publisher = repo.split("/", 1)[0].lower()
@@ -215,6 +250,8 @@ class DiscoveryService:
         return {
             # Legacy report keys.
             "repo": repo,
+            "role": role,
+            "roles": list(roles),
             "downloads": downloads,
             "likes": likes,
             "trusted": trusted,
@@ -232,9 +269,23 @@ class DiscoveryService:
             # the weights came from a measured file-size listing.
             "facts": facts,
             "estimates": {"ram_gb": ram, "memory_budget_gb": budget, "headroom_fraction": 0.2},
-            "heuristics": {"role": role, "quantization": quantization, "trusted_publisher": trusted},
+            "tool_use": tool_use,
+            "heuristics": {
+                "role": role,
+                "primary_role": roles[0],
+                "roles": list(roles),
+                "quantization": quantization,
+                "trusted_publisher": trusted,
+            },
             "provenance": self._provenance(
-                repo, enrichment, request.fast, ram_source, reason_source, list_url
+                repo,
+                role,
+                tool_use,
+                enrichment,
+                request.fast,
+                ram_source,
+                reason_source,
+                list_url,
             ),
             "rank_score": rank_score,
             "selection_reasons": self._selection_reasons(role, quantization, trusted, fits),
@@ -242,7 +293,16 @@ class DiscoveryService:
         }
 
     @staticmethod
-    def _provenance(repo, enrichment, fast, ram_source, reason_source, list_url=None):
+    def _provenance(
+        repo,
+        role,
+        tool_use,
+        enrichment,
+        fast,
+        ram_source,
+        reason_source,
+        list_url=None,
+    ):
         encoded = repo.replace("/", "%2F")
         records = [{
             "source": "huggingface_model_list",
@@ -253,6 +313,8 @@ class DiscoveryService:
             metadata_fields = ["gated", "license"]
             if reason_source in ("chat_template", "tags", "checked"):
                 metadata_fields.append("reasoning")
+            if tool_use["source"] in ("chat_template", "tags", "checked"):
+                metadata_fields.append("tool_use")
             records.append({
                 "source": "huggingface_model_metadata",
                 "url": enrichment.get("metadata_url") or "https://huggingface.co/api/models/{0}".format(encoded),
@@ -264,9 +326,28 @@ class DiscoveryService:
                 "url": enrichment.get("tree_url") or "https://huggingface.co/api/models/{0}/tree/main?recursive=true".format(encoded),
                 "fields": ["weight_bytes"],
             })
+        if tool_use["source"] in ("chat_template", "tags", "checked"):
+            role_basis = (
+                "primary role from repository name; tool-use signal from "
+                "Hugging Face metadata ({0})"
+            ).format(tool_use["source"])
+        elif tool_use["source"] == "name":
+            role_basis = "primary role and tool-use signal from repository name"
+        else:
+            role_basis = "primary role from repository name; no tool-use signal"
+        records.append({
+            "source": "local_role_derivation",
+            "fields": ["role", "roles", "primary_role"],
+            "basis": role_basis,
+        })
+        name_fields = ["quantization", "trusted_publisher"]
+        if tool_use["source"] == "name":
+            name_fields.append("tool_use")
+        if reason_source == "name":
+            name_fields.append("reasoning")
         records.append({
             "source": "local_name_derivation",
-            "fields": ["role", "quantization", "trusted_publisher"] + (["reasoning"] if reason_source == "name" else []),
+            "fields": name_fields,
         })
         records.append({
             "source": "local_memory_estimate",
@@ -281,7 +362,7 @@ class DiscoveryService:
 
     @staticmethod
     def _selection_reasons(role, quantization, trusted, fits):
-        reasons = ["classified for role: {0}".format(role)]
+        reasons = ["role membership: {0}".format(role)]
         if quantization:
             reasons.append("quantization inferred from repository name: {0}".format(quantization))
         if trusted:

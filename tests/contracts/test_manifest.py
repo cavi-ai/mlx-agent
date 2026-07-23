@@ -8,17 +8,50 @@ from scripts.validate_contracts import validate_manifest
 
 
 ROOT = Path(__file__).resolve().parents[2]
+CANONICAL_ROLE_IDS = (
+    "general",
+    "coding",
+    "reasoning",
+    "vision",
+    "embedding",
+    "tool-use",
+)
 
 
 class ManifestTests(unittest.TestCase):
-    def test_manifest_has_three_capabilities_and_five_native_providers(self):
+    def test_manifest_has_three_capabilities_five_providers_and_canonical_roles(self):
         manifest = json.loads((ROOT / "plugin.json").read_text())
+        roles = manifest["roles"]
+
         self.assertEqual(set(manifest["capabilities"]), {"scout", "adopt", "wire"})
         self.assertEqual(
             set(manifest["providers"]),
             {"claude", "codex", "gemini", "opencode", "agentskills"},
         )
         self.assertEqual(validate_manifest(ROOT / "plugin.json"), [])
+        self.assertEqual(manifest["schema_version"], "1.1")
+        self.assertEqual(tuple(role["id"] for role in roles), CANONICAL_ROLE_IDS)
+        self.assertEqual(set(role["id"] for role in roles), set(CANONICAL_ROLE_IDS))
+        self.assertNotIn("agentic", {role["id"] for role in roles})
+        self.assertFalse(any("alias" in role or "aliases" in role for role in roles))
+        self.assertEqual(
+            next(role for role in roles if role["id"] == "tool-use"),
+            {
+                "id": "tool-use",
+                "description": "Models verified to invoke supplied tools with schema-valid arguments.",
+                "membership": "additional",
+                "recommendation_minimum": "verified",
+            },
+        )
+        primary_roles = [role for role in roles if role["membership"] == "primary"]
+        self.assertEqual(len(primary_roles), 5)
+        self.assertEqual(
+            {role["id"] for role in primary_roles},
+            {"general", "coding", "reasoning", "vision", "embedding"},
+        )
+        self.assertTrue(
+            all(role["recommendation_minimum"] == "any" for role in primary_roles)
+        )
         for provider in ("claude", "gemini", "opencode"):
             self.assertEqual(
                 manifest["providers"][provider]["commands"],
@@ -72,7 +105,7 @@ class ManifestTests(unittest.TestCase):
 
     def test_manifest_validator_returns_errors_for_wrong_shaped_sections(self):
         original = json.loads((ROOT / "plugin.json").read_text())
-        for section in ("scopes", "capabilities", "providers"):
+        for section in ("scopes", "roles", "capabilities", "providers"):
             with self.subTest(section=section), tempfile.TemporaryDirectory() as directory:
                 manifest = dict(original)
                 manifest[section] = 1
@@ -81,6 +114,42 @@ class ManifestTests(unittest.TestCase):
                 errors = validate_manifest(path)
                 self.assertTrue(errors)
                 self.assertIn("{0} must be an".format(section), "\n".join(errors))
+
+        malformed_roles = (
+            original["roles"][:5],
+            original["roles"] + [original["roles"][0]],
+            [
+                dict(role, description="")
+                if role["id"] == "general"
+                else role
+                for role in original["roles"]
+            ],
+            [
+                dict(role, membership="primary", recommendation_minimum="any")
+                if role["id"] == "tool-use"
+                else role
+                for role in original["roles"]
+            ],
+            [
+                dict(role, id="agentic")
+                if role["id"] == "tool-use"
+                else role
+                for role in original["roles"]
+            ],
+            [
+                dict(role, unexpected=True)
+                if role["id"] == "general"
+                else role
+                for role in original["roles"]
+            ],
+        )
+        for roles in malformed_roles:
+            with self.subTest(roles=roles), tempfile.TemporaryDirectory() as directory:
+                manifest = dict(original)
+                manifest["roles"] = roles
+                path = Path(directory) / "plugin.json"
+                path.write_text(json.dumps(manifest))
+                self.assertTrue(validate_manifest(path))
 
     def test_manifest_validator_enforces_schema_only_constraints(self):
         manifest = json.loads((ROOT / "plugin.json").read_text())

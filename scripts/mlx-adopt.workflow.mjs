@@ -6,7 +6,7 @@ export const meta = {
 const pluginRoot = (args && args.pluginRoot) || '.'
 const statePath = (args && args.statePath) || '.mlx-agent-adoption.json'
 const shellQuote = (value) => `'${String(value).replace(/'/g, "'\\''")}'`
-const allowedRoles = new Set(['general', 'coding', 'reasoning', 'vision', 'embedding'])
+const allowedRoles = new Set(["general","coding","reasoning","vision","embedding","tool-use"])
 const requestedRoles = (args && Array.isArray(args.roles)) ? args.roles : []
 const roles = requestedRoles.filter((role) => allowedRoles.has(role))
 const selectedRoles = roles.length ? roles : ['general']

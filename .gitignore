@@ -5,3 +5,5 @@ node_modules/
 .worktrees/
 .superpowers/
 docs/superpowers/
+.claude/
+.code-review-graph/

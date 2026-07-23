@@ -1,0 +1,315 @@
+{
+  "cases": [
+    {
+      "name": "valid_ollama",
+      "response": {
+        "message": {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "function": {
+                "name": "lookup_widget",
+                "arguments": {
+                  "widget_id": "widget-42"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "valid": true,
+        "tool_name": "lookup_widget",
+        "arguments": {
+          "widget_id": "widget-42"
+        },
+        "reason": "valid"
+      }
+    },
+    {
+      "name": "valid_openai_string_arguments",
+      "response": {
+        "choices": [
+          {
+            "message": {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                {
+                  "id": "call_synthetic",
+                  "type": "function",
+                  "function": {
+                    "name": "lookup_widget",
+                    "arguments": "{\"widget_id\":\"widget-42\"}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "valid": true,
+        "tool_name": "lookup_widget",
+        "arguments": {
+          "widget_id": "widget-42"
+        },
+        "reason": "valid"
+      }
+    },
+    {
+      "name": "valid_openai_dict_arguments",
+      "response": {
+        "choices": [
+          {
+            "message": {
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "lookup_widget",
+                    "arguments": {
+                      "widget_id": "widget-42"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "valid": true,
+        "tool_name": "lookup_widget",
+        "arguments": {
+          "widget_id": "widget-42"
+        },
+        "reason": "valid"
+      }
+    },
+    {
+      "name": "malformed_json_arguments",
+      "response": {
+        "choices": [
+          {
+            "message": {
+              "tool_calls": [
+                {
+                  "function": {
+                    "name": "lookup_widget",
+                    "arguments": "{\"widget_id\":"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "valid": false,
+        "tool_name": null,
+        "arguments": null,
+        "reason": "malformed_arguments"
+      }
+    },
+    {
+      "name": "absent_direct_text",
+      "response": {
+        "choices": [
+          {
+            "message": {
+              "content": "Widget 42 is available."
+            }
+          }
+        ]
+      },
+      "expected": {
+        "valid": false,
+        "tool_name": null,
+        "arguments": null,
+        "reason": "missing_tool_call"
+      }
+    },
+    {
+      "name": "wrong_tool",
+      "response": {
+        "message": {
+          "tool_calls": [
+            {
+              "function": {
+                "name": "search_widget",
+                "arguments": {
+                  "widget_id": "widget-42"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "valid": false,
+        "tool_name": null,
+        "arguments": null,
+        "reason": "wrong_tool"
+      }
+    },
+    {
+      "name": "missing_argument",
+      "response": {
+        "message": {
+          "tool_calls": [
+            {
+              "function": {
+                "name": "lookup_widget",
+                "arguments": {}
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "valid": false,
+        "tool_name": null,
+        "arguments": null,
+        "reason": "schema_invalid"
+      }
+    },
+    {
+      "name": "extra_argument",
+      "response": {
+        "choices": [
+          {
+            "message": {
+              "tool_calls": [
+                {
+                  "function": {
+                    "name": "lookup_widget",
+                    "arguments": {
+                      "widget_id": "widget-42",
+                      "include_private": true
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "valid": false,
+        "tool_name": null,
+        "arguments": null,
+        "reason": "schema_invalid"
+      }
+    },
+    {
+      "name": "wrong_argument_type",
+      "response": {
+        "message": {
+          "tool_calls": [
+            {
+              "function": {
+                "name": "lookup_widget",
+                "arguments": {
+                  "widget_id": 42
+                }
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "valid": false,
+        "tool_name": null,
+        "arguments": null,
+        "reason": "schema_invalid"
+      }
+    },
+    {
+      "name": "wrong_argument_value",
+      "response": {
+        "choices": [
+          {
+            "message": {
+              "tool_calls": [
+                {
+                  "function": {
+                    "name": "lookup_widget",
+                    "arguments": "{\"widget_id\":\"widget-99\"}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "valid": false,
+        "tool_name": null,
+        "arguments": null,
+        "reason": "schema_invalid"
+      }
+    },
+    {
+      "name": "multiple_calls",
+      "response": {
+        "message": {
+          "tool_calls": [
+            {
+              "function": {
+                "name": "lookup_widget",
+                "arguments": {
+                  "widget_id": "widget-42"
+                }
+              }
+            },
+            {
+              "function": {
+                "name": "lookup_widget",
+                "arguments": {
+                  "widget_id": "widget-42"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "valid": false,
+        "tool_name": null,
+        "arguments": null,
+        "reason": "multiple_tool_calls"
+      }
+    },
+    {
+      "name": "reasoning_only",
+      "response": {
+        "choices": [
+          {
+            "message": {
+              "content": "",
+              "reasoning_content": "I should call a tool."
+            }
+          }
+        ]
+      },
+      "expected": {
+        "valid": false,
+        "tool_name": null,
+        "arguments": null,
+        "reason": "missing_tool_call"
+      }
+    },
+    {
+      "name": "non_dict_response",
+      "response": "lookup_widget(widget-42)",
+      "expected": {
+        "valid": false,
+        "tool_name": null,
+        "arguments": null,
+        "reason": "invalid_response"
+      }
+    }
+  ]
+}

@@ -35,6 +35,11 @@ jobs:
         run: |
           test -n "$MLX_AGENT_RUNTIME_HEALTH_ENDPOINT"
           curl --fail --silent --show-error --max-time 15 "$MLX_AGENT_RUNTIME_HEALTH_ENDPOINT"
+      - name: Probe an installed tool-use candidate
+        if: ${{ vars.MLX_AGENT_LIVE_TOOL_USE == '1' }}
+        env:
+          MLX_AGENT_LIVE_TOOL_USE: 1
+        run: PYTHONPATH=src python3 -m unittest tests.integration.test_tool_use_live -v
       - name: Verify the release package after the health check
         run: |
           PYTHONPATH=src python3 scripts/validate_contracts.py

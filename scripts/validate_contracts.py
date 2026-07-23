@@ -8,9 +8,19 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
+RESULT_SCHEMA_VERSION = "1.0"
 PLUGIN_VERSION = "0.3.0"
 CAPABILITIES = ("scout", "adopt", "wire")
+CANONICAL_ROLES = (
+    "general",
+    "coding",
+    "reasoning",
+    "vision",
+    "embedding",
+    "tool-use",
+)
+PRIMARY_ROLES = CANONICAL_ROLES[:-1]
 CAPABILITY_ACTIONS = {
     "scout": ("discover",),
     "adopt": ("start", "resume", "status"),
@@ -100,7 +110,7 @@ def validate_result(value: dict) -> List[str]:
     _require_string(value, "operation", "result", errors)
     _validate_date_time(value.get("generated_at"), "result.generated_at", errors)
 
-    if value.get("schema_version") != SCHEMA_VERSION:
+    if value.get("schema_version") != RESULT_SCHEMA_VERSION:
         errors.append("schema_version must equal '1.0'")
     if value.get("status") not in ("ok", "error"):
         errors.append("status must be one of ['ok', 'error']")
@@ -245,6 +255,53 @@ def _validate_provider(value: Any, name: str, errors: List[str]) -> None:
             errors.append("{0}.commands must equal []".format(prefix))
 
 
+def _validate_roles(value: Any, errors: List[str]) -> None:
+    if not isinstance(value, list):
+        errors.append("roles must be an array")
+        return
+
+    if len(value) != len(CANONICAL_ROLES):
+        errors.append("roles must contain exactly six entries")
+
+    role_ids = []
+    role_fields = ("id", "description", "membership", "recommendation_minimum")
+    for index, role in enumerate(value):
+        prefix = "roles[{0}]".format(index)
+        if not _is_dict(role):
+            errors.append("{0} must be an object".format(prefix))
+            continue
+
+        _require_keys(role, role_fields, prefix, errors)
+        _unexpected_keys(role, role_fields, prefix, errors)
+        _require_string(role, "id", prefix, errors)
+        _require_string(role, "description", prefix, errors)
+        role_id = role.get("id")
+        if isinstance(role_id, str):
+            role_ids.append(role_id)
+
+        if role_id in PRIMARY_ROLES:
+            if role.get("membership") != "primary":
+                errors.append("{0}.membership must equal 'primary'".format(prefix))
+            if role.get("recommendation_minimum") != "any":
+                errors.append(
+                    "{0}.recommendation_minimum must equal 'any'".format(prefix)
+                )
+        elif role_id == "tool-use":
+            if role.get("membership") != "additional":
+                errors.append("{0}.membership must equal 'additional'".format(prefix))
+            if role.get("recommendation_minimum") != "verified":
+                errors.append(
+                    "{0}.recommendation_minimum must equal 'verified'".format(prefix)
+                )
+        else:
+            errors.append("{0}.id is not a canonical role".format(prefix))
+
+    if len(role_ids) != len(set(role_ids)):
+        errors.append("roles must have unique IDs")
+    if set(role_ids) != set(CANONICAL_ROLES):
+        errors.append("roles must define exactly {0}".format(list(CANONICAL_ROLES)))
+
+
 def _subparsers(parser):
     for action in parser._actions:
         if isinstance(action, argparse._SubParsersAction):
@@ -355,6 +412,7 @@ def validate_manifest(path: Path) -> List[str]:
         "version",
         "identity",
         "scopes",
+        "roles",
         "requirements",
         "safety",
         "capabilities",
@@ -367,7 +425,7 @@ def validate_manifest(path: Path) -> List[str]:
     _require_string(value, "version", "manifest", errors)
     _require_string(value, "identity", "manifest", errors)
     if value.get("schema_version") != SCHEMA_VERSION:
-        errors.append("schema_version must equal '1.0'")
+        errors.append("schema_version must equal '1.1'")
     if value.get("identity") != "mlx-agent":
         errors.append("identity must equal 'mlx-agent'")
     if value.get("version") != PLUGIN_VERSION:
@@ -380,6 +438,8 @@ def validate_manifest(path: Path) -> List[str]:
         scope in ("user", "project") for scope in scopes
     ) or scopes[0] == scopes[1]:
         errors.append("scopes must equal ['user', 'project']")
+
+    _validate_roles(value.get("roles"), errors)
 
     requirements = value.get("requirements")
     if not _is_dict(requirements):

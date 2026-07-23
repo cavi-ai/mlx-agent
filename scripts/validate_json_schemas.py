@@ -12,7 +12,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from mlx_agent.adoption import AdoptionState, PHASES  # noqa: E402
+from mlx_agent.adoption import ADOPTION_SCHEMA_VERSION, AdoptionState, PHASES  # noqa: E402
 
 
 def _load(relative):
@@ -21,7 +21,7 @@ def _load(relative):
 
 def _base_adoption_state():
     return {
-        "schema_version": "1.1",
+        "schema_version": ADOPTION_SCHEMA_VERSION,
         "workflow_id": "schema-parity-fixture",
         "revision": 1,
         "phase": "inspect",
@@ -83,6 +83,22 @@ def main():
     native_portable = copy.deepcopy(plugin)
     native_portable["providers"]["gemini"]["install_mode"] = "portable"
     invalid_plugins.append(native_portable)
+    duplicate_role_id = copy.deepcopy(plugin)
+    duplicate_role_id["roles"][-1] = copy.deepcopy(duplicate_role_id["roles"][0])
+    duplicate_role_id["roles"][-1]["description"] = "Changed duplicate description."
+    invalid_plugins.append(duplicate_role_id)
+    invalid_primary_membership = copy.deepcopy(plugin)
+    invalid_primary_membership["roles"][0]["membership"] = "additional"
+    invalid_plugins.append(invalid_primary_membership)
+    invalid_primary_recommendation = copy.deepcopy(plugin)
+    invalid_primary_recommendation["roles"][0]["recommendation_minimum"] = "verified"
+    invalid_plugins.append(invalid_primary_recommendation)
+    invalid_additional_membership = copy.deepcopy(plugin)
+    invalid_additional_membership["roles"][-1]["membership"] = "primary"
+    invalid_plugins.append(invalid_additional_membership)
+    invalid_additional_recommendation = copy.deepcopy(plugin)
+    invalid_additional_recommendation["roles"][-1]["recommendation_minimum"] = "any"
+    invalid_plugins.append(invalid_additional_recommendation)
     for index, value in enumerate(invalid_plugins):
         if plugin_validator.is_valid(value):
             raise ValueError("plugin invalid fixture {0} passed schema validation".format(index))
@@ -102,13 +118,74 @@ def main():
 
     evidence = {
         "repo": "local/model", "role": "general", "strength": "heuristic_only",
+        "status": "metadata-only",
         "available_locally": False, "loads": None, "reasoning_confirmed": None,
         "runtime": None, "note": "bounded evidence", "details": {},
     }
+    for status in ("verified", "metadata-only", "failed", "unsupported-runtime"):
+        current = copy.deepcopy(base)
+        current.update(
+            completed_phases=["inspect", "discover", "shortlist", "verify"],
+            phase="compare",
+            shortlist=[{"repo": "local/model", "role": "general"}],
+            evidence=[dict(evidence, status=status)],
+        )
+        adoption_validator.validate(current)
+        if not _runtime_accepts(current):
+            raise ValueError("runtime rejected verification status {0}".format(status))
+
+    six_roles = copy.deepcopy(base)
+    six_roles["request"]["roles"] = [
+        "general", "coding", "reasoning", "vision", "embedding", "tool-use"
+    ]
+    adoption_validator.validate(six_roles)
+    if not _runtime_accepts(six_roles):
+        raise ValueError("runtime rejected six canonical adoption roles")
+
+    six_recommendations = copy.deepcopy(base)
+    six_recommendations.update(
+        completed_phases=list(PHASES[:-1]),
+        phase="complete",
+        status="complete",
+        recommendations=[
+            {"repo": "local/model-{0}".format(index), "role": "general"}
+            for index in range(6)
+        ],
+    )
+    adoption_validator.validate(six_recommendations)
+    if not _runtime_accepts(six_recommendations):
+        raise ValueError("runtime rejected six adoption recommendations")
+
+    legacy = copy.deepcopy(base)
+    legacy["schema_version"] = "1.1"
+    legacy.update(
+        completed_phases=["inspect", "discover", "shortlist", "verify"],
+        phase="compare",
+        shortlist=[{"repo": "local/model", "role": "general"}],
+        evidence=[{key: value for key, value in evidence.items() if key != "status"}],
+    )
+    legacy_before = copy.deepcopy(legacy)
+    if adoption_validator.is_valid(legacy):
+        raise ValueError("current JSON Schema accepted legacy adoption state")
+    if not _runtime_accepts(legacy):
+        raise ValueError("runtime rejected supported legacy adoption state")
+    if legacy != legacy_before:
+        raise ValueError("runtime legacy migration mutated its input")
+
     invalid = []
     unsupported_role = copy.deepcopy(base)
     unsupported_role["request"]["roles"] = ["unsupported"]
     invalid.append(unsupported_role)
+    seven_roles = copy.deepcopy(base)
+    seven_roles["request"]["roles"] = [
+        "general", "coding", "reasoning", "vision", "embedding", "tool-use", "general"
+    ]
+    invalid.append(seven_roles)
+    seven_recommendations = copy.deepcopy(six_recommendations)
+    seven_recommendations["recommendations"].append(
+        {"repo": "local/model-6", "role": "general"}
+    )
+    invalid.append(seven_recommendations)
     noncontiguous = copy.deepcopy(base)
     noncontiguous.update(completed_phases=["inspect", "shortlist"], phase="verify")
     invalid.append(noncontiguous)

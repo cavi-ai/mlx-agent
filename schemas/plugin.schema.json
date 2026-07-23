@@ -10,6 +10,7 @@
     "version",
     "identity",
     "scopes",
+    "roles",
     "requirements",
     "safety",
     "capabilities",
@@ -21,7 +22,7 @@
       "minLength": 1
     },
     "schema_version": {
-      "const": "1.0"
+      "const": "1.1"
     },
     "version": {
       "type": "string",
@@ -40,6 +41,149 @@
       },
       "uniqueItems": true,
       "minItems": 2
+    },
+    "roles": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "description",
+          "membership",
+          "recommendation_minimum"
+        ],
+        "properties": {
+          "id": {
+            "enum": [
+              "general",
+              "coding",
+              "reasoning",
+              "vision",
+              "embedding",
+              "tool-use"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "membership": {
+            "enum": [
+              "primary",
+              "additional"
+            ]
+          },
+          "recommendation_minimum": {
+            "enum": [
+              "any",
+              "verified"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "id": {
+                  "const": "tool-use"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "membership": {
+                  "const": "additional"
+                },
+                "recommendation_minimum": {
+                  "const": "verified"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "membership": {
+                  "const": "primary"
+                },
+                "recommendation_minimum": {
+                  "const": "any"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "id": {
+                "const": "general"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "id": {
+                "const": "coding"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "id": {
+                "const": "reasoning"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "id": {
+                "const": "vision"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "id": {
+                "const": "embedding"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "id": {
+                "const": "tool-use"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
     },
     "requirements": {
       "type": "object",

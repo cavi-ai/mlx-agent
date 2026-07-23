@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Document verified tool-use recommendations and safety boundaries, and add an opt-in Apple Silicon smoke test that probes the first installed candidate on supported loopback runtimes.
+
 ## 0.3.0 - 2026-07-20
 
 - Route OpenCode user-scope artifacts through `XDG_CONFIG_HOME` while preserving native `HOME`.

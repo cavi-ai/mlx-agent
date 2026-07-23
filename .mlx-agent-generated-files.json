@@ -14,15 +14,15 @@
     },
     {
       "path": "agents/mlx-advisor.md",
-      "sha256": "d6454a5a314512d41e80b58adc05aa7d9e1306992eaa2eb32640c43f6f979374"
+      "sha256": "25b2823fecaebc5ea305b26b0a3d88fbb8455d7befc117e83a166200e0925558"
     },
     {
       "path": "commands/mlx-adopt.md",
-      "sha256": "87950e2f92f47c4bf5afb1816db718b0d8a05fcd9a6effb50e845d05fd9e7fac"
+      "sha256": "88484fa995ce9e808274570af281f2855757aecfd371742fc73c44217c96e1a6"
     },
     {
       "path": "commands/mlx-scout.md",
-      "sha256": "23ea2080e01d12f13766264c41dce13e03f01f912b0f487e09d7526710e1e7c4"
+      "sha256": "8714ca8e3d4d42ce4817e747aafbef7725f0c1d8539ffdbfe1f6d9b38696cb72"
     },
     {
       "path": "commands/mlx-wire.md",
@@ -30,7 +30,7 @@
     },
     {
       "path": "scripts/mlx-adopt.workflow.mjs",
-      "sha256": "bc732f944e63155871073df934f1eb377d25c7980a3ae0d2baa73f391a8deb7c"
+      "sha256": "1669e37cdec089b4e497809adca9d1d8f629dc46ac4322dc40ea7d8289920c6a"
     }
   ],
   "schema_version": 2,

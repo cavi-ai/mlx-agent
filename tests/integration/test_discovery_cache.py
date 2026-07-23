@@ -65,6 +65,19 @@ class DiscoveryCacheTests(unittest.TestCase):
         self.assertEqual(self.hub.calls, 1)
         self.assertEqual(result["data"]["cache"]["status"], "fresh")
 
+    def test_old_schema_cache_is_ignored(self):
+        request = DiscoveryRequest(role="coding")
+        self._service().discover(request)
+        cache_path = next(Path(self.directory.name).glob("*.json"))
+        payload = json.loads(cache_path.read_text())
+        payload["schema_version"] = "1.0"
+        cache_path.write_text(json.dumps(payload))
+
+        result = self._service().discover(request).to_dict()
+
+        self.assertEqual(self.hub.calls, 2)
+        self.assertEqual(result["data"]["cache"]["status"], "miss")
+
     def test_refresh_replaces_cache_atomically(self):
         request = DiscoveryRequest(role="coding")
         self._service().discover(request)

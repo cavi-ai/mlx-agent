@@ -146,7 +146,7 @@ python3 skills/mlx-scout/scripts/scout.py --json          # machine-readable
 python3 skills/mlx-scout/scripts/scout.py --wire <repo> --target mlx_lm|lmstudio|mlx-vlm|ollama|litellm
 ```
 
-Roles: `general`, `coding`, `reasoning`, `vision`, `embedding`. `--limit N` sets results per role.
+Roles: `general`, `coding`, `reasoning`, `vision`, `embedding`, and `tool-use`. A model retains its primary role and can also have `tool-use` membership. `--limit N` sets results per role.
 
 ## How it works
 
@@ -156,6 +156,10 @@ Roles: `general`, `coding`, `reasoning`, `vision`, `embedding`. `--limit N` sets
 - **License / gated** — surfaces the license and flags gated repos before any external runtime fetch.
 - **Verify-before-recommend** — `/mlx-adopt` test-generates a candidate against your local runtime to confirm behavior before wiring it.
 
+For `tool-use`, metadata is not verification. Only a verified, schema-valid synthetic runtime tool call is recommended as tool-use capable. The bounded probe supports Ollama and local OpenAI-compatible LM Studio, `mlx_lm`, and LiteLLM servers; see [Scout evidence](docs/guides/scout.md), [Adopt verification](docs/guides/adopt.md), and the [security boundaries](docs/security.md).
+
+The opt-in release live smoke automatically selects only direct local Ollama, LM Studio, or `mlx_lm` backends. LiteLLM remains supported by the verifier, but is excluded from automatic live selection because a loopback LiteLLM inventory may route to remote or paid backends; smoke it only after separately proving that its route remains local.
+
 ## Use anywhere
 
 The generated `providers/agentskills/mlx-scout/`, `providers/agentskills/mlx-adopt/`, and `providers/agentskills/mlx-wire/` directories are self-contained [AgentSkills](https://agentskills.io) packages. Copy the complete provider directory you need into an isolated compatible host skills path; each contains its own launcher and runtime. The legacy root `skills/mlx-scout/` is repository-relative compatibility code and is not the portable package.
@@ -164,7 +168,7 @@ The generated `providers/agentskills/mlx-scout/`, `providers/agentskills/mlx-ado
 
 - macOS on Apple Silicon (for host/RAM/runtime detection; the HF query itself works anywhere)
 - Python 3.9+ (standard library only — zero pip installs)
-- Optional runtimes it detects & wires: [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai) (MLX), [`mlx_lm`](https://github.com/ml-explore/mlx-lm), [`mlx-vlm`](https://github.com/Blaizzy/mlx-vlm) — see [`skills/mlx-scout/references/runtimes.md`](skills/mlx-scout/references/runtimes.md).
+- Optional runtimes it detects & wires: [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai) (MLX), [`mlx_lm`](https://github.com/ml-explore/mlx-lm), [`mlx-vlm`](https://github.com/Blaizzy/mlx-vlm), and [LiteLLM](https://www.litellm.ai/) — see [`skills/mlx-scout/references/runtimes.md`](skills/mlx-scout/references/runtimes.md).
 
 ## Roadmap
 

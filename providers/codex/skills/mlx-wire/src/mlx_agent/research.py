@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Tuple
 from .blueprint import DatasetBlueprint, build_dataset_blueprint
 from .discovery import DiscoveryRequest
 from .interview import DomainIntent
+from .modality import FACET_CHOICES, facet_label, modality_label
 from .scoring import ScoreResult, rank_scored, score_candidate
 
 
@@ -329,6 +330,8 @@ def render_pack(pack: ResearchPack) -> str:
         "- Keywords: {0}".format(", ".join(intent.keywords) or "none"),
         "- License filter: {0}".format(", ".join(intent.license_allow) or "none"),
         "- Memory budget (GB): {0}".format(intent.memory_gb if intent.memory_gb is not None else "none"),
+        "- Modalities: {0}".format(", ".join(intent.modalities) or "none"),
+        "- Facets: {0}".format(", ".join(intent.facets) or "none"),
     ]
     if intent.notes:
         lines.append("- Notes: {0}".format(intent.notes))
@@ -354,6 +357,23 @@ def render_pack(pack: ResearchPack) -> str:
         lines.extend(["", "## Warnings", ""])
         for warning in pack.warnings:
             lines.append("- [{0}] {1}".format(warning.get("code", "warning"), warning.get("message", "")))
+    lines.extend(["", "## Modality foundations", ""])
+    if intent.modalities:
+        for modality in intent.modalities:
+            allowed = set(FACET_CHOICES.get(modality, {}).values())
+            facet_ids = [facet for facet in intent.facets if facet in allowed]
+            lines.append("- `{0}` — {1}".format(modality, modality_label(modality)))
+            if facet_ids:
+                lines.append("  - Facets: {0}".format(
+                    ", ".join(
+                        "`{0}` ({1})".format(facet, facet_label(facet))
+                        for facet in facet_ids
+                    )
+                ))
+        lines.append("")
+    else:
+        lines.append("No foundational modalities were selected for this pack.")
+        lines.append("")
     lines.extend(["", "## Candidates", ""])
     for index, candidate in enumerate(pack.candidates, start=1):
         lines.append("### {0}. `{1}` — score {2}/100".format(index, candidate.repo, candidate.score))

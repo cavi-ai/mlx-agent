@@ -1,13 +1,16 @@
-# Worked example: a legal research pack (docs only)
+# Worked example: legal as document-vision composition (docs only)
 
-This example shows the **domain-agnostic** engine applied to a legal use case. No
-legal-specific code exists in the plugin; only the interview answers differ.
+This example shows the **domain-agnostic** engine applied to a legal use case by
+composing the `document-vision` foundation (OCR / layout). No legal-specific
+code exists in the plugin; only the interview answers differ.
 
 ## Interview transcript
 
 ```
 What are you building? Describe the domain in a sentence.
 > On-device legal contract review with scanned PDFs
+
+# document-vision is detected from "scanned PDFs" / OCR language — no modality ask
 
 Which model roles do you need? (choose one or more) [Vision / OCR, Embeddings, Coding, Reasoning, General chat, Tool use / function calling]
 > Vision / OCR, General chat
@@ -34,7 +37,9 @@ Any other constraints or notes? (optional)
   "keywords": ["ocr", "contracts", "redaction"],
   "license_allow": ["apache-2.0", "mit"],
   "memory_gb": 32.0,
-  "notes": "must run fully offline"
+  "notes": "must run fully offline",
+  "modalities": ["document-vision"],
+  "facets": ["ocr"]
 }
 ```
 
@@ -47,6 +52,13 @@ Any other constraints or notes? (optional)
 - Keywords: ocr, contracts, redaction
 - License filter: apache-2.0, mit
 - Memory budget (GB): 32.0
+- Modalities: document-vision
+- Facets: ocr
+
+## Modality foundations
+
+- `document-vision` — Document extraction / vision
+  - Facets: `ocr` (OCR / text extraction)
 
 ## Candidates
 
@@ -82,10 +94,9 @@ to create a local dataset — nothing is downloaded or trained by research.
 Create a small, domain-specific dataset for **On-device legal contract review...**
 ```
 
-The OCR emphasis comes entirely from the interview answers and card/keyword
-scoring — the engine itself is domain-agnostic. Swap the answers (for example
-"audio transcription" with `asr, whisper` keywords) and the same engine produces
-an audio pack with no code change. When Hub datasets are empty, the pack still
-includes an explicit dataset blueprint so another agent can draft labeled data
-locally without any download or training from research.
+Legal is a **composition** of the `document-vision` foundation plus domain keywords —
+not a separate engine. The same foundations power audio and video packs (see sibling
+examples). When Hub datasets are empty, the pack still includes an explicit dataset
+blueprint so another agent can draft labeled data locally without any download or
+training from research.
 

@@ -42,6 +42,8 @@ def _fixture_http_get(payload):
 
     def get(url, timeout=10.0):
         del timeout
+        if "/api/datasets" in url:
+            return payload.get("datasets", [])
         if "/tree/main" in url:
             repo = urllib.parse.unquote(url.split("/api/models/", 1)[1].split("/tree/main", 1)[0])
             return payload["trees"].get(repo, [])
@@ -50,6 +52,11 @@ def _fixture_http_get(payload):
             return payload["details"].get(repo, {})
         if url.startswith("http://127.0.0.1") or url.startswith("http://localhost"):
             raise OSError("fixture does not emulate local runtime endpoints")
+        query = urllib.parse.urlsplit(url).query
+        params = urllib.parse.parse_qs(query)
+        filters = params.get("filter", [])
+        if "peft" in filters:
+            return payload.get("adapters", [])
         return payload["models"]
 
     return get
@@ -394,7 +401,9 @@ def _run_research(arguments):
     data = {"pack": pack.to_dict()}
     if arguments.write:
         try:
-            data["path"] = str(write_pack(markdown, intent, root=arguments.project, now=moment))
+            data["path"] = str(write_pack(
+                markdown, intent, root=arguments.project, now=moment, pack=pack,
+            ))
         except (OSError, ValueError) as error:
             return _emit_research(ResultEnvelope.fail(
                 operation, "write_failed",

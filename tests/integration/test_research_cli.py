@@ -40,6 +40,8 @@ class ResearchCliTests(unittest.TestCase):
             self.assertEqual(written.parent, (Path(project) / "mlx-research").resolve())
             markdown = written.read_text()
             self.assertIn("# MLX Research Pack: legal contract review", markdown)
+            self.assertIn("## Modality foundations", markdown)
+            self.assertIn("document-vision", markdown)
             self.assertIn("## Adapters / LoRAs", markdown)
             self.assertIn("## Datasets", markdown)
             self.assertIn("## Dataset blueprint", markdown)
@@ -49,6 +51,7 @@ class ResearchCliTests(unittest.TestCase):
             self.assertIn("adapters", pack)
             self.assertIn("datasets", pack)
             self.assertIsNotNone(pack["dataset_blueprint"])
+            self.assertEqual(pack["intent"]["modalities"], ["document-vision"])
 
     def test_research_fixture_mode_stays_offline_for_catalog(self):
         """Empty fixture adapters/datasets must not require network."""
@@ -71,6 +74,32 @@ class ResearchCliTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("domain_required", output)
 
+    def test_research_requires_modality_when_undetected(self):
+        with TemporaryDirectory() as project:
+            code, output = self._run([
+                "research", "--domain", "billing helper",
+                "--project", project, "--json",
+            ])
+            self.assertEqual(code, 2)
+            self.assertIn("modality_required", output)
+
+    def test_research_modality_flag_seeds_pack(self):
+        with TemporaryDirectory() as project:
+            code, output = self._run([
+                "research", "--domain", "billing helper",
+                "--modality", "audio", "--facet", "asr",
+                "--project", project, "--json",
+            ])
+            self.assertEqual(code, 0)
+            payload = json.loads(output)
+            pack = payload["data"]["pack"]
+            self.assertEqual(pack["intent"]["modalities"], ["audio"])
+            self.assertEqual(pack["intent"]["facets"], ["asr"])
+            self.assertIn("general", pack["intent"]["roles"])
+            markdown = Path(payload["data"]["path"]).read_text()
+            self.assertIn("## Modality foundations", markdown)
+            self.assertIn("`audio`", markdown)
+
     def test_research_human_output_prints_path(self):
         with TemporaryDirectory() as project:
             code, output = self._run([
@@ -84,7 +113,8 @@ class ResearchCliTests(unittest.TestCase):
         with TemporaryDirectory() as project:
             code, output = self._run([
                 "research", "--domain", "legal contract review",
-                "--role", "vision", "--project", project, "--no-write",
+                "--role", "vision", "--modality", "document-vision",
+                "--project", project, "--no-write",
             ])
             self.assertEqual(code, 0)
             self.assertIn("# MLX Research Pack: legal contract review", output)

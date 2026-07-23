@@ -103,7 +103,7 @@ python3 scripts/mlx-agent doctor gemini --scope user --json
 
 Use the same preview-then-confirm sequence for `update` and `uninstall`. Project installs add `--scope project --project /absolute/project/path`. The installer changes only receipt-owned files; it does not download models, persist secrets, overwrite unowned configuration, or modify a provider's marketplace registry.
 
-See the [complete install and lifecycle guide](docs/install/index.md), [Scout](docs/guides/scout.md), [Adopt](docs/guides/adopt.md), [Wire](docs/guides/wire.md), [Research](docs/guides/research.md), [security and recovery](docs/security.md), and [v0.1 Claude migration](docs/migrating-from-v0.1.md).
+See the [complete install and lifecycle guide](docs/install/index.md), [Scout](docs/guides/scout.md), [Adopt](docs/guides/adopt.md), [Wire](docs/guides/wire.md), [Research](docs/guides/research.md) ([legal](docs/examples/legal-research-pack.md) · [audio](docs/examples/audio-research-pack.md) · [video](docs/examples/video-research-pack.md)), [security and recovery](docs/security.md), and [v0.1 Claude migration](docs/migrating-from-v0.1.md).
 
 ## What's inside
 
@@ -112,7 +112,7 @@ See the [complete install and lifecycle guide](docs/install/index.md), [Scout](d
 | **Scout** | Discover MLX models on Hugging Face, bucketed by role for this host. |
 | **Adopt** | Resume a discover → verify → recommend workflow with durable evidence. |
 | **Wire** | Render, preview, and apply a confirmation-gated configuration transaction. |
-| **Research** | Build a read-only domain research pack: an interview scores and ranks models from Hugging Face metadata and model cards into project-local markdown. |
+| **Research** | Build a read-only domain research pack: foundational modalities (`audio`, `video`, `document-vision`) seed intent; models, adapters, and datasets are ranked into project-local markdown + JSON (with a dataset blueprint when none match). |
 | **`mlx-scout`** skill | Auto-activates on "which local model?"; wraps the discovery script + runtime reference. |
 | **`mlx-advisor`** agent | On-demand expert for picking + wiring a local model for a role. |
 | **`scout.py`** | The stdlib-only discovery/wiring core — runs standalone, too. |
@@ -148,6 +148,16 @@ python3 skills/mlx-scout/scripts/scout.py --wire <repo> --target mlx_lm|lmstudio
 ```
 
 Roles: `general`, `coding`, `reasoning`, `vision`, `embedding`, and `tool-use`. A model retains its primary role and can also have `tool-use` membership. `--limit N` sets results per role.
+
+Research packs (read-only; no download):
+
+```bash
+python3 scripts/mlx-agent research --domain "legal contract review" --keyword ocr
+python3 scripts/mlx-agent research --domain "meeting notes" --modality audio --facet asr
+python3 scripts/mlx-agent research --interview
+```
+
+Packs land under `./mlx-research/` as markdown + JSON. See the [research guide](docs/guides/research.md).
 
 ## How it works
 

@@ -15,6 +15,7 @@ from .host import HostInventory
 from .huggingface import HuggingFaceClient
 from .installer import Installer, InstallerConflictError
 from .interview import build_intent, run_interview
+from .modality import ALL_FACET_IDS, FOUNDATION_IDS, resolve_facets, resolve_modalities
 from .models import DISCOVERY_ROLES, render_md, wire
 from .providers import ProviderRegistry
 from .research import generate_pack, render_pack, write_pack
@@ -321,6 +322,20 @@ def _add_research_arguments(parser):
     parser.add_argument("--domain", help="one-line domain description (required unless --interview)")
     parser.add_argument("--role", dest="roles", action="append", choices=DISCOVERY_ROLES, help="model role to research (repeatable)")
     parser.add_argument("--keyword", dest="keywords", action="append", help="domain keyword to prioritize (repeatable)")
+    parser.add_argument(
+        "--modality",
+        dest="modalities",
+        action="append",
+        choices=list(FOUNDATION_IDS),
+        help="foundational modality to seed (repeatable): audio, video, document-vision",
+    )
+    parser.add_argument(
+        "--facet",
+        dest="facets",
+        action="append",
+        choices=list(ALL_FACET_IDS),
+        help="modality facet to prioritize (repeatable)",
+    )
     parser.add_argument("--license", dest="licenses", action="append", help="allow only this license (repeatable)")
     parser.add_argument("--memory-gb", type=float, help="host memory budget in GB")
     parser.add_argument("--notes", default="", help="free-form constraints")
@@ -358,8 +373,14 @@ def _emit_research(result, arguments, markdown=None):
 def _run_research(arguments):
     operation = "research"
     try:
+        cli_modalities = tuple(arguments.modalities or ())
+        cli_facets = tuple(arguments.facets or ())
         if arguments.interview:
-            intent = run_interview(_stdin_reader)
+            intent = run_interview(
+                _stdin_reader,
+                preset_modalities=cli_modalities,
+                preset_facets=cli_facets,
+            )
         elif not arguments.domain:
             return _emit_research(ResultEnvelope.fail(
                 operation, "domain_required",
@@ -367,6 +388,18 @@ def _run_research(arguments):
                 "Pass --domain \"...\" or use --interview.",
             ), arguments)
         else:
+            detect_text = " ".join(
+                [arguments.domain] + list(arguments.keywords or [])
+            )
+            modalities = resolve_modalities(cli=cli_modalities, text=detect_text)
+            if not modalities:
+                return _emit_research(ResultEnvelope.fail(
+                    operation, "modality_required",
+                    "No foundational modality was supplied or detected from the domain text.",
+                    "Pass --modality audio|video|document-vision (repeatable), "
+                    "or use --interview to choose interactively.",
+                ), arguments)
+            facets = resolve_facets(modalities, cli=cli_facets, text=detect_text)
             intent = build_intent({
                 "domain": arguments.domain,
                 "roles": arguments.roles or [],
@@ -374,6 +407,8 @@ def _run_research(arguments):
                 "license": ",".join(arguments.licenses or []),
                 "memory_gb": arguments.memory_gb,
                 "notes": arguments.notes,
+                "modalities": list(modalities),
+                "facets": list(facets),
             })
     except (ValueError, EOFError) as error:
         return _emit_research(ResultEnvelope.fail(

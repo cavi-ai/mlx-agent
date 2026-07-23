@@ -8,6 +8,8 @@ roles. No network access, no LLM dependency for the deterministic path.
 
 from __future__ import annotations
 
+import math
+
 from dataclasses import dataclass
 from typing import Callable, Dict, Mapping, Optional, Sequence, Tuple
 
@@ -128,9 +130,12 @@ def _resolve_memory(raw: object) -> Optional[float]:
     if not text:
         return None
     try:
-        return float(text)
+        value = float(text)
     except ValueError as error:
         raise ValueError("memory_gb must be a number") from error
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError("memory_gb must be a positive number")
+    return value
 
 
 def build_intent(

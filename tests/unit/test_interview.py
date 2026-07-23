@@ -7,6 +7,7 @@ from mlx_agent.interview import (
     build_intent,
     run_interview,
 )
+from mlx_agent.models import DISCOVERY_ROLES
 
 
 class BuildIntentTests(unittest.TestCase):
@@ -51,10 +52,13 @@ class BuildIntentTests(unittest.TestCase):
             build_intent({"domain": "x", "roles": [], "memory_gb": "lots"})
 
     def test_all_role_choices_map_to_discovery_roles(self):
-        from mlx_agent.models import DISCOVERY_ROLES
-
         for role in ROLE_CHOICES.values():
             self.assertIn(role, DISCOVERY_ROLES)
+
+    def test_build_intent_rejects_non_positive_or_nonfinite_memory(self):
+        for bad in ("-8", "0", "nan", "inf"):
+            with self.assertRaises(ValueError):
+                build_intent({"domain": "x", "roles": [], "memory_gb": bad})
 
 
 class RunInterviewTests(unittest.TestCase):

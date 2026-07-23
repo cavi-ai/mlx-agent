@@ -51,11 +51,23 @@ class FakeDiscovery:
 
 
 class FakeHF:
-    def __init__(self, cards):
+    def __init__(self, cards, adapters=None, datasets=None, dataset_cards=None):
         self._cards = cards
+        self._adapters = adapters if adapters is not None else []
+        self._datasets = datasets if datasets is not None else []
+        self._dataset_cards = dataset_cards or {}
 
     def fetch_model_card(self, repo, timeout=8):
         return self._cards.get(repo)
+
+    def fetch_dataset_card(self, repo, timeout=8):
+        return self._dataset_cards.get(repo)
+
+    def list_adapters(self, search="", limit_fetch=20, timeout=10):
+        return list(self._adapters)[:limit_fetch]
+
+    def list_datasets(self, search="", limit_fetch=20, timeout=10):
+        return list(self._datasets)[:limit_fetch]
 
 
 class SlugifyTests(unittest.TestCase):

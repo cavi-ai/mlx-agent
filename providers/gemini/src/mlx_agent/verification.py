@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import ast
 import http.client
 import ipaddress
 import json
+import math
 import threading
 import time
 from copy import deepcopy
@@ -14,6 +16,7 @@ from types import MappingProxyType
 from typing import Any, Dict, Optional
 from urllib.parse import urlsplit
 
+from .probe_assets import VISION_PROBE_TEXT, vision_probe_image_base64
 from .wiring import redact_secrets
 
 
@@ -48,6 +51,202 @@ _TOOL_USE_ARGUMENTS_MAX_CHARS = 512
 INVENTORY_RESPONSE_MAX_BYTES = 1024 * 1024
 PROBE_RESPONSE_MAX_BYTES = 256 * 1024
 _HTTP_READ_CHUNK_BYTES = 16 * 1024
+
+CODING_PROBE_ID = "coding-v1"
+REASONING_PROBE_ID = "reasoning-v1"
+VISION_PROBE_ID = "vision-v1"
+EMBEDDING_PROBE_ID = "embedding-v1"
+ROLE_PROBE_IDS = MappingProxyType({
+    "coding": CODING_PROBE_ID,
+    "reasoning": REASONING_PROBE_ID,
+    "vision": VISION_PROBE_ID,
+    "embedding": EMBEDDING_PROBE_ID,
+})
+
+CODING_PROBE_PROMPT = (
+    "Write a Python function named add that takes two arguments a and b "
+    "and returns their sum. Reply with only the function definition."
+)
+CODING_PROBE_MAX_TOKENS = 256
+_CODING_PROBE_MAX_CODE_CHARS = 2000
+_CODING_PROBE_BLOCKED_TOKENS = (
+    "import", "__", "while", "for", "open", "exec", "eval", "input",
+    "globals", "locals", "compile", "breakpoint", "exit", "quit",
+    "getattr", "setattr", "delattr", "vars", "help", "print",
+)
+REASONING_PROBE_PROMPT = (
+    "A farmer has 17 sheep. All but 9 run away. "
+    "How many sheep does the farmer have left? Reply with only the number."
+)
+REASONING_PROBE_ANSWER = 9
+REASONING_PROBE_MAX_TOKENS = 64
+VISION_PROBE_PROMPT = (
+    "What text is shown in this image? Reply with only the text in the image."
+)
+VISION_PROBE_MAX_TOKENS = 64
+EMBEDDING_PROBE_SENTENCES = (
+    "The cat sat on the warm windowsill.",
+    "A kitten rested on the sunny ledge.",
+    "Quantum chromodynamics describes the strong nuclear force.",
+)
+EMBEDDING_PROBE_MAX_VECTORS = 8
+_EMBEDDING_PROBE_MAX_DIMENSION = 8192
+
+
+def _role_probe_outcome(reason):
+    return {"valid": reason == "valid", "reason": reason}
+
+
+def validate_coding_response(response):
+    """Validate the fixed coding probe without retaining raw model output."""
+    try:
+        content, _hidden = _generation_text(response)
+        code = _extract_probe_code(content)
+        if code is None:
+            return _role_probe_outcome("missing_content")
+        if len(code) > _CODING_PROBE_MAX_CODE_CHARS:
+            return _role_probe_outcome("unsafe_content")
+        lowered = code.casefold()
+        if any(token in lowered for token in _CODING_PROBE_BLOCKED_TOKENS):
+            return _role_probe_outcome("unsafe_content")
+        try:
+            tree = ast.parse(code)
+        except (SyntaxError, ValueError, RecursionError, MemoryError):
+            return _role_probe_outcome("parse_failure")
+        function_defs = [
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "add"
+        ]
+        if not function_defs:
+            return _role_probe_outcome("missing_function")
+        namespace = {"__builtins__": {}}
+        try:
+            exec(compile(tree, "<coding-probe>", "exec"), namespace)
+            add = namespace.get("add")
+            if not callable(add):
+                return _role_probe_outcome("missing_function")
+            if add(2, 3) != 5 or add(-1, 1) != 0:
+                return _role_probe_outcome("wrong_answer")
+        except Exception:
+            return _role_probe_outcome("wrong_answer")
+        return _role_probe_outcome("valid")
+    except Exception:
+        return _role_probe_outcome("invalid_response")
+
+
+def _extract_probe_code(content):
+    if not isinstance(content, str) or not content.strip():
+        return None
+    text = content.strip()
+    if "```" in text:
+        segments = text.split("```")
+        for segment in segments[1::2]:
+            body = segment.split("\n", 1)
+            candidate = body[1] if len(body) == 2 else ""
+            if candidate.strip():
+                return candidate.strip()
+        return None
+    return text
+
+
+def validate_reasoning_response(response):
+    """Validate the fixed arithmetic reasoning probe by exact answer match."""
+    try:
+        content, _hidden = _generation_text(response)
+        if not isinstance(content, str) or not content.strip():
+            return _role_probe_outcome("missing_content")
+        digits = []
+        current = []
+        for character in content:
+            if character.isdigit() or (character == "-" and not current):
+                current.append(character)
+            elif current:
+                digits.append("".join(current))
+                current = []
+        if current:
+            digits.append("".join(current))
+        if not digits:
+            return _role_probe_outcome("missing_content")
+        try:
+            answer = int(digits[-1])
+        except ValueError:
+            return _role_probe_outcome("missing_content")
+        if answer != REASONING_PROBE_ANSWER:
+            return _role_probe_outcome("wrong_answer")
+        return _role_probe_outcome("valid")
+    except Exception:
+        return _role_probe_outcome("invalid_response")
+
+
+def validate_vision_response(response):
+    """Validate the fixed OCR probe by case-folded substring match."""
+    try:
+        content, _hidden = _generation_text(response)
+        if not isinstance(content, str) or not content.strip():
+            return _role_probe_outcome("missing_content")
+        normalized = "".join(content.split()).casefold()
+        if VISION_PROBE_TEXT.casefold() not in normalized:
+            return _role_probe_outcome("wrong_answer")
+        return _role_probe_outcome("valid")
+    except Exception:
+        return _role_probe_outcome("invalid_response")
+
+
+def validate_embedding_response(response):
+    """Validate the fixed embedding probe by cosine ordering."""
+    try:
+        vectors = _embedding_vectors(response)
+        if vectors is None or len(vectors) != len(EMBEDDING_PROBE_SENTENCES):
+            return _role_probe_outcome("invalid_response")
+        similar = _cosine_similarity(vectors[0], vectors[1])
+        dissimilar = _cosine_similarity(vectors[0], vectors[2])
+        if similar is None or dissimilar is None:
+            return _role_probe_outcome("invalid_response")
+        if not similar > dissimilar:
+            return _role_probe_outcome("order_inverted")
+        return _role_probe_outcome("valid")
+    except Exception:
+        return _role_probe_outcome("invalid_response")
+
+
+def _embedding_vectors(response):
+    if not isinstance(response, dict):
+        return None
+    records = response.get("embeddings")
+    if records is None:
+        data = response.get("data")
+        if isinstance(data, list):
+            records = [
+                item.get("embedding") if isinstance(item, dict) else None
+                for item in sorted(
+                    data,
+                    key=lambda item: item.get("index", 0) if isinstance(item, dict) else 0,
+                )
+            ]
+    if not isinstance(records, list) or len(records) > EMBEDDING_PROBE_MAX_VECTORS:
+        return None
+    vectors = []
+    for record in records:
+        if (
+            not isinstance(record, list)
+            or not record
+            or len(record) > _EMBEDDING_PROBE_MAX_DIMENSION
+            or any(not isinstance(value, (int, float)) or isinstance(value, bool) for value in record)
+        ):
+            return None
+        vectors.append([float(value) for value in record])
+    return vectors
+
+
+def _cosine_similarity(left, right):
+    if len(left) != len(right):
+        return None
+    dot = sum(a * b for a, b in zip(left, right))
+    norm_left = math.sqrt(sum(a * a for a in left))
+    norm_right = math.sqrt(sum(b * b for b in right))
+    if norm_left == 0 or norm_right == 0:
+        return None
+    return dot / (norm_left * norm_right)
 
 
 def normalize_tool_call(response):
@@ -126,6 +325,7 @@ def _tool_call_result(reason):
 class EvidenceStrength(str, Enum):
     """Ordered labels describing how directly a candidate was verified."""
 
+    runtime_measured = "runtime_measured"
     runtime_tested = "runtime_tested"
     runtime_inventory = "runtime_inventory"
     metadata_only = "metadata_only"
@@ -133,6 +333,7 @@ class EvidenceStrength(str, Enum):
 
     # Conventional aliases preserve a readable internal style while the exact
     # lowercase contract names remain available to API consumers.
+    RUNTIME_MEASURED = runtime_measured
     RUNTIME_TESTED = runtime_tested
     RUNTIME_INVENTORY = runtime_inventory
     METADATA_ONLY = metadata_only
@@ -194,6 +395,91 @@ def _http_json_post(url, payload, timeout=10.0):
         timeout=timeout,
         max_response_bytes=PROBE_RESPONSE_MAX_BYTES,
     )
+
+
+def _http_event_stream(url, payload, timeout=120.0, max_response_bytes=INVENTORY_RESPONSE_MAX_BYTES,
+                       connection_factory=None, clock=time.monotonic):
+    """Yield bounded JSON events from a validated loopback streaming endpoint.
+
+    Handles both server-sent events (``data: {...}`` lines terminated by
+    ``data: [DONE]``) and newline-delimited JSON (Ollama-style).
+    """
+    parsed = _validated_loopback_url(url)
+    deadline = clock() + timeout
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    if connection_factory is None:
+        connection_type = (
+            http.client.HTTPSConnection
+            if parsed.scheme == "https"
+            else http.client.HTTPConnection
+        )
+        connection = connection_type(parsed.hostname, port, timeout=_deadline_remaining(deadline, clock))
+    else:
+        connection = connection_factory(parsed.scheme, parsed.hostname, port, _deadline_remaining(deadline, clock))
+    try:
+        _set_connection_timeout(connection, _deadline_remaining(deadline, clock))
+        connection.request(
+            "POST",
+            parsed.path or "/",
+            body=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        _set_connection_timeout(connection, _deadline_remaining(deadline, clock))
+        response = connection.getresponse()
+        _deadline_remaining(deadline, clock)
+        if 300 <= response.status < 400:
+            raise http.client.HTTPException(
+                "redirect responses are not allowed for local runtime requests"
+            )
+        if not 200 <= response.status < 300:
+            raise http.client.HTTPException(
+                "local runtime returned HTTP status {0}".format(response.status)
+            )
+        buffer = b""
+        total = 0
+        done = False
+        while not done:
+            remaining = _deadline_remaining(deadline, clock)
+            _set_connection_timeout(connection, remaining)
+            chunk = response.read(_HTTP_READ_CHUNK_BYTES)
+            _deadline_remaining(deadline, clock)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_response_bytes:
+                raise ValueError("local runtime response exceeds size limit")
+            buffer += chunk
+            while b"\n" in buffer:
+                line, buffer = buffer.split(b"\n", 1)
+                event, done = _parse_stream_line(line)
+                if event is not None:
+                    yield event
+                if done:
+                    break
+        if not done and buffer.strip():
+            event, _done = _parse_stream_line(buffer)
+            if event is not None:
+                yield event
+    finally:
+        connection.close()
+
+
+def _parse_stream_line(line):
+    text = line.strip()
+    if not text:
+        return None, False
+    if text.startswith(b"data:"):
+        text = text[len(b"data:"):].strip()
+        if text == b"[DONE]":
+            return None, True
+        if not text:
+            return None, False
+    if not text.startswith(b"{"):
+        return None, False
+    try:
+        return json.loads(text.decode("utf-8")), False
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, False
 
 
 def _http_json_request(
@@ -376,6 +662,25 @@ class OllamaRuntimeClient:
             timeout=10.0,
         )
 
+    def embed(self, model, inputs):
+        return self._http_post(
+            "{0}/api/embed".format(self._base_url),
+            {"model": model, "input": list(inputs)},
+            timeout=10.0,
+        )
+
+    def stream_generate(self, model, prompt, max_tokens, timeout=120.0):
+        return _http_event_stream(
+            "{0}/api/chat".format(self._base_url),
+            {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": True,
+                "options": {"num_predict": max_tokens},
+            },
+            timeout=timeout,
+        )
+
 
 class OpenAICompatibleRuntimeClient:
     """Bounded adapter for an existing local OpenAI-compatible runtime."""
@@ -413,6 +718,26 @@ class OpenAICompatibleRuntimeClient:
             timeout=10.0,
         )
 
+    def embed(self, model, inputs):
+        return self._http_post(
+            "{0}/v1/embeddings".format(self._base_url),
+            {"model": model, "input": list(inputs)},
+            timeout=10.0,
+        )
+
+    def stream_generate(self, model, prompt, max_tokens, timeout=120.0):
+        return _http_event_stream(
+            "{0}/v1/chat/completions".format(self._base_url),
+            {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "stream": True,
+                "stream_options": {"include_usage": True},
+            },
+            timeout=timeout,
+        )
+
 
 class LMStudioRuntimeClient(OpenAICompatibleRuntimeClient):
     """Backward-compatible adapter for an existing LM Studio runtime."""
@@ -425,6 +750,44 @@ class LMStudioRuntimeClient(OpenAICompatibleRuntimeClient):
             base_url,
             http_get=http_get,
             http_post=http_post,
+        )
+
+
+class MLXVLMRuntimeClient(OpenAICompatibleRuntimeClient):
+    """Bounded adapter for an existing local mlx-vlm vision runtime."""
+
+    name = "mlx-vlm"
+
+    def __init__(self, http_get=None, http_post=None, base_url="http://127.0.0.1:8083"):
+        super().__init__(
+            "mlx-vlm",
+            base_url,
+            http_get=http_get,
+            http_post=http_post,
+        )
+
+    def generate_vision(self, model, prompt, image_base64, max_tokens):
+        return self._http_post(
+            "{0}/v1/chat/completions".format(self._base_url),
+            {
+                "model": model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": "data:image/png;base64,{0}".format(image_base64)
+                                },
+                            },
+                        ],
+                    }
+                ],
+                "max_tokens": max_tokens,
+            },
+            timeout=30.0,
         )
 
 
@@ -447,6 +810,7 @@ class Verifier:
                     OllamaRuntimeClient(),
                     LMStudioRuntimeClient(),
                     OpenAICompatibleRuntimeClient("mlx_lm", "http://127.0.0.1:8080"),
+                    MLXVLMRuntimeClient(),
                     OpenAICompatibleRuntimeClient("litellm", "http://127.0.0.1:4000"),
                 ]
             )
@@ -504,6 +868,13 @@ class Verifier:
                 reasoning_confirmed, reasoning_evidence = _reasoning_confirmation(
                     candidate, hidden_reasoning
                 )
+                details = {
+                    "visible_content": bool(content.strip()),
+                    "hidden_reasoning": bool(hidden_reasoning),
+                    "reasoning_evidence": reasoning_evidence,
+                }
+                if role in ROLE_PROBE_IDS:
+                    details["probes"] = [_run_role_probe(role, repo, runtime)]
                 return VerificationEvidence(
                     repo=repo,
                     role=role,
@@ -514,11 +885,7 @@ class Verifier:
                     reasoning_confirmed=reasoning_confirmed,
                     runtime=runtime_name,
                     note="Runtime generation completed without downloading the model.",
-                    details={
-                        "visible_content": bool(content.strip()),
-                        "hidden_reasoning": bool(hidden_reasoning),
-                        "reasoning_evidence": reasoning_evidence,
-                    },
+                    details=details,
                 )
             except Exception as error:
                 safe_error = _safe_error(error)
@@ -584,6 +951,43 @@ class Verifier:
             note=_bounded(note),
             details=details,
         )
+
+
+def _run_role_probe(role, repo, runtime):
+    """Run the role's deterministic probe; never raises into verification."""
+    probe_id = ROLE_PROBE_IDS[role]
+    try:
+        if role == "coding":
+            response = runtime.generate(repo, CODING_PROBE_PROMPT, max_tokens=CODING_PROBE_MAX_TOKENS)
+            outcome = validate_coding_response(response)
+        elif role == "reasoning":
+            response = runtime.generate(repo, REASONING_PROBE_PROMPT, max_tokens=REASONING_PROBE_MAX_TOKENS)
+            outcome = validate_reasoning_response(response)
+        elif role == "embedding":
+            embed = getattr(runtime, "embed", None)
+            if not callable(embed):
+                outcome = _role_probe_outcome("unsupported_runtime")
+            else:
+                outcome = validate_embedding_response(
+                    embed(repo, list(EMBEDDING_PROBE_SENTENCES))
+                )
+        elif role == "vision":
+            generate_vision = getattr(runtime, "generate_vision", None)
+            if not callable(generate_vision):
+                outcome = _role_probe_outcome("unsupported_runtime")
+            else:
+                response = generate_vision(
+                    repo,
+                    VISION_PROBE_PROMPT,
+                    vision_probe_image_base64(),
+                    VISION_PROBE_MAX_TOKENS,
+                )
+                outcome = validate_vision_response(response)
+        else:
+            outcome = _role_probe_outcome("unsupported_runtime")
+    except Exception as error:
+        outcome = {"valid": False, "reason": "probe_error", "error": _bounded(_safe_error(error), 160)}
+    return {"probe_id": probe_id, "outcome": outcome}
 
 
 def _verify_tool_use(repo, role, runtime_name, runtime):

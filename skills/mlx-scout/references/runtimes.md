@@ -40,3 +40,11 @@ Native `mlx_lm` on native 4-bit MLX weights is meaningfully faster than Ollama o
 ## LoRA
 
 `mlx_lm` supports LoRA/QLoRA: `mlx_lm.lora` (train on quantized base) → `mlx_lm.fuse` (fuse, preserves quant) → serve the fused model or `mlx_lm.server --adapter-path ./adapters`. Only worth it for a narrow, stable, high-volume task with proprietary data; otherwise pick a stronger base model.
+
+## Verification probes
+
+Adopt runs deterministic, synthetic role probes against a serving runtime before recommending: `coding-v1` (generated function is AST-parsed and executed in an empty-builtins sandbox), `reasoning-v1` (exact numeric answer), `vision-v1` (OCR of a bundled synthetic image; requires the mlx-vlm runtime on :8083), `embedding-v1` (cosine ordering via `/v1/embeddings` or `/api/embed`), and `tool-use-v1` (schema-valid synthetic tool call). A runtime that cannot run a probe is recorded as `unsupported-runtime`, never penalized.
+
+## Bench
+
+`mlx-agent bench run --repo <id> --runtime <ollama|lmstudio|mlx_lm|mlx-vlm|litellm>` measures TTFT and decode/prefill tok/s of an already-served model (one warm-up + N timed runs) and emits `runtime_measured` evidence. It never starts servers or downloads models; use each runtime's own pull/load command first.

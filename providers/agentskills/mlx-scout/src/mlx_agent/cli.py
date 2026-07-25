@@ -9,6 +9,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .adoption import ADOPTION_SCHEMA_VERSION, AdoptionRequest, AdoptionWorkflow
+from .bench import (
+    BENCH_PROBE_ID,
+    GEN_TOKENS_DEFAULT,
+    RUNS_DEFAULT,
+    TIMEOUT_DEFAULT,
+    BenchError,
+    measure_runtime,
+)
 from .contracts import ErrorDetail, ResultEnvelope
 from .discovery import DiscoveryRequest, DiscoveryService
 from .host import HostInventory
@@ -35,7 +43,13 @@ from .transactions import (
     preview_rollback,
     rollback,
 )
-from .verification import Verifier
+from .verification import (
+    LMStudioRuntimeClient,
+    MLXVLMRuntimeClient,
+    OllamaRuntimeClient,
+    OpenAICompatibleRuntimeClient,
+    Verifier,
+)
 from .wiring import ConfigAdapter
 
 
@@ -666,6 +680,92 @@ def _run_wire(arguments):
         ), arguments.json)
 
 
+_BENCH_RUNTIMES = ("ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm")
+
+
+def _bench_runtime_client(name):
+    if name == "ollama":
+        return OllamaRuntimeClient()
+    if name == "lmstudio":
+        return LMStudioRuntimeClient()
+    if name == "mlx-vlm":
+        return MLXVLMRuntimeClient()
+    if name == "mlx_lm":
+        return OpenAICompatibleRuntimeClient("mlx_lm", "http://127.0.0.1:8080")
+    if name == "litellm":
+        return OpenAICompatibleRuntimeClient("litellm", "http://127.0.0.1:4000")
+    raise ValueError("unsupported bench runtime: {0}".format(name))
+
+
+def _add_bench_arguments(parser):
+    actions = parser.add_subparsers(dest="bench_command", required=True)
+    run = actions.add_parser(
+        "run",
+        help="measure a model already served by a local runtime (never downloads)",
+    )
+    run.add_argument("--repo", required=True, help="model identifier exactly as the runtime serves it")
+    run.add_argument("--runtime", required=True, choices=_BENCH_RUNTIMES)
+    run.add_argument("--role", default="general", choices=DISCOVERY_ROLES)
+    run.add_argument("--runs", type=int, default=RUNS_DEFAULT, help="timed runs after one warm-up (1-10)")
+    run.add_argument("--gen-tokens", type=int, default=GEN_TOKENS_DEFAULT, help="tokens generated per run (16-2048)")
+    run.add_argument("--timeout", type=float, default=TIMEOUT_DEFAULT, help="total measurement deadline in seconds")
+    run.add_argument("--json", action="store_true")
+
+
+def _run_bench(arguments):
+    operation = "bench-{0}".format(arguments.bench_command)
+    try:
+        chip = None
+        try:
+            chip = HostInventory.inspect().chip
+        except Exception:
+            chip = None
+        measurement = measure_runtime(
+            arguments.repo,
+            _bench_runtime_client(arguments.runtime),
+            runs=arguments.runs,
+            gen_tokens=arguments.gen_tokens,
+            timeout=arguments.timeout,
+            chip=chip,
+        )
+        evidence = measurement.to_evidence(role=arguments.role).to_dict()
+        data = {"measurement": measurement.to_dict(), "evidence": evidence}
+        result = ResultEnvelope.ok(operation, data)
+        if arguments.json:
+            print(json.dumps(result.to_dict(), indent=2))
+        else:
+            print("Bench: {0} on {1} ({2} runs)".format(
+                measurement.repo, measurement.runtime, measurement.runs
+            ))
+            ttft = "{0} ms".format(measurement.ttft_ms) if measurement.ttft_ms is not None else "n/a"
+            prefill = (
+                "{0} tok/s".format(measurement.prefill_toks)
+                if measurement.prefill_toks is not None
+                else "n/a"
+            )
+            print("  decode:  {0} tok/s (spread {1}%)".format(measurement.decode_toks, measurement.spread_pct))
+            print("  ttft:    {0}".format(ttft))
+            print("  prefill: {0}".format(prefill))
+        return 0
+    except BenchError as error:
+        result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
+    except (TypeError, ValueError) as error:
+        result = ResultEnvelope.fail(
+            operation,
+            "invalid_arguments",
+            str(error),
+            "Correct the bench arguments and retry.",
+        )
+    if arguments.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        payload = result.to_dict()["error"]
+        print("bench failed [{0}]: {1}\nremediation: {2}".format(
+            payload["code"], payload["message"], payload["remediation"]
+        ))
+    return 2
+
+
 def _add_wire_arguments(parser):
     actions = parser.add_subparsers(dest="wire_command", required=True)
     for name in ("render", "apply"):
@@ -807,6 +907,8 @@ def build_parser():
     _add_blueprint_arguments(blueprint)
     wire_command = subcommands.add_parser("wire", help="render, apply, inspect, or roll back runtime wiring")
     _add_wire_arguments(wire_command)
+    bench_command = subcommands.add_parser("bench", help="measure a locally served model without downloading it")
+    _add_bench_arguments(bench_command)
     providers_command = subcommands.add_parser("providers", help="list detected supported provider CLIs")
     _add_installer_arguments(providers_command, include_providers=False)
     for name in ("install", "update", "uninstall", "doctor"):
@@ -822,6 +924,8 @@ def main(argv=None):
         return _run_adoption(arguments)
     if arguments.command == "wire":
         return _run_wire(arguments)
+    if arguments.command == "bench":
+        return _run_bench(arguments)
     if arguments.command in {"providers", "install", "update", "uninstall", "doctor"}:
         return _run_installer(arguments)
     if arguments.command == "inspect-host":

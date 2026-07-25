@@ -579,11 +579,11 @@ class VerificationTests(unittest.TestCase):
         self.assertLessEqual(probe_payload["max_tokens"], 64)
         json.dumps(probe_payload)
 
-    def test_default_verifier_has_four_local_runtime_clients(self):
+    def test_default_verifier_has_five_local_runtime_clients(self):
         verifier = Verifier()
         self.assertEqual(
             [client.name for client in verifier._runtime_clients],
-            ["ollama", "lmstudio", "mlx_lm", "litellm"],
+            ["ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm"],
         )
 
     def test_runtime_base_urls_must_be_credential_free_loopback_origins(self):

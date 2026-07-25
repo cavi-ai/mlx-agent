@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "recipes": {
+    "mlx_lm": {
+      "executable": "mlx_lm.server",
+      "argv": ["{executable}", "--model", "{repo}", "--port", "{port}", "--max-tokens", "{max_tokens}"],
+      "adapter_argv": ["--adapter-path", "{adapter_path}"],
+      "default_port": 8080,
+      "readiness": "http://127.0.0.1:{port}/v1/models",
+      "install_hint": "pip install mlx-lm"
+    },
+    "mlx-vlm": {
+      "executable": "mlx_vlm.server",
+      "argv": ["{executable}", "--model", "{repo}", "--port", "{port}"],
+      "adapter_argv": null,
+      "default_port": 8083,
+      "readiness": "http://127.0.0.1:{port}/v1/models",
+      "install_hint": "pip install mlx-vlm"
+    }
+  }
+}

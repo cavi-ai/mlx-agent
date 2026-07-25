@@ -38,7 +38,7 @@
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/cli.py",
-      "sha256": "3205a10b1b148977b4ffd64be72e615a533f369a0efbc44bf10b75eba98b3333"
+      "sha256": "66c11385f05d6738cd5d9b4ce78bb01a8727ddc4fb641a1ae841b58ee4b0eedb"
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/command_executor.py",
@@ -117,12 +117,20 @@
       "sha256": "3cd3e93f3bb3e90fca33b2371631730dcdc6053e2eb938182ea800fd69860162"
     },
     {
+      "path": "skills/mlx-adopt/src/mlx_agent/resources/serve-recipes.json",
+      "sha256": "3190552328ab7e905fc23a26df0d6c29b51dec96319abf0a79a792f1d14edbe6"
+    },
+    {
       "path": "skills/mlx-adopt/src/mlx_agent/runtime_preference.py",
       "sha256": "70bda205136b4219ca8406e743a363ef39aa2d3c3a664ddd21e6e70e53158bf8"
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/scoring.py",
       "sha256": "ab4b6d3322221209ae4ae78e98bf4966b7c31ec6a777d6de42020c82803ee364"
+    },
+    {
+      "path": "skills/mlx-adopt/src/mlx_agent/serve.py",
+      "sha256": "1ff86d67f95fda2f64cc315e8b06b0cee274e6e65dfef3e082f80348b286161e"
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/transactions.py",
@@ -170,7 +178,7 @@
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/cli.py",
-      "sha256": "3205a10b1b148977b4ffd64be72e615a533f369a0efbc44bf10b75eba98b3333"
+      "sha256": "66c11385f05d6738cd5d9b4ce78bb01a8727ddc4fb641a1ae841b58ee4b0eedb"
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/command_executor.py",
@@ -249,12 +257,20 @@
       "sha256": "3cd3e93f3bb3e90fca33b2371631730dcdc6053e2eb938182ea800fd69860162"
     },
     {
+      "path": "skills/mlx-scout/src/mlx_agent/resources/serve-recipes.json",
+      "sha256": "3190552328ab7e905fc23a26df0d6c29b51dec96319abf0a79a792f1d14edbe6"
+    },
+    {
       "path": "skills/mlx-scout/src/mlx_agent/runtime_preference.py",
       "sha256": "70bda205136b4219ca8406e743a363ef39aa2d3c3a664ddd21e6e70e53158bf8"
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/scoring.py",
       "sha256": "ab4b6d3322221209ae4ae78e98bf4966b7c31ec6a777d6de42020c82803ee364"
+    },
+    {
+      "path": "skills/mlx-scout/src/mlx_agent/serve.py",
+      "sha256": "1ff86d67f95fda2f64cc315e8b06b0cee274e6e65dfef3e082f80348b286161e"
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/transactions.py",
@@ -302,7 +318,7 @@
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/cli.py",
-      "sha256": "3205a10b1b148977b4ffd64be72e615a533f369a0efbc44bf10b75eba98b3333"
+      "sha256": "66c11385f05d6738cd5d9b4ce78bb01a8727ddc4fb641a1ae841b58ee4b0eedb"
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/command_executor.py",
@@ -381,12 +397,20 @@
       "sha256": "3cd3e93f3bb3e90fca33b2371631730dcdc6053e2eb938182ea800fd69860162"
     },
     {
+      "path": "skills/mlx-wire/src/mlx_agent/resources/serve-recipes.json",
+      "sha256": "3190552328ab7e905fc23a26df0d6c29b51dec96319abf0a79a792f1d14edbe6"
+    },
+    {
       "path": "skills/mlx-wire/src/mlx_agent/runtime_preference.py",
       "sha256": "70bda205136b4219ca8406e743a363ef39aa2d3c3a664ddd21e6e70e53158bf8"
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/scoring.py",
       "sha256": "ab4b6d3322221209ae4ae78e98bf4966b7c31ec6a777d6de42020c82803ee364"
+    },
+    {
+      "path": "skills/mlx-wire/src/mlx_agent/serve.py",
+      "sha256": "1ff86d67f95fda2f64cc315e8b06b0cee274e6e65dfef3e082f80348b286161e"
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/transactions.py",

@@ -92,7 +92,7 @@
           "repo": { "type": "string", "minLength": 1 },
           "role": { "type": "string", "minLength": 1 },
           "strength": {
-            "enum": ["runtime_tested", "runtime_inventory", "metadata_only", "heuristic_only"]
+            "enum": ["runtime_measured", "runtime_tested", "runtime_inventory", "metadata_only", "heuristic_only"]
           },
           "status": {
             "enum": ["verified", "metadata-only", "failed", "unsupported-runtime"]

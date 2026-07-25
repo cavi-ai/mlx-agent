@@ -19,11 +19,11 @@ CANONICAL_ROLE_IDS = (
 
 
 class ManifestTests(unittest.TestCase):
-    def test_manifest_has_three_capabilities_five_providers_and_canonical_roles(self):
+    def test_manifest_has_four_capabilities_five_providers_and_canonical_roles(self):
         manifest = json.loads((ROOT / "plugin.json").read_text())
         roles = manifest["roles"]
 
-        self.assertEqual(set(manifest["capabilities"]), {"scout", "adopt", "wire"})
+        self.assertEqual(set(manifest["capabilities"]), {"scout", "adopt", "wire", "bench"})
         self.assertEqual(
             set(manifest["providers"]),
             {"claude", "codex", "gemini", "opencode", "agentskills"},
@@ -55,10 +55,10 @@ class ManifestTests(unittest.TestCase):
         for provider in ("claude", "gemini", "opencode"):
             self.assertEqual(
                 manifest["providers"][provider]["commands"],
-                ["mlx-scout", "mlx-adopt", "mlx-wire"],
+                ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench"],
             )
         self.assertEqual(
-            ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire"],
+            ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire", "mlx-agent:mlx-bench"],
             manifest["providers"]["codex"]["commands"],
         )
 
@@ -99,7 +99,7 @@ class ManifestTests(unittest.TestCase):
             path.write_text(json.dumps(manifest))
             errors = validate_manifest(path)
         self.assertIn(
-            "providers.codex.commands must equal ['mlx-agent:mlx-scout', 'mlx-agent:mlx-adopt', 'mlx-agent:mlx-wire']",
+            "providers.codex.commands must equal ['mlx-agent:mlx-scout', 'mlx-agent:mlx-adopt', 'mlx-agent:mlx-wire', 'mlx-agent:mlx-bench']",
             errors,
         )
 

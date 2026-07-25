@@ -94,6 +94,7 @@
           {"name": "refresh", "flag": "--refresh", "kind": "option", "type": "boolean", "required": false},
           {"name": "fast", "flag": "--fast", "kind": "option", "type": "boolean", "required": false},
           {"name": "no_network", "flag": "--no-network", "kind": "option", "type": "boolean", "required": false},
+          {"name": "measure", "flag": "--measure", "kind": "option", "type": "boolean", "required": false},
           {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false}
         ]},
         "resume": {"arguments": [
@@ -137,6 +138,21 @@
           {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false}
         ]}
       }
+    },
+    "bench": {
+      "command": "mlx-bench",
+      "description": "Measure a locally served MLX model without downloading it.",
+      "actions": {
+        "run": {"arguments": [
+          {"name": "repo", "flag": "--repo", "kind": "option", "type": "string", "required": true},
+          {"name": "runtime", "flag": "--runtime", "kind": "option", "type": "string", "required": true},
+          {"name": "role", "flag": "--role", "kind": "option", "type": "string", "required": false},
+          {"name": "runs", "flag": "--runs", "kind": "option", "type": "integer", "required": false},
+          {"name": "gen_tokens", "flag": "--gen-tokens", "kind": "option", "type": "integer", "required": false},
+          {"name": "timeout", "flag": "--timeout", "kind": "option", "type": "number", "required": false},
+          {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false}
+        ]}
+      }
     }
   },
   "providers": {
@@ -145,12 +161,14 @@
       "capabilities": [
         "scout",
         "adopt",
-        "wire"
+        "wire",
+        "bench"
       ],
       "commands": [
         "mlx-scout",
         "mlx-adopt",
-        "mlx-wire"
+        "mlx-wire",
+        "mlx-bench"
       ],
       "invocation": {
         "kind": "command",
@@ -171,12 +189,14 @@
       "capabilities": [
         "scout",
         "adopt",
-        "wire"
+        "wire",
+        "bench"
       ],
       "commands": [
         "mlx-agent:mlx-scout",
         "mlx-agent:mlx-adopt",
-        "mlx-agent:mlx-wire"
+        "mlx-agent:mlx-wire",
+        "mlx-agent:mlx-bench"
       ],
       "invocation": {
         "kind": "skill",
@@ -193,7 +213,8 @@
         {"source": "providers/codex/.codex-plugin", "destination": ".codex-plugin"},
         {"source": "providers/codex/skills/mlx-scout", "destination": "skills/mlx-scout"},
         {"source": "providers/codex/skills/mlx-adopt", "destination": "skills/mlx-adopt"},
-        {"source": "providers/codex/skills/mlx-wire", "destination": "skills/mlx-wire"}
+        {"source": "providers/codex/skills/mlx-wire", "destination": "skills/mlx-wire"},
+        {"source": "providers/codex/skills/mlx-bench", "destination": "skills/mlx-bench"}
       ],
       "config_paths": []
     },
@@ -202,12 +223,14 @@
       "capabilities": [
         "scout",
         "adopt",
-        "wire"
+        "wire",
+        "bench"
       ],
       "commands": [
         "mlx-scout",
         "mlx-adopt",
-        "mlx-wire"
+        "mlx-wire",
+        "mlx-bench"
       ],
       "invocation": {
         "kind": "command",
@@ -228,10 +251,12 @@
         {"source": "providers/gemini/skills/mlx-scout", "destination": "skills/mlx-scout"},
         {"source": "providers/gemini/skills/mlx-adopt", "destination": "skills/mlx-adopt"},
         {"source": "providers/gemini/skills/mlx-wire", "destination": "skills/mlx-wire"},
+        {"source": "providers/gemini/skills/mlx-bench", "destination": "skills/mlx-bench"},
         {"source": "providers/gemini/commands", "destination": "commands", "project_destination": ".gemini/commands", "scope": "project"},
         {"source": "providers/gemini/skills/mlx-scout", "destination": "skills/mlx-scout", "project_destination": ".gemini/skills/mlx-scout", "scope": "project"},
         {"source": "providers/gemini/skills/mlx-adopt", "destination": "skills/mlx-adopt", "project_destination": ".gemini/skills/mlx-adopt", "scope": "project"},
-        {"source": "providers/gemini/skills/mlx-wire", "destination": "skills/mlx-wire", "project_destination": ".gemini/skills/mlx-wire", "scope": "project"}
+        {"source": "providers/gemini/skills/mlx-wire", "destination": "skills/mlx-wire", "project_destination": ".gemini/skills/mlx-wire", "scope": "project"},
+        {"source": "providers/gemini/skills/mlx-bench", "destination": "skills/mlx-bench", "project_destination": ".gemini/skills/mlx-bench", "scope": "project"}
       ],
       "config_paths": []
     },
@@ -240,12 +265,14 @@
       "capabilities": [
         "scout",
         "adopt",
-        "wire"
+        "wire",
+        "bench"
       ],
       "commands": [
         "mlx-scout",
         "mlx-adopt",
-        "mlx-wire"
+        "mlx-wire",
+        "mlx-bench"
       ],
       "invocation": {
         "kind": "command",
@@ -265,7 +292,8 @@
         {"source": "providers/opencode/src", "destination": "src"},
         {"source": "providers/opencode/skills/mlx-scout", "destination": "skills/mlx-scout"},
         {"source": "providers/opencode/skills/mlx-adopt", "destination": "skills/mlx-adopt"},
-        {"source": "providers/opencode/skills/mlx-wire", "destination": "skills/mlx-wire"}
+        {"source": "providers/opencode/skills/mlx-wire", "destination": "skills/mlx-wire"},
+        {"source": "providers/opencode/skills/mlx-bench", "destination": "skills/mlx-bench"}
       ],
       "config_paths": []
     },
@@ -274,7 +302,8 @@
       "capabilities": [
         "scout",
         "adopt",
-        "wire"
+        "wire",
+        "bench"
       ],
       "commands": [],
       "invocation": {
@@ -291,7 +320,8 @@
       "artifacts": [
         {"source": "providers/agentskills/mlx-scout", "destination": "skills/mlx-scout"},
         {"source": "providers/agentskills/mlx-adopt", "destination": "skills/mlx-adopt"},
-        {"source": "providers/agentskills/mlx-wire", "destination": "skills/mlx-wire"}
+        {"source": "providers/agentskills/mlx-wire", "destination": "skills/mlx-wire"},
+        {"source": "providers/agentskills/mlx-bench", "destination": "skills/mlx-bench"}
       ],
       "config_paths": []
     }

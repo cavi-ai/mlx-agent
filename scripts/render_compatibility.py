@@ -52,7 +52,7 @@ def _load_matrix(path):
         if not isinstance(entry.get("documentation"), str) or not entry["documentation"]:
             raise ValueError("provider {0} has invalid documentation".format(provider_id))
         capabilities = entry.get("capabilities")
-        if not isinstance(capabilities, dict) or set(capabilities) != {"scout", "adopt", "wire"}:
+        if not isinstance(capabilities, dict) or set(capabilities) != {"scout", "adopt", "wire", "bench"}:
             raise ValueError("provider {0} has invalid capabilities".format(provider_id))
         smoke = entry.get("last_smoke_test")
         if not isinstance(smoke, dict) or set(smoke) != {"status", "date", "summary"} or smoke["status"] not in statuses:
@@ -119,7 +119,7 @@ def render(matrix):
     for provider_id, entry in matrix["providers"].items():
         capabilities = "<br>".join(
             "`{0}`".format(entry["capabilities"][name]["invocation"])
-            for name in ("scout", "adopt", "wire")
+            for name in ("scout", "adopt", "wire", "bench")
         )
         provider = "[{0}]({1})".format(entry["display_name"], entry["documentation"])
         lines.append("| {0} | {1} | {2} |".format(

@@ -164,7 +164,7 @@ def _parse_adopt(tokens):
         raise GeminiArgumentError("Adopt requires start, resume, or status")
     action, argv, index = tokens[0], ["adopt", tokens[0]], 1
     state = None
-    allowed_booleans = {"--json"} if action != "start" else {"--offline", "--refresh", "--fast", "--no-network", "--json"}
+    allowed_booleans = {"--json"} if action != "start" else {"--offline", "--refresh", "--fast", "--no-network", "--measure", "--json"}
     while index < len(tokens):
         flag = tokens[index]
         if flag == "--state":
@@ -244,6 +244,44 @@ def _parse_wire(tokens):
     return argv
 
 
+def _parse_bench(tokens):
+    if not tokens or tokens[0] != "run":
+        raise GeminiArgumentError("Bench requires the run action")
+    argv, index = ["bench", "run"], 1
+    seen = set()
+    values = {
+        "--repo": (lambda value: _model(value), "repo"),
+        "--runtime": (lambda value: value if value in _RUNTIMES else None, "runtime"),
+        "--role": (lambda value: value if value in _ROLES else None, "role"),
+        "--runs": (lambda value: _integer(value, "runs", 1, 10), "runs"),
+        "--gen-tokens": (lambda value: _integer(value, "gen-tokens", 16, 2048), "gen-tokens"),
+        "--timeout": (lambda value: _decimal(value, "timeout", 1, 600), "timeout"),
+    }
+    while index < len(tokens):
+        flag = tokens[index]
+        if flag == "--json":
+            if flag in seen:
+                raise GeminiArgumentError("duplicate flag: --json")
+            seen.add(flag)
+            argv.append(flag)
+            index += 1
+        elif flag in values:
+            if flag in seen:
+                raise GeminiArgumentError("duplicate flag: {0}".format(flag))
+            value = values[flag][0](_value(tokens, index, flag))
+            if value is None:
+                raise GeminiArgumentError("invalid {0} value".format(values[flag][1]))
+            seen.add(flag)
+            argv.extend([flag, value])
+            index += 2
+        else:
+            raise GeminiArgumentError("unsupported Bench argument: {0}".format(flag))
+    for required in ("--repo", "--runtime"):
+        if required not in seen:
+            raise GeminiArgumentError("Bench run requires {0}".format(required))
+    return argv
+
+
 def parse_gemini_arguments(capability, raw):
     """Return a validated argv list; this function never runs a process."""
     tokens = _tokens(raw)
@@ -253,12 +291,14 @@ def parse_gemini_arguments(capability, raw):
         return _parse_adopt(tokens)
     if capability == "wire":
         return _parse_wire(tokens)
+    if capability == "bench":
+        return _parse_bench(tokens)
     raise GeminiArgumentError("unknown Gemini capability")
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("capability", choices=("scout", "adopt", "wire"))
+    parser.add_argument("capability", choices=("scout", "adopt", "wire", "bench"))
     parser.add_argument("raw", help="one opaque custom-command argument string")
     arguments = parser.parse_args(argv)
     try:

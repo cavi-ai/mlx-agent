@@ -21,6 +21,10 @@
       "sha256": "88484fa995ce9e808274570af281f2855757aecfd371742fc73c44217c96e1a6"
     },
     {
+      "path": "commands/mlx-bench.md",
+      "sha256": "fe26908fef697cb58a3859c846711b7d982096dc8bc2736f42bd412757a3d8f9"
+    },
+    {
       "path": "commands/mlx-scout.md",
       "sha256": "8714ca8e3d4d42ce4817e747aafbef7725f0c1d8539ffdbfe1f6d9b38696cb72"
     },

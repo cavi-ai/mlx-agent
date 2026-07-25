@@ -21,6 +21,10 @@
       "sha256": "88484fa995ce9e808274570af281f2855757aecfd371742fc73c44217c96e1a6"
     },
     {
+      "path": "commands/mlx-bench.md",
+      "sha256": "fe26908fef697cb58a3859c846711b7d982096dc8bc2736f42bd412757a3d8f9"
+    },
+    {
       "path": "commands/mlx-scout.md",
       "sha256": "8714ca8e3d4d42ce4817e747aafbef7725f0c1d8539ffdbfe1f6d9b38696cb72"
     },
@@ -50,7 +54,7 @@
     },
     {
       "path": "src/mlx_agent/adoption.py",
-      "sha256": "a880c08af80c370188eeb51a9ec65e4bd40c9579502bc6932d3a3b9ccae246b0"
+      "sha256": "ea12b889604d11ada8e3749cc0413a7e25653ec6d5b45b9aa8f14ae2cc0864b2"
     },
     {
       "path": "src/mlx_agent/bench.py",
@@ -62,11 +66,11 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "3205a10b1b148977b4ffd64be72e615a533f369a0efbc44bf10b75eba98b3333"
+      "sha256": "fc48dbbffee524dde7b36f4fdddd8ecb7ef16328f1f529ba7d8107ddd8d4dd68"
     },
     {
       "path": "src/mlx_agent/command_executor.py",
-      "sha256": "591d5f8cfd101e91f6b76052da242d8f411128619175b023c1c1daeac5af89b6"
+      "sha256": "03d639969413f407de5925eff3d4a740e9964ff65f79802cfd9e741291d49d3a"
     },
     {
       "path": "src/mlx_agent/contracts.py",
@@ -78,7 +82,7 @@
     },
     {
       "path": "src/mlx_agent/gemini_args.py",
-      "sha256": "ea261a838a039f5069618c5b4b6caaf5f9694fbde44335196f81f628695f971a"
+      "sha256": "0db2f41bae4892767655c3a0ccba62ec3b5e74c40c70e37b9f9dce5a7176cbdf"
     },
     {
       "path": "src/mlx_agent/gemini_executor.py",
@@ -106,7 +110,7 @@
     },
     {
       "path": "src/mlx_agent/mcp_server.py",
-      "sha256": "6be8bdfa8ede72b2465ed937677681d0e7f24b859fc8835256a85844085afad6"
+      "sha256": "530b0165c0c3058c94113e3e157422552478187a9679810419aad2e0aedaf13e"
     },
     {
       "path": "src/mlx_agent/modality.py",
@@ -154,7 +158,7 @@
     },
     {
       "path": "src/mlx_agent/verification.py",
-      "sha256": "f2d9ee20176b29e52ca776259d233eb6247584c2f238cdf156b38ce8c25fe7e0"
+      "sha256": "c66c471871c23c6b732c4d0adc683a3039f46cd0b8188067fb1be53b4c1f4b17"
     },
     {
       "path": "src/mlx_agent/wiring.py",

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `mlx-agent doctor models`: read-only model diagnostics. Inventories the Hugging Face cache (sizes, revisions, incomplete snapshots) and running loopback runtimes, then reports classified drift findings (missing model, hash mismatch, missing wired file, endpoint conflict) and wired endpoint health. Never deletes, moves, or repairs.
 - Add `mlx-agent bench run`: bounded, read-only performance measurement (TTFT, decode/prefill tok/s, run spread) of a model already served by a local loopback runtime; emits `runtime_measured` evidence (`bench-v1`). Never starts servers or downloads models.
 - Add deterministic role-fit verification probes: `coding-v1` (AST + sandboxed exec), `reasoning-v1` (exact answer), `vision-v1` (synthetic OCR image via new mlx-vlm runtime client), and `embedding-v1` (cosine ordering via `embed()`). Adopt compare adds a probe bonus and rejects on `role_probe_failed`; unsupported runtimes are recorded, not penalized.
 - Add `mlx-agent blueprint`: guidance-only MLX project design packs (quantization, training-loop sketch, LoRA/MTX notes, study materials) under `mlx-blueprints/` as markdown + JSON. No scaffolding, downloads, or training.

@@ -178,6 +178,15 @@ python3 scripts/mlx-agent bench run --repo qwen3:32b --runtime ollama --runs 5 -
 
 Bench reports TTFT, decode/prefill tok/s, and run spread as `runtime_measured` evidence. It never starts servers and never downloads models.
 
+Model diagnostics (read-only; never deletes or repairs):
+
+```bash
+python3 scripts/mlx-agent doctor models                 # inventory + drift + endpoint health
+python3 scripts/mlx-agent doctor models --wired-root . --hf-cache ~/.cache/huggingface/hub --json
+```
+
+`doctor models` inventories the Hugging Face cache and running local runtimes, then reports classified findings: wired configs referencing missing models, wired files changed or deleted since their receipt, two runtimes claiming one port, incomplete cache snapshots, and unreachable wired endpoints.
+
 ## How it works
 
 - **Real sizing** — pulls actual quantized byte size from the HF tree API, not a name guess.

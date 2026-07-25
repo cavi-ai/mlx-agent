@@ -62,7 +62,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "fc48dbbffee524dde7b36f4fdddd8ecb7ef16328f1f529ba7d8107ddd8d4dd68"
+      "sha256": "4abcc8c301ae3b29bbc5aac7829972acaa996c0e40add960a3f9578641e36887"
     },
     {
       "path": "src/mlx_agent/command_executor.py",
@@ -133,12 +133,20 @@
       "sha256": "3cd3e93f3bb3e90fca33b2371631730dcdc6053e2eb938182ea800fd69860162"
     },
     {
+      "path": "src/mlx_agent/resources/serve-recipes.json",
+      "sha256": "3190552328ab7e905fc23a26df0d6c29b51dec96319abf0a79a792f1d14edbe6"
+    },
+    {
       "path": "src/mlx_agent/runtime_preference.py",
       "sha256": "70bda205136b4219ca8406e743a363ef39aa2d3c3a664ddd21e6e70e53158bf8"
     },
     {
       "path": "src/mlx_agent/scoring.py",
       "sha256": "ab4b6d3322221209ae4ae78e98bf4966b7c31ec6a777d6de42020c82803ee364"
+    },
+    {
+      "path": "src/mlx_agent/serve.py",
+      "sha256": "1ff86d67f95fda2f64cc315e8b06b0cee274e6e65dfef3e082f80348b286161e"
     },
     {
       "path": "src/mlx_agent/transactions.py",

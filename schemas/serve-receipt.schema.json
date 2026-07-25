@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cavi-ai/mlx-agent/schemas/serve-receipt.schema.json",
+  "title": "mlx-agent serve receipt",
+  "type": "object",
+  "required": [
+    "schema_version", "kind", "repo", "runtime", "port", "argv", "pid",
+    "log_path", "readiness", "started_at", "preview_hash"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "kind": { "const": "serve" },
+    "repo": { "type": "string", "minLength": 1 },
+    "runtime": { "enum": ["mlx_lm", "mlx-vlm"] },
+    "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "argv": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "pid": { "type": "integer", "minimum": 1 },
+    "log_path": { "type": "string", "minLength": 1 },
+    "readiness": { "type": "string", "minLength": 1 },
+    "started_at": { "type": "string", "format": "date-time" },
+    "preview_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "additionalProperties": false
+}

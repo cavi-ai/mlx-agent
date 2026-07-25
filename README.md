@@ -187,6 +187,18 @@ python3 scripts/mlx-agent doctor models --wired-root . --hf-cache ~/.cache/huggi
 
 `doctor models` inventories the Hugging Face cache and running local runtimes, then reports classified findings: wired configs referencing missing models, wired files changed or deleted since their receipt, two runtimes claiming one port, incomplete cache snapshots, and unreachable wired endpoints.
 
+Serving (confirmation-gated; launches only what you review):
+
+```bash
+python3 scripts/mlx-agent serve start --repo mlx-community/Qwen3-32B-4bit --runtime mlx_lm
+# inspect the printed plan, then confirm it:
+python3 scripts/mlx-agent serve start --repo mlx-community/Qwen3-32B-4bit --runtime mlx_lm --confirm --preview-hash <hash>
+python3 scripts/mlx-agent serve status
+python3 scripts/mlx-agent serve stop --port 8080
+```
+
+`serve` renders the exact argv and port plan, requires `--confirm --preview-hash`, then spawns the server and writes a receipt. Hard gates: the model must already be in the Hugging Face cache (never downloads), the runtime executable must already be installed (never installs), the port must be free and unclaimed by wired configs, and the bind is loopback-only. `serve stop` only stops processes serve itself started, verified against their receipts.
+
 ## How it works
 
 - **Real sizing** — pulls actual quantized byte size from the HF tree API, not a name guess.

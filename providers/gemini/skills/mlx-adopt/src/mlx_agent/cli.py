@@ -33,6 +33,17 @@ from .project_blueprint import (
 )
 from .providers import ProviderRegistry
 from .research import generate_pack, render_pack, write_pack
+from .serve import (
+    MAX_TOKENS_DEFAULT,
+    ServeError,
+    default_model_present,
+    load_recipes,
+    plan_start,
+    start_serve,
+    status_serve,
+    stop_serve,
+    wired_port_claim,
+)
 from .transactions import (
     COOPERATIVE_CONCURRENCY_NOTE,
     ConcurrentTransactionError,
@@ -766,6 +777,131 @@ def _run_bench(arguments):
     return 2
 
 
+def _add_serve_arguments(parser):
+    actions = parser.add_subparsers(dest="serve_command", required=True)
+    start = actions.add_parser(
+        "start",
+        help="preview, then confirmation-gated launch of a local MLX server",
+    )
+    start.add_argument("--repo", required=True, help="publisher/model present in the local Hugging Face cache")
+    start.add_argument("--runtime", required=True, choices=["mlx_lm", "mlx-vlm"])
+    start.add_argument("--port", type=int, default=None, help="loopback port (defaults per runtime recipe)")
+    start.add_argument("--max-tokens", type=int, default=MAX_TOKENS_DEFAULT)
+    start.add_argument("--adapter-path", default=None, help="LoRA adapter directory (mlx_lm only)")
+    start.add_argument("--confirm", action="store_true", help="authorize this reviewed server launch")
+    start.add_argument("--preview-hash", help="hash returned by the separately reviewed serve start preview")
+    start.add_argument("--receipts-dir", default=None, help="receipt root (defaults to the current directory)")
+    start.add_argument("--hf-cache", default=None, help="Hugging Face cache root for the local-model gate")
+    start.add_argument("--json", action="store_true")
+    stop = actions.add_parser("stop", help="stop exactly the server a serve receipt owns")
+    stop.add_argument("--port", type=int, required=True)
+    stop.add_argument("--receipts-dir", default=None)
+    stop.add_argument("--json", action="store_true")
+    status = actions.add_parser("status", help="cross-check serve receipts against live processes")
+    status.add_argument("--receipts-dir", default=None)
+    status.add_argument("--json", action="store_true")
+
+
+def _run_serve(arguments):
+    operation = "serve-{0}".format(arguments.serve_command)
+    try:
+        if arguments.serve_command == "status":
+            entries = status_serve(arguments.receipts_dir)
+            return _emit_serve_result(
+                ResultEnvelope.ok(operation, {"servers": entries}), arguments.json,
+                human=_serve_status_human(entries),
+            )
+        if arguments.serve_command == "stop":
+            outcome = stop_serve(arguments.port, arguments.receipts_dir)
+            return _emit_serve_result(
+                ResultEnvelope.ok(operation, outcome), arguments.json,
+                human="serve {0}: port {1} (pid {2})".format(
+                    outcome["status"], outcome["port"], outcome["pid"]
+                ),
+            )
+        recipes = load_recipes()
+        plan = plan_start(
+            arguments.repo,
+            arguments.runtime,
+            recipes,
+            port=arguments.port,
+            max_tokens=arguments.max_tokens,
+            adapter_path=arguments.adapter_path,
+        )
+        if not arguments.confirm:
+            result = ResultEnvelope.ok(
+                operation, {"plan": plan, "requires_confirmation": True}
+            )
+            if arguments.json:
+                print(json.dumps(result.to_dict(), indent=2))
+            else:
+                print("Serve plan: {0} on 127.0.0.1:{1}".format(plan["repo"], plan["port"]))
+                print("  argv: {0}".format(" ".join(plan["argv"])))
+                print("  readiness: {0}".format(plan["readiness"]))
+                print("  preview_hash: {0}".format(plan["preview_hash"]))
+                print("Confirmation required: rerun with --confirm --preview-hash PREVIEW_HASH.")
+            return 2
+        wired_claims = wired_port_claim([
+            arguments.receipts_dir or str(Path.cwd())
+        ])
+        outcome = start_serve(
+            plan,
+            receipts_dir=arguments.receipts_dir,
+            confirm=True,
+            preview_hash=arguments.preview_hash,
+            model_present=default_model_present(arguments.hf_cache),
+            wired_claims=wired_claims,
+        )
+        receipt = outcome["receipt"]
+        return _emit_serve_result(
+            ResultEnvelope.ok(operation, outcome), arguments.json,
+            human="serve started: {0} on 127.0.0.1:{1} (pid {2})\n  log: {3}".format(
+                receipt["repo"], receipt["port"], receipt["pid"], receipt["log_path"]
+            ),
+        )
+    except ServeError as error:
+        result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        result = ResultEnvelope.fail(
+            operation,
+            "serve_failed",
+            str(error),
+            "Correct the serve arguments or receipt state, then retry.",
+        )
+    if arguments.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        payload = result.to_dict()["error"]
+        print("serve failed [{0}]: {1}\nremediation: {2}".format(
+            payload["code"], payload["message"], payload["remediation"]
+        ))
+    return 2
+
+
+def _emit_serve_result(result, as_json, human=None):
+    if as_json:
+        print(json.dumps(result.to_dict(), indent=2))
+    elif human:
+        print(human)
+    else:
+        print(json.dumps(result.to_dict()["data"], indent=2))
+    return 0 if result.status == "ok" else 2
+
+
+def _serve_status_human(entries):
+    if not entries:
+        return "No serve receipts."
+    lines = []
+    for entry in entries:
+        state = "alive" if entry["alive"] else "dead"
+        if entry["alive"] and not entry["argv_match"]:
+            state = "alive (argv mismatch)"
+        lines.append("  127.0.0.1:{0} {1} ({2}) pid {3} - {4}".format(
+            entry["port"], entry["repo"], entry["runtime"], entry["pid"], state
+        ))
+    return "Serve receipts:\n" + "\n".join(lines)
+
+
 def _add_wire_arguments(parser):
     actions = parser.add_subparsers(dest="wire_command", required=True)
     for name in ("render", "apply"):
@@ -982,6 +1118,8 @@ def build_parser():
     _add_wire_arguments(wire_command)
     bench_command = subcommands.add_parser("bench", help="measure a locally served model without downloading it")
     _add_bench_arguments(bench_command)
+    serve_command = subcommands.add_parser("serve", help="preview and launch a local MLX server (confirmation-gated)")
+    _add_serve_arguments(serve_command)
     providers_command = subcommands.add_parser("providers", help="list detected supported provider CLIs")
     _add_installer_arguments(providers_command, include_providers=False)
     for name in ("install", "update", "uninstall", "doctor"):
@@ -1002,6 +1140,8 @@ def main(argv=None):
         return _run_wire(arguments)
     if arguments.command == "bench":
         return _run_bench(arguments)
+    if arguments.command == "serve":
+        return _run_serve(arguments)
     if arguments.command in {"providers", "install", "update", "uninstall", "doctor"}:
         return _run_installer(arguments)
     if arguments.command == "inspect-host":

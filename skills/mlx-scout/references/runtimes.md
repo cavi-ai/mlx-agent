@@ -47,4 +47,8 @@ Adopt runs deterministic, synthetic role probes against a serving runtime before
 
 ## Bench
 
-`mlx-agent bench run --repo <id> --runtime <ollama|lmstudio|mlx_lm|mlx-vlm|litellm>` measures TTFT and decode/prefill tok/s of an already-served model (one warm-up + N timed runs) and emits `runtime_measured` evidence. It never starts servers or downloads models; use each runtime's own pull/load command first.
+`mlx-agent bench run --repo <id> --runtime <ollama|lmstudio|mlx_lm|mlx-vlm|litellm>` measures TTFT and decode/prefill tok/s of an already-served model (one warm-up + N timed runs) and emits `runtime_measured` evidence. It never starts servers or downloads models; use `mlx-agent serve start` (mlx_lm, mlx-vlm) or each runtime's own pull/load command first.
+
+## Serve
+
+`mlx-agent serve start --repo <hf-repo> --runtime mlx_lm [--port 8080] [--max-tokens 8192] [--adapter-path DIR]` prints the exact argv and port plan, then launches only after `--confirm --preview-hash`. Gates: model must already be in the HF cache, runtime executable already installed, port free and unclaimed by wired configs, loopback-only bind. `serve status` cross-checks receipts against live processes; `serve stop --port <port>` signals only receipt-owned processes after argv verification.

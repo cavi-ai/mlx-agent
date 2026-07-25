@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `mlx-agent bench run`: bounded, read-only performance measurement (TTFT, decode/prefill tok/s, run spread) of a model already served by a local loopback runtime; emits `runtime_measured` evidence (`bench-v1`). Never starts servers or downloads models.
+- Add deterministic role-fit verification probes: `coding-v1` (AST + sandboxed exec), `reasoning-v1` (exact answer), `vision-v1` (synthetic OCR image via new mlx-vlm runtime client), and `embedding-v1` (cosine ordering via `embed()`). Adopt compare adds a probe bonus and rejects on `role_probe_failed`; unsupported runtimes are recorded, not penalized.
 - Add `mlx-agent blueprint`: guidance-only MLX project design packs (quantization, training-loop sketch, LoRA/MTX notes, study materials) under `mlx-blueprints/` as markdown + JSON. No scaffolding, downloads, or training.
 - Add justified MLX-native runtime preference to research packs and discovery wiring (`mlx-vlm` / LM Studio / `mlx_lm`) from host inventory and modality/role rules, without changing scoring and without removing Ollama as a valid alternate.
 - Add foundational modality layers (`audio`, `video`, `document-vision`) that seed research intents via CLI `--modality`/`--facet`, lexicon detection, or an explicit interview ask; packs include a `## Modality foundations` section. No new discovery roles or runtimes.

@@ -169,6 +169,15 @@ python3 scripts/mlx-agent blueprint --goal "Meeting ASR notes" --modality audio 
 
 Design packs land under `./mlx-blueprints/` as markdown + JSON. See the [blueprint guide](docs/guides/blueprint.md).
 
+Performance measurement (read-only; measures only models already served by a running local runtime):
+
+```bash
+python3 scripts/mlx-agent bench run --repo mlx-community/Qwen3-32B-4bit --runtime mlx_lm
+python3 scripts/mlx-agent bench run --repo qwen3:32b --runtime ollama --runs 5 --json
+```
+
+Bench reports TTFT, decode/prefill tok/s, and run spread as `runtime_measured` evidence. It never starts servers and never downloads models.
+
 ## How it works
 
 - **Real sizing** — pulls actual quantized byte size from the HF tree API, not a name guess.
@@ -176,6 +185,8 @@ Design packs land under `./mlx-blueprints/` as markdown + JSON. See the [bluepri
 - **Quant dedup** — rolls `…-4bit / -8bit / -bf16` up to one logical model and picks the best quant that fits your RAM.
 - **License / gated** — surfaces the license and flags gated repos before any external runtime fetch.
 - **Verify-before-recommend** — `/mlx-adopt` test-generates a candidate against your local runtime to confirm behavior before wiring it.
+- **Role-fit probes** — deterministic synthetic runtime checks per role: `coding-v1` (AST + sandboxed exec), `reasoning-v1` (exact answer), `vision-v1` (OCR of a synthetic image), `embedding-v1` (cosine ordering). A failed probe rejects the candidate; an unsupported runtime is recorded, not penalized.
+- **Measured performance** — `bench run` records real TTFT and tok/s on your chip as `runtime_measured` evidence, which outranks probe-only evidence in comparisons.
 
 For `tool-use`, metadata is not verification. Only a verified, schema-valid synthetic runtime tool call is recommended as tool-use capable. The bounded probe supports Ollama and local OpenAI-compatible LM Studio, `mlx_lm`, and LiteLLM servers; see [Scout evidence](docs/guides/scout.md), [Adopt verification](docs/guides/adopt.md), and the [security boundaries](docs/security.md).
 

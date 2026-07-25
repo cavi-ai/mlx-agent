@@ -21,6 +21,7 @@ from .transactions import (
 )
 from .verification import (
     EvidenceStrength,
+    ROLE_PROBE_IDS,
     TOOL_USE_PROBE_ID,
     VerificationEvidence,
     VerificationStatus,
@@ -36,11 +37,13 @@ ALLOWED_ROLES = {
     "general", "coding", "reasoning", "vision", "embedding", "tool-use"
 }
 EVIDENCE_SCORES = {
+    EvidenceStrength.RUNTIME_MEASURED.value: 500,
     EvidenceStrength.RUNTIME_TESTED.value: 400,
     EvidenceStrength.RUNTIME_INVENTORY.value: 300,
     EvidenceStrength.METADATA_ONLY.value: 200,
     EvidenceStrength.HEURISTIC_ONLY.value: 100,
 }
+ROLE_PROBE_BONUS = 50
 
 
 class AdoptionStateConflictError(ValueError):
@@ -408,6 +411,12 @@ class AdoptionWorkflow:
             score = EVIDENCE_SCORES.get(evidence.get("strength"), 0)
             score += int(candidate.get("rank_score") or 0)
             score += 20 if candidate.get("trusted") else 0
+            probe_outcome = _role_probe_outcome_for(role, evidence)
+            if probe_outcome is not None:
+                if probe_outcome.get("valid") is True:
+                    score += ROLE_PROBE_BONUS
+                elif probe_outcome.get("reason") != "unsupported_runtime":
+                    reasons.append("role_probe_failed")
             comparisons.append({
                 "repo": repo,
                 "role": role,
@@ -511,6 +520,25 @@ class AdoptionWorkflow:
             raise AdoptionStateConflictError(
                 "another adoption workflow is updating this handoff"
             ) from error
+
+
+def _role_probe_outcome_for(role, evidence):
+    """Return the role-fit probe outcome recorded in evidence, if any."""
+    probe_id = ROLE_PROBE_IDS.get(role)
+    if probe_id is None or not isinstance(evidence, dict):
+        return None
+    details = evidence.get("details")
+    if not isinstance(details, dict):
+        return None
+    probes = details.get("probes")
+    if not isinstance(probes, list):
+        return None
+    for probe in probes:
+        if not isinstance(probe, dict) or probe.get("probe_id") != probe_id:
+            continue
+        outcome = probe.get("outcome")
+        return outcome if isinstance(outcome, dict) else None
+    return None
 
 
 def verification_concurrency(ram_gb):

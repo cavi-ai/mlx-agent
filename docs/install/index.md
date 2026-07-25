@@ -6,10 +6,10 @@ For a user-scoped portable install, copy all three generated packages into the h
 
 ```bash
 mkdir -p ~/.agents/skills
-cp -R providers/agentskills/mlx-scout providers/agentskills/mlx-adopt providers/agentskills/mlx-wire ~/.agents/skills/
+cp -R providers/agentskills/mlx-scout providers/agentskills/mlx-adopt providers/agentskills/mlx-wire providers/agentskills/mlx-bench ~/.agents/skills/
 ```
 
-For project scope, use `<project>/.agents/skills` instead. Restart the host and verify its available-skills list contains `mlx-scout`, `mlx-adopt`, and `mlx-wire`. Update by replacing only those three directories; uninstall by removing only those three package directories.
+For project scope, use `<project>/.agents/skills` instead. Restart the host and verify its available-skills list contains `mlx-scout`, `mlx-adopt`, `mlx-wire`, and `mlx-bench`. Update by replacing only those four directories; uninstall by removing only those four package directories.
 
 All provider packages contain the same structured Python core and require Python 3.9 or later. The universal installer stages only receipt-owned artifacts; it never installs a provider CLI, downloads model weights, persists secrets, or edits an unowned configuration file. `MLX_AGENT_CONFIG_ROOT` explicitly relocates MLX-agent receipts. When it is unset, `XDG_STATE_HOME` relocates those receipts. OpenCode additionally follows `XDG_CONFIG_HOME`; other provider user roots remain anchored to the selected host's home directory.
 

@@ -11,11 +11,11 @@ First-class adapters are included for each provider below. The universal install
 
 | Provider | Package | Invoke |
 | --- | --- | --- |
-| [Claude Code](docs/install/claude.md) | Native plugin | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire` |
-| [Codex CLI](docs/install/codex.md) | Native plugin | `$mlx-agent:mlx-scout`<br>`$mlx-agent:mlx-adopt`<br>`$mlx-agent:mlx-wire` |
-| [Gemini CLI](docs/install/gemini.md) | Native extension | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire` |
-| [OpenCode](docs/install/opencode.md) | Native plugin | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire` |
-| [AgentSkills-compatible hosts](docs/install/index.md) | Portable skills | `mlx-scout skill`<br>`mlx-adopt skill`<br>`mlx-wire skill` |
+| [Claude Code](docs/install/claude.md) | Native plugin | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire`<br>`/mlx-bench` |
+| [Codex CLI](docs/install/codex.md) | Native plugin | `$mlx-agent:mlx-scout`<br>`$mlx-agent:mlx-adopt`<br>`$mlx-agent:mlx-wire`<br>`$mlx-agent:mlx-bench` |
+| [Gemini CLI](docs/install/gemini.md) | Native extension | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire`<br>`/mlx-bench` |
+| [OpenCode](docs/install/opencode.md) | Native plugin | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire`<br>`/mlx-bench` |
+| [AgentSkills-compatible hosts](docs/install/index.md) | Portable skills | `mlx-scout skill`<br>`mlx-adopt skill`<br>`mlx-wire skill`<br>`mlx-bench skill` |
 <!-- compatibility:end -->
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
@@ -39,7 +39,7 @@ claude plugin install mlx-agent@mlx-agent
 claude plugin list
 ```
 
-Restart Claude Code, then run `/mlx-scout`, `/mlx-adopt`, or `/mlx-wire`.
+Restart Claude Code, then run `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, or `/mlx-bench`.
 
 ### Codex CLI
 
@@ -49,7 +49,7 @@ codex plugin add mlx-agent@mlx-agent
 codex plugin list
 ```
 
-Restart Codex, then invoke `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, or `$mlx-agent:mlx-wire`. Codex does not support custom slash commands.
+Restart Codex, then invoke `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, `$mlx-agent:mlx-wire`, or `$mlx-agent:mlx-bench`. Codex does not support custom slash commands.
 
 ### Gemini CLI
 
@@ -61,7 +61,7 @@ gemini extensions install ./mlx-agent/providers/gemini
 gemini extensions list
 ```
 
-Restart Gemini CLI, then run `/mlx-scout`, `/mlx-adopt`, or `/mlx-wire`.
+Restart Gemini CLI, then run `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, or `/mlx-bench`.
 
 ### OpenCode
 
@@ -76,18 +76,18 @@ python3 scripts/mlx-agent install opencode --scope user --confirm --preview-hash
 python3 scripts/mlx-agent doctor opencode --scope user --json
 ```
 
-Restart OpenCode, press `Ctrl+P`, filter for `mlx`, then run `/mlx-scout`, `/mlx-adopt`, or `/mlx-wire`. If OpenCode lives on another volume, set its XDG directories before both installation and launch; see the [OpenCode guide](docs/install/opencode.md).
+Restart OpenCode, press `Ctrl+P`, filter for `mlx`, then run `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, or `/mlx-bench`. If OpenCode lives on another volume, set its XDG directories before both installation and launch; see the [OpenCode guide](docs/install/opencode.md).
 
 ### AgentSkills-compatible hosts
 
-From a release checkout, copy all three self-contained packages into the host's user skills directory:
+From a release checkout, copy all four self-contained packages into the host's user skills directory:
 
 ```bash
 mkdir -p ~/.agents/skills
-cp -R providers/agentskills/mlx-scout providers/agentskills/mlx-adopt providers/agentskills/mlx-wire ~/.agents/skills/
+cp -R providers/agentskills/mlx-scout providers/agentskills/mlx-adopt providers/agentskills/mlx-wire providers/agentskills/mlx-bench ~/.agents/skills/
 ```
 
-For project scope, copy them to `<project>/.agents/skills/` instead. Restart the host and confirm that `mlx-scout`, `mlx-adopt`, and `mlx-wire` appear in its skills list.
+For project scope, copy them to `<project>/.agents/skills/` instead. Restart the host and confirm that `mlx-scout`, `mlx-adopt`, `mlx-wire`, and `mlx-bench` appear in its skills list.
 
 ### Universal installer and lifecycle
 
@@ -176,7 +176,7 @@ python3 scripts/mlx-agent bench run --repo mlx-community/Qwen3-32B-4bit --runtim
 python3 scripts/mlx-agent bench run --repo qwen3:32b --runtime ollama --runs 5 --json
 ```
 
-Bench reports TTFT, decode/prefill tok/s, and run spread as `runtime_measured` evidence. It never starts servers and never downloads models.
+Bench reports TTFT, decode/prefill tok/s, and run spread as `runtime_measured` evidence. It never starts servers and never downloads models. It is also available inside every provider as `/mlx-bench` (`$mlx-agent:mlx-bench` in Codex), and `adopt start --measure` upgrades verified shortlist candidates with measured evidence before ranking.
 
 Model diagnostics (read-only; never deletes or repairs):
 

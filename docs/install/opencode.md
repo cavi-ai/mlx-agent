@@ -1,6 +1,6 @@
 # OpenCode
 
-OpenCode is packaged for `/mlx-scout`, `/mlx-adopt`, and `/mlx-wire`, backed by a narrow native custom tool.
+OpenCode is packaged for `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, and `/mlx-bench`, backed by a narrow native custom tool.
 
 Use the receipt-owned installer; it never creates or edits `opencode.json`:
 
@@ -27,4 +27,4 @@ python3 scripts/mlx-agent install opencode --scope user --confirm --preview-hash
 opencode
 ```
 
-In OpenCode, press `Ctrl+P` and filter for `mlx` to verify `/mlx-scout`, `/mlx-adopt`, and `/mlx-wire`. `opencode debug paths` should report the intended XDG config, data, state, and cache roots. OpenCode 1.18.3 discovered all three commands during native validation; the model-backed provider response remained blocked by unavailable network access.
+In OpenCode, press `Ctrl+P` and filter for `mlx` to verify `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, and `/mlx-bench`. `opencode debug paths` should report the intended XDG config, data, state, and cache roots. OpenCode 1.18.3 discovered all three commands during native validation; the model-backed provider response remained blocked by unavailable network access.

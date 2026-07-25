@@ -38,7 +38,7 @@
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/cli.py",
-      "sha256": "42babf22fa3070a7ef67ae254f32d96aab828fcce705c8f0de3af92a280fbb99"
+      "sha256": "3205a10b1b148977b4ffd64be72e615a533f369a0efbc44bf10b75eba98b3333"
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/command_executor.py",
@@ -87,6 +87,10 @@
     {
       "path": "skills/mlx-adopt/src/mlx_agent/modality.py",
       "sha256": "c0b8a3443870fd7c1b63562b54ea0330cb6a3d3a8677ddf4eab95e19fd330efa"
+    },
+    {
+      "path": "skills/mlx-adopt/src/mlx_agent/model_doctor.py",
+      "sha256": "fd2f6fc41f2bbfc283556373be42a3dbf74435da8322e494df0c4cc9dcc2d904"
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/models.py",
@@ -166,7 +170,7 @@
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/cli.py",
-      "sha256": "42babf22fa3070a7ef67ae254f32d96aab828fcce705c8f0de3af92a280fbb99"
+      "sha256": "3205a10b1b148977b4ffd64be72e615a533f369a0efbc44bf10b75eba98b3333"
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/command_executor.py",
@@ -215,6 +219,10 @@
     {
       "path": "skills/mlx-scout/src/mlx_agent/modality.py",
       "sha256": "c0b8a3443870fd7c1b63562b54ea0330cb6a3d3a8677ddf4eab95e19fd330efa"
+    },
+    {
+      "path": "skills/mlx-scout/src/mlx_agent/model_doctor.py",
+      "sha256": "fd2f6fc41f2bbfc283556373be42a3dbf74435da8322e494df0c4cc9dcc2d904"
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/models.py",
@@ -294,7 +302,7 @@
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/cli.py",
-      "sha256": "42babf22fa3070a7ef67ae254f32d96aab828fcce705c8f0de3af92a280fbb99"
+      "sha256": "3205a10b1b148977b4ffd64be72e615a533f369a0efbc44bf10b75eba98b3333"
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/command_executor.py",
@@ -343,6 +351,10 @@
     {
       "path": "skills/mlx-wire/src/mlx_agent/modality.py",
       "sha256": "c0b8a3443870fd7c1b63562b54ea0330cb6a3d3a8677ddf4eab95e19fd330efa"
+    },
+    {
+      "path": "skills/mlx-wire/src/mlx_agent/model_doctor.py",
+      "sha256": "fd2f6fc41f2bbfc283556373be42a3dbf74435da8322e494df0c4cc9dcc2d904"
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/models.py",

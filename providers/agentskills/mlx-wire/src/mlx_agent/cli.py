@@ -811,6 +811,77 @@ def _add_installer_arguments(parser, include_providers=True):
     parser.add_argument("--json", action="store_true")
 
 
+def _add_doctor_arguments(parser):
+    _add_installer_arguments(parser)
+    parser.add_argument(
+        "--wired-root",
+        action="append",
+        default=None,
+        help="root scanned for Wire-managed configs (repeatable; defaults to the project root)",
+    )
+    parser.add_argument(
+        "--hf-cache",
+        default=None,
+        help="Hugging Face cache root (defaults to ~/.cache/huggingface/hub)",
+    )
+
+
+def _run_model_doctor(arguments):
+    from .model_doctor import default_hf_cache, run_model_doctor
+
+    operation = "doctor-models"
+    wired_roots = arguments.wired_root or [arguments.project]
+    hf_cache = arguments.hf_cache or default_hf_cache()
+    runtime_clients = [
+        OllamaRuntimeClient(),
+        LMStudioRuntimeClient(),
+        OpenAICompatibleRuntimeClient("mlx_lm", "http://127.0.0.1:8080"),
+        MLXVLMRuntimeClient(),
+        OpenAICompatibleRuntimeClient("litellm", "http://127.0.0.1:4000"),
+    ]
+    try:
+        report = run_model_doctor(wired_roots, hf_cache, runtime_clients)
+    except (OSError, TypeError, ValueError) as error:
+        result = ResultEnvelope.fail(
+            operation,
+            "doctor_failed",
+            str(error),
+            "Correct the scanned roots and retry; doctor never mutates anything.",
+        )
+        if arguments.json:
+            print(json.dumps(result.to_dict(), indent=2))
+        else:
+            payload = result.to_dict()["error"]
+            print("doctor failed [{0}]: {1}\nremediation: {2}".format(
+                payload["code"], payload["message"], payload["remediation"]
+            ))
+        return 2
+    warnings = [
+        {"code": finding["code"], "message": "{0}: {1}".format(
+            finding.get("path") or finding.get("model") or finding["code"],
+            finding["remediation"],
+        )}
+        for finding in report["findings"]
+    ]
+    result = ResultEnvelope.ok(operation, report, warnings=warnings)
+    if arguments.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        summary = report["summary"]
+        print("Doctor: {0} model(s), {1} wired config(s), {2} finding(s)".format(
+            summary["models"], summary["wired_configs"], summary["findings"]
+        ))
+        print("  hf-cache disk: {0:.1f} GB".format(summary["hf_cache_bytes"] / 1e9))
+        for finding in report["findings"]:
+            location = finding.get("path") or finding.get("model") or ""
+            print("  [{0}] {1} - {2}".format(finding["code"], location, finding["remediation"]))
+        for endpoint in report["endpoints"]:
+            print("  endpoint {0}: {1}".format(endpoint["endpoint"], endpoint["status"]))
+        for runtime_error in report["runtime_errors"]:
+            print("  runtime unreachable: {0}".format(runtime_error))
+    return 0
+
+
 def _installer_result(operation, data, as_json, status="ok", error=None):
     result = ResultEnvelope.ok(operation, data) if status == "ok" else ResultEnvelope.fail(
         operation, error[0], error[1], error[2]
@@ -843,6 +914,8 @@ def _installer_result(operation, data, as_json, status="ok", error=None):
 
 def _run_installer(arguments):
     operation = arguments.command
+    if operation == "doctor" and "models" in (getattr(arguments, "providers", None) or []):
+        return _run_model_doctor(arguments)
     try:
         installer = Installer(_installer_registry(), project_root=arguments.project)
         detections = [item.to_dict() for item in installer.detected()]
@@ -913,7 +986,10 @@ def build_parser():
     _add_installer_arguments(providers_command, include_providers=False)
     for name in ("install", "update", "uninstall", "doctor"):
         installer_command = subcommands.add_parser(name, help="{0} declared provider artifacts safely".format(name))
-        _add_installer_arguments(installer_command)
+        if name == "doctor":
+            _add_doctor_arguments(installer_command)
+        else:
+            _add_installer_arguments(installer_command)
     return parser
 
 

@@ -29,9 +29,10 @@ from .verification import (
 )
 
 
-ADOPTION_SCHEMA_VERSION = "1.2"
-LEGACY_ADOPTION_SCHEMA_VERSION = "1.1"
-PHASES = ("inspect", "discover", "shortlist", "verify", "compare", "recommend", "complete")
+ADOPTION_SCHEMA_VERSION = "1.3"
+LEGACY_ADOPTION_SCHEMA_VERSIONS = ("1.1", "1.2")
+PHASES = ("inspect", "discover", "shortlist", "verify", "measure", "compare", "recommend", "complete")
+MEASURE_LIMIT = 6
 UTILITY_ROLES = {"general", "embedding"}
 ALLOWED_ROLES = {
     "general", "coding", "reasoning", "vision", "embedding", "tool-use"
@@ -71,6 +72,7 @@ class AdoptionRequest:
     publishers: object = None
     runtime: object = None
     fast: bool = False
+    measure: bool = False
 
     def __post_init__(self):
         if isinstance(self.roles, str):
@@ -92,7 +94,7 @@ class AdoptionRequest:
             raise ValueError("shortlist_limit must be between 1 and 20")
         if not isinstance(self.allow_network, bool):
             raise TypeError("allow_network must be a boolean")
-        for name in ("offline", "refresh", "include_gated", "fast"):
+        for name in ("offline", "refresh", "include_gated", "fast", "measure"):
             if not isinstance(getattr(self, name), bool):
                 raise TypeError("{0} must be a boolean".format(name))
         if self.memory_gb is not None and (
@@ -119,6 +121,7 @@ class AdoptionRequest:
             "publishers": _string_list(self.publishers),
             "runtime": self.runtime,
             "fast": bool(self.fast),
+            "measure": bool(self.measure),
         }
 
     @classmethod
@@ -129,6 +132,7 @@ class AdoptionRequest:
             "roles", "state_path", "state", "shortlist_limit", "limit",
             "allow_network", "offline", "refresh", "memory_gb", "quantization",
             "licenses", "include_gated", "publishers", "runtime", "fast",
+            "measure",
         }
         unknown = sorted(set(value) - allowed)
         if unknown:
@@ -147,6 +151,7 @@ class AdoptionRequest:
             publishers=value.get("publishers"),
             runtime=value.get("runtime"),
             fast=value.get("fast", False),
+            measure=value.get("measure", False),
         )
 
 
@@ -383,6 +388,58 @@ class AdoptionWorkflow:
         with ThreadPoolExecutor(max_workers=workers) as executor:
             state.evidence = list(executor.map(verify_one, state.shortlist))
 
+    def _phase_measure(self, state):
+        if not state.request.get("measure", False):
+            return
+        from .bench import BenchError, measure_runtime
+
+        runtime_clients = getattr(self.verifier, "runtime_clients", None)
+        clients = {}
+        if callable(runtime_clients):
+            for client in runtime_clients():
+                name = getattr(client, "name", None)
+                if isinstance(name, str):
+                    clients[name] = client
+        measured = 0
+        for index, candidate in enumerate(state.shortlist):
+            if measured >= MEASURE_LIMIT:
+                break
+            if index >= len(state.evidence):
+                break
+            evidence = state.evidence[index]
+            if (
+                evidence.get("strength") != EvidenceStrength.RUNTIME_TESTED.value
+                or evidence.get("status") != VerificationStatus.VERIFIED.value
+            ):
+                continue
+            client = clients.get(evidence.get("runtime"))
+            if client is None or not callable(getattr(client, "stream_generate", None)):
+                continue
+            repo = candidate.get("repo") or candidate.get("repository")
+            try:
+                measurement = measure_runtime(
+                    repo, client, chip=state.host.get("chip")
+                )
+            except BenchError as error:
+                state.warnings.append({
+                    "code": "measure_skipped",
+                    "message": _bounded(
+                        "{0}: {1}".format(repo, error)
+                    ),
+                })
+                continue
+            except Exception as error:
+                state.warnings.append({
+                    "code": "measure_skipped",
+                    "message": _bounded("{0}: {1}".format(repo, error)),
+                })
+                continue
+            details = dict(evidence.get("details") or {})
+            details["bench"] = measurement.to_dict()
+            evidence["details"] = details
+            evidence["strength"] = EvidenceStrength.RUNTIME_MEASURED.value
+            measured += 1
+
     def _phase_compare(self, state):
         evidence_by_candidate = {
             (item["repo"], item["role"]): item for item in state.evidence
@@ -563,37 +620,49 @@ def _migrate_state(value):
     version = value.get("schema_version")
     if version == ADOPTION_SCHEMA_VERSION:
         return value
-    if version != LEGACY_ADOPTION_SCHEMA_VERSION:
+    if version not in LEGACY_ADOPTION_SCHEMA_VERSIONS:
         raise ValueError("unsupported adoption state schema version")
 
     migrated = deepcopy(value)
-    request = migrated.get("request")
-    legacy_roles = (
-        list(request.get("roles", []))
-        if isinstance(request, dict) and isinstance(request.get("roles", []), list)
-        else []
-    )
-    for collection in ("shortlist", "evidence", "comparisons", "recommendations"):
-        records = migrated.get(collection)
-        if isinstance(records, list):
-            legacy_roles.extend(
-                item.get("role") for item in records if isinstance(item, dict)
-            )
-    if "tool-use" in legacy_roles:
-        raise ValueError("legacy adoption state cannot contain tool-use")
+    if version == "1.1":
+        request = migrated.get("request")
+        legacy_roles = (
+            list(request.get("roles", []))
+            if isinstance(request, dict) and isinstance(request.get("roles", []), list)
+            else []
+        )
+        for collection in ("shortlist", "evidence", "comparisons", "recommendations"):
+            records = migrated.get(collection)
+            if isinstance(records, list):
+                legacy_roles.extend(
+                    item.get("role") for item in records if isinstance(item, dict)
+                )
+        if "tool-use" in legacy_roles:
+            raise ValueError("legacy adoption state cannot contain tool-use")
 
-    status_by_strength = {
-        EvidenceStrength.RUNTIME_TESTED.value: VerificationStatus.VERIFIED.value,
-        EvidenceStrength.RUNTIME_INVENTORY.value: VerificationStatus.FAILED.value,
-        EvidenceStrength.METADATA_ONLY.value: VerificationStatus.METADATA_ONLY.value,
-        EvidenceStrength.HEURISTIC_ONLY.value: VerificationStatus.METADATA_ONLY.value,
-    }
-    for item in migrated.get("evidence", []):
-        if not isinstance(item, dict):
-            continue
-        strength = item.get("strength")
-        if strength in status_by_strength:
-            item["status"] = status_by_strength[strength]
+        status_by_strength = {
+            EvidenceStrength.RUNTIME_TESTED.value: VerificationStatus.VERIFIED.value,
+            EvidenceStrength.RUNTIME_INVENTORY.value: VerificationStatus.FAILED.value,
+            EvidenceStrength.METADATA_ONLY.value: VerificationStatus.METADATA_ONLY.value,
+            EvidenceStrength.HEURISTIC_ONLY.value: VerificationStatus.METADATA_ONLY.value,
+        }
+        for item in migrated.get("evidence", []):
+            if not isinstance(item, dict):
+                continue
+            strength = item.get("strength")
+            if strength in status_by_strength:
+                item["status"] = status_by_strength[strength]
+
+    request = migrated.get("request")
+    if isinstance(request, dict) and "measure" not in request:
+        request["measure"] = False
+    completed = migrated.get("completed_phases")
+    if (
+        isinstance(completed, list)
+        and "verify" in completed
+        and "measure" not in completed
+    ):
+        completed.insert(completed.index("verify") + 1, "measure")
     migrated["schema_version"] = ADOPTION_SCHEMA_VERSION
     return migrated
 
@@ -674,7 +743,7 @@ def _validate_request_shape(request):
     required = {
         "roles", "shortlist_limit", "allow_network", "offline", "refresh",
         "memory_gb", "quantization", "licenses", "include_gated", "publishers",
-        "runtime", "fast",
+        "runtime", "fast", "measure",
     }
     if set(request) != required:
         raise ValueError("adoption request does not match the persisted schema")

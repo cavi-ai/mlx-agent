@@ -342,6 +342,7 @@ def _add_adoption_arguments(parser):
     start.add_argument("--refresh", action="store_true", help="refresh model discovery")
     start.add_argument("--fast", action="store_true", help="use heuristic-only discovery enrichment")
     start.add_argument("--no-network", dest="allow_network", action="store_false", default=True, help="do not inspect missing-model metadata")
+    start.add_argument("--measure", action="store_true", help="measure verified shortlist candidates (bench) before ranking")
     start.add_argument("--json", action="store_true")
     for name in ("resume", "status"):
         action = actions.add_parser(name, help="{0} an adoption handoff".format(name))

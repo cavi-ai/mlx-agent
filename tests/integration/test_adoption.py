@@ -270,6 +270,8 @@ class AdoptionWorkflowTests(unittest.TestCase):
                 state = self._advance_to(workflow, state, "verify")
                 state = workflow.advance(state)
 
+                self.assertEqual(state.phase, "measure")
+                state = workflow.advance(state)
                 self.assertEqual(state.phase, "compare")
                 self.assertEqual(verifier.maximum_active, expected)
                 self.assertEqual(len(state.evidence), 8)
@@ -316,6 +318,8 @@ class AdoptionWorkflowTests(unittest.TestCase):
 
             state = workflow.advance(state)
 
+            self.assertEqual(state.phase, "measure")
+            state = workflow.advance(state)
             self.assertEqual(state.phase, "compare")
             self.assertEqual(verifier.clear_calls, 1)
             self.assertEqual(verifier.events[0], "clear")
@@ -351,6 +355,8 @@ class AdoptionWorkflowTests(unittest.TestCase):
             state = self._advance_to(workflow, state, "verify")
             state = workflow.advance(state)
 
+            self.assertEqual(state.phase, "measure")
+            state = workflow.advance(state)
             self.assertEqual(state.phase, "compare")
             self.assertEqual(len(state.evidence), 2)
             broken = next(item for item in state.evidence if item["repo"] == "local/broken")
@@ -595,6 +601,9 @@ class AdoptionWorkflowTests(unittest.TestCase):
 
             resumed = workflow.resume(path)
             resumed = workflow.advance(resumed)
+
+            self.assertEqual(resumed.phase, "measure")
+            resumed = workflow.advance(resumed)
             persisted = json.loads(path.read_text())
 
             self.assertEqual(resumed.phase, "compare")
@@ -700,11 +709,11 @@ class AdoptionWorkflowTests(unittest.TestCase):
 
             resumed = workflow.resume(path)
             self.assertEqual(path.read_bytes(), legacy_bytes)
-            self.assertEqual(resumed.schema_version, "1.2")
+            self.assertEqual(resumed.schema_version, "1.3")
 
             workflow.advance(resumed)
             persisted = json.loads(path.read_text())
-            self.assertEqual(persisted["schema_version"], "1.2")
+            self.assertEqual(persisted["schema_version"], "1.3")
             self.assertEqual(persisted["revision"], 2)
 
     def test_complete_legacy_resume_does_not_rewrite_and_unknown_version_rejects(self):
@@ -757,7 +766,7 @@ class AdoptionWorkflowTests(unittest.TestCase):
             self.assertFalse(rejected["eligible"])
             self.assertIn("confirmed_reasoner_for_utility_role", rejected["rejection_reasons"])
             self.assertEqual(tuple(PHASES), (
-                "inspect", "discover", "shortlist", "verify", "compare", "recommend", "complete"
+                "inspect", "discover", "shortlist", "verify", "measure", "compare", "recommend", "complete"
             ))
 
     def test_recommendation_rejects_metadata_confirmed_reasoner_for_fast_role(self):
@@ -868,7 +877,7 @@ class AdoptionWorkflowTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         schema = json.loads((root / "schemas" / "adoption-state.schema.json").read_text())
         self.assertEqual(schema["properties"]["phase"]["enum"], list(PHASES))
-        self.assertEqual(schema["properties"]["schema_version"]["const"], "1.2")
+        self.assertEqual(schema["properties"]["schema_version"]["const"], "1.3")
         self.assertEqual(schema["properties"]["request"]["properties"]["roles"]["maxItems"], 6)
         self.assertEqual(schema["properties"]["recommendations"]["maxItems"], 6)
         self.assertEqual(
@@ -1006,7 +1015,7 @@ class AdoptionWorkflowTests(unittest.TestCase):
                 saved = json.loads(path.read_text())
                 saved["phase"] = "compare"
                 saved["status"] = "running"
-                saved["completed_phases"] = ["inspect", "discover", "shortlist", "verify"]
+                saved["completed_phases"] = ["inspect", "discover", "shortlist", "verify", "measure"]
                 saved["comparisons"] = []
                 saved["recommendations"] = []
                 path.write_text(json.dumps(saved))

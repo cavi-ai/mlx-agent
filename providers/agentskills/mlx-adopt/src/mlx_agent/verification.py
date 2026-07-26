@@ -828,6 +828,10 @@ class Verifier:
         with self._inventory_cache_lock:
             self._inventory_cache.clear()
 
+    def runtime_clients(self):
+        """Return the configured runtime clients without mutating them."""
+        return tuple(self._runtime_clients)
+
     def _runtime_inventory(self, runtime):
         cache_key = id(runtime)
         with self._inventory_cache_lock:

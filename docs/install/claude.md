@@ -1,6 +1,6 @@
 # Claude Code
 
-Claude Code exposes the three native commands: `/mlx-scout`, `/mlx-adopt`, and `/mlx-wire`.
+Claude Code exposes the four native commands: `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, and `/mlx-bench`.
 
 Install from the marketplace:
 
@@ -21,4 +21,4 @@ python3 scripts/mlx-agent uninstall claude --scope user --dry-run --json
 python3 scripts/mlx-agent doctor claude --scope user --json
 ```
 
-Project scope uses `--scope project --project <project>`. The universal installer stages one complete self-contained package under `~/.claude/plugins/mlx-agent` or `<project>/.claude/plugins/mlx-agent`, including all three commands, the MCP transport, and the bundled runtime. `doctor` reports staged artifacts separately from Claude-managed marketplace visibility. Marketplace-managed files remain owned by Claude Code.
+Project scope uses `--scope project --project <project>`. The universal installer stages one complete self-contained package under `~/.claude/plugins/mlx-agent` or `<project>/.claude/plugins/mlx-agent`, including all four commands, the MCP transport, and the bundled runtime. `doctor` reports staged artifacts separately from Claude-managed marketplace visibility. Marketplace-managed files remain owned by Claude Code.

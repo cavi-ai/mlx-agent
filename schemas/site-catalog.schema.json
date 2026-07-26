@@ -65,13 +65,14 @@
     },
     "capabilities": {
       "type": "array",
-      "maxItems": 3,
-      "minItems": 3,
+      "maxItems": 4,
+      "minItems": 4,
       "items": {"$ref": "#/$defs/capability"},
       "allOf": [
         {"contains": {"properties": {"slug": {"const": "scout"}}}, "minContains": 1, "maxContains": 1},
         {"contains": {"properties": {"slug": {"const": "adopt"}}}, "minContains": 1, "maxContains": 1},
-        {"contains": {"properties": {"slug": {"const": "wire"}}}, "minContains": 1, "maxContains": 1}
+        {"contains": {"properties": {"slug": {"const": "wire"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"slug": {"const": "bench"}}}, "minContains": 1, "maxContains": 1}
       ]
     },
     "skills": {
@@ -140,7 +141,7 @@
       "additionalProperties": false,
       "required": ["slug", "command", "description", "arguments"],
       "properties": {
-        "slug": {"enum": ["scout", "adopt", "wire"]},
+        "slug": {"enum": ["scout", "adopt", "wire", "bench"]},
         "command": {"type": "string", "minLength": 1},
         "description": {"type": "string", "minLength": 1},
         "arguments": {"type": "array", "items": {"type": "string"}}
@@ -151,7 +152,7 @@
       "additionalProperties": false,
       "required": ["slug", "activation"],
       "properties": {
-        "slug": {"enum": ["mlx-scout", "mlx-adopt", "mlx-wire"]},
+        "slug": {"enum": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench"]},
         "activation": {"const": "natural-language"}
       }
     },

@@ -39,6 +39,7 @@ def _base_adoption_state():
             "publishers": [],
             "runtime": None,
             "fast": True,
+            "measure": False,
         },
         "completed_phases": [],
         "host": {},
@@ -125,7 +126,7 @@ def main():
     for status in ("verified", "metadata-only", "failed", "unsupported-runtime"):
         current = copy.deepcopy(base)
         current.update(
-            completed_phases=["inspect", "discover", "shortlist", "verify"],
+            completed_phases=["inspect", "discover", "shortlist", "verify", "measure"],
             phase="compare",
             shortlist=[{"repo": "local/model", "role": "general"}],
             evidence=[dict(evidence, status=status)],

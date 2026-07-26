@@ -223,7 +223,8 @@
       "required": [
         "scout",
         "adopt",
-        "wire"
+        "wire",
+        "bench"
       ],
       "properties": {
         "scout": {
@@ -233,6 +234,9 @@
           "$ref": "#/$defs/capability"
         },
         "wire": {
+          "$ref": "#/$defs/capability"
+        },
+        "bench": {
           "$ref": "#/$defs/capability"
         }
       }
@@ -333,7 +337,7 @@
       "properties": {
         "command": {
           "type": "string",
-          "pattern": "^mlx-(scout|adopt|wire)$"
+          "pattern": "^mlx-(scout|adopt|wire|bench)$"
         },
         "description": {
           "type": "string",
@@ -375,12 +379,13 @@
             "enum": [
               "scout",
               "adopt",
-              "wire"
+              "wire",
+              "bench"
             ]
           },
           "uniqueItems": true,
-          "minItems": 3,
-          "maxItems": 3
+          "minItems": 4,
+          "maxItems": 4
         },
         "commands": {
           "type": "array",

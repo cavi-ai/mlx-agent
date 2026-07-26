@@ -402,7 +402,7 @@ class GeneratedAdapterTests(unittest.TestCase):
                 path for path in generated
                 if path.suffix == ".md" and ("commands" in path.parts or "agents" in path.parts or "agentskills" in path.parts)
             ]
-            self.assertEqual(len(prompts), 11)
+            self.assertEqual(len(prompts), 14)
             for prompt in prompts:
                 content = prompt.read_text(encoding="utf-8")
                 self.assertTrue(content.endswith("\n"))
@@ -418,7 +418,7 @@ class GeneratedAdapterTests(unittest.TestCase):
             for prompt in claude_commands:
                 self.assertIn("${CLAUDE_PLUGIN_ROOT}", prompt.read_text(encoding="utf-8"))
             generic_skills = [path for path in prompts if "agentskills" in path.parts]
-            self.assertEqual(len(generic_skills), 3)
+            self.assertEqual(len(generic_skills), 4)
             for skill in generic_skills:
                 content = skill.read_text(encoding="utf-8")
                 self.assertNotIn("CLAUDE_", content)

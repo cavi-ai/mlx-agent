@@ -11,7 +11,7 @@ from typing import Any, Dict, Iterable, List
 SCHEMA_VERSION = "1.1"
 RESULT_SCHEMA_VERSION = "1.0"
 PLUGIN_VERSION = "0.3.0"
-CAPABILITIES = ("scout", "adopt", "wire")
+CAPABILITIES = ("scout", "adopt", "wire", "bench")
 CANONICAL_ROLES = (
     "general",
     "coding",
@@ -25,6 +25,7 @@ CAPABILITY_ACTIONS = {
     "scout": ("discover",),
     "adopt": ("start", "resume", "status"),
     "wire": ("render", "apply", "status", "rollback"),
+    "bench": ("run",),
 }
 NATIVE_PROVIDERS = ("claude", "codex", "gemini", "opencode")
 PROVIDERS = NATIVE_PROVIDERS + ("agentskills",)
@@ -36,10 +37,10 @@ PROVIDER_INVOCATIONS = {
     "agentskills": {"kind": "skill", "prefix": ""},
 }
 PROVIDER_COMMANDS = {
-    "claude": ["mlx-scout", "mlx-adopt", "mlx-wire"],
-    "codex": ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire"],
-    "gemini": ["mlx-scout", "mlx-adopt", "mlx-wire"],
-    "opencode": ["mlx-scout", "mlx-adopt", "mlx-wire"],
+    "claude": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench"],
+    "codex": ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire", "mlx-agent:mlx-bench"],
+    "gemini": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench"],
+    "opencode": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench"],
     "agentskills": [],
 }
 DATE_TIME_PATTERN = re.compile(
@@ -203,7 +204,7 @@ def _validate_provider(value: Any, name: str, errors: List[str]) -> None:
     _require_keys(value, keys, prefix, errors)
     _unexpected_keys(value, keys, prefix, errors)
     if value.get("capabilities") != list(CAPABILITIES):
-        errors.append("{0}.capabilities must equal ['scout', 'adopt', 'wire']".format(prefix))
+        errors.append("{0}.capabilities must equal ['scout', 'adopt', 'wire', 'bench']".format(prefix))
     commands = value.get("detect_commands")
     if not isinstance(commands, list) or not all(isinstance(item, str) and item for item in commands):
         errors.append("{0}.detect_commands must be an array of non-empty strings".format(prefix))
@@ -354,6 +355,7 @@ def _validate_cli_parity(value, errors):
             "scout": {"discover": root["discover"]},
             "adopt": _subparsers(root["adopt"]),
             "wire": _subparsers(root["wire"]),
+            "bench": _subparsers(root["bench"]),
         }
     except Exception as error:
         errors.append("could not inspect CLI parser: {0}".format(error))

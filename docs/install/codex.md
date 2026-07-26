@@ -1,6 +1,6 @@
 # Codex CLI
 
-Codex uses installed skills, not custom slash commands. The exact native invocations are `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, and `$mlx-agent:mlx-wire` — do not use `/mlx-scout` in Codex.
+Codex uses installed skills, not custom slash commands. The exact native invocations are `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, `$mlx-agent:mlx-wire`, and `$mlx-agent:mlx-bench` — do not use `/mlx-scout` in Codex.
 
 Stage the local package with the universal installer if needed:
 
@@ -20,6 +20,6 @@ codex plugin add mlx-agent@mlx-agent
 codex plugin list
 ```
 
-Restart Codex, then invoke `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, or `$mlx-agent:mlx-wire`. Update the checkout and run `codex plugin marketplace upgrade mlx-agent`; remove the package with `codex plugin remove mlx-agent@mlx-agent` and, if desired, `codex plugin marketplace remove mlx-agent`.
+Restart Codex, then invoke `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, `$mlx-agent:mlx-wire`, or `$mlx-agent:mlx-bench`. Update the checkout and run `codex plugin marketplace upgrade mlx-agent`; remove the package with `codex plugin remove mlx-agent@mlx-agent` and, if desired, `codex plugin marketplace remove mlx-agent`.
 
 The universal installer stages the package under `~/plugins/mlx-agent` (or `<project>/plugins/mlx-agent`) but deliberately does not edit Codex-owned marketplace configuration. The repository-level `.agents/plugins/marketplace.json` is the installable local marketplace entrypoint.

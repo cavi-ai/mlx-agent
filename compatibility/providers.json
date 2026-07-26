@@ -15,7 +15,8 @@
       "capabilities": {
         "scout": {"command": "mlx-scout", "invocation": "/mlx-scout"},
         "adopt": {"command": "mlx-adopt", "invocation": "/mlx-adopt"},
-        "wire": {"command": "mlx-wire", "invocation": "/mlx-wire"}
+        "wire": {"command": "mlx-wire", "invocation": "/mlx-wire"},
+        "bench": {"command": "mlx-bench", "invocation": "/mlx-bench"}
       },
       "last_smoke_test": {"status": "fixture", "date": "2026-07-17", "summary": "Claude Code 2.1.198 added a disposable user marketplace, installed and uninstalled mlx-agent, and listed all three skills. Claude details did not expose slash-command discovery; the generated launcher returned fixture-backed Scout evidence."},
       "release_evidence": {"id": "rc-2026-07-17-claude", "status": "fixture", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, disposable HOME", "cli_version": "2.1.198", "scopes_tested": ["user"], "native_discovery": "skills listed; slash-command session not run", "fixture_bundle": "passed", "uninstall": "passed"},
@@ -38,7 +39,8 @@
       "capabilities": {
         "scout": {"command": "mlx-scout", "invocation": "$mlx-agent:mlx-scout"},
         "adopt": {"command": "mlx-adopt", "invocation": "$mlx-agent:mlx-adopt"},
-        "wire": {"command": "mlx-wire", "invocation": "$mlx-agent:mlx-wire"}
+        "wire": {"command": "mlx-wire", "invocation": "$mlx-agent:mlx-wire"},
+        "bench": {"command": "mlx-bench", "invocation": "$mlx-agent:mlx-bench"}
       },
       "last_smoke_test": {"status": "blocked", "date": "2026-07-17", "summary": "Codex CLI 0.137.0 isolated marketplace registration, install, and namespaced-skill prompt injection passed. The authorized fixture-only Scout session was DNS-blocked before a model response."},
       "release_evidence": {"id": "rc-2026-07-17-codex", "status": "blocked", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, isolated CODEX_HOME", "cli_version": "0.137.0", "scopes_tested": ["user"], "native_discovery": "namespaced skills injected", "fixture_bundle": "passed", "uninstall": "passed after DNS-blocked exec"},
@@ -61,7 +63,8 @@
       "capabilities": {
         "scout": {"command": "mlx-scout", "invocation": "/mlx-scout"},
         "adopt": {"command": "mlx-adopt", "invocation": "/mlx-adopt"},
-        "wire": {"command": "mlx-wire", "invocation": "/mlx-wire"}
+        "wire": {"command": "mlx-wire", "invocation": "/mlx-wire"},
+        "bench": {"command": "mlx-bench", "invocation": "/mlx-bench"}
       },
       "last_smoke_test": {"status": "fixture", "date": "2026-07-17", "summary": "Gemini CLI 0.46.0 validation/install, user and project skill discovery, fixture-backed Scout, and cleanup passed in a disposable HOME; command-list routing and model invocation were not run."},
       "release_evidence": {"id": "rc-2026-07-17-gemini", "status": "fixture", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, disposable HOME", "cli_version": "0.46.0", "scopes_tested": ["user", "project"], "native_discovery": "skills listed in both scopes; slash-command discovery not run", "fixture_bundle": "passed", "uninstall": "passed"},
@@ -84,7 +87,8 @@
       "capabilities": {
         "scout": {"command": "mlx-scout", "invocation": "/mlx-scout"},
         "adopt": {"command": "mlx-adopt", "invocation": "/mlx-adopt"},
-        "wire": {"command": "mlx-wire", "invocation": "/mlx-wire"}
+        "wire": {"command": "mlx-wire", "invocation": "/mlx-wire"},
+        "bench": {"command": "mlx-bench", "invocation": "/mlx-bench"}
       },
       "last_smoke_test": {"status": "blocked", "date": "2026-07-20", "summary": "OpenCode 1.18.3 discovered all three commands from an isolated XDG configuration and completed the receipt-owned package lifecycle. The model-backed invocation reached the configured provider but network access was unavailable."},
       "release_evidence": {"id": "rc-2026-07-20-opencode", "status": "blocked", "date": "2026-07-20", "environment": "macOS arm64, isolated XDG roots", "cli_version": "1.18.3", "scopes_tested": ["user", "project"], "native_discovery": "all three commands visible in the native command palette", "fixture_bundle": "passed", "uninstall": "passed"},
@@ -107,7 +111,8 @@
       "capabilities": {
         "scout": {"command": "mlx-scout", "invocation": "mlx-scout skill"},
         "adopt": {"command": "mlx-adopt", "invocation": "mlx-adopt skill"},
-        "wire": {"command": "mlx-wire", "invocation": "mlx-wire skill"}
+        "wire": {"command": "mlx-wire", "invocation": "mlx-wire skill"},
+        "bench": {"command": "mlx-bench", "invocation": "mlx-bench skill"}
       },
       "last_smoke_test": {"status": "fixture", "date": "2026-07-17", "summary": "Disposable AgentSkills user/project installation, installed fixture-backed Scout, and clean receipt-owned uninstall passed with scoped transaction locks."},
       "release_evidence": {"id": "rc-2026-07-17-agentskills", "status": "fixture", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, disposable config root", "cli_version": "portable format", "scopes_tested": ["user", "project"], "native_discovery": "not applicable", "fixture_bundle": "passed", "uninstall": "passed; no artifact lock files"},

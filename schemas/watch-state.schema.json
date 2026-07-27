@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cavi-ai/mlx-agent/schemas/watch-state.schema.json",
+  "title": "mlx-agent watch state",
+  "type": "object",
+  "required": ["schema_version", "created_at", "owned", "candidates", "previous"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "owned": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "required": ["id", "source"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "source": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "candidates": {
+      "type": "object",
+      "maxProperties": 2000,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["base", "weight_bytes", "gated", "license"],
+        "properties": {
+          "base": { "type": ["string", "null"] },
+          "weight_bytes": { "type": ["integer", "null"] },
+          "gated": { "type": ["string", "boolean", "null"] },
+          "license": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "previous": { "type": ["object", "null"] }
+  },
+  "additionalProperties": false
+}

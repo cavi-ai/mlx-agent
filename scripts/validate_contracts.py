@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, List
 
 SCHEMA_VERSION = "1.1"
 RESULT_SCHEMA_VERSION = "1.0"
-PLUGIN_VERSION = "0.3.0"
+PLUGIN_VERSION = "0.4.0"
 CAPABILITIES = ("scout", "adopt", "wire", "bench")
 CANONICAL_ROLES = (
     "general",

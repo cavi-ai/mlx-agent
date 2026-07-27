@@ -2,11 +2,11 @@
   "files": [
     {
       "path": ".claude-plugin/marketplace.json",
-      "sha256": "d6458ce74b077123d0912ce19552a11070e13441dc904a1f4f809cc1ba979844"
+      "sha256": "0062078bfbf1870d082e41264c36259c09d6000a40335770e92d4af3a0e4c4dc"
     },
     {
       "path": ".claude-plugin/plugin.json",
-      "sha256": "e2f3bc874bb938d6112fb61ebd7f8635388933c96029a380dc189a08ed70a61c"
+      "sha256": "7ab48769d5bf538c29cb8b3df1ef9240e1a54cbb3f4abe608a845e42034d951a"
     },
     {
       "path": ".mcp.json",
@@ -46,7 +46,7 @@
     },
     {
       "path": "src/mlx_agent/__init__.py",
-      "sha256": "813127f0d5124b8a84e2bbc22a9f98ade86f9a5f04b2c37f5545d05757c31858"
+      "sha256": "85a7318c27d7be4191aebb1359633bb42ff3fb6a11b64b3da869b387c87b477c"
     },
     {
       "path": "src/mlx_agent/__main__.py",

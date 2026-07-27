@@ -47,6 +47,7 @@ class DiscoveryRequest:
     limit: int = 6
     new: bool = False
     fast: bool = False
+    context_tokens: object = None
 
     def cache_request(self):
         """The reproducible request shape, excluding transport-only cache switches."""
@@ -61,6 +62,7 @@ class DiscoveryRequest:
             "limit": self.limit,
             "new": self.new,
             "fast": self.fast,
+            "context_tokens": self.context_tokens,
         }
 
 
@@ -88,6 +90,40 @@ def _parse_timestamp(value):
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except (AttributeError, TypeError, ValueError):
         return None
+
+
+def _kv_estimate(architecture, ram_gb, budget_gb, context_tokens):
+    """Attach KV-cache math when architecture, weights, and budget are known."""
+    if not isinstance(architecture, dict) or ram_gb is None or budget_gb is None:
+        return None
+    from .contextfit import (
+        DEFAULT_DTYPE_BYTES,
+        kv_bytes_per_token,
+        kv_cache_bytes,
+        max_context_tokens,
+    )
+
+    if kv_bytes_per_token(architecture) is None:
+        return None
+    weight_bytes = float(ram_gb) * 1e9
+    budget_bytes = float(budget_gb) * 0.8 * 1e9
+    block = {
+        "max_context_tokens": max_context_tokens(architecture, weight_bytes, budget_bytes),
+        "dtype_bytes": DEFAULT_DTYPE_BYTES,
+        "src": "huggingface_model_metadata",
+    }
+    if context_tokens is not None:
+        kv_bytes = kv_cache_bytes(architecture, context_tokens)
+        block["context_tokens"] = context_tokens
+        block["kv_gb"] = round(kv_bytes / 1e9, 1) if kv_bytes is not None else None
+    return block
+
+
+def _estimates(ram, budget, kv_block):
+    estimates = {"ram_gb": ram, "memory_budget_gb": budget, "headroom_fraction": 0.2}
+    if kv_block is not None:
+        estimates["kv"] = kv_block
+    return estimates
 
 
 class DiscoveryService:
@@ -232,7 +268,11 @@ class DiscoveryService:
         likes = model.get("likes", 0)
         trusted = publisher in REPUTABLE
         budget = request.memory_gb if request.memory_gb is not None else host_data.get("ram_gb")
+        architecture = enrichment.get("architecture")
+        kv_block = _kv_estimate(architecture, ram, budget, request.context_tokens)
         fits = ram is None or budget is None or ram < float(budget) * 0.8
+        if request.context_tokens is not None and kv_block is not None:
+            fits = (ram + kv_block["kv_gb"]) < float(budget) * 0.8
         rank_score = (1000000 if trusted else 0) + (quant_rank(repo) * 10000) + min(downloads, 9999) + min(likes, 999)
         metadata_available = enrichment.get("metadata_available") is True
         gated_status = "unknown"
@@ -268,7 +308,7 @@ class DiscoveryService:
             # Explainable structured fields. Memory remains an estimate, even when
             # the weights came from a measured file-size listing.
             "facts": facts,
-            "estimates": {"ram_gb": ram, "memory_budget_gb": budget, "headroom_fraction": 0.2},
+            "estimates": _estimates(ram, budget, kv_block),
             "tool_use": tool_use,
             "heuristics": {
                 "role": role,

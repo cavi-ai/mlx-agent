@@ -116,6 +116,7 @@ def _parse_scout(tokens):
         "--memory-gb": (lambda value: _decimal(value, "memory-gb", 0.25, 1024), "memory-gb"),
         "--quantization": (lambda value: value if _SAFE_QUANTIZATION.fullmatch(value) else None, "quantization"),
         "--runtime": (lambda value: value if value in _RUNTIMES else None, "runtime"),
+        "--context": (lambda value: _integer(value, "context", 1024, 1048576), "context"),
         "--state-dir": (lambda value: _path(value, "state-dir"), "state-dir"),
         "--wire": (lambda value: _model(value), "wire"),
         "--target": (lambda value: value if value in _RUNTIMES else None, "target"),

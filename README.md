@@ -214,6 +214,17 @@ python3 scripts/mlx-agent watch snapshot     # record a baseline
 python3 scripts/mlx-agent watch diff         # what changed since, for models you own
 ```
 
+Conversion (confirmation-gated local quantization):
+
+```bash
+python3 scripts/mlx-agent convert start --repo meta-llama/Llama-3.1-8B --q-bits 4
+# inspect the plan, then confirm:
+python3 scripts/mlx-agent convert start --repo meta-llama/Llama-3.1-8B --q-bits 4 --confirm --preview-hash <hash>
+python3 scripts/mlx-agent convert status
+```
+
+`convert` renders the exact `mlx_lm.convert` argv, requires `--confirm --preview-hash`, then runs the quantization detached with a receipt. Hard gates: source model already in the Hugging Face cache (never downloads), `mlx_lm` already installed (never installs), fresh output path (never overwrites), one job at a time.
+
 `watch diff` reports only changes relevant to models in your local inventories and wired configs: new quants of an owned base, weight-byte changes on tracked repos, gated flips, and owned models that disappeared. Unlike `discover --new` (which only re-sorts the Hub), watch keeps a baseline snapshot and ignores everything you do not own.
 
 `fleet` renders one bounded LiteLLM router YAML from explicit `--assign role=repo` picks or a completed adopt handoff, defaults vision to `mlx-vlm` and text roles to `mlx_lm`, checks every model against local inventories, and applies through the same preview-confirm-receipt-rollback transaction as wire.

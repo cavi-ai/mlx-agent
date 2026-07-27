@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `mlx-agent convert`: confirmation-gated local quantization. Preview renders the exact `mlx_lm.convert` argv and output path; `--confirm --preview-hash` spawns the job detached with a receipt. Gates: source in the HF cache, executable already installed, fresh output path, one job at a time. `convert status` cross-checks receipts against live processes and records exits once.
 - Add bundled reference packs: `quantization.md` (quant tradeoff ladder, KV-cache sizing, reasoning-model quant guidance), `model-families.md` (Qwen/Gemma/gpt-oss/Llama template and tool-calling quirks, vision and embedding notes), and `troubleshooting.md` (symptom-first serving playbook). Generated into every provider skill and pointed at from each scout skill.
 - Add context-aware fit: discovery extracts bounded architecture facts (layers, KV heads, head dim, max positions) from HF config and attaches an `estimates.kv` block (max context for the host budget, fp16 KV). `discover --context N` tightens `fits` to weights + KV at that context; default weights-only behavior is unchanged.
 - Add `mlx-agent watch`: stateful Hugging Face digest. `watch snapshot` records owned inventories (HF cache, runtimes, wired configs) and a full-role discovery reading into one self-owned state file; `watch diff` classifies only owned-relevant changes (new quant of owned, updated tracked repo, gated flip, owned missing).

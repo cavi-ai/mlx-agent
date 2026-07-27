@@ -33,6 +33,12 @@ from .fleet import (
     parse_assignments,
     parse_runtime_map,
 )
+from .fuse import (
+    FuseError,
+    plan_fuse,
+    start_fuse,
+    status_fuse,
+)
 from .host import HostInventory
 from .huggingface import HuggingFaceClient
 from .installer import Installer, InstallerConflictError
@@ -1458,6 +1464,93 @@ def _lora_status_human(entries):
     return "LoRA jobs:\n" + "\n".join(lines)
 
 
+def _add_fuse_arguments(parser):
+    actions = parser.add_subparsers(dest="fuse_command", required=True)
+    start = actions.add_parser(
+        "start",
+        help="preview, then confirmation-gated LoRA fuse into the base model",
+    )
+    start.add_argument("--repo", required=True, help="publisher/model base present in the local Hugging Face cache")
+    start.add_argument("--adapter", required=True, help="completed lora adapter directory")
+    start.add_argument("--out", default=None, help="fused output directory (default <model>-fused)")
+    start.add_argument("--confirm", action="store_true", help="authorize this reviewed fuse")
+    start.add_argument("--preview-hash", help="hash returned by the separately reviewed fuse preview")
+    start.add_argument("--receipts-dir", default=None)
+    start.add_argument("--hf-cache", default=None)
+    start.add_argument("--json", action="store_true")
+    status = actions.add_parser("status", help="cross-check fuse receipts against live processes")
+    status.add_argument("--receipts-dir", default=None)
+    status.add_argument("--json", action="store_true")
+
+
+def _run_fuse(arguments):
+    operation = "fuse-{0}".format(arguments.fuse_command)
+    try:
+        if arguments.fuse_command == "status":
+            entries = status_fuse(arguments.receipts_dir)
+            return _emit_serve_result(
+                ResultEnvelope.ok(operation, {"jobs": entries}), arguments.json,
+                human=_fuse_status_human(entries),
+            )
+        plan = plan_fuse(arguments.repo, arguments.adapter, out=arguments.out)
+        if not arguments.confirm:
+            result = ResultEnvelope.ok(
+                operation, {"plan": plan, "requires_confirmation": True}
+            )
+            if arguments.json:
+                print(json.dumps(result.to_dict(), indent=2))
+            else:
+                print("Fuse plan: {0} + {1} -> {2}".format(
+                    plan["repo"], plan["adapter"], plan["out"]
+                ))
+                print("  argv: {0}".format(" ".join(plan["argv"])))
+                print("  preview_hash: {0}".format(plan["preview_hash"]))
+                print("Confirmation required: rerun with --confirm --preview-hash PREVIEW_HASH.")
+            return 2
+        outcome = start_fuse(
+            plan,
+            receipts_dir=arguments.receipts_dir,
+            confirm=True,
+            preview_hash=arguments.preview_hash,
+            model_present=default_model_present(arguments.hf_cache),
+        )
+        receipt = outcome["receipt"]
+        return _emit_serve_result(
+            ResultEnvelope.ok(operation, outcome), arguments.json,
+            human="fuse started: {0} -> {1} (pid {2})\n  log: {3}".format(
+                receipt["repo"], receipt["out"], receipt["pid"], receipt["log_path"]
+            ),
+        )
+    except FuseError as error:
+        result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        result = ResultEnvelope.fail(
+            operation,
+            "fuse_failed",
+            str(error),
+            "Correct the fuse arguments or receipt state, then retry.",
+        )
+    if arguments.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        payload = result.to_dict()["error"]
+        print("fuse failed [{0}]: {1}\nremediation: {2}".format(
+            payload["code"], payload["message"], payload["remediation"]
+        ))
+    return 2
+
+
+def _fuse_status_human(entries):
+    if not entries:
+        return "No fuse receipts."
+    lines = []
+    for entry in entries:
+        lines.append("  {0} -> {1}: {2}".format(
+            entry["repo"], entry["out"], entry["state"]
+        ))
+    return "Fuse jobs:\n" + "\n".join(lines)
+
+
 def _add_wire_arguments(parser):
     actions = parser.add_subparsers(dest="wire_command", required=True)
     for name in ("render", "apply"):
@@ -1740,6 +1833,8 @@ def build_parser():
     _add_convert_arguments(convert_command)
     lora_command = subcommands.add_parser("lora", help="preview and run LoRA training on a cached model (confirmation-gated)")
     _add_lora_arguments(lora_command)
+    fuse_command = subcommands.add_parser("fuse", help="preview and fuse a LoRA adapter into its base (confirmation-gated)")
+    _add_fuse_arguments(fuse_command)
     providers_command = subcommands.add_parser("providers", help="list detected supported provider CLIs")
     _add_installer_arguments(providers_command, include_providers=False)
     for name in ("install", "update", "uninstall", "doctor"):
@@ -1770,6 +1865,8 @@ def main(argv=None):
         return _run_convert(arguments)
     if arguments.command == "lora":
         return _run_lora(arguments)
+    if arguments.command == "fuse":
+        return _run_fuse(arguments)
     if arguments.command in {"providers", "install", "update", "uninstall", "doctor"}:
         return _run_installer(arguments)
     if arguments.command == "inspect-host":

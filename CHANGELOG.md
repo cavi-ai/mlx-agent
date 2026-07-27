@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `mlx-agent fleet`: one-shot per-role router configuration. Renders a bounded LiteLLM router YAML from explicit `--assign role=repo` picks or a completed adopt handoff (`--from-adoption`), with per-role runtime defaults (vision → mlx-vlm, text → mlx_lm) and overrides. Models are checked against local inventories; apply goes through the same preview-confirm-receipt-rollback transaction as wire.
 - Promote bench to a full provider capability: `/mlx-bench` on Claude Code, Gemini CLI, and OpenCode, `$mlx-agent:mlx-bench` on Codex, and a portable AgentSkills package, all generated from the manifest with contract parity.
 - Add `adopt start --measure`: an optional measure phase between verify and compare that benches verified shortlist candidates (sequential, bounded) and upgrades their evidence to `runtime_measured` while preserving role-probe results. Adoption state schema migrates 1.1/1.2 states to 1.3.
 - Add `mlx-agent serve`: confirmation-gated launcher for `mlx_lm` and `mlx-vlm` servers. Preview renders the exact argv, port plan, and readiness endpoint; `--confirm --preview-hash` spawns the server and writes a receipt. Hard gates: model present in the Hugging Face cache, runtime executable already installed, port free and unclaimed by wired configs, loopback-only bind. `serve stop` signals only receipt-owned processes after argv verification; `serve status` cross-checks receipts against live processes.

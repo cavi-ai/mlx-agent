@@ -109,7 +109,7 @@ Run the provider-neutral discovery command:
 
 `{invocation} discover $ARGUMENTS`
 
-Present its evidence and recommendations as returned. Discovery must not download model weights or change configuration. If a later download or configuration mutation would help, describe the exact CLI preview first and obtain explicit user confirmation before it.
+Present its evidence and recommendations as returned. Discovery must not download model weights or change configuration. If a later download or configuration mutation would help, describe the exact CLI preview first and obtain explicit user confirmation before it. Bundled references (read when relevant): `src/mlx_agent/resources/references/quantization.md` for quant tradeoffs, `src/mlx_agent/resources/references/model-families.md` for chat-template and tool-calling quirks, `src/mlx_agent/resources/references/troubleshooting.md` for serving symptoms.
 """.format(identifier=identifier, invocation=invocation)
     elif capability == "adopt":
         body = """# MLX Adopt
@@ -186,7 +186,7 @@ def _claude_command_markdown(manifest: Mapping[str, object], capability: str) ->
     elif capability == "bench":
         boundary = "Bench measures only models already served by a running local runtime. It must not start servers, download model weights, or change configuration."
     else:
-        boundary = "Scout is read-only and must not download model weights or change configuration."
+        boundary = "Scout is read-only and must not download model weights or change configuration. Bundled references (read when relevant): `src/mlx_agent/resources/references/quantization.md` for quant tradeoffs, `src/mlx_agent/resources/references/model-families.md` for chat-template and tool-calling quirks, `src/mlx_agent/resources/references/troubleshooting.md` for serving symptoms."
     return _with_tool_use_guidance(manifest, """---
 name: {name}
 description: {description}
@@ -298,7 +298,7 @@ def _gemini_skill_markdown(manifest: Mapping[str, object], capability: str) -> s
         _yaml_scalar("mlx-{0}".format(capability)), _yaml_scalar(descriptions[capability]["description"])
     )
     capability_notes = {
-        "scout": "Use the executor only for documented discovery flags. Present the returned evidence without downloading model weights or changing configuration.",
+        "scout": "Use the executor only for documented discovery flags. Present the returned evidence without downloading model weights or changing configuration. Bundled references (read when relevant): `src/mlx_agent/resources/references/quantization.md` for quant tradeoffs, `src/mlx_agent/resources/references/model-families.md` for chat-template and tool-calling quirks, `src/mlx_agent/resources/references/troubleshooting.md` for serving symptoms.",
         "adopt": "Use the executor only for documented adoption state and role fields. Preserve the returned durable state and do not recreate adoption policy.",
         "wire": "Use the executor only for documented render, preview, confirmation, receipt, model, runtime, and path fields. Preserve confirmation-gated behavior.",
         "bench": "Use the executor only for documented repo, runtime, role, runs, gen-tokens, and timeout fields. Measure only already-served models; never start servers or download model weights.",
@@ -383,7 +383,7 @@ def _opencode_skill_markdown(manifest: Mapping[str, object], capability: str) ->
 
     description = manifest["capabilities"][capability]["description"]
     capability_notes = {
-        "scout": "The validated operation may discover only. It must not download model weights or mutate configuration.",
+        "scout": "The validated operation may discover only. It must not download model weights or mutate configuration. Bundled references (read when relevant): `src/mlx_agent/resources/references/quantization.md` for quant tradeoffs, `src/mlx_agent/resources/references/model-families.md` for chat-template and tool-calling quirks, `src/mlx_agent/resources/references/troubleshooting.md` for serving symptoms.",
         "adopt": "Allow one bounded independent verification record only; do not use unbounded subtask fan-out. Preserve durable state returned by the executor.",
         "wire": "Use the transaction CLI for render, then the unconfirmed preview and hash, then confirmed apply only after the user confirms that exact hash. Do not write configuration directly.",
         "bench": "The validated operation measures only models already served by a running local runtime. It must not start servers or download model weights.",

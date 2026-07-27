@@ -400,7 +400,9 @@ class GeneratedAdapterTests(unittest.TestCase):
             generated = generator.generate(("claude", "agentskills"), output_root)
             prompts = [
                 path for path in generated
-                if path.suffix == ".md" and ("commands" in path.parts or "agents" in path.parts or "agentskills" in path.parts)
+                if path.suffix == ".md"
+                and "resources" not in path.parts
+                and ("commands" in path.parts or "agents" in path.parts or "agentskills" in path.parts)
             ]
             self.assertEqual(len(prompts), 14)
             for prompt in prompts:

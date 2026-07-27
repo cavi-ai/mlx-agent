@@ -68,6 +68,15 @@ from .verification import (
     OpenAICompatibleRuntimeClient,
     Verifier,
 )
+from .watch import (
+    WatchError,
+    build_snapshot,
+    collect_owned,
+    diff_snapshots,
+    read_baseline,
+    snapshot_candidates,
+    write_snapshot,
+)
 from .wiring import ConfigAdapter
 
 
@@ -1048,6 +1057,101 @@ def _run_fleet(arguments):
         ), arguments.json)
 
 
+def _watch_runtime_clients():
+    return [
+        OllamaRuntimeClient(),
+        LMStudioRuntimeClient(),
+        OpenAICompatibleRuntimeClient("mlx_lm", "http://127.0.0.1:8080"),
+        MLXVLMRuntimeClient(),
+        OpenAICompatibleRuntimeClient("litellm", "http://127.0.0.1:4000"),
+    ]
+
+
+def _add_watch_arguments(parser):
+    actions = parser.add_subparsers(dest="watch_command", required=True)
+    for name in ("snapshot", "diff"):
+        action = actions.add_parser(
+            name,
+            help="{0} the owned-model Hugging Face watch state".format(name),
+        )
+        action.add_argument("--state-dir", default="./.mlx-agent-watch",
+                            help="watch state root (default ./.mlx-agent-watch)")
+        action.add_argument("--limit", type=int, default=6,
+                            help="discovery results per role (default 6)")
+        action.add_argument("--json", action="store_true")
+
+
+def _run_watch(arguments):
+    operation = "watch-{0}".format(arguments.watch_command)
+    try:
+        service, fixture_warning, fixture_error = _discovery_service_from_environment()
+        if fixture_error is not None:
+            return _emit_wire_result(fixture_error, arguments.json)
+        result = service.discover(DiscoveryRequest(limit=arguments.limit))
+        if result.status != "ok":
+            error = result.to_dict()["error"]
+            return _emit_wire_result(ResultEnvelope.fail(
+                operation, error["code"], error["message"], error["remediation"]
+            ), arguments.json)
+        owned = collect_owned(_watch_runtime_clients())
+        candidates = snapshot_candidates(result.data)
+        if arguments.watch_command == "snapshot":
+            snapshot = build_snapshot(owned, candidates)
+            destination = write_snapshot(arguments.state_dir, snapshot)
+            data = {
+                "state": str(destination),
+                "owned": len(snapshot["owned"]),
+                "candidates": len(snapshot["candidates"]),
+                "rotated_previous": snapshot["previous"] is not None,
+            }
+            result = ResultEnvelope.ok(operation, data)
+            if arguments.json:
+                print(json.dumps(result.to_dict(), indent=2))
+            else:
+                print("Watch snapshot: {0} owned, {1} tracked repos -> {2}".format(
+                    data["owned"], data["candidates"], data["state"]
+                ))
+            return 0
+        baseline = read_baseline(arguments.state_dir)
+        current = build_snapshot(owned, candidates)
+        findings = diff_snapshots(baseline, current)
+        data = {
+            "baseline_created_at": baseline["created_at"],
+            "findings": findings,
+        }
+        warnings = [
+            {"code": finding["code"], "message": "{0}: {1}".format(finding["repo"], finding["detail"])}
+            for finding in findings
+        ]
+        result = ResultEnvelope.ok(operation, data, warnings=warnings)
+        if arguments.json:
+            print(json.dumps(result.to_dict(), indent=2))
+        else:
+            print("Watch diff against {0}: {1} finding(s)".format(
+                baseline["created_at"], len(findings)
+            ))
+            for finding in findings:
+                print("  [{0}] {1} - {2}".format(finding["code"], finding["repo"], finding["detail"]))
+        return 0
+    except WatchError as error:
+        result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        result = ResultEnvelope.fail(
+            operation,
+            "watch_failed",
+            str(error),
+            "Correct the state directory and retry; watch only writes its own state file.",
+        )
+    if arguments.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        payload = result.to_dict()["error"]
+        print("watch failed [{0}]: {1}\nremediation: {2}".format(
+            payload["code"], payload["message"], payload["remediation"]
+        ))
+    return 2
+
+
 def _add_wire_arguments(parser):
     actions = parser.add_subparsers(dest="wire_command", required=True)
     for name in ("render", "apply"):
@@ -1268,6 +1372,8 @@ def build_parser():
     _add_serve_arguments(serve_command)
     fleet_command = subcommands.add_parser("fleet", help="render or apply a one-shot per-role router configuration")
     _add_fleet_arguments(fleet_command)
+    watch_command = subcommands.add_parser("watch", help="snapshot and diff owned models against Hugging Face")
+    _add_watch_arguments(watch_command)
     providers_command = subcommands.add_parser("providers", help="list detected supported provider CLIs")
     _add_installer_arguments(providers_command, include_providers=False)
     for name in ("install", "update", "uninstall", "doctor"):
@@ -1292,6 +1398,8 @@ def main(argv=None):
         return _run_serve(arguments)
     if arguments.command == "fleet":
         return _run_fleet(arguments)
+    if arguments.command == "watch":
+        return _run_watch(arguments)
     if arguments.command in {"providers", "install", "update", "uninstall", "doctor"}:
         return _run_installer(arguments)
     if arguments.command == "inspect-host":

@@ -62,7 +62,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "acc10b6d5af2cd55c110d32bae6a6fd9f6cf2d3cbd8a8568c070535ff9dcb07d"
+      "sha256": "c67f9f485cfbdafa8d0e027cf9f19102c1f10c16a1e8e97ec77f58f86f205702"
     },
     {
       "path": "src/mlx_agent/command_executor.py",
@@ -159,6 +159,10 @@
     {
       "path": "src/mlx_agent/verification.py",
       "sha256": "c66c471871c23c6b732c4d0adc683a3039f46cd0b8188067fb1be53b4c1f4b17"
+    },
+    {
+      "path": "src/mlx_agent/watch.py",
+      "sha256": "34f6ab4af7ca6ebf25329cd2e3e01e8982c471b11b1d19450b9adfdbd153b11b"
     },
     {
       "path": "src/mlx_agent/wiring.py",

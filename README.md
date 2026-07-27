@@ -206,6 +206,15 @@ python3 scripts/mlx-agent fleet apply --path ./router.yaml --from-adoption ./ado
 python3 scripts/mlx-agent fleet apply --path ./router.yaml --from-adoption ./adopt-state.json --confirm --preview-hash <hash>
 ```
 
+Watch (stateful owned-model digest):
+
+```bash
+python3 scripts/mlx-agent watch snapshot     # record a baseline
+python3 scripts/mlx-agent watch diff         # what changed since, for models you own
+```
+
+`watch diff` reports only changes relevant to models in your local inventories and wired configs: new quants of an owned base, weight-byte changes on tracked repos, gated flips, and owned models that disappeared. Unlike `discover --new` (which only re-sorts the Hub), watch keeps a baseline snapshot and ignores everything you do not own.
+
 `fleet` renders one bounded LiteLLM router YAML from explicit `--assign role=repo` picks or a completed adopt handoff, defaults vision to `mlx-vlm` and text roles to `mlx_lm`, checks every model against local inventories, and applies through the same preview-confirm-receipt-rollback transaction as wire.
 
 `serve` renders the exact argv and port plan, requires `--confirm --preview-hash`, then spawns the server and writes a receipt. Hard gates: the model must already be in the Hugging Face cache (never downloads), the runtime executable must already be installed (never installs), the port must be free and unclaimed by wired configs, and the bind is loopback-only. `serve stop` only stops processes serve itself started, verified against their receipts.

@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "plugin_version": "0.3.0",
-  "generated_from": "v0.3.0 provider validation evidence (2026-07-20)",
+  "plugin_version": "0.4.0",
+  "generated_from": "v0.4.0 provider validation evidence (2026-07-27)",
   "allowed_evidence_statuses": ["supported", "not-run", "blocked", "static", "fixture"],
   "providers": {
     "claude": {

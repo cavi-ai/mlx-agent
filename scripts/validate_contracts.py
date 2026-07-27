@@ -25,7 +25,7 @@ CAPABILITY_ACTIONS = {
     "scout": ("discover",),
     "adopt": ("start", "resume", "status"),
     "wire": ("render", "apply", "status", "rollback"),
-    "bench": ("run",),
+    "bench": ("run", "aggregate"),
 }
 NATIVE_PROVIDERS = ("claude", "codex", "gemini", "opencode")
 PROVIDERS = NATIVE_PROVIDERS + ("agentskills",)

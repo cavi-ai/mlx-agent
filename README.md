@@ -117,6 +117,7 @@ See the [complete install and lifecycle guide](docs/install/index.md), [Scout](d
 | **`mlx-scout`** skill | Auto-activates on "which local model?"; wraps the discovery script + runtime reference. |
 | **`mlx-advisor`** agent | On-demand expert for picking + wiring a local model for a role. |
 | **`scout.py`** | The stdlib-only discovery/wiring core — runs standalone, too. |
+| **Reference packs** | Quant guide, model-family quirks, and a troubleshooting playbook, bundled into every generated skill (`src/mlx_agent/resources/references/`). |
 
 ## Quick look
 

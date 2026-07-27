@@ -37,6 +37,16 @@ from .host import HostInventory
 from .huggingface import HuggingFaceClient
 from .installer import Installer, InstallerConflictError
 from .interview import build_intent, run_interview
+from .lora import (
+    BATCH_DEFAULT,
+    ITERS_DEFAULT,
+    LAYERS_DEFAULT,
+    LR_DEFAULT,
+    LoraError,
+    plan_lora,
+    start_lora,
+    status_lora,
+)
 from .modality import ALL_FACET_IDS, FOUNDATION_IDS, resolve_facets, resolve_modalities
 from .models import DISCOVERY_ROLES, render_md, wire
 from .project_blueprint import (
@@ -1261,6 +1271,105 @@ def _convert_status_human(entries):
     return "Convert jobs:\n" + "\n".join(lines)
 
 
+def _add_lora_arguments(parser):
+    actions = parser.add_subparsers(dest="lora_command", required=True)
+    start = actions.add_parser(
+        "start",
+        help="preview, then confirmation-gated LoRA training on a cached model",
+    )
+    start.add_argument("--repo", required=True, help="publisher/model base present in the local Hugging Face cache")
+    start.add_argument("--data", required=True, help="dataset directory with train.jsonl")
+    start.add_argument("--iters", type=int, default=ITERS_DEFAULT)
+    start.add_argument("--batch-size", type=int, default=BATCH_DEFAULT)
+    start.add_argument("--learning-rate", type=float, default=LR_DEFAULT)
+    start.add_argument("--num-layers", type=int, default=LAYERS_DEFAULT, help="-1 trains all layers")
+    start.add_argument("--out", default=None, help="adapter output directory (default <model>-lora)")
+    start.add_argument("--confirm", action="store_true", help="authorize this reviewed training run")
+    start.add_argument("--preview-hash", help="hash returned by the separately reviewed lora preview")
+    start.add_argument("--receipts-dir", default=None)
+    start.add_argument("--hf-cache", default=None)
+    start.add_argument("--json", action="store_true")
+    status = actions.add_parser("status", help="cross-check lora receipts against live processes")
+    status.add_argument("--receipts-dir", default=None)
+    status.add_argument("--json", action="store_true")
+
+
+def _run_lora(arguments):
+    operation = "lora-{0}".format(arguments.lora_command)
+    try:
+        if arguments.lora_command == "status":
+            entries = status_lora(arguments.receipts_dir)
+            return _emit_serve_result(
+                ResultEnvelope.ok(operation, {"jobs": entries}), arguments.json,
+                human=_lora_status_human(entries),
+            )
+        plan = plan_lora(
+            arguments.repo,
+            arguments.data,
+            iters=arguments.iters,
+            batch_size=arguments.batch_size,
+            learning_rate=arguments.learning_rate,
+            num_layers=arguments.num_layers,
+            out=arguments.out,
+        )
+        if not arguments.confirm:
+            result = ResultEnvelope.ok(
+                operation, {"plan": plan, "requires_confirmation": True}
+            )
+            if arguments.json:
+                print(json.dumps(result.to_dict(), indent=2))
+            else:
+                print("LoRA plan: {0} + {1} train lines -> {2}".format(
+                    plan["repo"], plan["dataset"]["train_lines"], plan["out"]
+                ))
+                print("  argv: {0}".format(" ".join(plan["argv"])))
+                print("  preview_hash: {0}".format(plan["preview_hash"]))
+                print("Confirmation required: rerun with --confirm --preview-hash PREVIEW_HASH.")
+            return 2
+        outcome = start_lora(
+            plan,
+            receipts_dir=arguments.receipts_dir,
+            confirm=True,
+            preview_hash=arguments.preview_hash,
+            model_present=default_model_present(arguments.hf_cache),
+        )
+        receipt = outcome["receipt"]
+        return _emit_serve_result(
+            ResultEnvelope.ok(operation, outcome), arguments.json,
+            human="lora started: {0} -> {1} (pid {2})\n  log: {3}".format(
+                receipt["repo"], receipt["out"], receipt["pid"], receipt["log_path"]
+            ),
+        )
+    except LoraError as error:
+        result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        result = ResultEnvelope.fail(
+            operation,
+            "lora_failed",
+            str(error),
+            "Correct the lora arguments or receipt state, then retry.",
+        )
+    if arguments.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        payload = result.to_dict()["error"]
+        print("lora failed [{0}]: {1}\nremediation: {2}".format(
+            payload["code"], payload["message"], payload["remediation"]
+        ))
+    return 2
+
+
+def _lora_status_human(entries):
+    if not entries:
+        return "No lora receipts."
+    lines = []
+    for entry in entries:
+        lines.append("  {0} -> {1}: {2}".format(
+            entry["repo"], entry["out"], entry["state"]
+        ))
+    return "LoRA jobs:\n" + "\n".join(lines)
+
+
 def _add_wire_arguments(parser):
     actions = parser.add_subparsers(dest="wire_command", required=True)
     for name in ("render", "apply"):
@@ -1485,6 +1594,8 @@ def build_parser():
     _add_watch_arguments(watch_command)
     convert_command = subcommands.add_parser("convert", help="preview and quantize a cached model (confirmation-gated)")
     _add_convert_arguments(convert_command)
+    lora_command = subcommands.add_parser("lora", help="preview and run LoRA training on a cached model (confirmation-gated)")
+    _add_lora_arguments(lora_command)
     providers_command = subcommands.add_parser("providers", help="list detected supported provider CLIs")
     _add_installer_arguments(providers_command, include_providers=False)
     for name in ("install", "update", "uninstall", "doctor"):
@@ -1513,6 +1624,8 @@ def main(argv=None):
         return _run_watch(arguments)
     if arguments.command == "convert":
         return _run_convert(arguments)
+    if arguments.command == "lora":
+        return _run_lora(arguments)
     if arguments.command in {"providers", "install", "update", "uninstall", "doctor"}:
         return _run_installer(arguments)
     if arguments.command == "inspect-host":

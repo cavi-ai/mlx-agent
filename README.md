@@ -223,7 +223,18 @@ python3 scripts/mlx-agent convert start --repo meta-llama/Llama-3.1-8B --q-bits 
 python3 scripts/mlx-agent convert status
 ```
 
-`convert` renders the exact `mlx_lm.convert` argv, requires `--confirm --preview-hash`, then runs the quantization detached with a receipt. Hard gates: source model already in the Hugging Face cache (never downloads), `mlx_lm` already installed (never installs), fresh output path (never overwrites), one job at a time.
+`convert` renders the exact `mlx_lm.convert` argv, requires `--confirm --preview-hash`, then runs the quantization detached with a receipt.
+
+LoRA training (confirmation-gated, dataset-validated):
+
+```bash
+python3 scripts/mlx-agent lora start --repo mlx-community/Qwen3-8B-4bit --data ./my-dataset --iters 1000
+# inspect the plan, then confirm:
+python3 scripts/mlx-agent lora start --repo mlx-community/Qwen3-8B-4bit --data ./my-dataset --confirm --preview-hash <hash>
+python3 scripts/mlx-agent lora status
+```
+
+`lora` validates the dataset (`train.jsonl` with `text` or `messages` per line) before rendering the exact `mlx_lm.lora` argv, then trains detached with a receipt under the same gates as convert: cached base model, installed runtime, fresh adapter path, one job at a time. Serve the result with `mlx-agent serve start --adapter-path <out>`. Hard gates: source model already in the Hugging Face cache (never downloads), `mlx_lm` already installed (never installs), fresh output path (never overwrites), one job at a time.
 
 `watch diff` reports only changes relevant to models in your local inventories and wired configs: new quants of an owned base, weight-byte changes on tracked repos, gated flips, and owned models that disappeared. Unlike `discover --new` (which only re-sorts the Hub), watch keeps a baseline snapshot and ignores everything you do not own.
 

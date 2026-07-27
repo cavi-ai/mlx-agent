@@ -358,18 +358,18 @@ def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_comma
     return entries
 
 
-def _argv_matches(receipt, command):
+def _argv_matches(receipt, command, require_port=True):
     if not command:
         return False
     argv = receipt.get("argv") or []
     if not argv:
         return False
     executable = Path(str(argv[0])).name
-    return (
-        executable in command
-        and "--port {0}".format(receipt["port"]) in command
-        and str(receipt["repo"]) in command
-    )
+    if executable not in command or str(receipt.get("repo")) not in command:
+        return False
+    if require_port:
+        return "--port {0}".format(receipt.get("port")) in command
+    return True
 
 
 def _terminate_pid(pid, sig=signal.SIGTERM):

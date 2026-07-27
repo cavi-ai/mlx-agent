@@ -18,6 +18,13 @@ from .bench import (
     measure_runtime,
 )
 from .contracts import ErrorDetail, ResultEnvelope
+from .convert import (
+    Q_BITS_CHOICES,
+    ConvertError,
+    plan_convert,
+    start_convert,
+    status_convert,
+)
 from .discovery import DiscoveryRequest, DiscoveryService
 from .fleet import (
     FleetConfigAdapter,
@@ -1167,6 +1174,93 @@ def _run_watch(arguments):
     return 2
 
 
+def _add_convert_arguments(parser):
+    actions = parser.add_subparsers(dest="convert_command", required=True)
+    start = actions.add_parser(
+        "start",
+        help="preview, then confirmation-gated quantization of a cached model",
+    )
+    start.add_argument("--repo", required=True, help="publisher/model present in the local Hugging Face cache")
+    start.add_argument("--q-bits", type=int, default=4, choices=Q_BITS_CHOICES)
+    start.add_argument("--out", default=None, help="output directory (default <model>-MLX-<bits>bit)")
+    start.add_argument("--confirm", action="store_true", help="authorize this reviewed conversion")
+    start.add_argument("--preview-hash", help="hash returned by the separately reviewed convert preview")
+    start.add_argument("--receipts-dir", default=None)
+    start.add_argument("--hf-cache", default=None)
+    start.add_argument("--json", action="store_true")
+    status = actions.add_parser("status", help="cross-check convert receipts against live processes")
+    status.add_argument("--receipts-dir", default=None)
+    status.add_argument("--json", action="store_true")
+
+
+def _run_convert(arguments):
+    operation = "convert-{0}".format(arguments.convert_command)
+    try:
+        if arguments.convert_command == "status":
+            entries = status_convert(arguments.receipts_dir)
+            return _emit_serve_result(
+                ResultEnvelope.ok(operation, {"jobs": entries}), arguments.json,
+                human=_convert_status_human(entries),
+            )
+        plan = plan_convert(arguments.repo, q_bits=arguments.q_bits, out=arguments.out)
+        if not arguments.confirm:
+            result = ResultEnvelope.ok(
+                operation, {"plan": plan, "requires_confirmation": True}
+            )
+            if arguments.json:
+                print(json.dumps(result.to_dict(), indent=2))
+            else:
+                print("Convert plan: {0} -> {1} ({2}bit)".format(
+                    plan["repo"], plan["out"], plan["q_bits"]
+                ))
+                print("  argv: {0}".format(" ".join(plan["argv"])))
+                print("  preview_hash: {0}".format(plan["preview_hash"]))
+                print("Confirmation required: rerun with --confirm --preview-hash PREVIEW_HASH.")
+            return 2
+        outcome = start_convert(
+            plan,
+            receipts_dir=arguments.receipts_dir,
+            confirm=True,
+            preview_hash=arguments.preview_hash,
+            model_present=default_model_present(arguments.hf_cache),
+        )
+        receipt = outcome["receipt"]
+        return _emit_serve_result(
+            ResultEnvelope.ok(operation, outcome), arguments.json,
+            human="convert started: {0} -> {1} (pid {2})\n  log: {3}".format(
+                receipt["repo"], receipt["out"], receipt["pid"], receipt["log_path"]
+            ),
+        )
+    except ConvertError as error:
+        result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        result = ResultEnvelope.fail(
+            operation,
+            "convert_failed",
+            str(error),
+            "Correct the convert arguments or receipt state, then retry.",
+        )
+    if arguments.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        payload = result.to_dict()["error"]
+        print("convert failed [{0}]: {1}\nremediation: {2}".format(
+            payload["code"], payload["message"], payload["remediation"]
+        ))
+    return 2
+
+
+def _convert_status_human(entries):
+    if not entries:
+        return "No convert receipts."
+    lines = []
+    for entry in entries:
+        lines.append("  {0} ({1}bit) -> {2}: {3}".format(
+            entry["repo"], entry["q_bits"], entry["out"], entry["state"]
+        ))
+    return "Convert jobs:\n" + "\n".join(lines)
+
+
 def _add_wire_arguments(parser):
     actions = parser.add_subparsers(dest="wire_command", required=True)
     for name in ("render", "apply"):
@@ -1389,6 +1483,8 @@ def build_parser():
     _add_fleet_arguments(fleet_command)
     watch_command = subcommands.add_parser("watch", help="snapshot and diff owned models against Hugging Face")
     _add_watch_arguments(watch_command)
+    convert_command = subcommands.add_parser("convert", help="preview and quantize a cached model (confirmation-gated)")
+    _add_convert_arguments(convert_command)
     providers_command = subcommands.add_parser("providers", help="list detected supported provider CLIs")
     _add_installer_arguments(providers_command, include_providers=False)
     for name in ("install", "update", "uninstall", "doctor"):
@@ -1415,6 +1511,8 @@ def main(argv=None):
         return _run_fleet(arguments)
     if arguments.command == "watch":
         return _run_watch(arguments)
+    if arguments.command == "convert":
+        return _run_convert(arguments)
     if arguments.command in {"providers", "install", "update", "uninstall", "doctor"}:
         return _run_installer(arguments)
     if arguments.command == "inspect-host":

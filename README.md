@@ -103,7 +103,7 @@ python3 scripts/mlx-agent doctor gemini --scope user --json
 
 Use the same preview-then-confirm sequence for `update` and `uninstall`. Project installs add `--scope project --project /absolute/project/path`. The installer changes only receipt-owned files; it does not download models, persist secrets, overwrite unowned configuration, or modify a provider's marketplace registry.
 
-See the [complete install and lifecycle guide](docs/install/index.md), [Scout](docs/guides/scout.md), [Adopt](docs/guides/adopt.md), [Wire](docs/guides/wire.md), [Research](docs/guides/research.md) ([legal](docs/examples/legal-research-pack.md) · [audio](docs/examples/audio-research-pack.md) · [video](docs/examples/video-research-pack.md)), [Blueprint](docs/guides/blueprint.md), [security and recovery](docs/security.md), and [v0.1 Claude migration](docs/migrating-from-v0.1.md).
+Hosted documentation is built from `docs/mlx-agent/source` into an immutable artifact (`docs/mlx-agent/CONSUMER.md`). See the [complete install and lifecycle guide](docs/install/index.md), [Scout](docs/guides/scout.md), [Adopt](docs/guides/adopt.md), [Wire](docs/guides/wire.md), [Research](docs/guides/research.md) ([legal](docs/examples/legal-research-pack.md) · [audio](docs/examples/audio-research-pack.md) · [video](docs/examples/video-research-pack.md)), [Blueprint](docs/guides/blueprint.md), [security and recovery](docs/security.md), and [v0.1 Claude migration](docs/migrating-from-v0.1.md).
 
 ## What's inside
 

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add the immutable documentation artifact: curated docs under `docs/mlx-agent/source`, built by `scripts/build_docs.py` into `docs/mlx-agent/v<version>/` with a `contentSha256` manifest (bobby-browser pattern), enforced by contract tests. See `docs/mlx-agent/CONSUMER.md`.
+
 ## 0.4.0 - 2026-07-27
 
 - Add community bench DB plumbing: `bench run --export` appends a bounded, anonymized result line (repo, chip, runtime, timings; no hostnames, paths, or prompts); `bench aggregate --exports <dir>` dedupes to newest per (repo, chip, runtime) and emits per-(repo, chip) medians; discovery annotates chip-matching candidates with `community_bench` from the bundled aggregate (annotation only, no ranking change).

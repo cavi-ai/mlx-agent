@@ -1,0 +1,54 @@
+{
+  "title": "mlx-agent",
+  "version": "0.4.0",
+  "sections": [
+    {
+      "title": "Introduction",
+      "pages": [
+        { "title": "Overview", "path": "introduction/overview.md" },
+        { "title": "Installation", "path": "introduction/installation.md" },
+        { "title": "Quickstart", "path": "introduction/quickstart.md" }
+      ]
+    },
+    {
+      "title": "Capabilities",
+      "pages": [
+        { "title": "Scout", "path": "capabilities/scout.md" },
+        { "title": "Adopt", "path": "capabilities/adopt.md" },
+        { "title": "Wire", "path": "capabilities/wire.md" },
+        { "title": "Bench", "path": "capabilities/bench.md" }
+      ]
+    },
+    {
+      "title": "Lifecycle",
+      "pages": [
+        { "title": "Serve", "path": "lifecycle/serve.md" },
+        { "title": "Convert", "path": "lifecycle/convert.md" },
+        { "title": "LoRA and fuse", "path": "lifecycle/lora-and-fuse.md" },
+        { "title": "Fleet", "path": "lifecycle/fleet.md" },
+        { "title": "Doctor", "path": "lifecycle/doctor.md" },
+        { "title": "Watch", "path": "lifecycle/watch.md" }
+      ]
+    },
+    {
+      "title": "Reference",
+      "pages": [
+        { "title": "Runtimes", "path": "reference/runtimes.md" },
+        { "title": "Command line", "path": "reference/cli.md" }
+      ]
+    },
+    {
+      "title": "Security",
+      "pages": [
+        { "title": "Security model", "path": "security/model.md" }
+      ]
+    },
+    {
+      "title": "Release",
+      "pages": [
+        { "title": "Version and support", "path": "release/version-and-support.md" },
+        { "title": "MIT license", "path": "release/license.md" }
+      ]
+    }
+  ]
+}

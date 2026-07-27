@@ -62,7 +62,7 @@
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/cli.py",
-      "sha256": "4abcc8c301ae3b29bbc5aac7829972acaa996c0e40add960a3f9578641e36887"
+      "sha256": "acc10b6d5af2cd55c110d32bae6a6fd9f6cf2d3cbd8a8568c070535ff9dcb07d"
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/command_executor.py",
@@ -75,6 +75,10 @@
     {
       "path": "skills/mlx-adopt/src/mlx_agent/discovery.py",
       "sha256": "6207878ef6bd572a777d1db62fc787bd46490c3ff6418bd87408da40af20a854"
+    },
+    {
+      "path": "skills/mlx-adopt/src/mlx_agent/fleet.py",
+      "sha256": "22b1d38415ec298d914945183afdecc323c373a2d5d9dde604a53c033a7ee415"
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/gemini_args.py",
@@ -202,7 +206,7 @@
     },
     {
       "path": "skills/mlx-bench/src/mlx_agent/cli.py",
-      "sha256": "4abcc8c301ae3b29bbc5aac7829972acaa996c0e40add960a3f9578641e36887"
+      "sha256": "acc10b6d5af2cd55c110d32bae6a6fd9f6cf2d3cbd8a8568c070535ff9dcb07d"
     },
     {
       "path": "skills/mlx-bench/src/mlx_agent/command_executor.py",
@@ -215,6 +219,10 @@
     {
       "path": "skills/mlx-bench/src/mlx_agent/discovery.py",
       "sha256": "6207878ef6bd572a777d1db62fc787bd46490c3ff6418bd87408da40af20a854"
+    },
+    {
+      "path": "skills/mlx-bench/src/mlx_agent/fleet.py",
+      "sha256": "22b1d38415ec298d914945183afdecc323c373a2d5d9dde604a53c033a7ee415"
     },
     {
       "path": "skills/mlx-bench/src/mlx_agent/gemini_args.py",
@@ -342,7 +350,7 @@
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/cli.py",
-      "sha256": "4abcc8c301ae3b29bbc5aac7829972acaa996c0e40add960a3f9578641e36887"
+      "sha256": "acc10b6d5af2cd55c110d32bae6a6fd9f6cf2d3cbd8a8568c070535ff9dcb07d"
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/command_executor.py",
@@ -355,6 +363,10 @@
     {
       "path": "skills/mlx-scout/src/mlx_agent/discovery.py",
       "sha256": "6207878ef6bd572a777d1db62fc787bd46490c3ff6418bd87408da40af20a854"
+    },
+    {
+      "path": "skills/mlx-scout/src/mlx_agent/fleet.py",
+      "sha256": "22b1d38415ec298d914945183afdecc323c373a2d5d9dde604a53c033a7ee415"
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/gemini_args.py",
@@ -482,7 +494,7 @@
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/cli.py",
-      "sha256": "4abcc8c301ae3b29bbc5aac7829972acaa996c0e40add960a3f9578641e36887"
+      "sha256": "acc10b6d5af2cd55c110d32bae6a6fd9f6cf2d3cbd8a8568c070535ff9dcb07d"
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/command_executor.py",
@@ -495,6 +507,10 @@
     {
       "path": "skills/mlx-wire/src/mlx_agent/discovery.py",
       "sha256": "6207878ef6bd572a777d1db62fc787bd46490c3ff6418bd87408da40af20a854"
+    },
+    {
+      "path": "skills/mlx-wire/src/mlx_agent/fleet.py",
+      "sha256": "22b1d38415ec298d914945183afdecc323c373a2d5d9dde604a53c033a7ee415"
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/gemini_args.py",
@@ -610,7 +626,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "4abcc8c301ae3b29bbc5aac7829972acaa996c0e40add960a3f9578641e36887"
+      "sha256": "acc10b6d5af2cd55c110d32bae6a6fd9f6cf2d3cbd8a8568c070535ff9dcb07d"
     },
     {
       "path": "src/mlx_agent/command_executor.py",
@@ -623,6 +639,10 @@
     {
       "path": "src/mlx_agent/discovery.py",
       "sha256": "6207878ef6bd572a777d1db62fc787bd46490c3ff6418bd87408da40af20a854"
+    },
+    {
+      "path": "src/mlx_agent/fleet.py",
+      "sha256": "22b1d38415ec298d914945183afdecc323c373a2d5d9dde604a53c033a7ee415"
     },
     {
       "path": "src/mlx_agent/gemini_args.py",

@@ -19,6 +19,13 @@ from .bench import (
 )
 from .contracts import ErrorDetail, ResultEnvelope
 from .discovery import DiscoveryRequest, DiscoveryService
+from .fleet import (
+    FleetConfigAdapter,
+    FleetError,
+    assignments_from_adoption,
+    parse_assignments,
+    parse_runtime_map,
+)
 from .host import HostInventory
 from .huggingface import HuggingFaceClient
 from .installer import Installer, InstallerConflictError
@@ -903,6 +910,144 @@ def _serve_status_human(entries):
     return "Serve receipts:\n" + "\n".join(lines)
 
 
+def _add_fleet_arguments(parser):
+    actions = parser.add_subparsers(dest="fleet_command", required=True)
+    for name in ("render", "apply"):
+        action = actions.add_parser(
+            name,
+            help="{0} a one-shot per-role router configuration".format(name),
+        )
+        action.add_argument("--path", required=True, help="target router configuration file")
+        action.add_argument("--assign", action="append", default=None, metavar="ROLE=REPO",
+                            help="per-role model assignment (repeatable)")
+        action.add_argument("--from-adoption", default=None, metavar="STATE",
+                            help="read role assignments from a completed adopt handoff")
+        action.add_argument("--runtime-map", action="append", default=None, metavar="ROLE=RUNTIME",
+                            help="per-role runtime override: mlx_lm or mlx-vlm (repeatable)")
+        action.add_argument("--allow-missing", action="store_true",
+                            help="warn instead of failing when a model is not in a local inventory")
+        action.add_argument("--json", action="store_true")
+        if name == "apply":
+            action.add_argument("--confirm", action="store_true", help="explicitly authorize this reviewed mutation")
+            action.add_argument("--preview-hash", help="hash returned by the separately reviewed fleet apply preview")
+            action.add_argument("--receipts-dir", help="directory for non-secret transaction receipts")
+            action.add_argument("--endpoint", help="optional local runtime health endpoint")
+
+
+def _fleet_inputs(arguments):
+    if arguments.assign and arguments.from_adoption:
+        raise FleetError(
+            "invalid_arguments",
+            "--assign and --from-adoption are mutually exclusive.",
+            "Pick explicit assignments or an adoption handoff, not both.",
+        )
+    if arguments.from_adoption:
+        assignments = assignments_from_adoption(arguments.from_adoption)
+    else:
+        assignments = parse_assignments(arguments.assign)
+    runtime_map = parse_runtime_map(arguments.runtime_map)
+    return assignments, runtime_map
+
+
+def _fleet_missing_models(assignments):
+    from .model_doctor import (
+        collect_runtime_inventory,
+        default_hf_cache,
+        inspect_hf_cache,
+    )
+
+    known = {item["id"].casefold() for item in inspect_hf_cache(default_hf_cache())}
+    runtime_clients = [
+        OllamaRuntimeClient(),
+        LMStudioRuntimeClient(),
+        OpenAICompatibleRuntimeClient("mlx_lm", "http://127.0.0.1:8080"),
+        MLXVLMRuntimeClient(),
+        OpenAICompatibleRuntimeClient("litellm", "http://127.0.0.1:4000"),
+    ]
+    runtime_inventory, _errors = collect_runtime_inventory(runtime_clients)
+    known.update(item["id"].casefold() for item in runtime_inventory)
+    return sorted(
+        repo for repo in set(assignments.values()) if repo.casefold() not in known
+    )
+
+
+def _run_fleet(arguments):
+    operation = "fleet-{0}".format(arguments.fleet_command)
+    try:
+        assignments, runtime_map = _fleet_inputs(arguments)
+        path = _assert_safe_target(arguments.path)
+        existing = _read_regular(path).decode("utf-8")
+        adapter = FleetConfigAdapter(path)
+        content = adapter.render(assignments, runtime_map, existing=existing)
+        missing = _fleet_missing_models(assignments)
+        warnings = []
+        if missing and not arguments.allow_missing:
+            return _emit_wire_result(_wire_failure(
+                operation,
+                "model_not_local",
+                "Models are not present in a local inventory: {0}".format(", ".join(missing)),
+                "Download them first, or pass --allow-missing to record a reviewed warning.",
+            ), arguments.json)
+        if missing:
+            warnings.append({
+                "code": "model_not_local",
+                "message": "Not in a local inventory: {0}".format(", ".join(missing)),
+            })
+        if arguments.fleet_command == "render":
+            result = _wire_ok(operation, {
+                "path": str(path), "assignments": assignments, "config": content,
+                "validation": {"parse": True},
+            })
+            result.warnings.extend(warnings)
+            return _emit_wire_result(result, arguments.json, human=content)
+        transaction = Transaction(receipts_dir=arguments.receipts_dir)
+        preview = transaction.preview([{
+            "path": str(path), "content": content, "runtime": "litellm",
+            "adapter": adapter, "endpoint": arguments.endpoint,
+        }])
+        if not arguments.confirm:
+            result = _wire_ok(operation, {"preview": preview, "requires_confirmation": True})
+            result.warnings.extend(warnings)
+            if arguments.json:
+                print(json.dumps(result.to_dict(), indent=2))
+            else:
+                print(preview["diff"])
+                print("Confirmation required: rerun with --confirm to apply this transaction.")
+            return 2
+        if not arguments.preview_hash:
+            return _emit_wire_result(_wire_failure(
+                operation, "preview_hash_required", "--confirm requires the preview hash from a prior preview.",
+                "Run fleet apply without --confirm, inspect the preview, then pass its --preview-hash value.",
+                {"preview": preview},
+            ), arguments.json)
+        if arguments.preview_hash != preview["preview_hash"]:
+            return _emit_wire_result(_wire_failure(
+                operation, "preview_stale", "The supplied preview hash does not match the current preview.",
+                "Generate and inspect a new preview before confirming this mutation.",
+                {"preview": preview},
+            ), arguments.json)
+        if not arguments.json:
+            print(preview["diff"])
+        receipt = transaction.apply(arguments.preview_hash)
+        data = {"preview": preview, "receipt": _receipt_data(receipt)}
+        result = _wire_ok(operation, data) if receipt.status == "applied" else _wire_failure(
+            operation, receipt.status, "Fleet did not apply; receipt status is {0}.".format(receipt.status),
+            "Inspect the receipt validation results and use the recorded recovery path before retrying.", data,
+        )
+        result.warnings.extend(warnings)
+        return _emit_wire_result(result, arguments.json)
+    except FleetError as error:
+        return _emit_wire_result(_wire_failure(
+            operation, error.code, str(error), error.remediation,
+        ), arguments.json)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        code = "cooperative_lock_busy" if isinstance(error, ConcurrentTransactionError) else ("preview_stale" if str(error).startswith("preview is stale") else "fleet_failed")
+        return _emit_wire_result(_wire_failure(
+            operation, code, "Fleet could not complete: {0}".format(error),
+            "Correct the assignments or target configuration, then render a new preview.",
+        ), arguments.json)
+
+
 def _add_wire_arguments(parser):
     actions = parser.add_subparsers(dest="wire_command", required=True)
     for name in ("render", "apply"):
@@ -1121,6 +1266,8 @@ def build_parser():
     _add_bench_arguments(bench_command)
     serve_command = subcommands.add_parser("serve", help="preview and launch a local MLX server (confirmation-gated)")
     _add_serve_arguments(serve_command)
+    fleet_command = subcommands.add_parser("fleet", help="render or apply a one-shot per-role router configuration")
+    _add_fleet_arguments(fleet_command)
     providers_command = subcommands.add_parser("providers", help="list detected supported provider CLIs")
     _add_installer_arguments(providers_command, include_providers=False)
     for name in ("install", "update", "uninstall", "doctor"):
@@ -1143,6 +1290,8 @@ def main(argv=None):
         return _run_bench(arguments)
     if arguments.command == "serve":
         return _run_serve(arguments)
+    if arguments.command == "fleet":
+        return _run_fleet(arguments)
     if arguments.command in {"providers", "install", "update", "uninstall", "doctor"}:
         return _run_installer(arguments)
     if arguments.command == "inspect-host":

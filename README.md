@@ -186,6 +186,8 @@ python3 scripts/mlx-agent doctor models                 # inventory + drift + en
 python3 scripts/mlx-agent doctor models --wired-root . --hf-cache ~/.cache/huggingface/hub --json
 ```
 
+`doctor models --prune` deletes only incomplete cache snapshots, and only after a reviewed candidate list: the preview names every directory and its size, marks the deletion as irreversible, and requires `--confirm --preview-hash`.
+
 `doctor models` inventories the Hugging Face cache and running local runtimes, then reports classified findings: wired configs referencing missing models, wired files changed or deleted since their receipt, two runtimes claiming one port, incomplete cache snapshots, and unreachable wired endpoints.
 
 Serving (confirmation-gated; launches only what you review):

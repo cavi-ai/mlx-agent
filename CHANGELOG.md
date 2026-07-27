@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `doctor models --prune`: confirmation-gated cleanup of incomplete Hugging Face cache snapshots. The preview lists every candidate directory and byte count and marks the deletion as irreversible; execution requires `--confirm --preview-hash` and removes only cache-owned directories from the reviewed plan.
 - Add `mlx-agent lora`: confirmation-gated LoRA training. Validates the dataset (train.jsonl with text or messages per line, bounded) before rendering the exact `mlx_lm.lora` argv; `--confirm --preview-hash` spawns training detached with a receipt. Bounded hyperparameters (iters, batch-size, learning-rate, num-layers); same gates as convert. `lora status` records exits once.
 - Add `mlx-agent convert`: confirmation-gated local quantization. Preview renders the exact `mlx_lm.convert` argv and output path; `--confirm --preview-hash` spawns the job detached with a receipt. Gates: source in the HF cache, executable already installed, fresh output path, one job at a time. `convert status` cross-checks receipts against live processes and records exits once.
 - Add bundled reference packs: `quantization.md` (quant tradeoff ladder, KV-cache sizing, reasoning-model quant guidance), `model-families.md` (Qwen/Gemma/gpt-oss/Llama template and tool-calling quirks, vision and embedding notes), and `troubleshooting.md` (symptom-first serving playbook). Generated into every provider skill and pointed at from each scout skill.

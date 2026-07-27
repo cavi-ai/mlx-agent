@@ -8,9 +8,12 @@ deadlines, bounded responses, and redacted errors.
 
 from __future__ import annotations
 
+import json
+import os
 import statistics
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .verification import (
@@ -285,3 +288,144 @@ def _utc_now():
     from datetime import datetime, timezone
 
     return datetime.now(timezone.utc).isoformat()
+
+
+BENCH_EXPORT_SCHEMA_VERSION = "1.0"
+BENCH_AGGREGATE_SCHEMA_VERSION = "1.0"
+MAX_EXPORT_LINE_BYTES = 4096
+MAX_EXPORT_LINES_PER_FILE = 5000
+MAX_AGGREGATE_ENTRIES = 5000
+_COMMUNITY_BENCH_PATH = Path(__file__).resolve().parent / "resources" / "bench-community.json"
+_community_bench_cache = None
+
+
+def export_record(measurement, tool_version):
+    """Build one bounded, anonymized export line from a measurement."""
+    record = {
+        "schema_version": BENCH_EXPORT_SCHEMA_VERSION,
+        "repo": measurement.repo,
+        "chip": measurement.chip,
+        "runtime": measurement.runtime,
+        "ttft_ms": measurement.ttft_ms,
+        "decode_toks": measurement.decode_toks,
+        "prefill_toks": measurement.prefill_toks,
+        "measured_at": measurement.measured_at,
+        "tool_version": tool_version,
+    }
+    validate_export_record(record)
+    return record
+
+
+def validate_export_record(record):
+    if not isinstance(record, dict):
+        raise ValueError("bench export record must be an object")
+    if record.get("schema_version") != BENCH_EXPORT_SCHEMA_VERSION:
+        raise ValueError("bench export record has an unsupported schema version")
+    for key in ("repo", "chip", "runtime", "measured_at", "tool_version"):
+        if not isinstance(record.get(key), str) or not record[key]:
+            raise ValueError("bench export record {0} must be a non-empty string".format(key))
+    if len(record["repo"]) > 300 or len(record["chip"]) > 120:
+        raise ValueError("bench export record identifiers exceed their bounds")
+    for key in ("ttft_ms", "decode_toks", "prefill_toks"):
+        value = record.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise ValueError("bench export record {0} must be numeric or null".format(key))
+        if not 0 <= value <= 1e9:
+            raise ValueError("bench export record {0} is outside bench bounds".format(key))
+    if record.get("decode_toks") is None:
+        raise ValueError("bench export record requires decode_toks")
+    return record
+
+
+def append_export(path, record):
+    """Append one validated export line; never reads or rewrites the file."""
+    line = json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n"
+    if len(line.encode("utf-8")) > MAX_EXPORT_LINE_BYTES:
+        raise BenchError(
+            "invalid_arguments",
+            "The export record exceeds its size bound.",
+            "Export only records produced by bench run.",
+        )
+    destination = Path(path)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(str(destination), flags, 0o600)
+    try:
+        os.write(descriptor, line.encode("utf-8"))
+    finally:
+        os.close(descriptor)
+    return destination
+
+
+def aggregate_exports(paths):
+    """Deduplicate and median-aggregate validated export records."""
+    newest = {}
+    for path in paths:
+        location = Path(path)
+        try:
+            handle = location.open("r", encoding="utf-8")
+        except OSError:
+            continue
+        with handle:
+            for index, line in enumerate(handle):
+                if index >= MAX_EXPORT_LINES_PER_FILE:
+                    break
+                stripped = line.strip()
+                if not stripped or len(stripped.encode("utf-8")) > MAX_EXPORT_LINE_BYTES:
+                    continue
+                try:
+                    record = validate_export_record(json.loads(stripped))
+                except (ValueError, json.JSONDecodeError):
+                    continue
+                key = (record["repo"], record["chip"], record["runtime"])
+                if key not in newest or record["measured_at"] > newest[key]["measured_at"]:
+                    newest[key] = record
+    groups = {}
+    for record in newest.values():
+        groups.setdefault((record["repo"], record["chip"]), []).append(record)
+    entries = []
+    for (repo, chip), records in sorted(groups.items()):
+        if len(entries) >= MAX_AGGREGATE_ENTRIES:
+            break
+        def _median(key):
+            values = [item[key] for item in records if item.get(key) is not None]
+            return round(statistics.median(values), 1) if values else None
+
+        entries.append({
+            "repo": repo,
+            "chip": chip,
+            "decode_toks": _median("decode_toks"),
+            "prefill_toks": _median("prefill_toks"),
+            "ttft_ms": _median("ttft_ms"),
+            "samples": len(records),
+            "updated_at": max(item["measured_at"] for item in records),
+        })
+    return {"schema_version": BENCH_AGGREGATE_SCHEMA_VERSION, "entries": entries}
+
+
+def load_community_bench(path=None):
+    """Load the bundled community aggregate once; the empty stub yields {}."""
+    global _community_bench_cache
+    if _community_bench_cache is not None and path is None:
+        return _community_bench_cache
+    location = Path(path) if path is not None else _COMMUNITY_BENCH_PATH
+    entries = {}
+    try:
+        value = json.loads(location.read_text(encoding="utf-8"))
+        if isinstance(value, dict) and isinstance(value.get("entries"), list):
+            for entry in value["entries"]:
+                if not isinstance(entry, dict):
+                    continue
+                repo = entry.get("repo")
+                chip = entry.get("chip")
+                if isinstance(repo, str) and isinstance(chip, str):
+                    entries[(repo, chip)] = {
+                        key: entry.get(key)
+                        for key in ("decode_toks", "prefill_toks", "ttft_ms", "samples")
+                    }
+    except (OSError, ValueError, json.JSONDecodeError):
+        entries = {}
+    if path is None:
+        _community_bench_cache = entries
+    return entries

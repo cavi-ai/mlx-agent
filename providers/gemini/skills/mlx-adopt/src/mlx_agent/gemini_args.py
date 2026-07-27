@@ -246,8 +246,10 @@ def _parse_wire(tokens):
 
 
 def _parse_bench(tokens):
-    if not tokens or tokens[0] != "run":
-        raise GeminiArgumentError("Bench requires the run action")
+    if not tokens or tokens[0] not in {"run", "aggregate"}:
+        raise GeminiArgumentError("Bench requires the run or aggregate action")
+    if tokens[0] == "aggregate":
+        return _parse_bench_aggregate(tokens)
     argv, index = ["bench", "run"], 1
     seen = set()
     values = {
@@ -257,6 +259,7 @@ def _parse_bench(tokens):
         "--runs": (lambda value: _integer(value, "runs", 1, 10), "runs"),
         "--gen-tokens": (lambda value: _integer(value, "gen-tokens", 16, 2048), "gen-tokens"),
         "--timeout": (lambda value: _decimal(value, "timeout", 1, 600), "timeout"),
+        "--export": (lambda value: _path(value, "export"), "export"),
     }
     while index < len(tokens):
         flag = tokens[index]
@@ -280,6 +283,30 @@ def _parse_bench(tokens):
     for required in ("--repo", "--runtime"):
         if required not in seen:
             raise GeminiArgumentError("Bench run requires {0}".format(required))
+    return argv
+
+
+def _parse_bench_aggregate(tokens):
+    argv, index = ["bench", "aggregate"], 1
+    seen = set()
+    while index < len(tokens):
+        flag = tokens[index]
+        if flag == "--json":
+            if flag in seen:
+                raise GeminiArgumentError("duplicate flag: --json")
+            seen.add(flag)
+            argv.append(flag)
+            index += 1
+        elif flag in {"--exports", "--out"}:
+            if flag in seen:
+                raise GeminiArgumentError("duplicate flag: {0}".format(flag))
+            seen.add(flag)
+            argv.extend([flag, _path(_value(tokens, index, flag), flag[2:])])
+            index += 2
+        else:
+            raise GeminiArgumentError("unsupported Bench argument: {0}".format(flag))
+    if "--exports" not in seen:
+        raise GeminiArgumentError("Bench aggregate requires --exports")
     return argv
 
 

@@ -92,6 +92,23 @@ def _parse_timestamp(value):
         return None
 
 
+def _community_bench_for(repo, chip):
+    """Return the community bench entry matching repo and host chip, if any."""
+    if not isinstance(repo, str) or not isinstance(chip, str) or not chip:
+        return None
+    try:
+        from .bench import load_community_bench
+
+        entry = load_community_bench().get((repo, chip))
+    except Exception:
+        return None
+    if not isinstance(entry, dict) or entry.get("decode_toks") is None:
+        return None
+    result = dict(entry)
+    result["chip"] = chip
+    return result
+
+
 def _kv_estimate(architecture, ram_gb, budget_gb, context_tokens):
     """Attach KV-cache math when architecture, weights, and budget are known."""
     if not isinstance(architecture, dict) or ram_gb is None or budget_gb is None:
@@ -273,6 +290,7 @@ class DiscoveryService:
         fits = ram is None or budget is None or ram < float(budget) * 0.8
         if request.context_tokens is not None and kv_block is not None:
             fits = (ram + kv_block["kv_gb"]) < float(budget) * 0.8
+        community_bench = _community_bench_for(repo, host_data.get("chip"))
         rank_score = (1000000 if trusted else 0) + (quant_rank(repo) * 10000) + min(downloads, 9999) + min(likes, 999)
         metadata_available = enrichment.get("metadata_available") is True
         gated_status = "unknown"
@@ -287,7 +305,7 @@ class DiscoveryService:
         }
         if enrichment.get("tree_available") is True and enrichment.get("weight_bytes"):
             facts["weight_bytes"] = enrichment["weight_bytes"]
-        return {
+        candidate = {
             # Legacy report keys.
             "repo": repo,
             "role": role,
@@ -331,6 +349,9 @@ class DiscoveryService:
             "selection_reasons": self._selection_reasons(role, quantization, trusted, fits),
             "rejection_reasons": [],
         }
+        if community_bench is not None:
+            candidate["community_bench"] = community_bench
+        return candidate
 
     @staticmethod
     def _provenance(

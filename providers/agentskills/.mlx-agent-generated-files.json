@@ -26,7 +26,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/bench.py",
-      "sha256": "3048f8899652c2fb1a991adae7a467a70edfdc07bee2973954aae345a8dbb281"
+      "sha256": "0b18b85a6cea27ed149dd1065904ba065d7adae82236a6ee3632686ecfe46bd4"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/blueprint.py",
@@ -34,7 +34,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/cli.py",
-      "sha256": "59961480a18706cb1b53d4519bc00da0e003b9ebe8c380bf19dac52cd93e2537"
+      "sha256": "b3e6ac8ec4c53e66b1522d02683109456bb67e86ef67b16e2481f1fc5df0ea0c"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/command_executor.py",
@@ -54,7 +54,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/discovery.py",
-      "sha256": "6f68c9a01e0a19f22033c7fa81bcf678ec1dceab42f4138775fb7854734652cd"
+      "sha256": "cc7154b69e6084ca1508c67e8e094b897fdd91c3540ad6dc2a0add95b62d6872"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/fleet.py",
@@ -66,7 +66,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/gemini_args.py",
-      "sha256": "27858d4b5bbfe023e644da1ed1da4968382898d5f2cb4712a7511da695389c50"
+      "sha256": "249181f75291ced3aa17ec57d6f03b95baa3b86f3678de9589afc9377e5c5acb"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/gemini_executor.py",
@@ -131,6 +131,10 @@
     {
       "path": "mlx-adopt/src/mlx_agent/resources/adapter-runtime.json",
       "sha256": "3cd3e93f3bb3e90fca33b2371631730dcdc6053e2eb938182ea800fd69860162"
+    },
+    {
+      "path": "mlx-adopt/src/mlx_agent/resources/bench-community.json",
+      "sha256": "2e127b8ca192b0f5a087109156d9ff604aa4cdd7a1b48b0af031d71b33eef429"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/resources/references/model-families.md",
@@ -202,7 +206,7 @@
     },
     {
       "path": "mlx-bench/src/mlx_agent/bench.py",
-      "sha256": "3048f8899652c2fb1a991adae7a467a70edfdc07bee2973954aae345a8dbb281"
+      "sha256": "0b18b85a6cea27ed149dd1065904ba065d7adae82236a6ee3632686ecfe46bd4"
     },
     {
       "path": "mlx-bench/src/mlx_agent/blueprint.py",
@@ -210,7 +214,7 @@
     },
     {
       "path": "mlx-bench/src/mlx_agent/cli.py",
-      "sha256": "59961480a18706cb1b53d4519bc00da0e003b9ebe8c380bf19dac52cd93e2537"
+      "sha256": "b3e6ac8ec4c53e66b1522d02683109456bb67e86ef67b16e2481f1fc5df0ea0c"
     },
     {
       "path": "mlx-bench/src/mlx_agent/command_executor.py",
@@ -230,7 +234,7 @@
     },
     {
       "path": "mlx-bench/src/mlx_agent/discovery.py",
-      "sha256": "6f68c9a01e0a19f22033c7fa81bcf678ec1dceab42f4138775fb7854734652cd"
+      "sha256": "cc7154b69e6084ca1508c67e8e094b897fdd91c3540ad6dc2a0add95b62d6872"
     },
     {
       "path": "mlx-bench/src/mlx_agent/fleet.py",
@@ -242,7 +246,7 @@
     },
     {
       "path": "mlx-bench/src/mlx_agent/gemini_args.py",
-      "sha256": "27858d4b5bbfe023e644da1ed1da4968382898d5f2cb4712a7511da695389c50"
+      "sha256": "249181f75291ced3aa17ec57d6f03b95baa3b86f3678de9589afc9377e5c5acb"
     },
     {
       "path": "mlx-bench/src/mlx_agent/gemini_executor.py",
@@ -307,6 +311,10 @@
     {
       "path": "mlx-bench/src/mlx_agent/resources/adapter-runtime.json",
       "sha256": "3cd3e93f3bb3e90fca33b2371631730dcdc6053e2eb938182ea800fd69860162"
+    },
+    {
+      "path": "mlx-bench/src/mlx_agent/resources/bench-community.json",
+      "sha256": "2e127b8ca192b0f5a087109156d9ff604aa4cdd7a1b48b0af031d71b33eef429"
     },
     {
       "path": "mlx-bench/src/mlx_agent/resources/references/model-families.md",
@@ -378,7 +386,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/bench.py",
-      "sha256": "3048f8899652c2fb1a991adae7a467a70edfdc07bee2973954aae345a8dbb281"
+      "sha256": "0b18b85a6cea27ed149dd1065904ba065d7adae82236a6ee3632686ecfe46bd4"
     },
     {
       "path": "mlx-scout/src/mlx_agent/blueprint.py",
@@ -386,7 +394,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/cli.py",
-      "sha256": "59961480a18706cb1b53d4519bc00da0e003b9ebe8c380bf19dac52cd93e2537"
+      "sha256": "b3e6ac8ec4c53e66b1522d02683109456bb67e86ef67b16e2481f1fc5df0ea0c"
     },
     {
       "path": "mlx-scout/src/mlx_agent/command_executor.py",
@@ -406,7 +414,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/discovery.py",
-      "sha256": "6f68c9a01e0a19f22033c7fa81bcf678ec1dceab42f4138775fb7854734652cd"
+      "sha256": "cc7154b69e6084ca1508c67e8e094b897fdd91c3540ad6dc2a0add95b62d6872"
     },
     {
       "path": "mlx-scout/src/mlx_agent/fleet.py",
@@ -418,7 +426,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/gemini_args.py",
-      "sha256": "27858d4b5bbfe023e644da1ed1da4968382898d5f2cb4712a7511da695389c50"
+      "sha256": "249181f75291ced3aa17ec57d6f03b95baa3b86f3678de9589afc9377e5c5acb"
     },
     {
       "path": "mlx-scout/src/mlx_agent/gemini_executor.py",
@@ -483,6 +491,10 @@
     {
       "path": "mlx-scout/src/mlx_agent/resources/adapter-runtime.json",
       "sha256": "3cd3e93f3bb3e90fca33b2371631730dcdc6053e2eb938182ea800fd69860162"
+    },
+    {
+      "path": "mlx-scout/src/mlx_agent/resources/bench-community.json",
+      "sha256": "2e127b8ca192b0f5a087109156d9ff604aa4cdd7a1b48b0af031d71b33eef429"
     },
     {
       "path": "mlx-scout/src/mlx_agent/resources/references/model-families.md",
@@ -554,7 +566,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/bench.py",
-      "sha256": "3048f8899652c2fb1a991adae7a467a70edfdc07bee2973954aae345a8dbb281"
+      "sha256": "0b18b85a6cea27ed149dd1065904ba065d7adae82236a6ee3632686ecfe46bd4"
     },
     {
       "path": "mlx-wire/src/mlx_agent/blueprint.py",
@@ -562,7 +574,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/cli.py",
-      "sha256": "59961480a18706cb1b53d4519bc00da0e003b9ebe8c380bf19dac52cd93e2537"
+      "sha256": "b3e6ac8ec4c53e66b1522d02683109456bb67e86ef67b16e2481f1fc5df0ea0c"
     },
     {
       "path": "mlx-wire/src/mlx_agent/command_executor.py",
@@ -582,7 +594,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/discovery.py",
-      "sha256": "6f68c9a01e0a19f22033c7fa81bcf678ec1dceab42f4138775fb7854734652cd"
+      "sha256": "cc7154b69e6084ca1508c67e8e094b897fdd91c3540ad6dc2a0add95b62d6872"
     },
     {
       "path": "mlx-wire/src/mlx_agent/fleet.py",
@@ -594,7 +606,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/gemini_args.py",
-      "sha256": "27858d4b5bbfe023e644da1ed1da4968382898d5f2cb4712a7511da695389c50"
+      "sha256": "249181f75291ced3aa17ec57d6f03b95baa3b86f3678de9589afc9377e5c5acb"
     },
     {
       "path": "mlx-wire/src/mlx_agent/gemini_executor.py",
@@ -659,6 +671,10 @@
     {
       "path": "mlx-wire/src/mlx_agent/resources/adapter-runtime.json",
       "sha256": "3cd3e93f3bb3e90fca33b2371631730dcdc6053e2eb938182ea800fd69860162"
+    },
+    {
+      "path": "mlx-wire/src/mlx_agent/resources/bench-community.json",
+      "sha256": "2e127b8ca192b0f5a087109156d9ff604aa4cdd7a1b48b0af031d71b33eef429"
     },
     {
       "path": "mlx-wire/src/mlx_agent/resources/references/model-families.md",

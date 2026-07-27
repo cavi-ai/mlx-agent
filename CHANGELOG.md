@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `mlx-agent watch`: stateful Hugging Face digest. `watch snapshot` records owned inventories (HF cache, runtimes, wired configs) and a full-role discovery reading into one self-owned state file; `watch diff` classifies only owned-relevant changes (new quant of owned, updated tracked repo, gated flip, owned missing).
 - Add `mlx-agent fleet`: one-shot per-role router configuration. Renders a bounded LiteLLM router YAML from explicit `--assign role=repo` picks or a completed adopt handoff (`--from-adoption`), with per-role runtime defaults (vision → mlx-vlm, text → mlx_lm) and overrides. Models are checked against local inventories; apply goes through the same preview-confirm-receipt-rollback transaction as wire.
 - Promote bench to a full provider capability: `/mlx-bench` on Claude Code, Gemini CLI, and OpenCode, `$mlx-agent:mlx-bench` on Codex, and a portable AgentSkills package, all generated from the manifest with contract parity.
 - Add `adopt start --measure`: an optional measure phase between verify and compare that benches verified shortlist candidates (sequential, bounded) and upgrades their evidence to `runtime_measured` while preserving role-probe results. Adoption state schema migrates 1.1/1.2 states to 1.3.

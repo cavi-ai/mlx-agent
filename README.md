@@ -177,7 +177,7 @@ python3 scripts/mlx-agent bench run --repo mlx-community/Qwen3-32B-4bit --runtim
 python3 scripts/mlx-agent bench run --repo qwen3:32b --runtime ollama --runs 5 --json
 ```
 
-Bench reports TTFT, decode/prefill tok/s, and run spread as `runtime_measured` evidence. It never starts servers and never downloads models. It is also available inside every provider as `/mlx-bench` (`$mlx-agent:mlx-bench` in Codex), and `adopt start --measure` upgrades verified shortlist candidates with measured evidence before ranking.
+Bench reports TTFT, decode/prefill tok/s, and run spread as `runtime_measured` evidence. `--export <file.jsonl>` appends an anonymized result line you can contribute back; `bench aggregate --exports <dir>` dedupes exports into medians per (repo, chip), and discovery annotates candidates with matching community numbers as `community_bench` (annotation only, no ranking change). It never starts servers and never downloads models. It is also available inside every provider as `/mlx-bench` (`$mlx-agent:mlx-bench` in Codex), and `adopt start --measure` upgrades verified shortlist candidates with measured evidence before ranking.
 
 Model diagnostics (read-only; never deletes or repairs):
 

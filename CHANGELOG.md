@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add community bench DB plumbing: `bench run --export` appends a bounded, anonymized result line (repo, chip, runtime, timings; no hostnames, paths, or prompts); `bench aggregate --exports <dir>` dedupes to newest per (repo, chip, runtime) and emits per-(repo, chip) medians; discovery annotates chip-matching candidates with `community_bench` from the bundled aggregate (annotation only, no ranking change).
 - Add `mlx-agent fuse`: confirmation-gated LoRA fusion. Validates the adapter directory (`adapter_config.json`), renders the exact `mlx_lm.fuse` argv, and runs detached with a receipt under the same gates as convert/lora. `fuse status` records exits once.
 - Add `serve start --launchd`: install a reviewed serve plan as a launchd agent. Renders a deterministic plist (bounded subset, managed label prefix), applies it through the transaction preview/confirm/receipt flow, refuses existing plists, and prints the exact `launchctl bootstrap` command instead of loading it.
 - Add `doctor models --prune`: confirmation-gated cleanup of incomplete Hugging Face cache snapshots. The preview lists every candidate directory and byte count and marks the deletion as irreversible; execution requires `--confirm --preview-hash` and removes only cache-owned directories from the reviewed plan.

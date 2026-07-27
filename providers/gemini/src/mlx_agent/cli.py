@@ -776,12 +776,50 @@ def _add_bench_arguments(parser):
     run.add_argument("--runs", type=int, default=RUNS_DEFAULT, help="timed runs after one warm-up (1-10)")
     run.add_argument("--gen-tokens", type=int, default=GEN_TOKENS_DEFAULT, help="tokens generated per run (16-2048)")
     run.add_argument("--timeout", type=float, default=TIMEOUT_DEFAULT, help="total measurement deadline in seconds")
+    run.add_argument("--export", default=None, help="append an anonymized result line to this JSONL file")
     run.add_argument("--json", action="store_true")
+    aggregate = actions.add_parser(
+        "aggregate",
+        help="deduplicate and median-aggregate bench export files",
+    )
+    aggregate.add_argument("--exports", required=True, help="directory of .jsonl export files")
+    aggregate.add_argument("--out", default=None, help="aggregate output path (default: print only)")
+    aggregate.add_argument("--json", action="store_true")
 
 
 def _run_bench(arguments):
     operation = "bench-{0}".format(arguments.bench_command)
     try:
+        if arguments.bench_command == "aggregate":
+            from .bench import aggregate_exports
+
+            exports_dir = Path(arguments.exports)
+            if not exports_dir.is_dir():
+                raise BenchError(
+                    "invalid_arguments",
+                    "The exports directory does not exist: {0}".format(arguments.exports),
+                    "Point --exports at a directory of bench export .jsonl files.",
+                )
+            files = sorted(exports_dir.glob("*.jsonl"))
+            aggregate = aggregate_exports(files)
+            if arguments.out:
+                destination = Path(arguments.out)
+                content = (json.dumps(aggregate, indent=2, sort_keys=True) + "\n").encode("utf-8")
+                destination.write_bytes(content)
+            data = {
+                "entries": aggregate["entries"],
+                "sources": len(files),
+                "written": str(arguments.out) if arguments.out else None,
+            }
+            result = ResultEnvelope.ok(operation, data)
+            if arguments.json:
+                print(json.dumps(result.to_dict(), indent=2))
+            else:
+                print("Aggregate: {0} entries from {1} export file(s){2}".format(
+                    len(aggregate["entries"]), len(files),
+                    " -> {0}".format(arguments.out) if arguments.out else "",
+                ))
+            return 0
         chip = None
         try:
             chip = HostInventory.inspect().chip
@@ -797,6 +835,14 @@ def _run_bench(arguments):
         )
         evidence = measurement.to_evidence(role=arguments.role).to_dict()
         data = {"measurement": measurement.to_dict(), "evidence": evidence}
+        if arguments.export:
+            from . import __version__
+            from .bench import append_export, export_record
+
+            destination = append_export(
+                arguments.export, export_record(measurement, __version__)
+            )
+            data["exported"] = str(destination)
         result = ResultEnvelope.ok(operation, data)
         if arguments.json:
             print(json.dumps(result.to_dict(), indent=2))

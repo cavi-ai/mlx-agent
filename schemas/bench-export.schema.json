@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cavi-ai/mlx-agent/schemas/bench-export.schema.json",
+  "title": "mlx-agent bench export record",
+  "type": "object",
+  "required": [
+    "schema_version", "repo", "chip", "runtime", "ttft_ms", "decode_toks",
+    "prefill_toks", "measured_at", "tool_version"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "repo": { "type": "string", "minLength": 1, "maxLength": 300 },
+    "chip": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "runtime": { "type": "string", "minLength": 1 },
+    "ttft_ms": { "type": ["number", "null"], "minimum": 0, "maximum": 1000000000 },
+    "decode_toks": { "type": "number", "minimum": 0, "maximum": 1000000000 },
+    "prefill_toks": { "type": ["number", "null"], "minimum": 0, "maximum": 1000000000 },
+    "measured_at": { "type": "string", "format": "date-time" },
+    "tool_version": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}

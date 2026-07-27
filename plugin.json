@@ -151,6 +151,12 @@
           {"name": "runs", "flag": "--runs", "kind": "option", "type": "integer", "required": false},
           {"name": "gen_tokens", "flag": "--gen-tokens", "kind": "option", "type": "integer", "required": false},
           {"name": "timeout", "flag": "--timeout", "kind": "option", "type": "number", "required": false},
+          {"name": "export", "flag": "--export", "kind": "option", "type": "string", "required": false},
+          {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false}
+        ]},
+        "aggregate": {"arguments": [
+          {"name": "exports", "flag": "--exports", "kind": "option", "type": "string", "required": true},
+          {"name": "out", "flag": "--out", "kind": "option", "type": "string", "required": false},
           {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false}
         ]}
       }

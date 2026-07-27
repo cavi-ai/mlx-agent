@@ -121,6 +121,18 @@
       "sha256": "3cd3e93f3bb3e90fca33b2371631730dcdc6053e2eb938182ea800fd69860162"
     },
     {
+      "path": "mlx-adopt/src/mlx_agent/resources/references/model-families.md",
+      "sha256": "666bd3e3fd4b9922488d8232075eb5a3bd9d168bb0c90162c1a459bc44df6b90"
+    },
+    {
+      "path": "mlx-adopt/src/mlx_agent/resources/references/quantization.md",
+      "sha256": "3571a2038e84413454e8dd024c3db23eee01c568185c3b7ef915a4c9d3606ce8"
+    },
+    {
+      "path": "mlx-adopt/src/mlx_agent/resources/references/troubleshooting.md",
+      "sha256": "0a4523aed1c0a2bd9331dc91d5e88d632f79aa25f98568b7e3dcc7265b68363d"
+    },
+    {
       "path": "mlx-adopt/src/mlx_agent/resources/serve-recipes.json",
       "sha256": "3190552328ab7e905fc23a26df0d6c29b51dec96319abf0a79a792f1d14edbe6"
     },
@@ -273,6 +285,18 @@
       "sha256": "3cd3e93f3bb3e90fca33b2371631730dcdc6053e2eb938182ea800fd69860162"
     },
     {
+      "path": "mlx-bench/src/mlx_agent/resources/references/model-families.md",
+      "sha256": "666bd3e3fd4b9922488d8232075eb5a3bd9d168bb0c90162c1a459bc44df6b90"
+    },
+    {
+      "path": "mlx-bench/src/mlx_agent/resources/references/quantization.md",
+      "sha256": "3571a2038e84413454e8dd024c3db23eee01c568185c3b7ef915a4c9d3606ce8"
+    },
+    {
+      "path": "mlx-bench/src/mlx_agent/resources/references/troubleshooting.md",
+      "sha256": "0a4523aed1c0a2bd9331dc91d5e88d632f79aa25f98568b7e3dcc7265b68363d"
+    },
+    {
       "path": "mlx-bench/src/mlx_agent/resources/serve-recipes.json",
       "sha256": "3190552328ab7e905fc23a26df0d6c29b51dec96319abf0a79a792f1d14edbe6"
     },
@@ -306,7 +330,7 @@
     },
     {
       "path": "mlx-scout/SKILL.md",
-      "sha256": "ec8b46166286c2845bc5ae22837bde1a494128437cb9b387c213d552430ccd38"
+      "sha256": "d48cb84bf0a543030c13c678c748c697468e93cf4a4beef95698a3f52de450a6"
     },
     {
       "path": "mlx-scout/scripts/mlx-agent",
@@ -423,6 +447,18 @@
     {
       "path": "mlx-scout/src/mlx_agent/resources/adapter-runtime.json",
       "sha256": "3cd3e93f3bb3e90fca33b2371631730dcdc6053e2eb938182ea800fd69860162"
+    },
+    {
+      "path": "mlx-scout/src/mlx_agent/resources/references/model-families.md",
+      "sha256": "666bd3e3fd4b9922488d8232075eb5a3bd9d168bb0c90162c1a459bc44df6b90"
+    },
+    {
+      "path": "mlx-scout/src/mlx_agent/resources/references/quantization.md",
+      "sha256": "3571a2038e84413454e8dd024c3db23eee01c568185c3b7ef915a4c9d3606ce8"
+    },
+    {
+      "path": "mlx-scout/src/mlx_agent/resources/references/troubleshooting.md",
+      "sha256": "0a4523aed1c0a2bd9331dc91d5e88d632f79aa25f98568b7e3dcc7265b68363d"
     },
     {
       "path": "mlx-scout/src/mlx_agent/resources/serve-recipes.json",
@@ -575,6 +611,18 @@
     {
       "path": "mlx-wire/src/mlx_agent/resources/adapter-runtime.json",
       "sha256": "3cd3e93f3bb3e90fca33b2371631730dcdc6053e2eb938182ea800fd69860162"
+    },
+    {
+      "path": "mlx-wire/src/mlx_agent/resources/references/model-families.md",
+      "sha256": "666bd3e3fd4b9922488d8232075eb5a3bd9d168bb0c90162c1a459bc44df6b90"
+    },
+    {
+      "path": "mlx-wire/src/mlx_agent/resources/references/quantization.md",
+      "sha256": "3571a2038e84413454e8dd024c3db23eee01c568185c3b7ef915a4c9d3606ce8"
+    },
+    {
+      "path": "mlx-wire/src/mlx_agent/resources/references/troubleshooting.md",
+      "sha256": "0a4523aed1c0a2bd9331dc91d5e88d632f79aa25f98568b7e3dcc7265b68363d"
     },
     {
       "path": "mlx-wire/src/mlx_agent/resources/serve-recipes.json",

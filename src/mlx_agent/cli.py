@@ -63,6 +63,7 @@ from .serve import (
     default_model_present,
     load_recipes,
     plan_start,
+    receipts_root,
     start_serve,
     status_serve,
     stop_serve,
@@ -837,6 +838,8 @@ def _add_serve_arguments(parser):
     start.add_argument("--port", type=int, default=None, help="loopback port (defaults per runtime recipe)")
     start.add_argument("--max-tokens", type=int, default=MAX_TOKENS_DEFAULT)
     start.add_argument("--adapter-path", default=None, help="LoRA adapter directory (mlx_lm only)")
+    start.add_argument("--launchd", action="store_true", help="install a launchd agent plist instead of spawning now")
+    start.add_argument("--launchd-dir", default=None, help="launchd target directory (defaults to ~/Library/LaunchAgents)")
     start.add_argument("--confirm", action="store_true", help="authorize this reviewed server launch")
     start.add_argument("--preview-hash", help="hash returned by the separately reviewed serve start preview")
     start.add_argument("--receipts-dir", default=None, help="receipt root (defaults to the current directory)")
@@ -877,6 +880,8 @@ def _run_serve(arguments):
             max_tokens=arguments.max_tokens,
             adapter_path=arguments.adapter_path,
         )
+        if arguments.launchd:
+            return _run_serve_launchd(arguments, plan, operation)
         if not arguments.confirm:
             result = ResultEnvelope.ok(
                 operation, {"plan": plan, "requires_confirmation": True}
@@ -927,13 +932,96 @@ def _run_serve(arguments):
     return 2
 
 
+def _run_serve_launchd(arguments, plan, operation):
+    """Preview-confirm installation of a launchd agent for a serve plan."""
+    from .serve import LaunchdPlistAdapter, launchd_label, render_launchd_plist
+
+    launchd_dir = Path(arguments.launchd_dir) if arguments.launchd_dir else (
+        Path.home() / "Library" / "LaunchAgents"
+    )
+    target = launchd_dir / "{0}.plist".format(launchd_label(plan["port"]))
+    log_path = str(receipts_root(arguments.receipts_dir) / "{0}.log".format(plan["port"]))
+    content = render_launchd_plist(plan, log_path=log_path)
+    adapter = LaunchdPlistAdapter(target)
+    adapter.validate(content)
+    if target.exists():
+        result = ResultEnvelope.fail(
+            operation,
+            "output_exists",
+            "A launchd plist already exists at {0}.".format(target),
+            "Unload and remove it yourself; serve never overwrites launchd agents.",
+        )
+        return _emit_serve_result(result, arguments.json)
+    if not launchd_dir.is_dir():
+        result = ResultEnvelope.fail(
+            operation,
+            "invalid_arguments",
+            "The launchd directory does not exist: {0}".format(launchd_dir),
+            "Create it yourself, or pass --launchd-dir.",
+        )
+        return _emit_serve_result(result, arguments.json)
+    if not default_model_present(arguments.hf_cache)(plan["repo"]):
+        result = ResultEnvelope.fail(
+            operation,
+            "model_not_local",
+            "The model is not present in the local Hugging Face cache.",
+            "Download it with the runtime's own pull command first; serve never downloads.",
+        )
+        return _emit_serve_result(result, arguments.json)
+    transaction = Transaction(receipts_dir=arguments.receipts_dir)
+    preview = transaction.preview([{
+        "path": str(target), "content": content, "runtime": "launchd",
+        "adapter": adapter, "endpoint": None,
+    }])
+    if not arguments.confirm:
+        result = ResultEnvelope.ok(
+            operation, {"preview": preview, "requires_confirmation": True}
+        )
+        if arguments.json:
+            print(json.dumps(result.to_dict(), indent=2))
+        else:
+            print(preview["diff"])
+            print("Confirmation required: rerun with --confirm --preview-hash PREVIEW_HASH.")
+        return 2
+    if not arguments.preview_hash:
+        result = ResultEnvelope.fail(
+            operation,
+            "preview_hash_required",
+            "--confirm requires the preview hash from a prior preview.",
+            "Run serve start --launchd without --confirm, inspect the preview, then pass --preview-hash.",
+        )
+        return _emit_serve_result(result, arguments.json)
+    if arguments.preview_hash != preview["preview_hash"]:
+        result = ResultEnvelope.fail(
+            operation,
+            "preview_stale",
+            "The supplied preview hash does not match the current preview.",
+            "Generate and inspect a new preview before confirming this mutation.",
+        )
+        return _emit_serve_result(result, arguments.json)
+    receipt = transaction.apply(arguments.preview_hash)
+    data = {"receipt": _receipt_data(receipt), "plist": str(target)}
+    result = ResultEnvelope.ok(operation, data)
+    return _emit_serve_result(
+        result, arguments.json,
+        human="launchd agent installed: {0}\n  load it with: launchctl bootstrap gui/$(id -u) {1}".format(
+            target, target
+        ),
+    )
+
+
 def _emit_serve_result(result, as_json, human=None):
     if as_json:
         print(json.dumps(result.to_dict(), indent=2))
     elif human:
         print(human)
-    else:
+    elif result.status == "ok":
         print(json.dumps(result.to_dict()["data"], indent=2))
+    else:
+        payload = result.to_dict()["error"]
+        print("{0} failed [{1}]: {2}\nremediation: {3}".format(
+            result.operation, payload["code"], payload["message"], payload["remediation"]
+        ))
     return 0 if result.status == "ok" else 2
 
 

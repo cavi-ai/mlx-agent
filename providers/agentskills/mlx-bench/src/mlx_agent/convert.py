@@ -37,9 +37,9 @@ def _utc_now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def receipts_root(root=None):
+def receipts_root(root=None, kind="convert"):
     base = Path(root) if root is not None else Path.cwd()
-    return base / ".mlx-agent-receipts" / "convert"
+    return base / ".mlx-agent-receipts" / kind
 
 
 def plan_convert(repo, q_bits=4, out=None):
@@ -86,12 +86,12 @@ def _receipt_path(root, plan):
     )
 
 
-def _read_receipt(path):
+def _read_receipt(path, kind=CONVERT_RECEIPT_KIND):
     try:
         value = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError, json.JSONDecodeError):
         return None
-    if not isinstance(value, dict) or value.get("kind") != CONVERT_RECEIPT_KIND:
+    if not isinstance(value, dict) or value.get("kind") != kind:
         return None
     if not isinstance(value.get("pid"), int) or isinstance(value.get("pid"), bool):
         return None
@@ -100,12 +100,9 @@ def _read_receipt(path):
     return value
 
 
-def _write_receipt(root, receipt):
+def _write_receipt(root, receipt, filename):
     content = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
-    _atomic_in_directory(
-        root, "{0}-{1}bit.json".format(receipt["repo"].split("/", 1)[1], receipt["q_bits"]),
-        content, 0o600,
-    )
+    _atomic_in_directory(root, filename, content, 0o600)
 
 
 def start_convert(plan, receipts_dir=None, confirm=False, preview_hash=None,
@@ -179,7 +176,10 @@ def start_convert(plan, receipts_dir=None, confirm=False, preview_hash=None,
         "completed_at": None,
         "exit_status": None,
     }
-    _write_receipt(root, receipt)
+    _write_receipt(
+        root, receipt,
+        "{0}-{1}bit.json".format(receipt["repo"].split("/", 1)[1], receipt["q_bits"]),
+    )
     return {"status": "started", "receipt": receipt}
 
 
@@ -220,7 +220,10 @@ def status_convert(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_com
         exit_status = "done" if Path(receipt["out"]).exists() else "failed"
         receipt["completed_at"] = now()
         receipt["exit_status"] = exit_status
-        _write_receipt(root, receipt)
+        _write_receipt(
+            root, receipt,
+            "{0}-{1}bit.json".format(receipt["repo"].split("/", 1)[1], receipt["q_bits"]),
+        )
         entry["state"] = exit_status
         entry["completed_at"] = receipt["completed_at"]
         entries.append(entry)

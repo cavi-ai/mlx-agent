@@ -34,7 +34,7 @@
     },
     {
       "path": "skills/mlx-scout/SKILL.md",
-      "sha256": "229e47484efa9cc34c4c7dc0d2115f23f5797b20c33fc6873da2edc11a0f4548"
+      "sha256": "077bcabc1a50dcebcad2e13c1d34128c6297f566277c3092199bfce73bb6188d"
     },
     {
       "path": "skills/mlx-wire/SKILL.md",
@@ -139,6 +139,18 @@
     {
       "path": "src/mlx_agent/resources/adapter-runtime.json",
       "sha256": "3cd3e93f3bb3e90fca33b2371631730dcdc6053e2eb938182ea800fd69860162"
+    },
+    {
+      "path": "src/mlx_agent/resources/references/model-families.md",
+      "sha256": "666bd3e3fd4b9922488d8232075eb5a3bd9d168bb0c90162c1a459bc44df6b90"
+    },
+    {
+      "path": "src/mlx_agent/resources/references/quantization.md",
+      "sha256": "3571a2038e84413454e8dd024c3db23eee01c568185c3b7ef915a4c9d3606ce8"
+    },
+    {
+      "path": "src/mlx_agent/resources/references/troubleshooting.md",
+      "sha256": "0a4523aed1c0a2bd9331dc91d5e88d632f79aa25f98568b7e3dcc7265b68363d"
     },
     {
       "path": "src/mlx_agent/resources/serve-recipes.json",

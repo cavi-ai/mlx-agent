@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -22,7 +23,7 @@ from pathlib import Path
 
 from .model_doctor import scan_wired_configs
 from .transactions import _atomic_in_directory
-from .wiring import validate_health_endpoint
+from .wiring import require_secret_free_config, validate_health_endpoint
 
 
 SERVE_RECEIPT_SCHEMA_VERSION = "1.0"
@@ -456,3 +457,72 @@ def default_model_present(hf_cache=None):
         return repo.casefold() in known
 
     return check
+
+
+LAUNCHD_LABEL_PREFIX = "com.mlx-agent.serve."
+_LAUNCHD_LABEL = re.compile(r"\A" + LAUNCHD_LABEL_PREFIX.replace(".", r"\.") + r"(\d{1,5})\Z")
+
+
+def launchd_label(port):
+    return "{0}{1}".format(LAUNCHD_LABEL_PREFIX, port)
+
+
+def render_launchd_plist(plan, log_path=None):
+    """Render a deterministic launchd plist for a reviewed serve plan."""
+    from xml.sax.saxutils import escape
+
+    label = launchd_label(plan["port"])
+    log = log_path or str(receipts_root() / "{0}.log".format(plan["port"]))
+    arguments = "\n".join(
+        "        <string>{0}</string>".format(escape(str(part))) for part in plan["argv"]
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        '<plist version="1.0">\n'
+        '<dict>\n'
+        '    <key>Label</key>\n'
+        '    <string>{label}</string>\n'
+        '    <key>ProgramArguments</key>\n'
+        '    <array>\n'
+        '{arguments}\n'
+        '    </array>\n'
+        '    <key>RunAtLoad</key>\n'
+        '    <true/>\n'
+        '    <key>KeepAlive</key>\n'
+        '    <false/>\n'
+        '    <key>StandardOutPath</key>\n'
+        '    <string>{log}</string>\n'
+        '    <key>StandardErrorPath</key>\n'
+        '    <string>{log}</string>\n'
+        '</dict>\n'
+        '</plist>\n'
+    ).format(label=escape(label), arguments=arguments, log=escape(str(log)))
+
+
+class LaunchdPlistAdapter:
+    """Validate the exact launchd plist subset serve renders."""
+
+    version = "1.0"
+    runtime = "launchd"
+
+    def __init__(self, path=None):
+        self.path = Path(path) if path is not None else None
+
+    def validate(self, content):
+        if not isinstance(content, str):
+            raise TypeError("plist content must be text")
+        require_secret_free_config(content)
+        lines = content.splitlines()
+        if len(lines) < 8 or not lines[0].startswith("<?xml") or lines[2] != '<plist version="1.0">':
+            raise ValueError("launchd plist must use the managed XML subset")
+        if lines[-1] != "</plist>" or lines[-2] != "</dict>":
+            raise ValueError("launchd plist must close its dict and plist elements")
+        text = content
+        for required in ("<key>Label</key>", "<key>ProgramArguments</key>", "<key>RunAtLoad</key>"):
+            if required not in text:
+                raise ValueError("launchd plist is missing {0}".format(required))
+        label_match = re.search(r"<key>Label</key>\s*\n\s*<string>([^<]+)</string>", text)
+        if label_match is None or _LAUNCHD_LABEL.fullmatch(label_match.group(1)) is None:
+            raise ValueError("launchd plist label must use the managed serve prefix")
+        return True

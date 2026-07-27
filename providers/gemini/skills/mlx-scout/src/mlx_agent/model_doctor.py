@@ -411,3 +411,85 @@ def _endpoint_origin_key(endpoint):
     if parts & _STATE_CHANGING_PATH_PARTS:
         return None
     return "{0}://{1}:{2}".format(parsed.scheme.lower(), parsed.hostname.lower(), port)
+
+
+PRUNE_PREVIEW_VERSION = "1.0"
+MAX_PRUNE_CANDIDATES = 100
+
+
+class PruneError(RuntimeError):
+    """Classified prune failure safe to surface in a result envelope."""
+
+    def __init__(self, code, message, remediation):
+        super().__init__(message)
+        self.code = code
+        self.remediation = remediation
+
+
+def plan_prune(cache_dir):
+    """List incomplete HF cache snapshots eligible for deletion; read-only."""
+    root = Path(cache_dir)
+    candidates = []
+    for item in inspect_hf_cache(root):
+        if item.get("complete", True):
+            continue
+        location = root / "models--{0}".format(item["id"].replace("/", "--"))
+        candidates.append({
+            "repo": item["id"],
+            "path": str(location),
+            "bytes": item.get("bytes") or 0,
+        })
+        if len(candidates) >= MAX_PRUNE_CANDIDATES:
+            break
+    canonical = json.dumps(candidates, sort_keys=True, separators=(",", ":"))
+    return {
+        "cache": str(root),
+        "candidates": candidates,
+        "total_bytes": sum(item["bytes"] for item in candidates),
+        "preview_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+    }
+
+
+def execute_prune(plan, confirm=False, preview_hash=None, remover=None):
+    """Delete exactly the reviewed candidates; irreversible by design."""
+    if not confirm:
+        return {"status": "preview", "plan": plan, "requires_confirmation": True}
+    if not preview_hash:
+        raise PruneError(
+            "preview_hash_required",
+            "--confirm requires the hash from a reviewed prune preview.",
+            "Run doctor models --prune without --confirm, inspect the plan, then pass --preview-hash.",
+        )
+    if preview_hash != plan["preview_hash"]:
+        raise PruneError(
+            "preview_stale",
+            "The supplied preview hash does not match the current prune plan.",
+            "Re-run doctor models --prune and review the fresh candidate list.",
+        )
+    if remover is None:
+        import shutil
+
+        def remover(path):
+            shutil.rmtree(path)
+
+    cache = Path(plan["cache"]).resolve()
+    removed = []
+    for candidate in plan["candidates"]:
+        location = Path(candidate["path"])
+        resolved = location.resolve()
+        if resolved == cache or cache not in resolved.parents:
+            raise PruneError(
+                "unsafe_target",
+                "Refusing to remove a path outside the cache: {0}".format(candidate["path"]),
+                "Only cache-owned model directories are ever pruned.",
+            )
+        if not location.is_dir():
+            removed.append({"repo": candidate["repo"], "removed": False, "reason": "already gone"})
+            continue
+        remover(str(location))
+        removed.append({
+            "repo": candidate["repo"],
+            "removed": not location.exists(),
+            "bytes": candidate["bytes"],
+        })
+    return {"status": "pruned", "removed": removed}

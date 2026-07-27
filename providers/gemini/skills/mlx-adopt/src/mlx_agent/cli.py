@@ -1428,14 +1428,70 @@ def _add_doctor_arguments(parser):
         default=None,
         help="Hugging Face cache root (defaults to ~/.cache/huggingface/hub)",
     )
+    parser.add_argument(
+        "--prune",
+        action="store_true",
+        help="preview deletion of incomplete HF cache snapshots (requires --confirm --preview-hash to execute)",
+    )
 
 
 def _run_model_doctor(arguments):
-    from .model_doctor import default_hf_cache, run_model_doctor
+    from .model_doctor import (
+        PruneError,
+        default_hf_cache,
+        execute_prune,
+        plan_prune,
+        run_model_doctor,
+    )
 
     operation = "doctor-models"
     wired_roots = arguments.wired_root or [arguments.project]
     hf_cache = arguments.hf_cache or default_hf_cache()
+    if arguments.prune:
+        try:
+            plan = plan_prune(hf_cache)
+            outcome = execute_prune(
+                plan,
+                confirm=arguments.confirm,
+                preview_hash=arguments.preview_hash,
+            )
+        except PruneError as error:
+            result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
+            if arguments.json:
+                print(json.dumps(result.to_dict(), indent=2))
+            else:
+                payload = result.to_dict()["error"]
+                print("doctor failed [{0}]: {1}\nremediation: {2}".format(
+                    payload["code"], payload["message"], payload["remediation"]
+                ))
+            return 2
+        if outcome["status"] == "preview":
+            result = ResultEnvelope.ok(
+                operation, {"plan": plan, "requires_confirmation": True}
+            )
+            if arguments.json:
+                print(json.dumps(result.to_dict(), indent=2))
+            else:
+                if not plan["candidates"]:
+                    print("Nothing to prune: no incomplete cache snapshots.")
+                for candidate in plan["candidates"]:
+                    print("  prune: {0} ({1:.1f} GB) - {2}".format(
+                        candidate["repo"], candidate["bytes"] / 1e9, candidate["path"]
+                    ))
+                if plan["candidates"]:
+                    print("IRREVERSIBLE: these cache directories will be deleted permanently.")
+                    print("  preview_hash: {0}".format(plan["preview_hash"]))
+                    print("Confirmation required: rerun with --prune --confirm --preview-hash PREVIEW_HASH.")
+            return 0 if not plan["candidates"] else 2
+        result = ResultEnvelope.ok(operation, outcome)
+        if arguments.json:
+            print(json.dumps(result.to_dict(), indent=2))
+        else:
+            removed = [item for item in outcome["removed"] if item.get("removed")]
+            print("Pruned {0} incomplete snapshot(s).".format(len(removed)))
+            for item in removed:
+                print("  removed: {0}".format(item["repo"]))
+        return 0
     runtime_clients = [
         OllamaRuntimeClient(),
         LMStudioRuntimeClient(),

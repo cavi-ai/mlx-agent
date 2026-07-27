@@ -34,7 +34,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/cli.py",
-      "sha256": "6b3fdc194cbf149b1de7d5a8bd56074bbbfe90692df22ca2329e21d9446b58e2"
+      "sha256": "f897fdba203995fc214ef6e763a96ac57b7cddad46c0dba3198f6ee6eab93d70"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/command_executor.py",
@@ -102,7 +102,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/model_doctor.py",
-      "sha256": "fd2f6fc41f2bbfc283556373be42a3dbf74435da8322e494df0c4cc9dcc2d904"
+      "sha256": "b9e1b20a3982033666cb4da90e142db6178420c81e2b4bfe67b012bb0b7b4f7e"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/models.py",
@@ -206,7 +206,7 @@
     },
     {
       "path": "mlx-bench/src/mlx_agent/cli.py",
-      "sha256": "6b3fdc194cbf149b1de7d5a8bd56074bbbfe90692df22ca2329e21d9446b58e2"
+      "sha256": "f897fdba203995fc214ef6e763a96ac57b7cddad46c0dba3198f6ee6eab93d70"
     },
     {
       "path": "mlx-bench/src/mlx_agent/command_executor.py",
@@ -274,7 +274,7 @@
     },
     {
       "path": "mlx-bench/src/mlx_agent/model_doctor.py",
-      "sha256": "fd2f6fc41f2bbfc283556373be42a3dbf74435da8322e494df0c4cc9dcc2d904"
+      "sha256": "b9e1b20a3982033666cb4da90e142db6178420c81e2b4bfe67b012bb0b7b4f7e"
     },
     {
       "path": "mlx-bench/src/mlx_agent/models.py",
@@ -378,7 +378,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/cli.py",
-      "sha256": "6b3fdc194cbf149b1de7d5a8bd56074bbbfe90692df22ca2329e21d9446b58e2"
+      "sha256": "f897fdba203995fc214ef6e763a96ac57b7cddad46c0dba3198f6ee6eab93d70"
     },
     {
       "path": "mlx-scout/src/mlx_agent/command_executor.py",
@@ -446,7 +446,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/model_doctor.py",
-      "sha256": "fd2f6fc41f2bbfc283556373be42a3dbf74435da8322e494df0c4cc9dcc2d904"
+      "sha256": "b9e1b20a3982033666cb4da90e142db6178420c81e2b4bfe67b012bb0b7b4f7e"
     },
     {
       "path": "mlx-scout/src/mlx_agent/models.py",
@@ -550,7 +550,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/cli.py",
-      "sha256": "6b3fdc194cbf149b1de7d5a8bd56074bbbfe90692df22ca2329e21d9446b58e2"
+      "sha256": "f897fdba203995fc214ef6e763a96ac57b7cddad46c0dba3198f6ee6eab93d70"
     },
     {
       "path": "mlx-wire/src/mlx_agent/command_executor.py",
@@ -618,7 +618,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/model_doctor.py",
-      "sha256": "fd2f6fc41f2bbfc283556373be42a3dbf74435da8322e494df0c4cc9dcc2d904"
+      "sha256": "b9e1b20a3982033666cb4da90e142db6178420c81e2b4bfe67b012bb0b7b4f7e"
     },
     {
       "path": "mlx-wire/src/mlx_agent/models.py",

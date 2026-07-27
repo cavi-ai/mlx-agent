@@ -8,6 +8,7 @@ import threading
 import time
 import urllib.parse
 
+from .contextfit import extract_architecture
 from .models import (
     REASONER_HINTS,
     TEMPLATE_REASON,
@@ -383,6 +384,7 @@ class HuggingFaceClient:
             "tool_use_src": None,
             "tool_use_confidence": "none",
             "params_total": None,
+            "architecture": None,
             "metadata_available": False,
             "tree_available": False,
             "metadata_url": model_url,
@@ -399,6 +401,7 @@ class HuggingFaceClient:
             card_data = metadata.get("cardData") or {}
             output["license"] = card_data.get("license") or next((tag.split("license:", 1)[1] for tag in tags if tag.startswith("license:")), None)
             output["params_total"] = (metadata.get("safetensors") or {}).get("total")
+            output["architecture"] = extract_architecture(config)
             template = ((config.get("tokenizer_config") or {}).get("chat_template") or "")
             lower_tags = [tag.lower() for tag in tags]
             normalized_tags = {

@@ -67,6 +67,7 @@
             {"name": "license", "flag": "--license", "kind": "option", "type": "string", "required": false, "repeatable": true},
             {"name": "publisher", "flag": "--publisher", "kind": "option", "type": "string", "required": false, "repeatable": true},
             {"name": "runtime", "flag": "--runtime", "kind": "option", "type": "string", "required": false},
+            {"name": "context", "flag": "--context", "kind": "option", "type": "integer", "required": false},
             {"name": "exclude_gated", "flag": "--exclude-gated", "kind": "option", "type": "boolean", "required": false},
             {"name": "include_gated", "flag": "--include-gated", "kind": "option", "type": "boolean", "required": false},
             {"name": "refresh", "flag": "--refresh", "kind": "option", "type": "boolean", "required": false},

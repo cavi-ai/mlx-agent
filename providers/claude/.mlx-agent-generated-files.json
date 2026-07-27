@@ -66,11 +66,15 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "c67f9f485cfbdafa8d0e027cf9f19102c1f10c16a1e8e97ec77f58f86f205702"
+      "sha256": "486322247a012d1f8c191dd045731f4e2cc3aaa471d69117abc6fe656e7359f8"
     },
     {
       "path": "src/mlx_agent/command_executor.py",
       "sha256": "03d639969413f407de5925eff3d4a740e9964ff65f79802cfd9e741291d49d3a"
+    },
+    {
+      "path": "src/mlx_agent/contextfit.py",
+      "sha256": "5d0d2328c90178e52897ffe41065816f0d002f38ccf1d07c2705e42c3aa8c41e"
     },
     {
       "path": "src/mlx_agent/contracts.py",
@@ -78,7 +82,7 @@
     },
     {
       "path": "src/mlx_agent/discovery.py",
-      "sha256": "6207878ef6bd572a777d1db62fc787bd46490c3ff6418bd87408da40af20a854"
+      "sha256": "6f68c9a01e0a19f22033c7fa81bcf678ec1dceab42f4138775fb7854734652cd"
     },
     {
       "path": "src/mlx_agent/fleet.py",
@@ -86,7 +90,7 @@
     },
     {
       "path": "src/mlx_agent/gemini_args.py",
-      "sha256": "0db2f41bae4892767655c3a0ccba62ec3b5e74c40c70e37b9f9dce5a7176cbdf"
+      "sha256": "27858d4b5bbfe023e644da1ed1da4968382898d5f2cb4712a7511da695389c50"
     },
     {
       "path": "src/mlx_agent/gemini_executor.py",
@@ -102,7 +106,7 @@
     },
     {
       "path": "src/mlx_agent/huggingface.py",
-      "sha256": "fd2c50dac8dd941189510de9863a17855fb443283914b624facdf438367c7ed7"
+      "sha256": "9e17292e991de934768b33e4d393bcb0cffb01d38e3de8efd53b5d5946b60cef"
     },
     {
       "path": "src/mlx_agent/installer.py",

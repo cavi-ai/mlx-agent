@@ -222,6 +222,7 @@ python3 scripts/mlx-agent watch diff         # what changed since, for models yo
 ## How it works
 
 - **Real sizing** — pulls actual quantized byte size from the HF tree API, not a name guess.
+- **Context-aware fit** — reads model architecture from HF config (layers, KV heads, head dim) and computes KV-cache cost: every candidate carries a `max_context_tokens` estimate for your RAM, and `discover --context N` tightens `fits` to weights + KV at that context.
 - **Reasoning detection** — reads the model's `chat_template` and tags (catches `reasoning_effort` / `<think>`), falling back to a name heuristic. Reasoning models emit hidden thinking, so `mlx-agent` keeps them out of fast/cheap roles.
 - **Quant dedup** — rolls `…-4bit / -8bit / -bf16` up to one logical model and picks the best quant that fits your RAM.
 - **License / gated** — surfaces the license and flags gated repos before any external runtime fetch.

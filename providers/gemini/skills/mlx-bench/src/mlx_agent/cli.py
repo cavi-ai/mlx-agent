@@ -175,6 +175,7 @@ def _add_discovery_arguments(parser):
     parser.add_argument("--license", dest="licenses", action="append", help="allow only this license (repeatable)")
     parser.add_argument("--publisher", dest="publishers", action="append", help="allow only this publisher (repeatable)")
     parser.add_argument("--runtime", choices=["ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm"], help="require a runtime compatible with the model role")
+    parser.add_argument("--context", dest="context_tokens", type=int, default=None, help="tighten fit checks to weights plus KV cache at this context length")
     parser.add_argument("--exclude-gated", dest="include_gated", action="store_false", default=True, help="exclude gated repositories")
     parser.add_argument("--include-gated", dest="include_gated", action="store_true", help="include gated repositories (the legacy default)")
     cache_group = parser.add_mutually_exclusive_group()
@@ -193,6 +194,19 @@ def _run_discovery(arguments, legacy):
     if arguments.wire:
         print(wire(arguments.wire, arguments.target, arguments.port))
         return 0
+    if arguments.context_tokens is not None and not 1024 <= arguments.context_tokens <= 1048576:
+        result = ResultEnvelope.fail(
+            "discover",
+            "invalid_arguments",
+            "--context must be between 1024 and 1048576 tokens.",
+            "Pass a bounded context length, or omit --context for weights-only fit.",
+        )
+        if arguments.json:
+            print(json.dumps(result.to_dict(), indent=2))
+        else:
+            error = result.to_dict()["error"]
+            print("discover failed [{0}]: {1}\nremediation: {2}".format(error["code"], error["message"], error["remediation"]))
+        return 2
     service, fixture_warning, fixture_error = _discovery_service_from_environment(arguments.state_dir)
     result = fixture_error or service.discover(DiscoveryRequest(
         role=arguments.role,
@@ -207,6 +221,7 @@ def _run_discovery(arguments, legacy):
         limit=arguments.limit,
         new=arguments.new,
         fast=arguments.fast,
+        context_tokens=arguments.context_tokens,
     ))
     if fixture_warning:
         result = ResultEnvelope.ok("discover", result.data, warnings=[fixture_warning])

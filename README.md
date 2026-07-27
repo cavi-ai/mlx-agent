@@ -197,6 +197,17 @@ python3 scripts/mlx-agent serve status
 python3 scripts/mlx-agent serve stop --port 8080
 ```
 
+Fleet routing (one-shot per-role router config, transaction-backed like wire):
+
+```bash
+python3 scripts/mlx-agent fleet render --path ./router.yaml --assign coding=mlx-community/Qwen3-32B-4bit --assign vision=mlx-community/Qwen3-VL-8B-Instruct-4bit
+python3 scripts/mlx-agent fleet apply --path ./router.yaml --from-adoption ./adopt-state.json
+# inspect the diff, then confirm:
+python3 scripts/mlx-agent fleet apply --path ./router.yaml --from-adoption ./adopt-state.json --confirm --preview-hash <hash>
+```
+
+`fleet` renders one bounded LiteLLM router YAML from explicit `--assign role=repo` picks or a completed adopt handoff, defaults vision to `mlx-vlm` and text roles to `mlx_lm`, checks every model against local inventories, and applies through the same preview-confirm-receipt-rollback transaction as wire.
+
 `serve` renders the exact argv and port plan, requires `--confirm --preview-hash`, then spawns the server and writes a receipt. Hard gates: the model must already be in the Hugging Face cache (never downloads), the runtime executable must already be installed (never installs), the port must be free and unclaimed by wired configs, and the bind is loopback-only. `serve stop` only stops processes serve itself started, verified against their receipts.
 
 ## How it works

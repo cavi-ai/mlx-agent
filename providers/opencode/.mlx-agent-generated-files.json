@@ -13,8 +13,20 @@
       "sha256": "e4bbd26600bd450b38dbed46ece8e30c9723465b2a2c12e37fd26b7241498a4e"
     },
     {
+      "path": "commands/mlx-doctor.md",
+      "sha256": "05e3fe9382228fcacd543eaf89ed5a33de097db6df3393917ed8c46301b3d695"
+    },
+    {
+      "path": "commands/mlx-fleet.md",
+      "sha256": "8eefd70154f4852773d660167dafdb60447b0f7fb7b8ad3fcbc49564e57380a6"
+    },
+    {
       "path": "commands/mlx-scout.md",
       "sha256": "791716331dc36caea09b65f7d6b32bb578d8f2f86451ee0d2a00d06745193fca"
+    },
+    {
+      "path": "commands/mlx-watch.md",
+      "sha256": "f4cd88f4d1a2534a9e0538fa31c44dfdebb79e3124ec1d612a501d962b77ffec"
     },
     {
       "path": "commands/mlx-wire.md",
@@ -33,8 +45,20 @@
       "sha256": "f4c9d486cd4d7b1a985d276b51bf99d89111000f406724b1fe3f56ad3196187a"
     },
     {
+      "path": "skills/mlx-doctor/SKILL.md",
+      "sha256": "4693913aeb21a237e0bec167cd79b1f1fb89200302b87a2615c8ca621162cc25"
+    },
+    {
+      "path": "skills/mlx-fleet/SKILL.md",
+      "sha256": "59743844042bb236787a348e903fa177ca7be24ba20dccc4d63f7d1f55799d6e"
+    },
+    {
       "path": "skills/mlx-scout/SKILL.md",
       "sha256": "077bcabc1a50dcebcad2e13c1d34128c6297f566277c3092199bfce73bb6188d"
+    },
+    {
+      "path": "skills/mlx-watch/SKILL.md",
+      "sha256": "44758973b8bd8069bd2d3aff4e988fba477eb8204c8e18ccda523e0ce81e8a04"
     },
     {
       "path": "skills/mlx-wire/SKILL.md",
@@ -66,7 +90,7 @@
     },
     {
       "path": "src/mlx_agent/command_executor.py",
-      "sha256": "03d639969413f407de5925eff3d4a740e9964ff65f79802cfd9e741291d49d3a"
+      "sha256": "ea96da41560947f4769da850577ecc8a241b767489fb35e131ad0888a5caa92f"
     },
     {
       "path": "src/mlx_agent/contextfit.py",
@@ -94,7 +118,7 @@
     },
     {
       "path": "src/mlx_agent/gemini_args.py",
-      "sha256": "249181f75291ced3aa17ec57d6f03b95baa3b86f3678de9589afc9377e5c5acb"
+      "sha256": "3c8b5a91cd4c93c261a4ba039376633205086ac196a382dd32954bbf04d27e1d"
     },
     {
       "path": "src/mlx_agent/host.py",
@@ -118,7 +142,7 @@
     },
     {
       "path": "src/mlx_agent/mcp_server.py",
-      "sha256": "530b0165c0c3058c94113e3e157422552478187a9679810419aad2e0aedaf13e"
+      "sha256": "b3bbec4fae36563a4cdd134e74e0ae76538df7f93f708f06655dc6b6afa4e993"
     },
     {
       "path": "src/mlx_agent/modality.py",

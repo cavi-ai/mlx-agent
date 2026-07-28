@@ -310,6 +310,128 @@ def _parse_bench_aggregate(tokens):
     return argv
 
 
+def _parse_doctor(tokens):
+    if not tokens or tokens[0] != "models":
+        raise GeminiArgumentError("Doctor requires the models action")
+    argv, index = ["doctor", "models"], 1
+    seen = set()
+    while index < len(tokens):
+        flag = tokens[index]
+        if flag == "--json":
+            if flag in seen:
+                raise GeminiArgumentError("duplicate flag: --json")
+            seen.add(flag)
+            argv.append(flag)
+            index += 1
+        elif flag == "--wired-root":
+            argv.extend([flag, _path(_value(tokens, index, flag), "wired-root")])
+            index += 2
+        elif flag == "--hf-cache":
+            if flag in seen:
+                raise GeminiArgumentError("duplicate flag: --hf-cache")
+            seen.add(flag)
+            argv.extend([flag, _path(_value(tokens, index, flag), "hf-cache")])
+            index += 2
+        else:
+            raise GeminiArgumentError("unsupported Doctor argument: {0}".format(flag))
+    return argv
+
+
+def _parse_watch(tokens):
+    if not tokens or tokens[0] not in {"snapshot", "diff"}:
+        raise GeminiArgumentError("Watch requires the snapshot or diff action")
+    argv, index = ["watch", tokens[0]], 1
+    seen = set()
+    while index < len(tokens):
+        flag = tokens[index]
+        if flag == "--json":
+            if flag in seen:
+                raise GeminiArgumentError("duplicate flag: --json")
+            seen.add(flag)
+            argv.append(flag)
+            index += 1
+        elif flag == "--state-dir":
+            if flag in seen:
+                raise GeminiArgumentError("duplicate flag: --state-dir")
+            seen.add(flag)
+            argv.extend([flag, _path(_value(tokens, index, flag), "state-dir")])
+            index += 2
+        elif flag == "--limit":
+            if flag in seen:
+                raise GeminiArgumentError("duplicate flag: --limit")
+            seen.add(flag)
+            argv.extend([flag, _integer(_value(tokens, index, flag), "limit", 1, 50)])
+            index += 2
+        else:
+            raise GeminiArgumentError("unsupported Watch argument: {0}".format(flag))
+    return argv
+
+
+def _fleet_assignment(value, label):
+    if "=" not in value:
+        raise GeminiArgumentError("{0} must use role=value form".format(label))
+    role, target = value.split("=", 1)
+    if role not in _ROLES:
+        raise GeminiArgumentError("{0} must name a canonical role".format(label))
+    return value
+
+
+def _parse_fleet(tokens):
+    if not tokens or tokens[0] not in {"render", "apply"}:
+        raise GeminiArgumentError("Fleet requires the render or apply action")
+    action, argv, index = tokens[0], ["fleet", tokens[0]], 1
+    seen = set()
+    values = {
+        "--from-adoption": (lambda value: _path(value, "from-adoption"), "from-adoption"),
+        "--preview-hash": (lambda value: value if re.fullmatch(r"[0-9a-f]{64}", value) else None, "preview-hash"),
+        "--receipts-dir": (lambda value: _path(value, "receipts-dir"), "receipts-dir"),
+        "--endpoint": (lambda value: _endpoint(value), "endpoint"),
+    }
+    path_seen = False
+    while index < len(tokens):
+        flag = tokens[index]
+        if flag in {"--json", "--confirm", "--allow-missing"}:
+            if flag in seen:
+                raise GeminiArgumentError("duplicate flag: {0}".format(flag))
+            seen.add(flag)
+            argv.append(flag)
+            index += 1
+        elif flag == "--assign":
+            value = _value(tokens, index, flag)
+            _fleet_assignment(value, "--assign")
+            _model(value.split("=", 1)[1])
+            argv.extend([flag, value])
+            index += 2
+        elif flag == "--runtime-map":
+            value = _value(tokens, index, flag)
+            _fleet_assignment(value, "--runtime-map")
+            if value.split("=", 1)[1] not in ("mlx_lm", "mlx-vlm"):
+                raise GeminiArgumentError("--runtime-map must target mlx_lm or mlx-vlm")
+            argv.extend([flag, value])
+            index += 2
+        elif flag == "--path":
+            if flag in seen:
+                raise GeminiArgumentError("duplicate flag: --path")
+            seen.add(flag)
+            argv.extend([flag, _path(_value(tokens, index, flag), "path")])
+            path_seen = True
+            index += 2
+        elif flag in values:
+            if flag in seen:
+                raise GeminiArgumentError("duplicate flag: {0}".format(flag))
+            value = values[flag][0](_value(tokens, index, flag))
+            if value is None:
+                raise GeminiArgumentError("invalid {0} value".format(values[flag][1]))
+            seen.add(flag)
+            argv.extend([flag, value])
+            index += 2
+        else:
+            raise GeminiArgumentError("unsupported Fleet argument: {0}".format(flag))
+    if not path_seen:
+        raise GeminiArgumentError("Fleet {0} requires --path".format(action))
+    return argv
+
+
 def parse_gemini_arguments(capability, raw):
     """Return a validated argv list; this function never runs a process."""
     tokens = _tokens(raw)
@@ -321,12 +443,18 @@ def parse_gemini_arguments(capability, raw):
         return _parse_wire(tokens)
     if capability == "bench":
         return _parse_bench(tokens)
+    if capability == "doctor":
+        return _parse_doctor(tokens)
+    if capability == "watch":
+        return _parse_watch(tokens)
+    if capability == "fleet":
+        return _parse_fleet(tokens)
     raise GeminiArgumentError("unknown Gemini capability")
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("capability", choices=("scout", "adopt", "wire", "bench"))
+    parser.add_argument("capability", choices=("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"))
     parser.add_argument("raw", help="one opaque custom-command argument string")
     arguments = parser.parse_args(argv)
     try:

@@ -25,8 +25,20 @@
       "sha256": "fe26908fef697cb58a3859c846711b7d982096dc8bc2736f42bd412757a3d8f9"
     },
     {
+      "path": "commands/mlx-doctor.md",
+      "sha256": "18d865be6e341a1c4c829dd3d99c304cba06a0b23643df03032f5d2529748db6"
+    },
+    {
+      "path": "commands/mlx-fleet.md",
+      "sha256": "94958db5a8fdb7c6e4988c493e6c7db6a4e0fb56446d5588c4f5ec4e364a497c"
+    },
+    {
       "path": "commands/mlx-scout.md",
       "sha256": "f6de5ddde768b5766d7bbf797d1baed6ac37b128335633223c8f84a57495775f"
+    },
+    {
+      "path": "commands/mlx-watch.md",
+      "sha256": "7ba35ec7a0d851fad44d5b49f50a458fc290a36e2c18d54da8711414aea9e466"
     },
     {
       "path": "commands/mlx-wire.md",

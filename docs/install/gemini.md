@@ -1,6 +1,6 @@
 # Gemini CLI
 
-Gemini CLI exposes `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, and `/mlx-bench` through the `mlx-agent` extension.
+Gemini CLI exposes `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, and `/mlx-fleet` through the `mlx-agent` extension.
 
 Validate and install an extension checkout:
 

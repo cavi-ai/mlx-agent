@@ -185,11 +185,11 @@ esac
         codex = manifest["providers"]["codex"]
         self.assertEqual({"kind": "skill", "prefix": "$"}, codex["invocation"])
         self.assertEqual(
-            ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire", "mlx-agent:mlx-bench"],
+            ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire", "mlx-agent:mlx-bench", "mlx-agent:mlx-doctor", "mlx-agent:mlx-watch", "mlx-agent:mlx-fleet"],
             codex["commands"],
         )
 
-    def test_generated_plugin_has_the_official_manifest_and_four_skill_entries(self):
+    def test_generated_plugin_has_the_official_manifest_and_seven_skill_entries(self):
         generator = load_generator()
         with tempfile.TemporaryDirectory() as directory:
             output_root = Path(directory)

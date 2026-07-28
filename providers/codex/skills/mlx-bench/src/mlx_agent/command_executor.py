@@ -12,7 +12,7 @@ from .gemini_args import GeminiArgumentError, parse_gemini_arguments
 
 MAX_ARGUMENT_BYTES = 4096
 _PROVIDERS = ("opencode",)
-_CAPABILITIES = ("scout", "adopt", "wire", "bench")
+_CAPABILITIES = ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet")
 
 
 class CommandExecutorError(ValueError):

@@ -53,7 +53,7 @@ def _tool_definition():
             "additionalProperties": False,
             "required": ["capability", "arguments"],
             "properties": {
-                "capability": {"enum": ["scout", "adopt", "wire", "bench"]},
+                "capability": {"enum": ["scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"]},
                 "arguments": {"type": "string", "maxLength": MAX_ARGUMENT_BYTES},
             },
         },

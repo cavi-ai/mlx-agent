@@ -46,13 +46,34 @@
       "command": "mlx-bench",
       "description": "Measure a locally served MLX model without downloading it.",
       "arguments": ["repo", "runtime", "runs"]
+    },
+    {
+      "slug": "doctor",
+      "command": "mlx-doctor",
+      "description": "Diagnose local model inventories, wiring drift, and endpoint health.",
+      "arguments": ["wired-root", "hf-cache"]
+    },
+    {
+      "slug": "watch",
+      "command": "mlx-watch",
+      "description": "Digest Hugging Face changes for owned models against a stored baseline.",
+      "arguments": ["state-dir", "limit"]
+    },
+    {
+      "slug": "fleet",
+      "command": "mlx-fleet",
+      "description": "Preview and confirm a one-shot per-role router configuration.",
+      "arguments": ["assign", "from-adoption", "runtime-map"]
     }
   ],
   "skills": [
     {"slug": "mlx-scout", "activation": "natural-language"},
     {"slug": "mlx-adopt", "activation": "natural-language"},
     {"slug": "mlx-wire", "activation": "natural-language"},
-    {"slug": "mlx-bench", "activation": "natural-language"}
+    {"slug": "mlx-bench", "activation": "natural-language"},
+    {"slug": "mlx-doctor", "activation": "natural-language"},
+    {"slug": "mlx-watch", "activation": "natural-language"},
+    {"slug": "mlx-fleet", "activation": "natural-language"}
   ],
   "runtimes": [
     {"slug": "ollama", "optional": true},
@@ -67,28 +88,28 @@
       "minimum_version": "2.1.143",
       "last_tested_version": "2.1.198",
       "scopes": ["user", "project"],
-      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench"]
+      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"]
     },
     "codex": {
       "install_guide": "docs/install/codex.md",
       "minimum_version": "0.137.0",
       "last_tested_version": "0.137.0",
       "scopes": ["user", "project"],
-      "commands": ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire", "mlx-agent:mlx-bench"]
+      "commands": ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire", "mlx-agent:mlx-bench", "mlx-agent:mlx-doctor", "mlx-agent:mlx-watch", "mlx-agent:mlx-fleet"]
     },
     "gemini": {
       "install_guide": "docs/install/gemini.md",
       "minimum_version": "0.46.0",
       "last_tested_version": "0.46.0",
       "scopes": ["user", "project"],
-      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench"]
+      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"]
     },
     "opencode": {
       "install_guide": "docs/install/opencode.md",
       "minimum_version": "1.17.7",
       "last_tested_version": "1.18.3",
       "scopes": ["user", "project"],
-      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench"]
+      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"]
     },
     "agentskills": {
       "install_guide": "docs/install/index.md",

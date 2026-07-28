@@ -44,6 +44,18 @@ def _content_sha256(root, files):
     return digest.hexdigest()
 
 
+def _head_commit():
+    import subprocess
+
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        capture_output=True, text=True, timeout=5, cwd=str(ROOT),
+    )
+    if result.returncode != 0:
+        raise ValueError("could not resolve the source commit for the docs artifact")
+    return result.stdout.strip()
+
+
 def build(version, check=False):
     if not SOURCE.is_dir():
         raise ValueError("documentation source is missing: {0}".format(SOURCE))
@@ -70,6 +82,14 @@ def build(version, check=False):
         expected = _content_sha256(destination, built_files)
         if manifest.get("contentSha256") != expected:
             raise ValueError("documentation content digest mismatch")
+        release = manifest.get("release")
+        if (
+            not isinstance(release, dict)
+            or release.get("tag") != "v{0}".format(version)
+            or not isinstance(release.get("commit"), str)
+            or len(release["commit"]) != 40
+        ):
+            raise ValueError("documentation release provenance is missing or malformed")
         return destination
 
     if destination.exists():
@@ -89,6 +109,10 @@ def build(version, check=False):
         "contentSha256": _content_sha256(destination, files),
         "publicBasePath": "/docs/mlx-agent/v{0}".format(version),
         "stableAlias": "/docs/mlx-agent",
+        "release": {
+            "tag": "v{0}".format(version),
+            "commit": _head_commit(),
+        },
     }
     (destination / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"

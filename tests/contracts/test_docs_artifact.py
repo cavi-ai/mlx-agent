@@ -44,6 +44,8 @@ class DocsArtifactTests(unittest.TestCase):
         self.assertRegex(manifest["contentSha256"], r"^[0-9a-f]{64}$")
         self.assertEqual(manifest["publicBasePath"], "/docs/mlx-agent/v{0}".format(__version__))
         self.assertEqual(manifest["stableAlias"], "/docs/mlx-agent")
+        self.assertEqual(manifest["release"]["tag"], "v{0}".format(__version__))
+        self.assertRegex(manifest["release"]["commit"], r"^[0-9a-f]{40}$")
 
     def test_pages_have_titles_and_no_broken_relative_links(self):
         for page in SOURCE.rglob("*.md"):

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add release provenance to the documentation artifact manifest: `release.tag` and `release.commit` record the source commit the artifact was built from, matching the bobby-browser consumer pattern.
 - Add the immutable documentation artifact: curated docs under `docs/mlx-agent/source`, built by `scripts/build_docs.py` into `docs/mlx-agent/v<version>/` with a `contentSha256` manifest (bobby-browser pattern), enforced by contract tests. See `docs/mlx-agent/CONSUMER.md`.
 
 ## 0.4.0 - 2026-07-27

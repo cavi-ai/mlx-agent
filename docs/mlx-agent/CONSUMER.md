@@ -4,9 +4,11 @@
 
 ## Contents
 
-- `manifest.json` — `{package, product, version, contentSha256, publicBasePath, stableAlias}`.
+- `manifest.json` — `{package, product, version, contentSha256, publicBasePath, stableAlias, release}`.
 - `navigation.json` — `{title, version, sections[]}`; `version` equals the manifest version and every navigation path exists in the artifact.
 - One markdown page per navigation entry.
+
+`release` records `{tag: "v<version>", commit}` — the repository commit the artifact was built from (the build commit's parent once committed, since a commit cannot contain its own hash).
 
 ## Contract for hosts
 

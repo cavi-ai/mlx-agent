@@ -3,6 +3,10 @@
   "package": "mlx-agent",
   "product": "mlx-agent",
   "publicBasePath": "/docs/mlx-agent/v0.4.0",
+  "release": {
+    "commit": "923627988cf98e984fa36e0b940f86e7263e2958",
+    "tag": "v0.4.0"
+  },
   "stableAlias": "/docs/mlx-agent",
   "version": "0.4.0"
 }

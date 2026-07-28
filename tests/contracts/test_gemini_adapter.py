@@ -80,7 +80,7 @@ class GeminiAdapterContractTests(unittest.TestCase):
         manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
         gemini = manifest["providers"]["gemini"]
         self.assertEqual({"kind": "command", "prefix": "/"}, gemini["invocation"])
-        self.assertEqual(["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench"], gemini["commands"])
+        self.assertEqual(["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"], gemini["commands"])
 
     def test_generated_extension_has_required_manifest_commands_and_skills(self):
         generator = load_generator()
@@ -142,7 +142,7 @@ class GeminiAdapterContractTests(unittest.TestCase):
             extension_root = Path(directory) / "providers" / "gemini"
             generator.generate(("gemini",), Path(directory))
             command_names = sorted(path.stem for path in (extension_root / "commands").glob("*.toml"))
-            self.assertEqual(["mlx-adopt", "mlx-bench", "mlx-scout", "mlx-wire"], command_names)
+            self.assertEqual(["mlx-adopt", "mlx-bench", "mlx-doctor", "mlx-fleet", "mlx-scout", "mlx-watch", "mlx-wire"], command_names)
             for path in extension_root.rglob("*"):
                 if path.is_file() and path.name != ".mlx-agent-generated-files.json":
                     self.assertNotIn(str(ROOT), path.read_text(encoding="utf-8", errors="replace"), str(path))

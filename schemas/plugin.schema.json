@@ -224,7 +224,10 @@
         "scout",
         "adopt",
         "wire",
-        "bench"
+        "bench",
+        "doctor",
+        "watch",
+        "fleet"
       ],
       "properties": {
         "scout": {
@@ -237,6 +240,15 @@
           "$ref": "#/$defs/capability"
         },
         "bench": {
+          "$ref": "#/$defs/capability"
+        },
+        "doctor": {
+          "$ref": "#/$defs/capability"
+        },
+        "watch": {
+          "$ref": "#/$defs/capability"
+        },
+        "fleet": {
           "$ref": "#/$defs/capability"
         }
       }
@@ -337,7 +349,7 @@
       "properties": {
         "command": {
           "type": "string",
-          "pattern": "^mlx-(scout|adopt|wire|bench)$"
+          "pattern": "^mlx-(scout|adopt|wire|bench|doctor|watch|fleet)$"
         },
         "description": {
           "type": "string",
@@ -380,12 +392,15 @@
               "scout",
               "adopt",
               "wire",
-              "bench"
+              "bench",
+              "doctor",
+              "watch",
+              "fleet"
             ]
           },
           "uniqueItems": true,
-          "minItems": 4,
-          "maxItems": 4
+          "minItems": 7,
+          "maxItems": 7
         },
         "commands": {
           "type": "array",

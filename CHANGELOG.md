@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Promote doctor, watch, and fleet to full provider capabilities: `/mlx-doctor`, `/mlx-watch`, and `/mlx-fleet` on Claude Code, Gemini CLI, and OpenCode, `$mlx-agent:`-prefixed on Codex, plus portable AgentSkills packages, all generated from the manifest with contract parity. Process-spawning commands (serve, convert, lora, fuse) remain CLI-only.
 - Add release provenance to the documentation artifact manifest: `release.tag` and `release.commit` record the source commit the artifact was built from, matching the bobby-browser consumer pattern.
 - Add the immutable documentation artifact: curated docs under `docs/mlx-agent/source`, built by `scripts/build_docs.py` into `docs/mlx-agent/v<version>/` with a `contentSha256` manifest (bobby-browser pattern), enforced by contract tests. See `docs/mlx-agent/CONSUMER.md`.
 

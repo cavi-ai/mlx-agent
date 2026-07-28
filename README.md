@@ -11,11 +11,11 @@ First-class adapters are included for each provider below. The universal install
 
 | Provider | Package | Invoke |
 | --- | --- | --- |
-| [Claude Code](docs/install/claude.md) | Native plugin | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire`<br>`/mlx-bench` |
-| [Codex CLI](docs/install/codex.md) | Native plugin | `$mlx-agent:mlx-scout`<br>`$mlx-agent:mlx-adopt`<br>`$mlx-agent:mlx-wire`<br>`$mlx-agent:mlx-bench` |
-| [Gemini CLI](docs/install/gemini.md) | Native extension | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire`<br>`/mlx-bench` |
-| [OpenCode](docs/install/opencode.md) | Native plugin | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire`<br>`/mlx-bench` |
-| [AgentSkills-compatible hosts](docs/install/index.md) | Portable skills | `mlx-scout skill`<br>`mlx-adopt skill`<br>`mlx-wire skill`<br>`mlx-bench skill` |
+| [Claude Code](docs/install/claude.md) | Native plugin | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire`<br>`/mlx-bench`<br>`/mlx-doctor`<br>`/mlx-watch`<br>`/mlx-fleet` |
+| [Codex CLI](docs/install/codex.md) | Native plugin | `$mlx-agent:mlx-scout`<br>`$mlx-agent:mlx-adopt`<br>`$mlx-agent:mlx-wire`<br>`$mlx-agent:mlx-bench`<br>`$mlx-agent:mlx-doctor`<br>`$mlx-agent:mlx-watch`<br>`$mlx-agent:mlx-fleet` |
+| [Gemini CLI](docs/install/gemini.md) | Native extension | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire`<br>`/mlx-bench`<br>`/mlx-doctor`<br>`/mlx-watch`<br>`/mlx-fleet` |
+| [OpenCode](docs/install/opencode.md) | Native plugin | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire`<br>`/mlx-bench`<br>`/mlx-doctor`<br>`/mlx-watch`<br>`/mlx-fleet` |
+| [AgentSkills-compatible hosts](docs/install/index.md) | Portable skills | `mlx-scout skill`<br>`mlx-adopt skill`<br>`mlx-wire skill`<br>`mlx-bench skill`<br>`mlx-doctor skill`<br>`mlx-watch skill`<br>`mlx-fleet skill` |
 <!-- compatibility:end -->
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
@@ -39,7 +39,7 @@ claude plugin install mlx-agent@mlx-agent
 claude plugin list
 ```
 
-Restart Claude Code, then run `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, or `/mlx-bench`.
+Restart Claude Code, then run `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, or `/mlx-fleet`.
 
 ### Codex CLI
 
@@ -49,7 +49,7 @@ codex plugin add mlx-agent@mlx-agent
 codex plugin list
 ```
 
-Restart Codex, then invoke `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, `$mlx-agent:mlx-wire`, or `$mlx-agent:mlx-bench`. Codex does not support custom slash commands.
+Restart Codex, then invoke `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, `$mlx-agent:mlx-wire`, `$mlx-agent:mlx-bench`, `$mlx-agent:mlx-doctor`, `$mlx-agent:mlx-watch`, or `$mlx-agent:mlx-fleet`. Codex does not support custom slash commands.
 
 ### Gemini CLI
 
@@ -61,7 +61,7 @@ gemini extensions install ./mlx-agent/providers/gemini
 gemini extensions list
 ```
 
-Restart Gemini CLI, then run `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, or `/mlx-bench`.
+Restart Gemini CLI, then run `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, or `/mlx-fleet`.
 
 ### OpenCode
 
@@ -76,18 +76,18 @@ python3 scripts/mlx-agent install opencode --scope user --confirm --preview-hash
 python3 scripts/mlx-agent doctor opencode --scope user --json
 ```
 
-Restart OpenCode, press `Ctrl+P`, filter for `mlx`, then run `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, or `/mlx-bench`. If OpenCode lives on another volume, set its XDG directories before both installation and launch; see the [OpenCode guide](docs/install/opencode.md).
+Restart OpenCode, press `Ctrl+P`, filter for `mlx`, then run `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, or `/mlx-fleet`. If OpenCode lives on another volume, set its XDG directories before both installation and launch; see the [OpenCode guide](docs/install/opencode.md).
 
 ### AgentSkills-compatible hosts
 
-From a release checkout, copy all four self-contained packages into the host's user skills directory:
+From a release checkout, copy all seven self-contained packages into the host's user skills directory:
 
 ```bash
 mkdir -p ~/.agents/skills
-cp -R providers/agentskills/mlx-scout providers/agentskills/mlx-adopt providers/agentskills/mlx-wire providers/agentskills/mlx-bench ~/.agents/skills/
+cp -R providers/agentskills/mlx-scout providers/agentskills/mlx-adopt providers/agentskills/mlx-wire providers/agentskills/mlx-bench providers/agentskills/mlx-doctor providers/agentskills/mlx-watch providers/agentskills/mlx-fleet ~/.agents/skills/
 ```
 
-For project scope, copy them to `<project>/.agents/skills/` instead. Restart the host and confirm that `mlx-scout`, `mlx-adopt`, `mlx-wire`, and `mlx-bench` appear in its skills list.
+For project scope, copy them to `<project>/.agents/skills/` instead. Restart the host and confirm that `mlx-scout`, `mlx-adopt`, `mlx-wire`, `mlx-bench`, `mlx-doctor`, `mlx-watch`, and `mlx-fleet` appear in its skills list.
 
 ### Universal installer and lifecycle
 

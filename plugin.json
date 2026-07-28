@@ -160,6 +160,66 @@
           {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false}
         ]}
       }
+    },
+    "doctor": {
+      "command": "mlx-doctor",
+      "description": "Diagnose local model inventories, wiring drift, and endpoint health.",
+      "actions": {
+        "models": {"arguments": [
+          {"name": "providers", "kind": "positional", "type": "string", "required": false},
+          {"name": "scope", "flag": "--scope", "kind": "option", "type": "string", "required": false},
+          {"name": "project", "flag": "--project", "kind": "option", "type": "string", "required": false},
+          {"name": "dry_run", "flag": "--dry-run", "kind": "option", "type": "boolean", "required": false},
+          {"name": "confirm", "flag": "--confirm", "kind": "option", "type": "boolean", "required": false},
+          {"name": "preview_hash", "flag": "--preview-hash", "kind": "option", "type": "string", "required": false},
+          {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false},
+          {"name": "wired_root", "flag": "--wired-root", "kind": "option", "type": "string", "required": false, "repeatable": true},
+          {"name": "hf_cache", "flag": "--hf-cache", "kind": "option", "type": "string", "required": false},
+          {"name": "prune", "flag": "--prune", "kind": "option", "type": "boolean", "required": false}
+        ]}
+      }
+    },
+    "watch": {
+      "command": "mlx-watch",
+      "description": "Digest Hugging Face changes for owned models against a stored baseline.",
+      "actions": {
+        "snapshot": {"arguments": [
+          {"name": "state_dir", "flag": "--state-dir", "kind": "option", "type": "string", "required": false},
+          {"name": "limit", "flag": "--limit", "kind": "option", "type": "integer", "required": false},
+          {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false}
+        ]},
+        "diff": {"arguments": [
+          {"name": "state_dir", "flag": "--state-dir", "kind": "option", "type": "string", "required": false},
+          {"name": "limit", "flag": "--limit", "kind": "option", "type": "integer", "required": false},
+          {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false}
+        ]}
+      }
+    },
+    "fleet": {
+      "command": "mlx-fleet",
+      "description": "Preview and confirm a one-shot per-role router configuration.",
+      "actions": {
+        "render": {"arguments": [
+          {"name": "path", "flag": "--path", "kind": "option", "type": "string", "required": true},
+          {"name": "assign", "flag": "--assign", "kind": "option", "type": "string", "required": false, "repeatable": true},
+          {"name": "from_adoption", "flag": "--from-adoption", "kind": "option", "type": "string", "required": false},
+          {"name": "runtime_map", "flag": "--runtime-map", "kind": "option", "type": "string", "required": false, "repeatable": true},
+          {"name": "allow_missing", "flag": "--allow-missing", "kind": "option", "type": "boolean", "required": false},
+          {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false}
+        ]},
+        "apply": {"arguments": [
+          {"name": "path", "flag": "--path", "kind": "option", "type": "string", "required": true},
+          {"name": "assign", "flag": "--assign", "kind": "option", "type": "string", "required": false, "repeatable": true},
+          {"name": "from_adoption", "flag": "--from-adoption", "kind": "option", "type": "string", "required": false},
+          {"name": "runtime_map", "flag": "--runtime-map", "kind": "option", "type": "string", "required": false, "repeatable": true},
+          {"name": "allow_missing", "flag": "--allow-missing", "kind": "option", "type": "boolean", "required": false},
+          {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false},
+          {"name": "confirm", "flag": "--confirm", "kind": "option", "type": "boolean", "required": false},
+          {"name": "preview_hash", "flag": "--preview-hash", "kind": "option", "type": "string", "required": false},
+          {"name": "receipts_dir", "flag": "--receipts-dir", "kind": "option", "type": "string", "required": false},
+          {"name": "endpoint", "flag": "--endpoint", "kind": "option", "type": "string", "required": false}
+        ]}
+      }
     }
   },
   "providers": {
@@ -169,13 +229,19 @@
         "scout",
         "adopt",
         "wire",
-        "bench"
+        "bench",
+        "doctor",
+        "watch",
+        "fleet"
       ],
       "commands": [
         "mlx-scout",
         "mlx-adopt",
         "mlx-wire",
-        "mlx-bench"
+        "mlx-bench",
+        "mlx-doctor",
+        "mlx-watch",
+        "mlx-fleet"
       ],
       "invocation": {
         "kind": "command",
@@ -197,13 +263,19 @@
         "scout",
         "adopt",
         "wire",
-        "bench"
+        "bench",
+        "doctor",
+        "watch",
+        "fleet"
       ],
       "commands": [
         "mlx-agent:mlx-scout",
         "mlx-agent:mlx-adopt",
         "mlx-agent:mlx-wire",
-        "mlx-agent:mlx-bench"
+        "mlx-agent:mlx-bench",
+        "mlx-agent:mlx-doctor",
+        "mlx-agent:mlx-watch",
+        "mlx-agent:mlx-fleet"
       ],
       "invocation": {
         "kind": "skill",
@@ -221,7 +293,10 @@
         {"source": "providers/codex/skills/mlx-scout", "destination": "skills/mlx-scout"},
         {"source": "providers/codex/skills/mlx-adopt", "destination": "skills/mlx-adopt"},
         {"source": "providers/codex/skills/mlx-wire", "destination": "skills/mlx-wire"},
-        {"source": "providers/codex/skills/mlx-bench", "destination": "skills/mlx-bench"}
+        {"source": "providers/codex/skills/mlx-bench", "destination": "skills/mlx-bench"},
+        {"source": "providers/codex/skills/mlx-doctor", "destination": "skills/mlx-doctor"},
+        {"source": "providers/codex/skills/mlx-watch", "destination": "skills/mlx-watch"},
+        {"source": "providers/codex/skills/mlx-fleet", "destination": "skills/mlx-fleet"}
       ],
       "config_paths": []
     },
@@ -231,13 +306,19 @@
         "scout",
         "adopt",
         "wire",
-        "bench"
+        "bench",
+        "doctor",
+        "watch",
+        "fleet"
       ],
       "commands": [
         "mlx-scout",
         "mlx-adopt",
         "mlx-wire",
-        "mlx-bench"
+        "mlx-bench",
+        "mlx-doctor",
+        "mlx-watch",
+        "mlx-fleet"
       ],
       "invocation": {
         "kind": "command",
@@ -259,11 +340,17 @@
         {"source": "providers/gemini/skills/mlx-adopt", "destination": "skills/mlx-adopt"},
         {"source": "providers/gemini/skills/mlx-wire", "destination": "skills/mlx-wire"},
         {"source": "providers/gemini/skills/mlx-bench", "destination": "skills/mlx-bench"},
+        {"source": "providers/gemini/skills/mlx-doctor", "destination": "skills/mlx-doctor"},
+        {"source": "providers/gemini/skills/mlx-watch", "destination": "skills/mlx-watch"},
+        {"source": "providers/gemini/skills/mlx-fleet", "destination": "skills/mlx-fleet"},
         {"source": "providers/gemini/commands", "destination": "commands", "project_destination": ".gemini/commands", "scope": "project"},
         {"source": "providers/gemini/skills/mlx-scout", "destination": "skills/mlx-scout", "project_destination": ".gemini/skills/mlx-scout", "scope": "project"},
         {"source": "providers/gemini/skills/mlx-adopt", "destination": "skills/mlx-adopt", "project_destination": ".gemini/skills/mlx-adopt", "scope": "project"},
         {"source": "providers/gemini/skills/mlx-wire", "destination": "skills/mlx-wire", "project_destination": ".gemini/skills/mlx-wire", "scope": "project"},
-        {"source": "providers/gemini/skills/mlx-bench", "destination": "skills/mlx-bench", "project_destination": ".gemini/skills/mlx-bench", "scope": "project"}
+        {"source": "providers/gemini/skills/mlx-bench", "destination": "skills/mlx-bench", "project_destination": ".gemini/skills/mlx-bench", "scope": "project"},
+        {"source": "providers/gemini/skills/mlx-doctor", "destination": "skills/mlx-doctor", "project_destination": ".gemini/skills/mlx-doctor", "scope": "project"},
+        {"source": "providers/gemini/skills/mlx-watch", "destination": "skills/mlx-watch", "project_destination": ".gemini/skills/mlx-watch", "scope": "project"},
+        {"source": "providers/gemini/skills/mlx-fleet", "destination": "skills/mlx-fleet", "project_destination": ".gemini/skills/mlx-fleet", "scope": "project"}
       ],
       "config_paths": []
     },
@@ -273,13 +360,19 @@
         "scout",
         "adopt",
         "wire",
-        "bench"
+        "bench",
+        "doctor",
+        "watch",
+        "fleet"
       ],
       "commands": [
         "mlx-scout",
         "mlx-adopt",
         "mlx-wire",
-        "mlx-bench"
+        "mlx-bench",
+        "mlx-doctor",
+        "mlx-watch",
+        "mlx-fleet"
       ],
       "invocation": {
         "kind": "command",
@@ -300,7 +393,10 @@
         {"source": "providers/opencode/skills/mlx-scout", "destination": "skills/mlx-scout"},
         {"source": "providers/opencode/skills/mlx-adopt", "destination": "skills/mlx-adopt"},
         {"source": "providers/opencode/skills/mlx-wire", "destination": "skills/mlx-wire"},
-        {"source": "providers/opencode/skills/mlx-bench", "destination": "skills/mlx-bench"}
+        {"source": "providers/opencode/skills/mlx-bench", "destination": "skills/mlx-bench"},
+        {"source": "providers/opencode/skills/mlx-doctor", "destination": "skills/mlx-doctor"},
+        {"source": "providers/opencode/skills/mlx-watch", "destination": "skills/mlx-watch"},
+        {"source": "providers/opencode/skills/mlx-fleet", "destination": "skills/mlx-fleet"}
       ],
       "config_paths": []
     },
@@ -310,7 +406,10 @@
         "scout",
         "adopt",
         "wire",
-        "bench"
+        "bench",
+        "doctor",
+        "watch",
+        "fleet"
       ],
       "commands": [],
       "invocation": {
@@ -328,7 +427,10 @@
         {"source": "providers/agentskills/mlx-scout", "destination": "skills/mlx-scout"},
         {"source": "providers/agentskills/mlx-adopt", "destination": "skills/mlx-adopt"},
         {"source": "providers/agentskills/mlx-wire", "destination": "skills/mlx-wire"},
-        {"source": "providers/agentskills/mlx-bench", "destination": "skills/mlx-bench"}
+        {"source": "providers/agentskills/mlx-bench", "destination": "skills/mlx-bench"},
+        {"source": "providers/agentskills/mlx-doctor", "destination": "skills/mlx-doctor"},
+        {"source": "providers/agentskills/mlx-watch", "destination": "skills/mlx-watch"},
+        {"source": "providers/agentskills/mlx-fleet", "destination": "skills/mlx-fleet"}
       ],
       "config_paths": []
     }

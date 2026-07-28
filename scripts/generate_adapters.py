@@ -137,6 +137,48 @@ Measure a model already served by a running local runtime:
 
 Present the returned measurements as returned. Bench must not start servers, download model weights, or change configuration; the model must already be served by an existing local runtime.
 """.format(identifier=identifier, invocation=invocation)
+    elif capability == "doctor":
+        body = """# MLX Doctor
+
+canonical capability ID: {identifier}
+
+Run the read-only model diagnostics:
+
+`{invocation} doctor models --json`
+
+Present the inventory, drift findings, and endpoint health as returned. Doctor must not delete, move, or repair anything; the confirmation-gated prune of incomplete cache snapshots requires an explicit reviewed preview from the user first.
+""".format(identifier=identifier, invocation=invocation)
+    elif capability == "watch":
+        body = """# MLX Watch
+
+canonical capability ID: {identifier}
+
+Record or compare the owned-model baseline:
+
+`{invocation} watch snapshot --json`
+`{invocation} watch diff --json`
+
+Present the classified findings as returned. Watch writes only its own state file and never downloads model weights or changes configuration.
+""".format(identifier=identifier, invocation=invocation)
+    elif capability == "fleet":
+        body = """# MLX Fleet
+
+canonical capability ID: {identifier}
+
+Render the one-shot per-role router configuration without mutation:
+
+`{invocation} fleet render --path <router.yaml> --assign <role=repo> --json`
+
+Then request the exact transaction diff and preview hash without confirmation:
+
+`{invocation} fleet apply --path <router.yaml> --assign <role=repo> --json`
+
+Show that returned diff and preview hash. Do not write configuration files directly. Only after the user explicitly confirms that exact preview, run:
+
+`{invocation} fleet apply --path <router.yaml> --assign <role=repo> --confirm --preview-hash <preview-hash> --json`
+
+Never download model weights without an explicit confirmation. Report the transaction receipt returned by the CLI.
+""".format(identifier=identifier, invocation=invocation)
     else:
         body = """# MLX Wire
 
@@ -185,6 +227,12 @@ def _claude_command_markdown(manifest: Mapping[str, object], capability: str) ->
         boundary = "Preserve the durable adoption state path and resume it instead of recreating workflow state."
     elif capability == "bench":
         boundary = "Bench measures only models already served by a running local runtime. It must not start servers, download model weights, or change configuration."
+    elif capability == "doctor":
+        boundary = "Doctor diagnostics are read-only. The prune of incomplete cache snapshots is irreversible and requires the user's explicitly reviewed preview hash."
+    elif capability == "watch":
+        boundary = "Watch writes only its own state file and must not download model weights or change configuration."
+    elif capability == "fleet":
+        boundary = "The validated tool sequence is `fleet render --path <router.yaml> --assign <role=repo> --json`, then `fleet apply --path <router.yaml> --assign <role=repo> --json` to obtain the preview. After the user explicitly confirms that exact preview, call `fleet apply --path <router.yaml> --assign <role=repo> --confirm --preview-hash <preview-hash> --json`."
     else:
         boundary = "Scout is read-only and must not download model weights or change configuration. Bundled references (read when relevant): `src/mlx_agent/resources/references/quantization.md` for quant tradeoffs, `src/mlx_agent/resources/references/model-families.md` for chat-template and tool-calling quirks, `src/mlx_agent/resources/references/troubleshooting.md` for serving symptoms."
     return _with_tool_use_guidance(manifest, """---
@@ -271,6 +319,22 @@ def _gemini_command_toml(manifest: Mapping[str, object], capability: str) -> str
             "Use the skill's bounded measurement core only against models already served by a running local runtime. "
             "Do not start servers, download model weights, or change configuration."
         )
+    elif capability == "doctor":
+        prompt += (
+            "Use the skill's read-only diagnostics for inventory, drift, and endpoint health. "
+            "Do not delete, move, or repair anything without the user's explicitly reviewed prune preview."
+        )
+    elif capability == "watch":
+        prompt += (
+            "Use the skill's baseline snapshot and diff digest for owned models. "
+            "Do not download model weights or change configuration."
+        )
+    elif capability == "fleet":
+        prompt += (
+            "Use the skill's exact Fleet sequence: render, request the unconfirmed apply preview and hash, "
+            "then apply only after the user explicitly confirms that exact hash. "
+            "Do not write configuration directly."
+        )
     else:
         prompt += (
             "Use the skill's exact Wire sequence: render, request the unconfirmed apply preview and hash, "
@@ -302,6 +366,9 @@ def _gemini_skill_markdown(manifest: Mapping[str, object], capability: str) -> s
         "adopt": "Use the executor only for documented adoption state and role fields. Preserve the returned durable state and do not recreate adoption policy.",
         "wire": "Use the executor only for documented render, preview, confirmation, receipt, model, runtime, and path fields. Preserve confirmation-gated behavior.",
         "bench": "Use the executor only for documented repo, runtime, role, runs, gen-tokens, and timeout fields. Measure only already-served models; never start servers or download model weights.",
+        "doctor": "Use the executor only for the documented models action and its roots. Diagnostics stay read-only; prune requires the user's explicitly reviewed preview hash.",
+        "watch": "Use the executor only for the documented snapshot and diff actions. Watch writes only its own state file.",
+        "fleet": "Use the executor only for documented path, assign, from-adoption, runtime-map, confirmation, receipt, and endpoint fields. Preserve confirmation-gated behavior.",
     }
     return _with_tool_use_guidance(manifest, front_matter + """# MLX {title}
 
@@ -353,6 +420,9 @@ def _opencode_command_markdown(manifest: Mapping[str, object], capability: str) 
         "adopt": "Create at most one bounded independent verification record. Do not fan out, download model weights, or change configuration.",
         "wire": "Use only the transaction CLI's render, preview, confirmed `--confirm --preview-hash` apply, and receipt workflow. Do not edit configuration directly.",
         "bench": "Run only the validated measurement operation against an already-served model. Do not start servers, download model weights, or change configuration.",
+        "doctor": "Run only the read-only diagnostics. Do not delete, move, or repair anything without the user's explicitly reviewed prune preview.",
+        "watch": "Run only the baseline snapshot and diff actions. Do not download model weights or change configuration.",
+        "fleet": "Use only the transaction CLI's render, preview, confirmed `--confirm --preview-hash` apply, and receipt workflow. Do not edit configuration directly.",
     }
     return _with_tool_use_guidance(manifest, front_matter + """# MLX {title}
 
@@ -387,6 +457,9 @@ def _opencode_skill_markdown(manifest: Mapping[str, object], capability: str) ->
         "adopt": "Allow one bounded independent verification record only; do not use unbounded subtask fan-out. Preserve durable state returned by the executor.",
         "wire": "Use the transaction CLI for render, then the unconfirmed preview and hash, then confirmed apply only after the user confirms that exact hash. Do not write configuration directly.",
         "bench": "The validated operation measures only models already served by a running local runtime. It must not start servers or download model weights.",
+        "doctor": "The validated operation is read-only diagnostics. Prune is irreversible and requires the user's explicitly reviewed preview hash.",
+        "watch": "The validated operation writes only the watch state file. It must not download model weights or mutate configuration.",
+        "fleet": "Use the transaction CLI for render, then the unconfirmed preview and hash, then confirmed apply only after the user confirms that exact hash. Do not write configuration directly.",
     }
     return _with_tool_use_guidance(manifest, """---
 name: {name}
@@ -704,7 +777,8 @@ def _allowed_surface_paths(surface: Optional[Path]) -> set:
         Path(".claude-plugin/plugin.json"), Path(".claude-plugin/marketplace.json"),
         Path(".mcp.json"),
         Path("commands/mlx-scout.md"), Path("commands/mlx-adopt.md"), Path("commands/mlx-wire.md"),
-        Path("commands/mlx-bench.md"),
+        Path("commands/mlx-bench.md"), Path("commands/mlx-doctor.md"), Path("commands/mlx-watch.md"),
+        Path("commands/mlx-fleet.md"),
         Path("agents/mlx-advisor.md"), Path("scripts/mlx-adopt.workflow.mjs"),
     }
     runtime = {Path("scripts/mlx-agent"), Path("scripts/mlx-agent-mcp")}
@@ -715,7 +789,7 @@ def _allowed_surface_paths(surface: Optional[Path]) -> set:
         return root_paths | runtime
     if surface == Path("providers/codex"):
         allowed = {Path(".codex-plugin/plugin.json")}
-        for capability in ("scout", "adopt", "wire", "bench"):
+        for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
             skill = Path("skills/mlx-{0}".format(capability))
             allowed.add(skill / "SKILL.md")
             allowed.update(skill / path for path in runtime)
@@ -723,7 +797,7 @@ def _allowed_surface_paths(surface: Optional[Path]) -> set:
     if surface == Path("providers/gemini"):
         allowed = {Path("gemini-extension.json")}
         allowed.update(runtime)
-        for capability in ("scout", "adopt", "wire", "bench"):
+        for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
             skill = Path("skills/mlx-{0}".format(capability))
             allowed.add(Path("commands/mlx-{0}.toml".format(capability)))
             allowed.add(skill / "SKILL.md")
@@ -735,7 +809,7 @@ def _allowed_surface_paths(surface: Optional[Path]) -> set:
         # Compatibility-only entries remove a hash-matched prior Gemini file
         # transport from an existing OpenCode inventory.
         allowed.update({Path("src/mlx_agent/gemini_executor.py"), Path("src/mlx_agent/gemini_transport.py")})
-        for capability in ("scout", "adopt", "wire", "bench"):
+        for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
             skill = Path("skills/mlx-{0}".format(capability))
             allowed.add(Path("commands/mlx-{0}.md".format(capability)))
             allowed.add(skill / "SKILL.md")
@@ -747,7 +821,7 @@ def _allowed_surface_paths(surface: Optional[Path]) -> set:
         return allowed
     if surface == Path("providers/agentskills"):
         allowed = set()
-        for capability in ("scout", "adopt", "wire", "bench"):
+        for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
             skill = Path("mlx-{0}".format(capability))
             allowed.add(skill / "SKILL.md")
             allowed.update(skill / path for path in runtime)
@@ -802,6 +876,9 @@ def _render(manifest: Mapping[str, object], provider_ids: Sequence[str]) -> Dict
             Path("commands/mlx-adopt.md"): _claude_command_markdown(manifest, "adopt"),
             Path("commands/mlx-wire.md"): _claude_command_markdown(manifest, "wire"),
             Path("commands/mlx-bench.md"): _claude_command_markdown(manifest, "bench"),
+            Path("commands/mlx-doctor.md"): _claude_command_markdown(manifest, "doctor"),
+            Path("commands/mlx-watch.md"): _claude_command_markdown(manifest, "watch"),
+            Path("commands/mlx-fleet.md"): _claude_command_markdown(manifest, "fleet"),
             Path("agents/mlx-advisor.md"): _advisor_markdown(manifest),
             Path("scripts/mlx-adopt.workflow.mjs"): _workflow(manifest),
         }
@@ -812,7 +889,7 @@ def _render(manifest: Mapping[str, object], provider_ids: Sequence[str]) -> Dict
     if "codex" in selected:
         codex_root = Path("providers/codex")
         rendered[codex_root / ".codex-plugin" / "plugin.json"] = _codex_plugin_metadata(manifest)
-        for capability in ("scout", "adopt", "wire", "bench"):
+        for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
             skill_root = codex_root / "skills" / "mlx-{0}".format(capability)
             rendered[skill_root / "SKILL.md"] = _codex_skill_markdown(manifest, capability)
             rendered.update(_runtime_bundle(skill_root))
@@ -820,7 +897,7 @@ def _render(manifest: Mapping[str, object], provider_ids: Sequence[str]) -> Dict
         gemini_root = Path("providers/gemini")
         rendered[gemini_root / "gemini-extension.json"] = _gemini_extension_metadata(manifest)
         rendered.update(_runtime_bundle(gemini_root))
-        for capability in ("scout", "adopt", "wire", "bench"):
+        for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
             skill_root = gemini_root / "skills" / "mlx-{0}".format(capability)
             rendered[gemini_root / "commands" / "mlx-{0}.toml".format(capability)] = _gemini_command_toml(manifest, capability)
             rendered[skill_root / "SKILL.md"] = _gemini_skill_markdown(manifest, capability)
@@ -831,12 +908,12 @@ def _render(manifest: Mapping[str, object], provider_ids: Sequence[str]) -> Dict
         rendered[opencode_root / "agents" / "mlx-advisor.md"] = _opencode_advisor_markdown(manifest)
         for source in _opencode_runtime_sources():
             rendered[opencode_root / "src" / "mlx_agent" / source.relative_to(ROOT / "src" / "mlx_agent")] = source.read_bytes()
-        for capability in ("scout", "adopt", "wire", "bench"):
+        for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
             skill_root = opencode_root / "skills" / "mlx-{0}".format(capability)
             rendered[opencode_root / "commands" / "mlx-{0}.md".format(capability)] = _opencode_command_markdown(manifest, capability)
             rendered[skill_root / "SKILL.md"] = _opencode_skill_markdown(manifest, capability)
     if "agentskills" in selected:
-        for capability in ("scout", "adopt", "wire", "bench"):
+        for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
             skill_root = Path("providers/agentskills/mlx-{0}".format(capability))
             rendered[skill_root / "SKILL.md"] = _generic_skill_markdown(manifest, capability)
             rendered.update(_runtime_bundle(skill_root))

@@ -8,7 +8,7 @@
     "license": "MIT"
   },
   "release": {
-    "version": "0.4.0",
+    "version": "0.5.0",
     "channel": "source-checkout"
   },
   "links": {
@@ -107,7 +107,7 @@
     "opencode": {
       "install_guide": "docs/install/opencode.md",
       "minimum_version": "1.17.7",
-      "last_tested_version": "1.18.3",
+      "last_tested_version": "1.18.9",
       "scopes": ["user", "project"],
       "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"]
     },
@@ -145,17 +145,17 @@
       "codex": {
         "schema_validation": "supported",
         "cli_smoke": "blocked",
-        "last_tested": "2026-07-17"
+        "last_tested": "2026-07-29"
       },
       "gemini": {
         "schema_validation": "supported",
         "cli_smoke": "fixture",
-        "last_tested": "2026-07-17"
+        "last_tested": "2026-07-29"
       },
       "opencode": {
         "schema_validation": "static",
         "cli_smoke": "blocked",
-        "last_tested": "2026-07-20"
+        "last_tested": "2026-07-29"
       },
       "agentskills": {
         "schema_validation": "supported",

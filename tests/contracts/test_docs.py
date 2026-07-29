@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import mlx_agent
 from datetime import date
 from pathlib import Path
 
@@ -37,7 +38,7 @@ class DocumentationContractTests(unittest.TestCase):
         self.readme = README_PATH.read_text(encoding="utf-8")
 
     def test_matrix_records_complete_evidence_for_every_provider(self):
-        self.assertEqual("0.4.0", self.matrix["plugin_version"])
+        self.assertEqual(mlx_agent.__version__, self.matrix["plugin_version"])
         self.assertEqual(set(PROVIDERS), set(self.matrix["providers"]))
         self.assertEqual(
             {"supported", "not-run", "blocked", "static", "fixture"},
@@ -173,7 +174,7 @@ class DocumentationContractTests(unittest.TestCase):
         commands = (
             "claude plugin marketplace add cavi-ai/mlx-agent",
             "claude plugin install mlx-agent@mlx-agent",
-            "codex plugin marketplace add cavi-ai/mlx-agent --ref v0.4.0",
+            "codex plugin marketplace add cavi-ai/mlx-agent --ref v{0}".format(mlx_agent.__version__),
             "codex plugin add mlx-agent@mlx-agent",
             "gemini extensions install ./mlx-agent/providers/gemini",
             "python3 scripts/mlx-agent install opencode --scope user --dry-run --json",

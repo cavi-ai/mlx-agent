@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.5.0 - 2026-07-29
+
+- Add the Release workflow: tagging `v*` validates that every committed copy of the version agrees, runs the full gate set, attaches `mlx-agent-docs-<tag>.tar.gz` to the GitHub Release, and dispatches `cavi-oss-release` to each registered documentation consumer. `scripts/validate_release_version.py` runs the same lockstep check locally, and `scripts/release_envelope.py` renders the artifact manifest and dispatch body from one definition.
+- Make the tagged live-runtime health job opt-in behind `MLX_AGENT_LIVE_RUNTIME_HEALTH`: it requires a self-hosted Apple Silicon runner, so tagging a release no longer queues a job that no runner can claim.
+- Refresh provider validation evidence for 0.5.0: OpenCode 1.18.9, Codex CLI 0.137.0, and Gemini CLI 0.46.0 smoke suites pass.
+
 - Fix provider roots being judged after symlink resolution: a provider config directory that is a symlink to another location (dotfile checkout, config on another volume) resolved outside the approved user roots and raised, which failed `definitions()` and took down every provider command for every provider. Containment is now judged on the logical path; traversal and absolute escapes are still rejected.
 - Install through a symlinked provider directory without configuration: a validated root is resolved once to its real location, so the no-follow descriptor walk only ever sees real directories and previews, receipts, and ownership checks share one spelling. No `XDG_CONFIG_HOME` export is required for a relocated provider directory.
 - Add `destination_not_writable`: install, update, and uninstall refuse a root that is a symlink at plan time, naming the symlink and its target, instead of surfacing `[Errno 20]` from the descriptor walk. Doctor still reports such layouts rather than refusing.

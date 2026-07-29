@@ -115,6 +115,7 @@ Hosted documentation is built from `docs/mlx-agent/source` into an immutable art
 | **Research** | Build a read-only domain research pack: foundational modalities seed intent; models/adapters/datasets are ranked into markdown + JSON; packs include a justified MLX-native runtime preference (Ollama remains a valid alternate). |
 | **Blueprint** | Emit a guidance-only MLX project design pack (quant/train/LoRA/MTX/study notes) under `mlx-blueprints/`. No scaffolding or training. |
 | **`mlx-scout`** skill | Auto-activates on "which local model?"; wraps the discovery script + runtime reference. |
+| **`mlx-converter`** skill | Auto-activates on "convert this GGUF" / "what have I already converted?"; wraps the GGUF inventory and conversion core. |
 | **`mlx-advisor`** agent | On-demand expert for picking + wiring a local model for a role. |
 | **`scout.py`** | The stdlib-only discovery/wiring core — runs standalone, too. |
 | **Reference packs** | Quant guide, model-family quirks, and a troubleshooting playbook, bundled into every generated skill (`src/mlx_agent/resources/references/`). |
@@ -226,6 +227,18 @@ python3 scripts/mlx-agent convert status
 ```
 
 `convert` renders the exact `mlx_lm.convert` argv, requires `--confirm --preview-hash`, then runs the quantization detached with a receipt.
+
+GGUF inventory and conversion:
+
+```bash
+python3 scripts/mlx-agent convert scan                       # what is converted, pending, duplicated
+python3 scripts/mlx-agent convert scan --pending-only --json
+python3 scripts/mlx-agent convert start --gguf ~/models/model-Q4_K_M.gguf --q-bits 4
+```
+
+`convert scan` is read-only and stdlib-only: it parses bounded GGUF headers under the configured roots (`--gguf-root`, repeatable), pairs each file with an MLX output by provenance marker, receipt, or name, and groups redundant copies (`exact`, byte-identical or same-quantization) apart from quantization `variant`s. It reports; it never deletes.
+
+`convert start --gguf` dequantizes the GGUF to Hugging Face weights with `transformers`, then quantizes those to MLX with `mlx_lm.convert`, under the same preview-confirm-receipt gates. It needs `torch`, `transformers`, and `gguf` importable by the same interpreter and never installs them. The output carries an `mlx-converter.json` provenance marker naming its source GGUF.
 
 LoRA training (confirmation-gated, dataset-validated):
 

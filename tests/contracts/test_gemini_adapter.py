@@ -371,9 +371,14 @@ class GeminiAdapterContractTests(unittest.TestCase):
         self.assertFalse(foreign_owner.exists())
 
     def test_recursive_provider_artifacts_exclude_runtime_bytecode(self):
-        registry = ProviderRegistry(ROOT / "plugin.json")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            registry = ProviderRegistry(
+                ROOT / "plugin.json", home=root / "home", config_root=root / "config"
+            )
+            definitions = registry.definitions()
         for provider in ("codex", "gemini"):
-            definition = registry.definitions()[provider]
+            definition = definitions[provider]
             with self.subTest(provider=provider):
                 self.assertFalse(any("__pycache__" in item.source.parts for item in definition.artifacts))
                 self.assertFalse(any(item.source.suffix == ".pyc" for item in definition.artifacts))

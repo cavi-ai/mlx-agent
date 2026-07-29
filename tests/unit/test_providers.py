@@ -47,7 +47,11 @@ class ProviderRegistryTests(unittest.TestCase):
 
     def test_detection_uses_injected_executable_lookup_without_installing_anything(self):
         with tempfile.TemporaryDirectory() as directory:
-            registry = ProviderRegistry(ROOT / "plugin.json", config_root=Path(directory))
+            registry = ProviderRegistry(
+                ROOT / "plugin.json",
+                home=Path(directory) / "home",
+                config_root=Path(directory) / "config",
+            )
             detections = detect_providers(
                 registry.definitions().values(),
                 env={"PATH": "/fake/bin"},
@@ -74,8 +78,13 @@ class ProviderRegistryTests(unittest.TestCase):
             calls.append((argv, kwargs))
             return subprocess.CompletedProcess(argv, 0, b"gemini 99.0.0\n")
 
-        registry = ProviderRegistry(ROOT / "plugin.json")
-        definition = registry.definitions()["gemini"]
+        with tempfile.TemporaryDirectory() as directory:
+            registry = ProviderRegistry(
+                ROOT / "plugin.json",
+                home=Path(directory) / "home",
+                config_root=Path(directory) / "config",
+            )
+            definition = registry.definitions()["gemini"]
         detection = detect_providers(
             [definition],
             env={"PATH": "/fake/bin"},
@@ -112,7 +121,54 @@ class ProviderRegistryTests(unittest.TestCase):
             path = root / "plugin.json"
             path.write_text(json.dumps(manifest))
             with self.assertRaises(ValueError):
-                ProviderRegistry(path, config_root=root).definitions()
+                ProviderRegistry(
+                    path, home=root / "home", config_root=root / "config"
+                ).definitions()
+
+    def test_symlinked_provider_config_directory_resolves_to_its_target(self):
+        """A dotfile checkout elsewhere is still the provider's own directory."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            (home / ".config").mkdir(parents=True)
+            elsewhere = root / "volume" / "opencode"
+            elsewhere.mkdir(parents=True)
+            (home / ".config" / "opencode").symlink_to(elsewhere, target_is_directory=True)
+
+            registry = ProviderRegistry(
+                ROOT / "plugin.json", home=home, config_root=root / "config"
+            )
+            definitions = registry.definitions()
+
+            self.assertEqual(
+                {"claude", "codex", "gemini", "opencode", "agentskills"},
+                set(definitions),
+            )
+            self.assertEqual(elsewhere.resolve(), definitions["opencode"].user_root)
+
+    def test_user_root_still_rejects_escaping_an_approved_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = json.loads((ROOT / "plugin.json").read_text())
+            manifest["providers"]["claude"]["user_root"] = "/etc/mlx-agent"
+            path = root / "plugin.json"
+            path.write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(ValueError, "approved user configuration root"):
+                ProviderRegistry(
+                    path, home=root / "home", config_root=root / "config"
+                ).definitions()
+
+    def test_user_root_rejects_traversal_out_of_an_approved_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = json.loads((ROOT / "plugin.json").read_text())
+            manifest["providers"]["claude"]["user_root"] = "{home}/../escape"
+            path = root / "plugin.json"
+            path.write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(ValueError, "traversal"):
+                ProviderRegistry(
+                    path, home=root / "home", config_root=root / "config"
+                ).definitions()
 
     def test_provider_artifact_sources_never_follow_symlinks(self):
         with tempfile.TemporaryDirectory() as directory:

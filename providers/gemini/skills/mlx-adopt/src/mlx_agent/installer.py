@@ -12,7 +12,7 @@ from pathlib import Path
 from .providers import detect_providers
 from .transactions import (
     LegacyLockError, Receipt, Transaction, _assert_safe_directory, _assert_safe_target,
-    _atomic_in_directory, _read_regular, _read_target, _walk_directory,
+    _atomic_in_directory, _physical_absolute, _read_regular, _read_target, _walk_directory,
     _rollback_receipt_hash, legacy_lock_problem, rollback,
 )
 from .wiring import redact_secrets
@@ -20,6 +20,42 @@ from .wiring import redact_secrets
 
 class InstallerConflictError(ValueError):
     """A requested operation would touch an unowned or modified artifact."""
+
+
+class InstallerPathError(ValueError):
+    """A destination root cannot be written through safely on this host."""
+
+    def __init__(self, message, remediation):
+        super().__init__(message)
+        self.remediation = remediation
+
+
+def _first_symlinked_component(path):
+    """Return the first symlinked ancestor of an absolute path, or None.
+
+    Writes walk every component with ``O_NOFOLLOW``, so a symlinked directory
+    anywhere above an artifact makes the whole install fail. Provider roots are
+    resolved before they reach here, so anything this finds is a root that
+    became a symlink afterwards — and finding it turns an ``[Errno 20]`` from
+    the descriptor walk into a diagnosis.
+
+    The path is normalized through the same fixed ``/var`` alias handling the
+    descriptor walk uses, so the platform's own compatibility symlink is not
+    mistaken for one of the user's.
+    """
+    try:
+        normalized = _physical_absolute(path)
+    except ValueError:
+        return None
+    cursor = Path(normalized.anchor or "/")
+    for component in normalized.parts[1:]:
+        cursor = cursor / component
+        try:
+            if cursor.is_symlink():
+                return cursor, os.readlink(str(cursor))
+        except OSError:
+            return None
+    return None
 
 
 class _ArtifactAdapter:
@@ -182,7 +218,10 @@ class Installer:
         if len(selected) != len(set(selected)) or any(item not in definitions for item in selected):
             raise ValueError("providers must be unique supported provider IDs")
         if action == "doctor":
+            # Doctor's job is to report unhealthy layouts, including symlinked
+            # ones. Only mutating actions refuse them up front.
             return self._doctor_plan(selected, definitions, scope, project)
+        self._assert_writable_roots(selected, definitions, scope, project)
         if action == "uninstall":
             return self._uninstall_plan(selected, definitions, scope, project)
         return self._install_plan(action, selected, definitions, scope, project)
@@ -332,6 +371,25 @@ class Installer:
         return self._make_plan("uninstall", selected, scope, project, rollback_receipts=steps,
                                uninstall_hashes=uninstall_hashes, restore_changes=tuple((provider_id, tuple(changes)) for provider_id, changes in restore_changes.items()),
                                summary=summary, definitions=definitions)
+
+    def _assert_writable_roots(self, selected, definitions, scope, project):
+        """Refuse early, and by name, when a destination root is a symlink."""
+        for provider_id in selected:
+            root = definitions[provider_id].destination(scope, project)
+            found = _first_symlinked_component(root)
+            if found is None:
+                continue
+            location, target = found
+            raise InstallerPathError(
+                "{0} installs under {1}, but {2} is a symlink to {3}.".format(
+                    provider_id, root, location, target
+                ),
+                "Artifacts are written through a no-follow descriptor walk, which "
+                "cannot traverse a symlinked directory. Point the install at the real "
+                "location instead — for user scope, export XDG_CONFIG_HOME (or "
+                "MLX_AGENT_HOME) to the directory the symlink resolves to — or replace "
+                "the symlink with a real directory.",
+            )
 
     def _doctor_plan(self, selected, definitions, scope, project):
         return self._make_plan("doctor", selected, scope, project, definitions=definitions)

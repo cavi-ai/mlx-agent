@@ -169,7 +169,9 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("release_envelope.py manifest", self.workflow)
         self.assertIn("release_envelope.py dispatch", self.workflow)
         self.assertIn("CONSUMER_DISPATCH_TOKEN", self.workflow)
-        self.assertIn("cavi-ai/cavi-home", self.workflow)
+        for consumer in ("cavi-ai/cavi-home", "cavi-ai/mlx-dashboard"):
+            with self.subTest(consumer=consumer):
+                self.assertIn(consumer, self.workflow)
 
     def test_tagging_never_queues_an_unclaimable_job(self):
         apple = (ROOT / ".github" / "workflows" / "apple-silicon.yml").read_text(encoding="utf-8")

@@ -169,7 +169,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("release_envelope.py manifest", self.workflow)
         self.assertIn("release_envelope.py dispatch", self.workflow)
         self.assertIn("CONSUMER_DISPATCH_TOKEN", self.workflow)
-        for consumer in ("cavi-ai/cavi-home", "cavi-ai/mlx-dashboard"):
+        for consumer in ("cavi-ai/cavi-home", "cavi-ai/mlx-workbench"):
             with self.subTest(consumer=consumer):
                 self.assertIn(consumer, self.workflow)
 

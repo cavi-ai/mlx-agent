@@ -87,7 +87,7 @@ jobs:
           set -euo pipefail
           staging="$(mktemp -d)"
           mkdir -p "$staging/docs/mlx-agent"
-          cp -R "docs/mlx-agent/v${VERSION}" "$staging/docs/mlx-agent/v${VERSION}"
+          PYTHONPATH=src python3 scripts/build_docs.py --commit "$COMMIT" --destination "$staging/docs/mlx-agent/v${VERSION}"
           python3 scripts/release_envelope.py manifest \
             --version "$VERSION" --tag "$TAG" --commit "$COMMIT" \
             --out "$staging/cavi-release.json"

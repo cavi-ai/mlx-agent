@@ -1,9 +1,11 @@
 import json
 import re
+import tempfile
 import unittest
 from pathlib import Path
 
 from mlx_agent import __version__
+from scripts import build_docs
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -13,6 +15,18 @@ _RELATIVE_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 
 
 class DocsArtifactTests(unittest.TestCase):
+    def test_release_build_can_bind_the_manifest_to_the_tag_commit(self):
+        release_commit = "1" * 40
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "docs"
+            build_docs.build(
+                __version__, destination=destination, commit=release_commit
+            )
+            manifest = json.loads(
+                (destination / "manifest.json").read_text(encoding="utf-8")
+            )
+        self.assertEqual(release_commit, manifest["release"]["commit"])
+
     def test_source_navigation_matches_version_and_files(self):
         navigation = json.loads((SOURCE / "navigation.json").read_text(encoding="utf-8"))
         self.assertEqual(navigation["version"], __version__)

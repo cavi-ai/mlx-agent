@@ -169,7 +169,9 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("release_envelope.py manifest", self.workflow)
         self.assertIn("release_envelope.py dispatch", self.workflow)
         self.assertIn("CONSUMER_DISPATCH_TOKEN", self.workflow)
-        self.assertIn("cavi-ai/cavi-home", self.workflow)
+        for consumer in ("cavi-ai/cavi-home", "cavi-ai/mlx-workbench"):
+            with self.subTest(consumer=consumer):
+                self.assertIn(consumer, self.workflow)
 
     def test_release_rebuilds_docs_with_the_exact_tag_commit_before_packaging(self):
         self.assertIn(

@@ -11,6 +11,23 @@
     "schema_version": { "const": "1.0" },
     "kind": { "const": "convert" },
     "repo": { "type": "string", "minLength": 1 },
+    "slug": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9._-]+$" },
+    "source": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["hf-cache", "gguf"] },
+        "repo": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "signature": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "architecture": { "type": ["string", "null"] },
+        "quantization": { "type": ["string", "null"] },
+        "model_key": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
     "q_bits": { "enum": [4, 8] },
     "out": { "type": "string", "minLength": 1 },
     "argv": {

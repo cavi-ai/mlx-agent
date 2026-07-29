@@ -1,6 +1,6 @@
 {
   "name": "mlx-agent",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Structured local MLX discovery, adoption, and wiring for Apple Silicon agents.",
   "author": {
     "name": "Sasan Sotoodehfar"

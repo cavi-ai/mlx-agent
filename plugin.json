@@ -1,7 +1,7 @@
 {
   "$schema": "schemas/plugin.schema.json",
   "schema_version": "1.1",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "identity": "mlx-agent",
   "scopes": [
     "user",

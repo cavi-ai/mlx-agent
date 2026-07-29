@@ -66,7 +66,7 @@
     },
     {
       "path": "src/mlx_agent/__init__.py",
-      "sha256": "bff1ddecb075779263fc889f2f2f8f883949d63737e0164dc43147dd1188f807"
+      "sha256": "e45be5654f238ce06f27e386deece602fcb8c81d69fbb88fad74dffea456f1af"
     },
     {
       "path": "src/mlx_agent/__main__.py",

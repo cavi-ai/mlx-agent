@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "plugin_version": "0.5.0",
-  "evidence_id": "v0.5.0-rc-2026-07-29",
+  "plugin_version": "0.5.1",
+  "evidence_id": "v0.5.1-rc-2026-07-29",
   "allowed_evidence_statuses": ["supported", "not-run", "blocked", "static", "fixture"],
   "providers": {
     "claude": {"id": "rc-2026-07-17-claude", "status": "fixture", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, disposable HOME", "cli_version": "2.1.198", "scopes_tested": ["user"], "native_discovery": "skills listed; slash-command session not run", "fixture_bundle": "passed", "uninstall": "passed"},

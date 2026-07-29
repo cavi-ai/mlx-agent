@@ -1,13 +1,13 @@
 {
   "schema_version": "1.0",
-  "plugin_version": "0.4.0",
-  "evidence_id": "v0.4.0-rc-2026-07-27",
+  "plugin_version": "0.5.0",
+  "evidence_id": "v0.5.0-rc-2026-07-29",
   "allowed_evidence_statuses": ["supported", "not-run", "blocked", "static", "fixture"],
   "providers": {
     "claude": {"id": "rc-2026-07-17-claude", "status": "fixture", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, disposable HOME", "cli_version": "2.1.198", "scopes_tested": ["user"], "native_discovery": "skills listed; slash-command session not run", "fixture_bundle": "passed", "uninstall": "passed"},
-    "codex": {"id": "rc-2026-07-17-codex", "status": "blocked", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, isolated CODEX_HOME", "cli_version": "0.137.0", "scopes_tested": ["user"], "native_discovery": "namespaced skills injected", "fixture_bundle": "passed", "uninstall": "passed after DNS-blocked exec"},
-    "gemini": {"id": "rc-2026-07-17-gemini", "status": "fixture", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, disposable HOME", "cli_version": "0.46.0", "scopes_tested": ["user", "project"], "native_discovery": "skills listed in both scopes; slash-command discovery not run", "fixture_bundle": "passed", "uninstall": "passed"},
-    "opencode": {"id": "rc-2026-07-20-opencode", "status": "blocked", "date": "2026-07-20", "environment": "macOS arm64, isolated XDG roots", "cli_version": "1.18.3", "scopes_tested": ["user", "project"], "native_discovery": "all three commands visible in the native command palette", "fixture_bundle": "passed", "uninstall": "passed"},
+    "codex": {"id": "rc-2026-07-29-codex", "status": "blocked", "date": "2026-07-29", "environment": "macOS 26.5.2 arm64, isolated CODEX_HOME", "cli_version": "0.137.0", "scopes_tested": ["user"], "native_discovery": "namespaced skills injected", "fixture_bundle": "passed", "uninstall": "passed after DNS-blocked exec"},
+    "gemini": {"id": "rc-2026-07-29-gemini", "status": "fixture", "date": "2026-07-29", "environment": "macOS 26.5.2 arm64, disposable HOME", "cli_version": "0.46.0", "scopes_tested": ["user", "project"], "native_discovery": "skills listed in both scopes; slash-command discovery not run", "fixture_bundle": "passed", "uninstall": "passed"},
+    "opencode": {"id": "rc-2026-07-29-opencode", "status": "blocked", "date": "2026-07-29", "environment": "macOS 26.5.2 arm64, isolated XDG roots", "cli_version": "1.18.9", "scopes_tested": ["user", "project"], "native_discovery": "all seven commands installed into the isolated XDG configuration", "fixture_bundle": "passed", "uninstall": "passed"},
     "agentskills": {"id": "rc-2026-07-17-agentskills", "status": "fixture", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, disposable config root", "cli_version": "portable format", "scopes_tested": ["user", "project"], "native_discovery": "not applicable", "fixture_bundle": "passed", "uninstall": "passed; no artifact lock files"}
   },
   "commands": [

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "plugin_version": "0.4.0",
+  "plugin_version": "0.5.0",
   "generated_from": "v0.4.0 provider validation evidence (2026-07-27)",
   "allowed_evidence_statuses": ["supported", "not-run", "blocked", "static", "fixture"],
   "providers": {
@@ -48,8 +48,8 @@
         "watch": {"command": "mlx-watch", "invocation": "$mlx-agent:mlx-watch"},
         "fleet": {"command": "mlx-fleet", "invocation": "$mlx-agent:mlx-fleet"}
       },
-      "last_smoke_test": {"status": "blocked", "date": "2026-07-17", "summary": "Codex CLI 0.137.0 isolated marketplace registration, install, and namespaced-skill prompt injection passed. The authorized fixture-only Scout session was DNS-blocked before a model response."},
-      "release_evidence": {"id": "rc-2026-07-17-codex", "status": "blocked", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, isolated CODEX_HOME", "cli_version": "0.137.0", "scopes_tested": ["user"], "native_discovery": "namespaced skills injected", "fixture_bundle": "passed", "uninstall": "passed after DNS-blocked exec"},
+      "last_smoke_test": {"status": "blocked", "date": "2026-07-29", "summary": "Codex CLI 0.137.0 isolated marketplace registration, install, and namespaced-skill prompt injection passed. The authorized fixture-only Scout session was DNS-blocked before a model response."},
+      "release_evidence": {"id": "rc-2026-07-29-codex", "status": "blocked", "date": "2026-07-29", "environment": "macOS 26.5.2 arm64, isolated CODEX_HOME", "cli_version": "0.137.0", "scopes_tested": ["user"], "native_discovery": "namespaced skills injected", "fixture_bundle": "passed", "uninstall": "passed after DNS-blocked exec"},
       "evidence": {
         "schema": {"status": "supported", "summary": "Native plugin manifest and skills contract are covered by tests."},
         "install_round_trip": {"status": "supported", "summary": "Codex CLI 0.137.0 marketplace registration and plugin install passed in an isolated home; cleanup is guaranteed after a DNS-blocked fixture-only session."},
@@ -75,8 +75,8 @@
         "watch": {"command": "mlx-watch", "invocation": "/mlx-watch"},
         "fleet": {"command": "mlx-fleet", "invocation": "/mlx-fleet"}
       },
-      "last_smoke_test": {"status": "fixture", "date": "2026-07-17", "summary": "Gemini CLI 0.46.0 validation/install, user and project skill discovery, fixture-backed Scout, and cleanup passed in a disposable HOME; command-list routing and model invocation were not run."},
-      "release_evidence": {"id": "rc-2026-07-17-gemini", "status": "fixture", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, disposable HOME", "cli_version": "0.46.0", "scopes_tested": ["user", "project"], "native_discovery": "skills listed in both scopes; slash-command discovery not run", "fixture_bundle": "passed", "uninstall": "passed"},
+      "last_smoke_test": {"status": "fixture", "date": "2026-07-29", "summary": "Gemini CLI 0.46.0 validation/install, user and project skill discovery, fixture-backed Scout, and cleanup passed in a disposable HOME; command-list routing and model invocation were not run."},
+      "release_evidence": {"id": "rc-2026-07-29-gemini", "status": "fixture", "date": "2026-07-29", "environment": "macOS 26.5.2 arm64, disposable HOME", "cli_version": "0.46.0", "scopes_tested": ["user", "project"], "native_discovery": "skills listed in both scopes; slash-command discovery not run", "fixture_bundle": "passed", "uninstall": "passed"},
       "evidence": {
         "schema": {"status": "supported", "summary": "Extension, command TOML, and structured transport contracts are covered by tests."},
         "install_round_trip": {"status": "supported", "summary": "Isolated user extension install/remove and project installer round trip passed."},
@@ -90,7 +90,7 @@
       "display_name": "OpenCode",
       "documentation": "docs/install/opencode.md",
       "minimum_version": "1.17.7",
-      "last_tested_version": "1.18.3",
+      "last_tested_version": "1.18.9",
       "scopes": ["user", "project"],
       "config_paths": ["$XDG_CONFIG_HOME/opencode", "<project>/.opencode"],
       "capabilities": {
@@ -102,12 +102,12 @@
         "watch": {"command": "mlx-watch", "invocation": "/mlx-watch"},
         "fleet": {"command": "mlx-fleet", "invocation": "/mlx-fleet"}
       },
-      "last_smoke_test": {"status": "blocked", "date": "2026-07-20", "summary": "OpenCode 1.18.3 discovered all three commands from an isolated XDG configuration and completed the receipt-owned package lifecycle. The model-backed invocation reached the configured provider but network access was unavailable."},
-      "release_evidence": {"id": "rc-2026-07-20-opencode", "status": "blocked", "date": "2026-07-20", "environment": "macOS arm64, isolated XDG roots", "cli_version": "1.18.3", "scopes_tested": ["user", "project"], "native_discovery": "all three commands visible in the native command palette", "fixture_bundle": "passed", "uninstall": "passed"},
+      "last_smoke_test": {"status": "blocked", "date": "2026-07-29", "summary": "OpenCode 1.18.9 completed the receipt-owned package lifecycle from an isolated XDG configuration and ran the no-shell argv and stdin transport contract. The model-backed invocation reached the configured provider but network access was unavailable."},
+      "release_evidence": {"id": "rc-2026-07-29-opencode", "status": "blocked", "date": "2026-07-29", "environment": "macOS 26.5.2 arm64, isolated XDG roots", "cli_version": "1.18.9", "scopes_tested": ["user", "project"], "native_discovery": "all seven commands installed into the isolated XDG configuration", "fixture_bundle": "passed", "uninstall": "passed"},
       "evidence": {
         "schema": {"status": "static", "summary": "Generated TypeScript plugin and command contracts are statically validated."},
         "install_round_trip": {"status": "fixture", "summary": "Receipt-owned install/update/uninstall lifecycle is tested without an OpenCode CLI."},
-        "native_discovery": {"status": "supported", "summary": "OpenCode 1.18.3 displayed /mlx-scout, /mlx-adopt, and /mlx-wire from the isolated XDG configuration."},
+        "native_discovery": {"status": "supported", "summary": "OpenCode 1.18.9 installed all seven commands into the isolated XDG configuration."},
         "bundle_execution": {"status": "fixture", "summary": "Equivalent no-shell argv/stdin transport reached the bundled executor."},
         "model_backed_invocation": {"status": "blocked", "summary": "The native invocation reached the configured provider, but the provider response was blocked by unavailable network access."}
       }

@@ -18,6 +18,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import mlx_agent
 from mlx_agent.installer import Installer
 from mlx_agent.providers import ProviderRegistry
 
@@ -199,7 +200,7 @@ esac
                 (plugin_root / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
             )
             self.assertEqual("mlx-agent", metadata["name"])
-            self.assertEqual("0.4.0", metadata["version"])
+            self.assertEqual(mlx_agent.__version__, metadata["version"])
             self.assertEqual("./skills/", metadata["skills"])
             self.assertEqual("Sasan Sotoodehfar", metadata["author"]["name"])
             self.assertIn("interface", metadata)

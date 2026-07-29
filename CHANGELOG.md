@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.1 - 2026-07-29
+
+- Rebuild the release documentation artifact in staging with the exact tagged commit so its embedded provenance matches the outer release envelope consumed by CAVI Home.
+
 ## 0.5.0 - 2026-07-29
 
 - Add the Release workflow: tagging `v*` validates that every committed copy of the version agrees, runs the full gate set, attaches `mlx-agent-docs-<tag>.tar.gz` to the GitHub Release, and dispatches `cavi-oss-release` to each registered documentation consumer. `scripts/validate_release_version.py` runs the same lockstep check locally, and `scripts/release_envelope.py` renders the artifact manifest and dispatch body from one definition.

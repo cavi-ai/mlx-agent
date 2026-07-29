@@ -2,7 +2,7 @@
 
 > Discover, verify, and **wire** local MLX-optimized models on Apple Silicon — for your coding agent.
 
-Current package version: **0.5.0**.
+Current package version: **0.5.1**.
 
 <!-- compatibility:begin -->
 ## Provider support
@@ -44,7 +44,7 @@ Restart Claude Code, then run `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-ben
 ### Codex CLI
 
 ```bash
-codex plugin marketplace add cavi-ai/mlx-agent --ref v0.5.0
+codex plugin marketplace add cavi-ai/mlx-agent --ref v0.5.1
 codex plugin add mlx-agent@mlx-agent
 codex plugin list
 ```
@@ -56,7 +56,7 @@ Restart Codex, then invoke `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, `$mlx
 Gemini installs this extension from its packaged provider directory:
 
 ```bash
-git clone --depth 1 --branch v0.5.0 https://github.com/cavi-ai/mlx-agent.git
+git clone --depth 1 --branch v0.5.1 https://github.com/cavi-ai/mlx-agent.git
 gemini extensions install ./mlx-agent/providers/gemini
 gemini extensions list
 ```
@@ -68,7 +68,7 @@ Restart Gemini CLI, then run `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-benc
 OpenCode uses the confirmation-gated universal installer. Run these commands from a release checkout:
 
 ```bash
-git clone --depth 1 --branch v0.5.0 https://github.com/cavi-ai/mlx-agent.git
+git clone --depth 1 --branch v0.5.1 https://github.com/cavi-ai/mlx-agent.git
 cd mlx-agent
 python3 scripts/mlx-agent install opencode --scope user --dry-run --json
 # Copy data.preview.preview_hash from the output, then confirm that exact plan:

@@ -88,6 +88,48 @@ class ProviderDetection:
         }
 
 
+def _logical(path):
+    """Absolute, `..`-free spelling of a path without resolving symlinks.
+
+    Containment is judged on the spelling a user configured, not on where the
+    filesystem happens to point. A provider directory that is a symlink to
+    another volume — a dotfile checkout, config on external storage — is still
+    that provider's directory, and resolving it would misread it as an escape.
+    Traversal is rejected outright, so a rendered template can never climb out
+    of an approved root.
+    """
+    value = Path(path).expanduser()
+    if ".." in value.parts:
+        raise ValueError("path traversal is not allowed: {0}".format(path))
+    return Path(os.path.normpath(os.path.abspath(str(value))))
+
+
+def _physical(path):
+    """Resolve a validated root to the spelling the filesystem will accept.
+
+    Artifacts are written through a descriptor walk that opens every component
+    with ``O_NOFOLLOW``, so a symlinked directory anywhere above them cannot be
+    traversed — and a provider config directory that is a symlink is a normal
+    arrangement (dotfiles checkout, storage on another volume). Resolving the
+    existing prefix once, here, means the walk only ever sees real directories
+    while receipts, previews, and ownership checks all use one stable spelling.
+
+    Containment is checked on the logical path before this runs. Where a user's
+    own symlink points is that user's arrangement, not something a manifest can
+    influence.
+    """
+    value = Path(path)
+    missing = []
+    cursor = value
+    while cursor != cursor.parent and not cursor.exists():
+        missing.append(cursor.name)
+        cursor = cursor.parent
+    resolved = Path(os.path.realpath(str(cursor)))
+    for name in reversed(missing):
+        resolved = resolved / name
+    return resolved
+
+
 def _safe_relative(value, field, allow_current=False):
     path = Path(value)
     if allow_current and str(value) == ".":
@@ -103,8 +145,11 @@ class ProviderRegistry:
     def __init__(self, manifest_path, home=None, config_root=None, xdg_config_home=None):
         self.manifest_path = Path(manifest_path).resolve()
         self.home = Path(home).expanduser().resolve() if home else Path.home().resolve()
+        # Receipts are state, not configuration, and belong in the XDG state
+        # directory. The previous default put them in a dotless ``~/mlx-agent``.
         self.config_root = (
-            Path(config_root).expanduser().resolve() if config_root else self.home
+            Path(config_root).expanduser().resolve() if config_root
+            else (self.home / ".local" / "state").resolve()
         )
         self.xdg_config_home = (
             Path(xdg_config_home).expanduser().resolve()
@@ -249,7 +294,7 @@ class ProviderRegistry:
 
     def _validate_gemini_extension_layout(self, user_root, project_root, artifacts):
         """Keep Gemini's install roots aligned with its extension discovery layout."""
-        if user_root != (self.home / _GEMINI_EXTENSION_SUFFIX).resolve():
+        if user_root != _physical(_logical(self.home / _GEMINI_EXTENSION_SUFFIX)):
             raise ValueError("provider gemini.user_root must target home/.gemini/extensions/mlx-agent")
         if project_root != _GEMINI_EXTENSION_SUFFIX:
             raise ValueError("provider gemini.project_root must target .gemini/extensions/mlx-agent")
@@ -261,7 +306,7 @@ class ProviderRegistry:
 
     def _validate_opencode_layout(self, user_root, project_root, artifacts):
         """Keep OpenCode's documented global and project discovery locations exact."""
-        if user_root != (self.xdg_config_home / "opencode").resolve():
+        if user_root != _physical(_logical(self.xdg_config_home / "opencode")):
             raise ValueError("provider opencode.user_root must target the OpenCode XDG config directory")
         if project_root != Path(".opencode"):
             raise ValueError("provider opencode.project_root must target .opencode")
@@ -282,16 +327,16 @@ class ProviderRegistry:
         if not isinstance(template, str) or "{project}" in template:
             raise ValueError("provider {0}.user_root is invalid".format(provider_id))
         try:
-            path = Path(template.format(
+            path = _logical(template.format(
                 home=str(self.home), config_root=str(self.config_root),
                 xdg_config_home=str(self.xdg_config_home),
-            )).resolve()
+            ))
         except (KeyError, ValueError) as error:
             raise ValueError("provider {0}.user_root is invalid: {1}".format(provider_id, error))
         allowed_roots = (self.home, self.config_root, self.xdg_config_home)
         if not any(root == path or root in path.parents for root in allowed_roots):
             raise ValueError("provider {0}.user_root must be under an approved user configuration root".format(provider_id))
-        return path
+        return _physical(path)
 
     def _project_root(self, template, provider_id):
         if not isinstance(template, str) or "{project}" not in template:

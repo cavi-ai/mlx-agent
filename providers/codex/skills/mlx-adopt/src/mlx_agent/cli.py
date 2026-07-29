@@ -21,11 +21,14 @@ from .contracts import ErrorDetail, ResultEnvelope
 from .convert import (
     Q_BITS_CHOICES,
     ConvertError,
+    load_receipts,
     plan_convert,
+    plan_gguf_convert,
     start_convert,
     status_convert,
 )
 from .discovery import DiscoveryRequest, DiscoveryService
+from .gguf import MAX_SCAN_FILES, GGUFError, default_gguf_roots, inventory
 from .fleet import (
     FleetConfigAdapter,
     FleetError,
@@ -41,7 +44,7 @@ from .fuse import (
 )
 from .host import HostInventory
 from .huggingface import HuggingFaceClient
-from .installer import Installer, InstallerConflictError
+from .installer import Installer, InstallerConflictError, InstallerPathError
 from .interview import build_intent, run_interview
 from .lora import (
     BATCH_DEFAULT,
@@ -1330,7 +1333,9 @@ def _add_convert_arguments(parser):
         "start",
         help="preview, then confirmation-gated quantization of a cached model",
     )
-    start.add_argument("--repo", required=True, help="publisher/model present in the local Hugging Face cache")
+    source = start.add_mutually_exclusive_group(required=True)
+    source.add_argument("--repo", help="publisher/model present in the local Hugging Face cache")
+    source.add_argument("--gguf", help="path to a local .gguf file to dequantize and convert")
     start.add_argument("--q-bits", type=int, default=4, choices=Q_BITS_CHOICES)
     start.add_argument("--out", default=None, help="output directory (default <model>-MLX-<bits>bit)")
     start.add_argument("--confirm", action="store_true", help="authorize this reviewed conversion")
@@ -1341,6 +1346,26 @@ def _add_convert_arguments(parser):
     status = actions.add_parser("status", help="cross-check convert receipts against live processes")
     status.add_argument("--receipts-dir", default=None)
     status.add_argument("--json", action="store_true")
+    scan = actions.add_parser(
+        "scan",
+        help="inventory local GGUF weights: converted, pending, and redundant copies",
+    )
+    scan.add_argument(
+        "--gguf-root", action="append", default=None, dest="gguf_roots",
+        help="directory to scan for .gguf files (repeatable)",
+    )
+    scan.add_argument(
+        "--mlx-root", action="append", default=None, dest="mlx_roots",
+        help="directory holding MLX outputs (repeatable; defaults to the GGUF roots)",
+    )
+    scan.add_argument("--receipts-dir", default=None)
+    scan.add_argument("--limit", type=int, default=None, help="maximum files to inspect")
+    scan.add_argument(
+        "--no-signature", action="store_true",
+        help="skip content signatures (faster, weaker duplicate detection)",
+    )
+    scan.add_argument("--pending-only", action="store_true", help="list only unconverted models")
+    scan.add_argument("--json", action="store_true")
 
 
 def _run_convert(arguments):
@@ -1352,7 +1377,18 @@ def _run_convert(arguments):
                 ResultEnvelope.ok(operation, {"jobs": entries}), arguments.json,
                 human=_convert_status_human(entries),
             )
-        plan = plan_convert(arguments.repo, q_bits=arguments.q_bits, out=arguments.out)
+        if arguments.convert_command == "scan":
+            report = _convert_scan(arguments)
+            return _emit_serve_result(
+                ResultEnvelope.ok(operation, report), arguments.json,
+                human=_convert_scan_human(report, arguments.pending_only),
+            )
+        if arguments.gguf:
+            plan = plan_gguf_convert(
+                arguments.gguf, q_bits=arguments.q_bits, out=arguments.out
+            )
+        else:
+            plan = plan_convert(arguments.repo, q_bits=arguments.q_bits, out=arguments.out)
         if not arguments.confirm:
             result = ResultEnvelope.ok(
                 operation, {"plan": plan, "requires_confirmation": True}
@@ -1360,8 +1396,8 @@ def _run_convert(arguments):
             if arguments.json:
                 print(json.dumps(result.to_dict(), indent=2))
             else:
-                print("Convert plan: {0} -> {1} ({2}bit)".format(
-                    plan["repo"], plan["out"], plan["q_bits"]
+                print("Convert plan [{0}]: {1} -> {2} ({3}bit)".format(
+                    plan["source"]["kind"], plan["repo"], plan["out"], plan["q_bits"]
                 ))
                 print("  argv: {0}".format(" ".join(plan["argv"])))
                 print("  preview_hash: {0}".format(plan["preview_hash"]))
@@ -1372,7 +1408,7 @@ def _run_convert(arguments):
             receipts_dir=arguments.receipts_dir,
             confirm=True,
             preview_hash=arguments.preview_hash,
-            model_present=default_model_present(arguments.hf_cache),
+            model_present=None if arguments.gguf else default_model_present(arguments.hf_cache),
         )
         receipt = outcome["receipt"]
         return _emit_serve_result(
@@ -1381,7 +1417,7 @@ def _run_convert(arguments):
                 receipt["repo"], receipt["out"], receipt["pid"], receipt["log_path"]
             ),
         )
-    except ConvertError as error:
+    except (ConvertError, GGUFError) as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         result = ResultEnvelope.fail(
@@ -1398,6 +1434,70 @@ def _run_convert(arguments):
             payload["code"], payload["message"], payload["remediation"]
         ))
     return 2
+
+
+def _convert_scan(arguments):
+    roots = arguments.gguf_roots or default_gguf_roots()
+    if not roots:
+        raise ConvertError(
+            "no_scan_roots",
+            "No GGUF roots were given and none of the well-known directories exist.",
+            "Pass --gguf-root PATH for each directory that holds your .gguf files.",
+        )
+    report = inventory(
+        roots,
+        mlx_roots=arguments.mlx_roots or (),
+        receipts=load_receipts(arguments.receipts_dir),
+        signature=not arguments.no_signature,
+        limit=arguments.limit or MAX_SCAN_FILES,
+    )
+    if arguments.pending_only:
+        report = dict(report, models=[
+            item for item in report["models"] if item["status"] == "pending"
+        ])
+    return report
+
+
+def _human_bytes(count):
+    value = float(count)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if value < 1024 or unit == "TB":
+            return "{0:.1f}{1}".format(value, unit)
+        value /= 1024
+    return "{0:.1f}TB".format(value)
+
+
+def _convert_scan_human(report, pending_only=False):
+    totals = report["totals"]
+    lines = ["GGUF inventory: {0} files, {1} pending, {2} converted ({3})".format(
+        totals["gguf"], totals["pending"], totals["converted"], _human_bytes(totals["bytes"])
+    )]
+    for item in report["models"]:
+        if item["status"] == "shard":
+            continue
+        if pending_only and item["status"] != "pending":
+            continue
+        lines.append("  [{0}] {1}  {2} {3} {4}".format(
+            item["status"], item["name"], item.get("architecture") or "?",
+            item.get("quantization") or "?", _human_bytes(item["bytes"]),
+        ))
+    if totals["unreadable"]:
+        lines.append("  {0} file(s) had unreadable headers.".format(totals["unreadable"]))
+    duplicates = report["duplicates"]
+    if duplicates:
+        lines.append("Duplicates ({0} reclaimable):".format(
+            _human_bytes(totals["reclaimable_bytes"])
+        ))
+        for group in duplicates:
+            if group["kind"] == "exact":
+                lines.append("  same model and quantization, keep {0}".format(group["keep"]))
+                for path in group["redundant"]:
+                    lines.append("    redundant: {0}".format(path))
+            else:
+                lines.append("  same model at {0}:".format("/".join(group["quantizations"])))
+                for path in group["members"]:
+                    lines.append("    variant: {0}".format(path))
+    return "\n".join(lines)
 
 
 def _convert_status_human(entries):
@@ -1829,6 +1929,10 @@ def _run_installer(arguments):
         result = installer.execute(plan, arguments.preview_hash if operation != "doctor" else False)
         data = result if isinstance(result, dict) else result.to_dict()
         return _installer_result(operation, {"result": data, "mutated": operation != "doctor"}, arguments.json)
+    except InstallerPathError as error:
+        return _installer_result(operation, {}, arguments.json, "error", (
+            "destination_not_writable", str(error), error.remediation,
+        ))
     except InstallerConflictError as error:
         lock_code = "legacy_lock_busy" if str(error).startswith("legacy_lock_busy") else (
             "legacy_lock_recreated" if str(error).startswith("legacy_lock_recreated") else "artifact_conflict"
@@ -1847,6 +1951,15 @@ def legacy_scout_main(argv=None):
     parser = argparse.ArgumentParser(description="Discover MLX models on HuggingFace for this host.")
     _add_discovery_arguments(parser)
     return _run_discovery(parser.parse_args(argv), legacy=True)
+
+
+def converter_main(argv=None):
+    """Entry point for the bundled mlx-converter skill script."""
+    parser = argparse.ArgumentParser(
+        description="Inventory local GGUF weights and convert them to MLX.",
+    )
+    _add_convert_arguments(parser)
+    return _run_convert(parser.parse_args(argv))
 
 
 def build_parser():

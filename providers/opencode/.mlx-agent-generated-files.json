@@ -86,7 +86,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "b3e6ac8ec4c53e66b1522d02683109456bb67e86ef67b16e2481f1fc5df0ea0c"
+      "sha256": "c1170706671d819d0830e345ef078b9385e29b0a05be349a5d727640f2f924f0"
     },
     {
       "path": "src/mlx_agent/command_executor.py",
@@ -102,7 +102,7 @@
     },
     {
       "path": "src/mlx_agent/convert.py",
-      "sha256": "c543a637511cf01a324df69cfd01a2872f58442480927120bfcb30cec0c7c6de"
+      "sha256": "744abb9b0a5f1a51ba55cf66af2abdedfff696e684b155014843a7aff0d492d7"
     },
     {
       "path": "src/mlx_agent/discovery.py",
@@ -121,6 +121,14 @@
       "sha256": "3c8b5a91cd4c93c261a4ba039376633205086ac196a382dd32954bbf04d27e1d"
     },
     {
+      "path": "src/mlx_agent/gguf.py",
+      "sha256": "c7dad8898b6a07e1b615c8872c3515269a7dec4138e8e19d7759af83dac4dad0"
+    },
+    {
+      "path": "src/mlx_agent/gguf_runner.py",
+      "sha256": "878bed5c485ed926078b4c20bcddba359e5f33dbcac0ce661fbdda37929a0d7d"
+    },
+    {
       "path": "src/mlx_agent/host.py",
       "sha256": "fdd5cdb9dcd3e2e1e10184cc1115a112772e1d8a9e180942cfe6e5ed7c9b36fb"
     },
@@ -130,7 +138,7 @@
     },
     {
       "path": "src/mlx_agent/installer.py",
-      "sha256": "3f9ace29a58c735e40e0f5bbfb2ce4a8d94f38f81b86f2bad781988d4c76c4ea"
+      "sha256": "70c5930a9cd0e5c2b19685276c3efda4b3cc94fe537b174c47d53822a8dca55e"
     },
     {
       "path": "src/mlx_agent/interview.py",
@@ -166,7 +174,7 @@
     },
     {
       "path": "src/mlx_agent/providers.py",
-      "sha256": "8581be6c086a9e2b7667fda9d3010538f150b42dc4b757fa6b22e239f55ee5bb"
+      "sha256": "8857eb52c4bdb3072691e2e045bd3c35188e30a296ace24718f1c156c73dcf08"
     },
     {
       "path": "src/mlx_agent/research.py",

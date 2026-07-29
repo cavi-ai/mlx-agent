@@ -171,6 +171,12 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("CONSUMER_DISPATCH_TOKEN", self.workflow)
         self.assertIn("cavi-ai/cavi-home", self.workflow)
 
+    def test_release_rebuilds_docs_with_the_exact_tag_commit_before_packaging(self):
+        self.assertIn(
+            'scripts/build_docs.py --commit "$COMMIT" --destination "$staging/docs/mlx-agent/v${VERSION}"',
+            self.workflow,
+        )
+
     def test_tagging_never_queues_an_unclaimable_job(self):
         apple = (ROOT / ".github" / "workflows" / "apple-silicon.yml").read_text(encoding="utf-8")
         self.assertIn("MLX_AGENT_LIVE_RUNTIME_HEALTH", apple)

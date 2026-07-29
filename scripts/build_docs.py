@@ -56,10 +56,11 @@ def _head_commit():
     return result.stdout.strip()
 
 
-def build(version, check=False):
+def build(version, check=False, destination=None, commit=None):
     if not SOURCE.is_dir():
         raise ValueError("documentation source is missing: {0}".format(SOURCE))
-    destination = ROOT / "docs" / "mlx-agent" / "v{0}".format(version)
+    destination = destination or ROOT / "docs" / "mlx-agent" / "v{0}".format(version)
+    destination = Path(destination)
     navigation = json.loads((SOURCE / "navigation.json").read_text(encoding="utf-8"))
     if navigation.get("version") != version:
         raise ValueError(
@@ -111,7 +112,7 @@ def build(version, check=False):
         "stableAlias": "/docs/mlx-agent",
         "release": {
             "tag": "v{0}".format(version),
-            "commit": _head_commit(),
+            "commit": commit or _head_commit(),
         },
     }
     (destination / "manifest.json").write_text(
@@ -123,9 +124,21 @@ def build(version, check=False):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="verify the committed artifact instead of rebuilding")
+    parser.add_argument("--commit", help="full release commit to record in manifest.json")
+    parser.add_argument("--destination", help="release artifact destination directory")
     arguments = parser.parse_args(argv)
     try:
-        destination = build(__version__, check=arguments.check)
+        if arguments.commit and (
+            len(arguments.commit) != 40
+            or any(character not in "0123456789abcdef" for character in arguments.commit)
+        ):
+            raise ValueError("release commit must be a full lowercase SHA")
+        destination = build(
+            __version__,
+            check=arguments.check,
+            destination=arguments.destination,
+            commit=arguments.commit,
+        )
     except ValueError as error:
         print("docs artifact: {0}".format(error), file=sys.stderr)
         return 2

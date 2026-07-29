@@ -14,7 +14,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/__init__.py",
-      "sha256": "85a7318c27d7be4191aebb1359633bb42ff3fb6a11b64b3da869b387c87b477c"
+      "sha256": "bff1ddecb075779263fc889f2f2f8f883949d63737e0164dc43147dd1188f807"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/__main__.py",
@@ -202,7 +202,7 @@
     },
     {
       "path": "mlx-bench/src/mlx_agent/__init__.py",
-      "sha256": "85a7318c27d7be4191aebb1359633bb42ff3fb6a11b64b3da869b387c87b477c"
+      "sha256": "bff1ddecb075779263fc889f2f2f8f883949d63737e0164dc43147dd1188f807"
     },
     {
       "path": "mlx-bench/src/mlx_agent/__main__.py",
@@ -390,7 +390,7 @@
     },
     {
       "path": "mlx-doctor/src/mlx_agent/__init__.py",
-      "sha256": "85a7318c27d7be4191aebb1359633bb42ff3fb6a11b64b3da869b387c87b477c"
+      "sha256": "bff1ddecb075779263fc889f2f2f8f883949d63737e0164dc43147dd1188f807"
     },
     {
       "path": "mlx-doctor/src/mlx_agent/__main__.py",
@@ -578,7 +578,7 @@
     },
     {
       "path": "mlx-fleet/src/mlx_agent/__init__.py",
-      "sha256": "85a7318c27d7be4191aebb1359633bb42ff3fb6a11b64b3da869b387c87b477c"
+      "sha256": "bff1ddecb075779263fc889f2f2f8f883949d63737e0164dc43147dd1188f807"
     },
     {
       "path": "mlx-fleet/src/mlx_agent/__main__.py",
@@ -766,7 +766,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/__init__.py",
-      "sha256": "85a7318c27d7be4191aebb1359633bb42ff3fb6a11b64b3da869b387c87b477c"
+      "sha256": "bff1ddecb075779263fc889f2f2f8f883949d63737e0164dc43147dd1188f807"
     },
     {
       "path": "mlx-scout/src/mlx_agent/__main__.py",
@@ -954,7 +954,7 @@
     },
     {
       "path": "mlx-watch/src/mlx_agent/__init__.py",
-      "sha256": "85a7318c27d7be4191aebb1359633bb42ff3fb6a11b64b3da869b387c87b477c"
+      "sha256": "bff1ddecb075779263fc889f2f2f8f883949d63737e0164dc43147dd1188f807"
     },
     {
       "path": "mlx-watch/src/mlx_agent/__main__.py",
@@ -1142,7 +1142,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/__init__.py",
-      "sha256": "85a7318c27d7be4191aebb1359633bb42ff3fb6a11b64b3da869b387c87b477c"
+      "sha256": "bff1ddecb075779263fc889f2f2f8f883949d63737e0164dc43147dd1188f807"
     },
     {
       "path": "mlx-wire/src/mlx_agent/__main__.py",

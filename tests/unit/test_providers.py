@@ -125,7 +125,7 @@ class ProviderRegistryTests(unittest.TestCase):
                     path, home=root / "home", config_root=root / "config"
                 ).definitions()
 
-    def test_symlinked_provider_config_directory_stays_inside_its_root(self):
+    def test_symlinked_provider_config_directory_resolves_to_its_target(self):
         """A dotfile checkout elsewhere is still the provider's own directory."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -144,10 +144,7 @@ class ProviderRegistryTests(unittest.TestCase):
                 {"claude", "codex", "gemini", "opencode", "agentskills"},
                 set(definitions),
             )
-            self.assertEqual(
-                registry.xdg_config_home / "opencode",
-                definitions["opencode"].user_root,
-            )
+            self.assertEqual(elsewhere.resolve(), definitions["opencode"].user_root)
 
     def test_user_root_still_rejects_escaping_an_approved_root(self):
         with tempfile.TemporaryDirectory() as directory:

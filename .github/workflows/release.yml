@@ -1,0 +1,149 @@
+name: Release
+
+# Cuts the GitHub Release for a v* tag and hands the documentation artifact to
+# every consumer that subscribes to cavi-oss-release. Nothing here publishes to
+# an external registry: Claude Code reads this repository as its marketplace and
+# every other provider installs from a checkout, so distribution is the tag, the
+# attached artifact, and the consumer dispatch.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to release, for example v0.5.0
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+      tag: ${{ steps.identity.outputs.tag }}
+      commit: ${{ steps.identity.outputs.commit }}
+      sha256: ${{ steps.artifact.outputs.sha256 }}
+      url: ${{ steps.artifact.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install development validators
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Resolve the release identity
+        id: identity
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="${INPUT_TAG:-${GITHUB_REF_NAME}}"
+          python3 scripts/validate_release_version.py --tag "$tag"
+          {
+            echo "tag=$tag"
+            echo "version=$(python3 scripts/validate_release_version.py --print)"
+            echo "commit=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Validate canonical contracts
+        run: PYTHONPATH=src python scripts/validate_contracts.py
+
+      - name: Validate Draft 2020-12 schemas and runtime parity
+        run: PYTHONPATH=src python scripts/validate_json_schemas.py
+
+      - name: Detect generated adapter drift
+        run: PYTHONPATH=src python scripts/generate_adapters.py --check
+
+      - name: Detect generated compatibility-documentation drift
+        run: PYTHONPATH=src python scripts/render_compatibility.py --check
+
+      - name: Verify the committed documentation artifact
+        run: PYTHONPATH=src python scripts/build_docs.py --check
+
+      - name: Run full unit integration and contract discovery
+        run: PYTHONPATH=src python -m unittest discover -s tests
+
+      - name: Build the release artifact
+        id: artifact
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
+          TAG: ${{ steps.identity.outputs.tag }}
+          COMMIT: ${{ steps.identity.outputs.commit }}
+        run: |
+          set -euo pipefail
+          staging="$(mktemp -d)"
+          mkdir -p "$staging/docs/mlx-agent"
+          cp -R "docs/mlx-agent/v${VERSION}" "$staging/docs/mlx-agent/v${VERSION}"
+          python3 scripts/release_envelope.py manifest \
+            --version "$VERSION" --tag "$TAG" --commit "$COMMIT" \
+            --out "$staging/cavi-release.json"
+          asset="mlx-agent-docs-${TAG}.tar.gz"
+          tar -C "$staging" --numeric-owner --owner=0 --group=0 \
+            -czf "$asset" cavi-release.json "docs/mlx-agent/v${VERSION}"
+          {
+            echo "asset=$asset"
+            echo "sha256=$(sha256sum "$asset" | cut -d' ' -f1)"
+            echo "url=https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${asset}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.identity.outputs.tag }}
+          VERSION: ${{ steps.identity.outputs.version }}
+          ASSET: ${{ steps.artifact.outputs.asset }}
+          SHA256: ${{ steps.artifact.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          notes="$(mktemp)"
+          python3 scripts/release_notes.py --version "$VERSION" > "$notes"
+          printf '\n\n`%s`\n\nsha256 `%s`\n' "$ASSET" "$SHA256" >> "$notes"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "mlx-agent $TAG" --notes-file "$notes"
+            gh release upload "$TAG" "$ASSET" --clobber
+          else
+            gh release create "$TAG" "$ASSET" --title "mlx-agent $TAG" --notes-file "$notes"
+          fi
+
+  notify-consumers:
+    needs: release
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        consumer: [cavi-ai/cavi-home]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Dispatch cavi-oss-release
+        env:
+          GH_TOKEN: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
+          CONSUMER: ${{ matrix.consumer }}
+          VERSION: ${{ needs.release.outputs.version }}
+          TAG: ${{ needs.release.outputs.tag }}
+          COMMIT: ${{ needs.release.outputs.commit }}
+          URL: ${{ needs.release.outputs.url }}
+          SHA256: ${{ needs.release.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          python3 scripts/release_envelope.py dispatch \
+            --version "$VERSION" --tag "$TAG" --commit "$COMMIT" \
+            --url "$URL" --sha256 "$SHA256" --out "$body"
+          gh api "repos/${CONSUMER}/dispatches" --method POST --input "$body"

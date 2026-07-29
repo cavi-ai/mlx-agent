@@ -1,0 +1,12 @@
+{
+  "contentSha256": "21159164f19d3bc5fd9087acdf96fefb2e3a848e26a7f5b3027d34449a7206bd",
+  "package": "mlx-agent",
+  "product": "mlx-agent",
+  "publicBasePath": "/docs/mlx-agent/v0.5.0",
+  "release": {
+    "commit": "dea514a11b02394a366117e76eb5ca231f278475",
+    "tag": "v0.5.0"
+  },
+  "stableAlias": "/docs/mlx-agent",
+  "version": "0.5.0"
+}

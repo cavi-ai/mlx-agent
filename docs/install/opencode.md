@@ -29,4 +29,4 @@ python3 scripts/mlx-agent install opencode --scope user --confirm --preview-hash
 opencode
 ```
 
-In OpenCode, press `Ctrl+P` and filter for `mlx` to verify `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, and `/mlx-fleet`. `opencode debug paths` should report the intended XDG config, data, state, and cache roots. OpenCode 1.18.3 discovered all three commands during native validation; the model-backed provider response remained blocked by unavailable network access.
+In OpenCode, press `Ctrl+P` and filter for `mlx` to verify `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, and `/mlx-fleet`. `opencode debug paths` should report the intended XDG config, data, state, and cache roots. OpenCode 1.18.9 completed the receipt-owned package lifecycle during native validation; the model-backed provider response remained blocked by unavailable network access.

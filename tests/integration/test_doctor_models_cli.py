@@ -1,14 +1,30 @@
 import io
 import json
+import os
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from mlx_agent.cli import main
 
 
 class DoctorModelsCliTests(unittest.TestCase):
+    def setUp(self):
+        # The CLI builds its provider registry from the environment. Pin every
+        # root so the developer's own dotfiles never decide the result.
+        self.temporary = TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        root = Path(self.temporary.name)
+        environment = patch.dict(os.environ, {
+            "MLX_AGENT_HOME": str(root / "home"),
+            "MLX_AGENT_CONFIG_ROOT": str(root / "state"),
+            "XDG_CONFIG_HOME": str(root / "config"),
+        })
+        environment.start()
+        self.addCleanup(environment.stop)
+
     def _run(self, argv):
         buffer = io.StringIO()
         with redirect_stdout(buffer):

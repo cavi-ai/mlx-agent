@@ -11,7 +11,7 @@ cp -R providers/agentskills/mlx-scout providers/agentskills/mlx-adopt providers/
 
 For project scope, use `<project>/.agents/skills` instead. Restart the host and verify its available-skills list contains `mlx-scout`, `mlx-adopt`, `mlx-wire`, `mlx-bench`, `mlx-doctor`, `mlx-watch`, and `mlx-fleet`. Update by replacing only those seven directories; uninstall by removing only those seven package directories.
 
-All provider packages contain the same structured Python core and require Python 3.9 or later. The universal installer stages only receipt-owned artifacts; it never installs a provider CLI, downloads model weights, persists secrets, or edits an unowned configuration file. `MLX_AGENT_CONFIG_ROOT` explicitly relocates MLX-agent receipts. When it is unset, `XDG_STATE_HOME` relocates those receipts. OpenCode additionally follows `XDG_CONFIG_HOME`; other provider user roots remain anchored to the selected host's home directory.
+All provider packages contain the same structured Python core and require Python 3.9 or later. The universal installer stages only receipt-owned artifacts; it never installs a provider CLI, downloads model weights, persists secrets, or edits an unowned configuration file. `MLX_AGENT_CONFIG_ROOT` explicitly relocates MLX-agent receipts. When it is unset, `XDG_STATE_HOME` relocates those receipts; when neither is set they default to `~/.local/state/mlx-agent/installer-receipts`. OpenCode additionally follows `XDG_CONFIG_HOME`; other provider user roots remain anchored to the selected host's home directory. A provider directory that is a symlink needs no variables at all: the installer resolves it once and records the resolved path.
 
 ```bash
 # Run from this repository or an unpacked release.

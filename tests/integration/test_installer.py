@@ -7,10 +7,11 @@ import tempfile
 import unittest
 import subprocess
 from pathlib import Path
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from mlx_agent.installer import Installer, InstallerConflictError
+from mlx_agent.installer import Installer, InstallerConflictError, InstallerPathError
 from mlx_agent.providers import ProviderRegistry
 from mlx_agent.cli import _installer_registry, main
 from mlx_agent.transactions import Transaction, _target_lock_name, rollback
@@ -31,6 +32,16 @@ class InstallerRoundTripTests(unittest.TestCase):
             ROOT / "plugin.json", home=self.home, config_root=self.config
         )
         self.installer = Installer(self.registry, project_root=self.project)
+        # Tests that drive the CLI build their registry from the environment.
+        # Pin the host roots so the developer's own dotfiles never decide the
+        # result; individual tests still layer their own overrides on top.
+        environment = patch.dict(os.environ, {
+            "MLX_AGENT_HOME": str(self.home),
+            "XDG_CONFIG_HOME": str(self.root / "xdg-config"),
+            "XDG_STATE_HOME": str(self.config),
+        })
+        environment.start()
+        self.addCleanup(environment.stop)
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -384,6 +395,45 @@ class InstallerRoundTripTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsafe target leaf"):
             self.installer.plan("update", ["claude"], "user", self.project)
         self.assertEqual(artifact.source.read_bytes(), outside.read_bytes())
+
+    def _symlinked_claude_root(self):
+        root = self.home / ".claude" / "plugins"
+        root.mkdir(parents=True)
+        elsewhere = self.root / "elsewhere"
+        elsewhere.mkdir()
+        (root / "mlx-agent").symlink_to(elsewhere, target_is_directory=True)
+        return elsewhere.resolve()
+
+    def test_symlinked_destination_root_installs_into_its_target(self):
+        elsewhere = self._symlinked_claude_root()
+        registry = ProviderRegistry(
+            ROOT / "plugin.json", home=self.home, config_root=self.config
+        )
+        installer = Installer(registry, project_root=self.project)
+        self.assertEqual(elsewhere, registry.definitions()["claude"].user_root)
+
+        plan = installer.plan("install", ["claude"], "user", self.project)
+        receipt = installer.execute(plan, confirmed=plan.preview["preview_hash"])
+        self.assertEqual("applied", receipt.status)
+        self.assertTrue((elsewhere / "commands" / "mlx-scout.md").is_file())
+
+    def test_destination_root_symlinked_after_resolution_is_refused_by_name(self):
+        """The guard covers a root that becomes a symlink after it was resolved."""
+        elsewhere = self._symlinked_claude_root()
+        unresolved = self.home / ".claude" / "plugins" / "mlx-agent"
+        definitions = self.registry.definitions()
+        definitions["claude"] = replace(definitions["claude"], user_root=unresolved)
+        with patch.object(self.registry, "definitions", return_value=definitions):
+            with self.assertRaises(InstallerPathError) as caught:
+                self.installer.plan("install", ["claude"], "user", self.project)
+        self.assertIn("symlink", str(caught.exception))
+        self.assertIn(str(unresolved.name), str(caught.exception))
+        self.assertIn(elsewhere.name, str(caught.exception))
+        self.assertIn("XDG_CONFIG_HOME", caught.exception.remediation)
+
+    def test_receipts_default_to_the_xdg_state_directory(self):
+        registry = ProviderRegistry(ROOT / "plugin.json", home=self.home)
+        self.assertEqual((self.home / ".local" / "state").resolve(), registry.config_root)
 
     def test_cli_without_a_provider_lists_detected_choices_instead_of_installing_all(self):
         output = io.StringIO()

@@ -25,6 +25,33 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+def _paths_without_script_dir(entries, script_dir, cwd):
+    """Drop the runner directory so ``import gguf`` hits the installed package.
+
+    Script launch puts this package directory on ``sys.path[0]``, which shadows
+    the installed ``gguf`` package with sibling ``gguf.py`` (no ``GGUFReader``).
+    """
+    script_dir = Path(script_dir).resolve()
+    cwd = Path(cwd).resolve()
+    cleaned = []
+    for entry in entries:
+        if entry in ("", "."):
+            if cwd != script_dir:
+                cleaned.append(entry)
+            continue
+        try:
+            if Path(entry).resolve() == script_dir:
+                continue
+        except OSError:
+            cleaned.append(entry)
+            continue
+        cleaned.append(entry)
+    return cleaned
+
+
+sys.path[:] = _paths_without_script_dir(sys.path, Path(__file__).resolve().parent, Path.cwd())
+
+
 PROVENANCE_NAME = "mlx-converter.json"
 SIGNATURE_CHUNK_BYTES = 1024 * 1024
 EXECUTABLE = "mlx_lm.convert"

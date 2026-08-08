@@ -1,18 +1,14 @@
 {
   "name": "mlx-agent",
-  "description": "Structured local MLX discovery, adoption, and wiring for Apple Silicon agents.",
   "owner": {
-    "name": "Sasan Sotoodehfar"
+    "name": "Franco Sotoodehfar"
   },
   "plugins": [
     {
       "name": "mlx-agent",
-      "description": "Structured local MLX discovery, adoption, and wiring for Apple Silicon.",
+      "description": "Structured local MLX discovery, adoption, and wiring for Apple Silicon agents.",
       "version": "0.5.1",
-      "author": {
-        "name": "Sasan Sotoodehfar"
-      },
-      "source": ".",
+      "source": "./",
       "category": "development"
     }
   ]

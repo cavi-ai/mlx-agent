@@ -38,23 +38,59 @@ class PathsWithoutScriptDirTests(unittest.TestCase):
             cleaned = _paths_without_script_dir(["", "."], script_dir, cwd)
             self.assertEqual(cleaned, ["", "."])
 
+    def test_removes_nested_script_directory_entry(self):
+        with TemporaryDirectory() as raw:
+            script_dir = Path(raw) / "runner"
+            nested = script_dir / "nested"
+            nested.mkdir(parents=True)
+            cleaned = _paths_without_script_dir([str(nested)], script_dir, script_dir)
+            self.assertEqual([], cleaned)
+
 
 class GGUFRunnerScriptTests(unittest.TestCase):
     def test_runner_uses_shadow_resistant_gguf_import(self):
-        repository_root = Path(__file__).resolve().parents[2]
-        runners = sorted(
-            {
-                str(repository_root / "src/mlx_agent/gguf_runner.py"),
-                *(str(path) for path in repository_root.glob("providers/*/src/mlx_agent/gguf_runner.py")),
-                *(
-                    str(path)
-                    for path in repository_root.glob(
-                        "providers/*/skills/*/src/mlx_agent/gguf_runner.py"
-                    )
-                ),
-            }
+        all_runners, _, _ = self._collect_gguf_runners()
+        self._assert_shadow_free_execution([all_runners[0]], "root")
+
+    def test_provider_adapter_runners_avoid_shadowed_gguf(self):
+        _, provider_runners, skill_runners = self._collect_gguf_runners()
+        self._assert_shadow_free_execution(
+            provider_runners + skill_runners,
+            "provider-copy",
         )
 
+    @unittest.skipUnless(os.environ.get("CI"), "adapter discovery ordering is CI-only")
+    def test_adapter_runner_discovery_order_is_stable(self):
+        _, provider_runners, skill_runners = self._collect_gguf_runners()
+        self.assertEqual(provider_runners, sorted(provider_runners, key=str))
+        self.assertEqual(skill_runners, sorted(skill_runners, key=str))
+        if provider_runners and skill_runners:
+            combined = provider_runners + skill_runners
+            split = len(provider_runners)
+            self.assertEqual(combined[:split], sorted(provider_runners, key=str))
+            self.assertEqual(combined[split:], sorted(skill_runners, key=str))
+
+        if not provider_runners and not skill_runners:
+            self.fail("no gguf runner adapter copies discovered in this checkout")
+
+    def _collect_gguf_runners(self):
+        repository_root = Path(__file__).resolve().parents[2]
+        canonical_runner = str(repository_root / "src/mlx_agent/gguf_runner.py")
+        provider_runners = sorted(
+            str(path)
+            for path in repository_root.glob(
+                "providers/*/src/mlx_agent/gguf_runner.py"
+            )
+        )
+        skill_runners = sorted(
+            str(path)
+            for path in repository_root.glob(
+                "providers/*/skills/*/src/mlx_agent/gguf_runner.py"
+            )
+        )
+        return [canonical_runner] + provider_runners + skill_runners, provider_runners, skill_runners
+
+    def _assert_shadow_free_execution(self, runners, marker_prefix):
         with TemporaryDirectory() as raw:
             environment_root = Path(raw)
             site_packages = environment_root / "site-packages"
@@ -90,7 +126,7 @@ class GGUFRunnerScriptTests(unittest.TestCase):
 
             for index, runner in enumerate(runners):
                 runner_out = environment_root / ("out-" + str(index))
-                marker = environment_root / ("runner-{0}.marker".format(index))
+                marker = environment_root / ("{0}-runner-{1}.marker".format(marker_prefix, index))
                 result = self._run_script(
                     Path(runner),
                     gguf_path,

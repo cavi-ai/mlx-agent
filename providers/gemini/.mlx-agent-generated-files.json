@@ -122,7 +122,7 @@
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/gguf_runner.py",
-      "sha256": "0af512cca179453f0ec9967a5159d482e4bc1fd035d39ff65f81bc3359b10acb"
+      "sha256": "1e77d7388487d126d151dd99a031f785f3926350368a9e11ce1b3bbb302c13b1"
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/host.py",
@@ -310,7 +310,7 @@
     },
     {
       "path": "skills/mlx-bench/src/mlx_agent/gguf_runner.py",
-      "sha256": "0af512cca179453f0ec9967a5159d482e4bc1fd035d39ff65f81bc3359b10acb"
+      "sha256": "1e77d7388487d126d151dd99a031f785f3926350368a9e11ce1b3bbb302c13b1"
     },
     {
       "path": "skills/mlx-bench/src/mlx_agent/host.py",
@@ -498,7 +498,7 @@
     },
     {
       "path": "skills/mlx-doctor/src/mlx_agent/gguf_runner.py",
-      "sha256": "0af512cca179453f0ec9967a5159d482e4bc1fd035d39ff65f81bc3359b10acb"
+      "sha256": "1e77d7388487d126d151dd99a031f785f3926350368a9e11ce1b3bbb302c13b1"
     },
     {
       "path": "skills/mlx-doctor/src/mlx_agent/host.py",
@@ -686,7 +686,7 @@
     },
     {
       "path": "skills/mlx-fleet/src/mlx_agent/gguf_runner.py",
-      "sha256": "0af512cca179453f0ec9967a5159d482e4bc1fd035d39ff65f81bc3359b10acb"
+      "sha256": "1e77d7388487d126d151dd99a031f785f3926350368a9e11ce1b3bbb302c13b1"
     },
     {
       "path": "skills/mlx-fleet/src/mlx_agent/host.py",
@@ -874,7 +874,7 @@
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/gguf_runner.py",
-      "sha256": "0af512cca179453f0ec9967a5159d482e4bc1fd035d39ff65f81bc3359b10acb"
+      "sha256": "1e77d7388487d126d151dd99a031f785f3926350368a9e11ce1b3bbb302c13b1"
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/host.py",
@@ -1062,7 +1062,7 @@
     },
     {
       "path": "skills/mlx-watch/src/mlx_agent/gguf_runner.py",
-      "sha256": "0af512cca179453f0ec9967a5159d482e4bc1fd035d39ff65f81bc3359b10acb"
+      "sha256": "1e77d7388487d126d151dd99a031f785f3926350368a9e11ce1b3bbb302c13b1"
     },
     {
       "path": "skills/mlx-watch/src/mlx_agent/host.py",
@@ -1250,7 +1250,7 @@
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/gguf_runner.py",
-      "sha256": "0af512cca179453f0ec9967a5159d482e4bc1fd035d39ff65f81bc3359b10acb"
+      "sha256": "1e77d7388487d126d151dd99a031f785f3926350368a9e11ce1b3bbb302c13b1"
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/host.py",
@@ -1426,7 +1426,7 @@
     },
     {
       "path": "src/mlx_agent/gguf_runner.py",
-      "sha256": "0af512cca179453f0ec9967a5159d482e4bc1fd035d39ff65f81bc3359b10acb"
+      "sha256": "1e77d7388487d126d151dd99a031f785f3926350368a9e11ce1b3bbb302c13b1"
     },
     {
       "path": "src/mlx_agent/host.py",

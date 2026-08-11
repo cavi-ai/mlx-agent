@@ -33,6 +33,14 @@ def _paths_without_script_dir(entries, script_dir, cwd):
     """
     script_dir = Path(script_dir).resolve()
     cwd = Path(cwd).resolve()
+
+    def _is_within_script_dir(candidate):
+        try:
+            candidate.resolve().relative_to(script_dir)
+            return True
+        except (ValueError, OSError):
+            return False
+
     cleaned = []
     for entry in entries:
         if entry in ("", "."):
@@ -40,7 +48,10 @@ def _paths_without_script_dir(entries, script_dir, cwd):
                 cleaned.append(entry)
             continue
         try:
-            if Path(entry).resolve() == script_dir:
+            entry_path = Path(entry)
+            if not entry_path.is_absolute():
+                entry_path = cwd / entry_path
+            if _is_within_script_dir(entry_path):
                 continue
         except OSError:
             cleaned.append(entry)

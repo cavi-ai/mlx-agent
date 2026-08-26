@@ -20,7 +20,7 @@ RELEASE_EVIDENCE_FIELDS = ("id", "status", "date", "environment", "cli_version",
 PACKAGE_TYPES = {
     "claude": "Native plugin",
     "codex": "Native plugin",
-    "gemini": "Native extension",
+    "agy": "Native plugin",
     "opencode": "Native plugin",
     "agentskills": "Portable skills",
 }

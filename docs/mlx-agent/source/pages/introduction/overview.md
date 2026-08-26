@@ -19,4 +19,4 @@ mlx-agent discovers, verifies, measures, wires, serves, converts, and trains loc
 
 ## Providers
 
-First-class adapters ship for Claude Code, Codex CLI, Gemini CLI, and OpenCode, plus portable AgentSkills packages. Every provider exposes the seven capabilities: `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, and `/mlx-fleet` (`$mlx-agent:` prefix on Codex).
+First-class adapters ship for Claude Code, Codex CLI, Agy, and OpenCode, plus portable AgentSkills packages. Every provider exposes the seven capabilities: Claude Code and OpenCode use `/mlx-*` commands, Codex uses `$mlx-agent:mlx-*`, and Agy and AgentSkills use the named `mlx-*` skills.

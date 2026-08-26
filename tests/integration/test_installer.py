@@ -123,14 +123,14 @@ class InstallerRoundTripTests(unittest.TestCase):
         self.assertEqual("staged", doctor["providers"][0]["integration_state"])
 
     def test_project_scope_uses_only_project_root_and_reinstall_is_a_noop(self):
-        definition = self.registry.definitions()["gemini"]
-        plan = self.installer.plan("install", ["gemini"], "project", self.project)
+        definition = self.registry.definitions()["agy"]
+        plan = self.installer.plan("install", ["agy"], "project", self.project)
         receipt = self.installer.execute(plan, confirmed=plan.preview["preview_hash"])
         self.assertEqual("applied", receipt.status)
         self.assertTrue(all(str(target).startswith(str(self.project.resolve())) for target in receipt.targets))
         self.assertFalse(definition.user_root.exists())
 
-        again = self.installer.plan("install", ["gemini"], "project", self.project)
+        again = self.installer.plan("install", ["agy"], "project", self.project)
         self.assertTrue(again.noop)
         self.assertEqual("noop", self.installer.execute(again, confirmed=False).status)
 
@@ -140,7 +140,7 @@ class InstallerRoundTripTests(unittest.TestCase):
             project_root=self.project,
             executable_lookup=lambda command, path=None: None,
         )
-        plan = installer.plan("install", ["gemini"], "project", self.project)
+        plan = installer.plan("install", ["agy"], "project", self.project)
         self.assertEqual("absent", plan.compatibility[0]["state"])
         self.assertEqual(
             "applied", installer.execute(
@@ -148,7 +148,7 @@ class InstallerRoundTripTests(unittest.TestCase):
             ).status,
         )
         result = installer.execute(
-            installer.plan("doctor", ["gemini"], "project", self.project)
+            installer.plan("doctor", ["agy"], "project", self.project)
         )
         self.assertFalse(result["healthy"])
         self.assertEqual("staged", result["providers"][0]["integration_state"])
@@ -158,22 +158,22 @@ class InstallerRoundTripTests(unittest.TestCase):
         installer = Installer(
             self.registry,
             project_root=self.project,
-            executable_lookup=lambda command, path=None: "/fake/bin/gemini"
-            if command == "gemini" else None,
+            executable_lookup=lambda command, path=None: "/fake/bin/agy"
+            if command == "agy" else None,
             probe_runner=lambda argv, **kwargs: subprocess.CompletedProcess(
-                argv, 0, b"gemini 0.46.0\n"
+                argv, 0, b"agy 1.1.14\n"
             ),
         )
-        plan = installer.plan("install", ["gemini"], "user", self.project)
+        plan = installer.plan("install", ["agy"], "user", self.project)
         installer.execute(plan, confirmed=plan.preview["preview_hash"])
-        definition = self.registry.definitions()["gemini"]
+        definition = self.registry.definitions()["agy"]
         target = definition.artifact_destination(
             "user", self.project, definition.artifacts[0]
         )
         target.unlink()
 
         result = installer.execute(
-            installer.plan("doctor", ["gemini"], "user", self.project)
+            installer.plan("doctor", ["agy"], "user", self.project)
         )
         self.assertFalse(result["healthy"])
         self.assertEqual("invalid", result["providers"][0]["artifact_state"])
@@ -452,13 +452,13 @@ class InstallerRoundTripTests(unittest.TestCase):
             {"MLX_AGENT_CONFIG_ROOT": str(self.config), "MLX_AGENT_HOME": str(self.home)},
         ), contextlib.redirect_stdout(output):
             self.assertEqual(0, main([
-                "install", "gemini", "--scope", "project", "--project", str(self.project),
+                "install", "agy", "--scope", "project", "--project", str(self.project),
                 "--dry-run",
             ]))
         text = output.getvalue()
-        self.assertIn("gemini: absent", text)
+        self.assertIn("agy: absent", text)
         self.assertIn("provider executable was not found", text)
-        self.assertFalse((self.project / ".gemini").exists())
+        self.assertFalse((self.project / ".agents").exists())
 
     def test_cli_applies_only_the_separately_reviewed_preview(self):
         preview_output = io.StringIO()

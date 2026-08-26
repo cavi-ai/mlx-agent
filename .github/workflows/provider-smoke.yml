@@ -8,7 +8,7 @@ on:
         required: true
         default: none
         type: choice
-        options: [none, codex, gemini, all]
+        options: [none, codex, agy, all]
       run_live:
         description: Run an authenticated provider CLI smoke; credentials and license consent must already be configured on the runner.
         required: true
@@ -28,7 +28,7 @@ jobs:
       - name: Run deterministic provider contracts
         run: |
           mkdir -p smoke-results
-          PYTHONPATH=src python -m unittest tests.contracts.test_codex_adapter tests.contracts.test_gemini_adapter tests.contracts.test_opencode_adapter -v >/dev/null
+          PYTHONPATH=src python -m unittest tests.contracts.test_agy_adapter tests.contracts.test_codex_adapter tests.contracts.test_opencode_adapter -v >/dev/null
           printf 'deterministic provider contracts: passed\n' > smoke-results/contracts.txt
           bash tests/smoke/opencode.sh >/dev/null
           printf 'OpenCode equivalent no-shell argv/stdin fixture: passed\n' > smoke-results/opencode-equivalent-transport.txt
@@ -55,11 +55,11 @@ jobs:
         run: |
           bash tests/smoke/codex.sh >/dev/null
           printf 'Codex isolated lifecycle: passed\n' > smoke-results/codex.txt
-      - name: Gemini isolated lifecycle smoke
-        if: inputs.provider == 'gemini' || inputs.provider == 'all'
+      - name: Agy isolated lifecycle smoke
+        if: inputs.provider == 'agy' || inputs.provider == 'all'
         run: |
-          bash tests/smoke/gemini.sh >/dev/null
-          printf 'Gemini isolated lifecycle: passed\n' > smoke-results/gemini.txt
+          bash tests/smoke/agy.sh >/dev/null
+          printf 'Agy isolated lifecycle: passed\n' > smoke-results/agy.txt
       - name: Upload non-secret smoke evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -71,9 +71,6 @@ jobs:
       - name: Detect generated compatibility-documentation drift
         run: PYTHONPATH=src python scripts/render_compatibility.py --check
 
-      - name: Verify the committed documentation artifact
-        run: PYTHONPATH=src python scripts/build_docs.py --check
-
       - name: Run full unit integration and contract discovery
         run: PYTHONPATH=src python -m unittest discover -s tests
 

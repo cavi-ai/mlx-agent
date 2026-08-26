@@ -1,6 +1,6 @@
 # Version and support
 
-Current release: **0.5.1** (tag `v0.5.1`).
+Current release: **0.5.2** (tag `v0.5.2`).
 
 ## Compatibility
 
@@ -8,7 +8,7 @@ Current release: **0.5.1** (tag `v0.5.1`).
 | --- | --- | --- |
 | Claude Code | 2.1.143 | 2.1.198 |
 | Codex CLI | 0.137.0 | 0.137.0 |
-| Gemini CLI | 0.46.0 | 0.46.0 |
+| Agy | 1.1.14 | 1.1.14 |
 | OpenCode | 1.17.7 | 1.18.9 |
 | AgentSkills hosts | — | — |
 

@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from shutil import which
 from pathlib import Path
 
 from mlx_agent.installer import Installer
@@ -25,6 +26,49 @@ def load_generator():
 
 
 class GeneratedAdapterTests(unittest.TestCase):
+    def test_generated_agy_package_has_a_native_plugin_root_and_validates(self):
+        generator = load_generator()
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory)
+            generator.generate(("agy",), output_root)
+            package = output_root / "providers" / "agy"
+            manifest = json.loads((package / "plugin.json").read_text(encoding="utf-8"))
+
+            self.assertEqual("mlx-agent", manifest["name"])
+            self.assertTrue((package / "skills" / "mlx-scout" / "SKILL.md").is_file())
+            agy = which("agy")
+            if agy is None:
+                self.skipTest("agy is not installed")
+            result = subprocess.run(
+                [agy, "plugin", "validate", str(package)], text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            self.assertEqual(0, result.returncode, result.stderr or result.stdout)
+
+    def test_generated_metadata_projects_the_canonical_cavi_publisher(self):
+        generator = load_generator()
+        manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+        publisher = manifest["publisher"]
+
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory)
+            generator.generate(("claude", "codex"), output_root)
+
+            claude_plugin = json.loads(
+                (output_root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+            )
+            claude_marketplace = json.loads(
+                (output_root / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8")
+            )
+            codex_marketplace = json.loads(
+                (output_root / ".agents" / "plugins" / "marketplace.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(publisher, claude_plugin["author"])
+        self.assertEqual(publisher, claude_marketplace["owner"])
+        self.assertEqual(publisher, claude_marketplace["plugins"][0]["author"])
+        self.assertEqual(publisher, codex_marketplace["owner"])
+
     def test_generation_matches_committed_adapters_byte_for_byte(self):
         generator = load_generator()
         with tempfile.TemporaryDirectory() as directory:
@@ -64,7 +108,7 @@ class GeneratedAdapterTests(unittest.TestCase):
         fixture = ROOT / "tests" / "fixtures" / "scout_responses.json"
         with tempfile.TemporaryDirectory() as directory:
             output_root = Path(directory) / "package"
-            generator.generate(("claude", "agentskills"), output_root)
+            generator.generate(("claude", "agy", "agentskills"), output_root)
             unrelated = Path(directory) / "unrelated"
             unrelated.mkdir()
             environment = dict(os.environ, MLX_AGENT_FIXTURE=str(fixture))
@@ -102,6 +146,11 @@ class GeneratedAdapterTests(unittest.TestCase):
                     ],
                     "wire-render",
                 ),
+                (
+                    output_root / "providers" / "agy" / "skills" / "mlx-scout" / "scripts" / "mlx-agent",
+                    ["discover", "--limit", "1", "--json"],
+                    "discover",
+                ),
             ]
             for executable, arguments, operation in executions:
                 result = subprocess.run(
@@ -116,7 +165,7 @@ class GeneratedAdapterTests(unittest.TestCase):
         fixture = ROOT / "tests" / "fixtures" / "scout_responses.json"
         with tempfile.TemporaryDirectory() as directory:
             output_root = Path(directory) / "package"
-            generator.generate(("claude", "gemini"), output_root)
+            generator.generate(("claude",), output_root)
             unrelated = Path(directory) / "unrelated"
             unrelated.mkdir()
             environment = dict(os.environ, MLX_AGENT_FIXTURE=str(fixture))
@@ -129,7 +178,7 @@ class GeneratedAdapterTests(unittest.TestCase):
                     "arguments": {"capability": "scout", "arguments": "--limit 1 --json"},
                 },
             }
-            for provider in ("claude", "gemini"):
+            for provider in ("claude",):
                 executable = output_root / "providers" / provider / "scripts" / "mlx-agent-mcp"
                 result = subprocess.run(
                     [sys.executable, str(executable)], input=json.dumps(request) + "\n",
@@ -390,7 +439,7 @@ class GeneratedAdapterTests(unittest.TestCase):
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("Ran 5 tests", result.stderr)
+        self.assertIn("Ran 6 tests", result.stderr)
 
     def test_prompts_are_capability_parity_wrappers_over_the_structured_cli(self):
         generator = load_generator()

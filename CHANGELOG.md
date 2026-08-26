@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.5.2 - 2026-08-25
+
+- Replace the discontinued Gemini CLI extension with a first-class Agy plugin package, including isolated native validation, user/project lifecycle coverage, and generated seven-skill bundles.
+- Centralize canonical CAVI publisher metadata and project it into generated Claude and Codex metadata without unsupported host fields.
+- Rename the former Gemini-only argument parser to shared command parsing, remove its retired file transport, and fix installer secret detection so canonical publisher URLs do not produce false positives.
+- Build release documentation artifacts in staging from the exact tagged commit, avoiding impossible self-referential committed provenance.
+
 ## 0.5.1 - 2026-07-29
 
 - Rebuild the release documentation artifact in staging with the exact tagged commit so its embedded provenance matches the outer release envelope consumed by CAVI Home.

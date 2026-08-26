@@ -79,10 +79,10 @@ def main():
     invalid_invocation["providers"]["claude"]["invocation"]["prefix"] = "$"
     invalid_plugins.append(invalid_invocation)
     missing_native_minimum = copy.deepcopy(plugin)
-    missing_native_minimum["providers"]["gemini"]["minimum_version"] = None
+    missing_native_minimum["providers"]["agy"]["minimum_version"] = None
     invalid_plugins.append(missing_native_minimum)
     native_portable = copy.deepcopy(plugin)
-    native_portable["providers"]["gemini"]["install_mode"] = "portable"
+    native_portable["providers"]["agy"]["install_mode"] = "portable"
     invalid_plugins.append(native_portable)
     duplicate_role_id = copy.deepcopy(plugin)
     duplicate_role_id["roles"][-1] = copy.deepcopy(duplicate_role_id["roles"][0])

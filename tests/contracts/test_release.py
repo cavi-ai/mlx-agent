@@ -39,11 +39,6 @@ class VersionLockstepTests(unittest.TestCase):
         _version, errors = validate_release_version.validate("v99.0.0")
         self.assertTrue(any("does not match" in item for item in errors))
 
-    def test_the_shipping_documentation_artifact_exists(self):
-        artifact = ROOT / "docs" / "mlx-agent" / "v{0}".format(mlx_agent.__version__)
-        self.assertTrue((artifact / "manifest.json").is_file())
-
-
 class ReleaseEnvelopeTests(unittest.TestCase):
     def test_manifest_matches_the_consumer_identity_contract(self):
         manifest = release_envelope.release_manifest("0.5.0", "v0.5.0", COMMIT)
@@ -158,7 +153,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
             "scripts/validate_json_schemas.py",
             "scripts/generate_adapters.py --check",
             "scripts/render_compatibility.py --check",
-            "scripts/build_docs.py --check",
+            "scripts/build_docs.py --commit \"$COMMIT\" --destination \"$staging/docs/mlx-agent/v${VERSION}\"",
             "unittest discover -s tests",
         ):
             with self.subTest(gate=gate):

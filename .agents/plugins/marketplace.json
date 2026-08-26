@@ -1,5 +1,10 @@
 {
   "name": "mlx-agent",
+  "owner": {
+    "name": "Sasan Sotoodehfar",
+    "organization": "CAVI AI",
+    "organization_url": "https://cavi-ai.xyz"
+  },
   "interface": {
     "displayName": "MLX Agent"
   },

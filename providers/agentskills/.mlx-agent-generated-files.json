@@ -14,7 +14,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/__init__.py",
-      "sha256": "e45be5654f238ce06f27e386deece602fcb8c81d69fbb88fad74dffea456f1af"
+      "sha256": "1297bf460e56f23a5a3f00be92a9d761dc51ea2cba9a7ff4c675a8d91f2c2ed6"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/__main__.py",
@@ -26,7 +26,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/bench.py",
-      "sha256": "0b18b85a6cea27ed149dd1065904ba065d7adae82236a6ee3632686ecfe46bd4"
+      "sha256": "c906e7d89b6411dc6a5e3a7a23f7bbef5191e1325856845502f43e0870a21769"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/blueprint.py",
@@ -37,8 +37,12 @@
       "sha256": "c1170706671d819d0830e345ef078b9385e29b0a05be349a5d727640f2f924f0"
     },
     {
+      "path": "mlx-adopt/src/mlx_agent/command_args.py",
+      "sha256": "2c8936d67b4d26745204bcb0b4938aee6829f032dece267d6fa3ab16a37ee5d0"
+    },
+    {
       "path": "mlx-adopt/src/mlx_agent/command_executor.py",
-      "sha256": "ea96da41560947f4769da850577ecc8a241b767489fb35e131ad0888a5caa92f"
+      "sha256": "df07ae85a25780d23cfe90e1032a19031ec5fbb388b7940414763ce9a26e5b32"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/contextfit.py",
@@ -65,18 +69,6 @@
       "sha256": "1a4068b405a409464939778fbd9caed0e321613dcb7be98767f77d93843ef3a5"
     },
     {
-      "path": "mlx-adopt/src/mlx_agent/gemini_args.py",
-      "sha256": "3c8b5a91cd4c93c261a4ba039376633205086ac196a382dd32954bbf04d27e1d"
-    },
-    {
-      "path": "mlx-adopt/src/mlx_agent/gemini_executor.py",
-      "sha256": "728ee036f0f94a146daec5d538782bcf585034890154600633b8c5d8b575225a"
-    },
-    {
-      "path": "mlx-adopt/src/mlx_agent/gemini_transport.py",
-      "sha256": "8799e357851dab68bd00f82c13874953dc09f64b2cd94197c9124d471ab3e1cb"
-    },
-    {
       "path": "mlx-adopt/src/mlx_agent/gguf.py",
       "sha256": "c7dad8898b6a07e1b615c8872c3515269a7dec4138e8e19d7759af83dac4dad0"
     },
@@ -94,7 +86,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/installer.py",
-      "sha256": "70c5930a9cd0e5c2b19685276c3efda4b3cc94fe537b174c47d53822a8dca55e"
+      "sha256": "c7f0c4f7f999ae12662d844da0a120ff8e6c28c709dc710ec11412e429c059eb"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/interview.py",
@@ -106,7 +98,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/mcp_server.py",
-      "sha256": "b3bbec4fae36563a4cdd134e74e0ae76538df7f93f708f06655dc6b6afa4e993"
+      "sha256": "86191b74a19fc7837b8ab63ec03604ad37a695d7c18324687000159e00de2fa2"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/modality.py",
@@ -130,7 +122,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/providers.py",
-      "sha256": "8857eb52c4bdb3072691e2e045bd3c35188e30a296ace24718f1c156c73dcf08"
+      "sha256": "0d109e26510efb465852d931ff82d7bacaec8d6aaa721f055b7b745ce675882a"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/research.py",
@@ -202,7 +194,7 @@
     },
     {
       "path": "mlx-bench/src/mlx_agent/__init__.py",
-      "sha256": "e45be5654f238ce06f27e386deece602fcb8c81d69fbb88fad74dffea456f1af"
+      "sha256": "1297bf460e56f23a5a3f00be92a9d761dc51ea2cba9a7ff4c675a8d91f2c2ed6"
     },
     {
       "path": "mlx-bench/src/mlx_agent/__main__.py",
@@ -214,7 +206,7 @@
     },
     {
       "path": "mlx-bench/src/mlx_agent/bench.py",
-      "sha256": "0b18b85a6cea27ed149dd1065904ba065d7adae82236a6ee3632686ecfe46bd4"
+      "sha256": "c906e7d89b6411dc6a5e3a7a23f7bbef5191e1325856845502f43e0870a21769"
     },
     {
       "path": "mlx-bench/src/mlx_agent/blueprint.py",
@@ -225,8 +217,12 @@
       "sha256": "c1170706671d819d0830e345ef078b9385e29b0a05be349a5d727640f2f924f0"
     },
     {
+      "path": "mlx-bench/src/mlx_agent/command_args.py",
+      "sha256": "2c8936d67b4d26745204bcb0b4938aee6829f032dece267d6fa3ab16a37ee5d0"
+    },
+    {
       "path": "mlx-bench/src/mlx_agent/command_executor.py",
-      "sha256": "ea96da41560947f4769da850577ecc8a241b767489fb35e131ad0888a5caa92f"
+      "sha256": "df07ae85a25780d23cfe90e1032a19031ec5fbb388b7940414763ce9a26e5b32"
     },
     {
       "path": "mlx-bench/src/mlx_agent/contextfit.py",
@@ -253,18 +249,6 @@
       "sha256": "1a4068b405a409464939778fbd9caed0e321613dcb7be98767f77d93843ef3a5"
     },
     {
-      "path": "mlx-bench/src/mlx_agent/gemini_args.py",
-      "sha256": "3c8b5a91cd4c93c261a4ba039376633205086ac196a382dd32954bbf04d27e1d"
-    },
-    {
-      "path": "mlx-bench/src/mlx_agent/gemini_executor.py",
-      "sha256": "728ee036f0f94a146daec5d538782bcf585034890154600633b8c5d8b575225a"
-    },
-    {
-      "path": "mlx-bench/src/mlx_agent/gemini_transport.py",
-      "sha256": "8799e357851dab68bd00f82c13874953dc09f64b2cd94197c9124d471ab3e1cb"
-    },
-    {
       "path": "mlx-bench/src/mlx_agent/gguf.py",
       "sha256": "c7dad8898b6a07e1b615c8872c3515269a7dec4138e8e19d7759af83dac4dad0"
     },
@@ -282,7 +266,7 @@
     },
     {
       "path": "mlx-bench/src/mlx_agent/installer.py",
-      "sha256": "70c5930a9cd0e5c2b19685276c3efda4b3cc94fe537b174c47d53822a8dca55e"
+      "sha256": "c7f0c4f7f999ae12662d844da0a120ff8e6c28c709dc710ec11412e429c059eb"
     },
     {
       "path": "mlx-bench/src/mlx_agent/interview.py",
@@ -294,7 +278,7 @@
     },
     {
       "path": "mlx-bench/src/mlx_agent/mcp_server.py",
-      "sha256": "b3bbec4fae36563a4cdd134e74e0ae76538df7f93f708f06655dc6b6afa4e993"
+      "sha256": "86191b74a19fc7837b8ab63ec03604ad37a695d7c18324687000159e00de2fa2"
     },
     {
       "path": "mlx-bench/src/mlx_agent/modality.py",
@@ -318,7 +302,7 @@
     },
     {
       "path": "mlx-bench/src/mlx_agent/providers.py",
-      "sha256": "8857eb52c4bdb3072691e2e045bd3c35188e30a296ace24718f1c156c73dcf08"
+      "sha256": "0d109e26510efb465852d931ff82d7bacaec8d6aaa721f055b7b745ce675882a"
     },
     {
       "path": "mlx-bench/src/mlx_agent/research.py",
@@ -390,7 +374,7 @@
     },
     {
       "path": "mlx-doctor/src/mlx_agent/__init__.py",
-      "sha256": "e45be5654f238ce06f27e386deece602fcb8c81d69fbb88fad74dffea456f1af"
+      "sha256": "1297bf460e56f23a5a3f00be92a9d761dc51ea2cba9a7ff4c675a8d91f2c2ed6"
     },
     {
       "path": "mlx-doctor/src/mlx_agent/__main__.py",
@@ -402,7 +386,7 @@
     },
     {
       "path": "mlx-doctor/src/mlx_agent/bench.py",
-      "sha256": "0b18b85a6cea27ed149dd1065904ba065d7adae82236a6ee3632686ecfe46bd4"
+      "sha256": "c906e7d89b6411dc6a5e3a7a23f7bbef5191e1325856845502f43e0870a21769"
     },
     {
       "path": "mlx-doctor/src/mlx_agent/blueprint.py",
@@ -413,8 +397,12 @@
       "sha256": "c1170706671d819d0830e345ef078b9385e29b0a05be349a5d727640f2f924f0"
     },
     {
+      "path": "mlx-doctor/src/mlx_agent/command_args.py",
+      "sha256": "2c8936d67b4d26745204bcb0b4938aee6829f032dece267d6fa3ab16a37ee5d0"
+    },
+    {
       "path": "mlx-doctor/src/mlx_agent/command_executor.py",
-      "sha256": "ea96da41560947f4769da850577ecc8a241b767489fb35e131ad0888a5caa92f"
+      "sha256": "df07ae85a25780d23cfe90e1032a19031ec5fbb388b7940414763ce9a26e5b32"
     },
     {
       "path": "mlx-doctor/src/mlx_agent/contextfit.py",
@@ -441,18 +429,6 @@
       "sha256": "1a4068b405a409464939778fbd9caed0e321613dcb7be98767f77d93843ef3a5"
     },
     {
-      "path": "mlx-doctor/src/mlx_agent/gemini_args.py",
-      "sha256": "3c8b5a91cd4c93c261a4ba039376633205086ac196a382dd32954bbf04d27e1d"
-    },
-    {
-      "path": "mlx-doctor/src/mlx_agent/gemini_executor.py",
-      "sha256": "728ee036f0f94a146daec5d538782bcf585034890154600633b8c5d8b575225a"
-    },
-    {
-      "path": "mlx-doctor/src/mlx_agent/gemini_transport.py",
-      "sha256": "8799e357851dab68bd00f82c13874953dc09f64b2cd94197c9124d471ab3e1cb"
-    },
-    {
       "path": "mlx-doctor/src/mlx_agent/gguf.py",
       "sha256": "c7dad8898b6a07e1b615c8872c3515269a7dec4138e8e19d7759af83dac4dad0"
     },
@@ -470,7 +446,7 @@
     },
     {
       "path": "mlx-doctor/src/mlx_agent/installer.py",
-      "sha256": "70c5930a9cd0e5c2b19685276c3efda4b3cc94fe537b174c47d53822a8dca55e"
+      "sha256": "c7f0c4f7f999ae12662d844da0a120ff8e6c28c709dc710ec11412e429c059eb"
     },
     {
       "path": "mlx-doctor/src/mlx_agent/interview.py",
@@ -482,7 +458,7 @@
     },
     {
       "path": "mlx-doctor/src/mlx_agent/mcp_server.py",
-      "sha256": "b3bbec4fae36563a4cdd134e74e0ae76538df7f93f708f06655dc6b6afa4e993"
+      "sha256": "86191b74a19fc7837b8ab63ec03604ad37a695d7c18324687000159e00de2fa2"
     },
     {
       "path": "mlx-doctor/src/mlx_agent/modality.py",
@@ -506,7 +482,7 @@
     },
     {
       "path": "mlx-doctor/src/mlx_agent/providers.py",
-      "sha256": "8857eb52c4bdb3072691e2e045bd3c35188e30a296ace24718f1c156c73dcf08"
+      "sha256": "0d109e26510efb465852d931ff82d7bacaec8d6aaa721f055b7b745ce675882a"
     },
     {
       "path": "mlx-doctor/src/mlx_agent/research.py",
@@ -578,7 +554,7 @@
     },
     {
       "path": "mlx-fleet/src/mlx_agent/__init__.py",
-      "sha256": "e45be5654f238ce06f27e386deece602fcb8c81d69fbb88fad74dffea456f1af"
+      "sha256": "1297bf460e56f23a5a3f00be92a9d761dc51ea2cba9a7ff4c675a8d91f2c2ed6"
     },
     {
       "path": "mlx-fleet/src/mlx_agent/__main__.py",
@@ -590,7 +566,7 @@
     },
     {
       "path": "mlx-fleet/src/mlx_agent/bench.py",
-      "sha256": "0b18b85a6cea27ed149dd1065904ba065d7adae82236a6ee3632686ecfe46bd4"
+      "sha256": "c906e7d89b6411dc6a5e3a7a23f7bbef5191e1325856845502f43e0870a21769"
     },
     {
       "path": "mlx-fleet/src/mlx_agent/blueprint.py",
@@ -601,8 +577,12 @@
       "sha256": "c1170706671d819d0830e345ef078b9385e29b0a05be349a5d727640f2f924f0"
     },
     {
+      "path": "mlx-fleet/src/mlx_agent/command_args.py",
+      "sha256": "2c8936d67b4d26745204bcb0b4938aee6829f032dece267d6fa3ab16a37ee5d0"
+    },
+    {
       "path": "mlx-fleet/src/mlx_agent/command_executor.py",
-      "sha256": "ea96da41560947f4769da850577ecc8a241b767489fb35e131ad0888a5caa92f"
+      "sha256": "df07ae85a25780d23cfe90e1032a19031ec5fbb388b7940414763ce9a26e5b32"
     },
     {
       "path": "mlx-fleet/src/mlx_agent/contextfit.py",
@@ -629,18 +609,6 @@
       "sha256": "1a4068b405a409464939778fbd9caed0e321613dcb7be98767f77d93843ef3a5"
     },
     {
-      "path": "mlx-fleet/src/mlx_agent/gemini_args.py",
-      "sha256": "3c8b5a91cd4c93c261a4ba039376633205086ac196a382dd32954bbf04d27e1d"
-    },
-    {
-      "path": "mlx-fleet/src/mlx_agent/gemini_executor.py",
-      "sha256": "728ee036f0f94a146daec5d538782bcf585034890154600633b8c5d8b575225a"
-    },
-    {
-      "path": "mlx-fleet/src/mlx_agent/gemini_transport.py",
-      "sha256": "8799e357851dab68bd00f82c13874953dc09f64b2cd94197c9124d471ab3e1cb"
-    },
-    {
       "path": "mlx-fleet/src/mlx_agent/gguf.py",
       "sha256": "c7dad8898b6a07e1b615c8872c3515269a7dec4138e8e19d7759af83dac4dad0"
     },
@@ -658,7 +626,7 @@
     },
     {
       "path": "mlx-fleet/src/mlx_agent/installer.py",
-      "sha256": "70c5930a9cd0e5c2b19685276c3efda4b3cc94fe537b174c47d53822a8dca55e"
+      "sha256": "c7f0c4f7f999ae12662d844da0a120ff8e6c28c709dc710ec11412e429c059eb"
     },
     {
       "path": "mlx-fleet/src/mlx_agent/interview.py",
@@ -670,7 +638,7 @@
     },
     {
       "path": "mlx-fleet/src/mlx_agent/mcp_server.py",
-      "sha256": "b3bbec4fae36563a4cdd134e74e0ae76538df7f93f708f06655dc6b6afa4e993"
+      "sha256": "86191b74a19fc7837b8ab63ec03604ad37a695d7c18324687000159e00de2fa2"
     },
     {
       "path": "mlx-fleet/src/mlx_agent/modality.py",
@@ -694,7 +662,7 @@
     },
     {
       "path": "mlx-fleet/src/mlx_agent/providers.py",
-      "sha256": "8857eb52c4bdb3072691e2e045bd3c35188e30a296ace24718f1c156c73dcf08"
+      "sha256": "0d109e26510efb465852d931ff82d7bacaec8d6aaa721f055b7b745ce675882a"
     },
     {
       "path": "mlx-fleet/src/mlx_agent/research.py",
@@ -766,7 +734,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/__init__.py",
-      "sha256": "e45be5654f238ce06f27e386deece602fcb8c81d69fbb88fad74dffea456f1af"
+      "sha256": "1297bf460e56f23a5a3f00be92a9d761dc51ea2cba9a7ff4c675a8d91f2c2ed6"
     },
     {
       "path": "mlx-scout/src/mlx_agent/__main__.py",
@@ -778,7 +746,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/bench.py",
-      "sha256": "0b18b85a6cea27ed149dd1065904ba065d7adae82236a6ee3632686ecfe46bd4"
+      "sha256": "c906e7d89b6411dc6a5e3a7a23f7bbef5191e1325856845502f43e0870a21769"
     },
     {
       "path": "mlx-scout/src/mlx_agent/blueprint.py",
@@ -789,8 +757,12 @@
       "sha256": "c1170706671d819d0830e345ef078b9385e29b0a05be349a5d727640f2f924f0"
     },
     {
+      "path": "mlx-scout/src/mlx_agent/command_args.py",
+      "sha256": "2c8936d67b4d26745204bcb0b4938aee6829f032dece267d6fa3ab16a37ee5d0"
+    },
+    {
       "path": "mlx-scout/src/mlx_agent/command_executor.py",
-      "sha256": "ea96da41560947f4769da850577ecc8a241b767489fb35e131ad0888a5caa92f"
+      "sha256": "df07ae85a25780d23cfe90e1032a19031ec5fbb388b7940414763ce9a26e5b32"
     },
     {
       "path": "mlx-scout/src/mlx_agent/contextfit.py",
@@ -817,18 +789,6 @@
       "sha256": "1a4068b405a409464939778fbd9caed0e321613dcb7be98767f77d93843ef3a5"
     },
     {
-      "path": "mlx-scout/src/mlx_agent/gemini_args.py",
-      "sha256": "3c8b5a91cd4c93c261a4ba039376633205086ac196a382dd32954bbf04d27e1d"
-    },
-    {
-      "path": "mlx-scout/src/mlx_agent/gemini_executor.py",
-      "sha256": "728ee036f0f94a146daec5d538782bcf585034890154600633b8c5d8b575225a"
-    },
-    {
-      "path": "mlx-scout/src/mlx_agent/gemini_transport.py",
-      "sha256": "8799e357851dab68bd00f82c13874953dc09f64b2cd94197c9124d471ab3e1cb"
-    },
-    {
       "path": "mlx-scout/src/mlx_agent/gguf.py",
       "sha256": "c7dad8898b6a07e1b615c8872c3515269a7dec4138e8e19d7759af83dac4dad0"
     },
@@ -846,7 +806,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/installer.py",
-      "sha256": "70c5930a9cd0e5c2b19685276c3efda4b3cc94fe537b174c47d53822a8dca55e"
+      "sha256": "c7f0c4f7f999ae12662d844da0a120ff8e6c28c709dc710ec11412e429c059eb"
     },
     {
       "path": "mlx-scout/src/mlx_agent/interview.py",
@@ -858,7 +818,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/mcp_server.py",
-      "sha256": "b3bbec4fae36563a4cdd134e74e0ae76538df7f93f708f06655dc6b6afa4e993"
+      "sha256": "86191b74a19fc7837b8ab63ec03604ad37a695d7c18324687000159e00de2fa2"
     },
     {
       "path": "mlx-scout/src/mlx_agent/modality.py",
@@ -882,7 +842,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/providers.py",
-      "sha256": "8857eb52c4bdb3072691e2e045bd3c35188e30a296ace24718f1c156c73dcf08"
+      "sha256": "0d109e26510efb465852d931ff82d7bacaec8d6aaa721f055b7b745ce675882a"
     },
     {
       "path": "mlx-scout/src/mlx_agent/research.py",
@@ -954,7 +914,7 @@
     },
     {
       "path": "mlx-watch/src/mlx_agent/__init__.py",
-      "sha256": "e45be5654f238ce06f27e386deece602fcb8c81d69fbb88fad74dffea456f1af"
+      "sha256": "1297bf460e56f23a5a3f00be92a9d761dc51ea2cba9a7ff4c675a8d91f2c2ed6"
     },
     {
       "path": "mlx-watch/src/mlx_agent/__main__.py",
@@ -966,7 +926,7 @@
     },
     {
       "path": "mlx-watch/src/mlx_agent/bench.py",
-      "sha256": "0b18b85a6cea27ed149dd1065904ba065d7adae82236a6ee3632686ecfe46bd4"
+      "sha256": "c906e7d89b6411dc6a5e3a7a23f7bbef5191e1325856845502f43e0870a21769"
     },
     {
       "path": "mlx-watch/src/mlx_agent/blueprint.py",
@@ -977,8 +937,12 @@
       "sha256": "c1170706671d819d0830e345ef078b9385e29b0a05be349a5d727640f2f924f0"
     },
     {
+      "path": "mlx-watch/src/mlx_agent/command_args.py",
+      "sha256": "2c8936d67b4d26745204bcb0b4938aee6829f032dece267d6fa3ab16a37ee5d0"
+    },
+    {
       "path": "mlx-watch/src/mlx_agent/command_executor.py",
-      "sha256": "ea96da41560947f4769da850577ecc8a241b767489fb35e131ad0888a5caa92f"
+      "sha256": "df07ae85a25780d23cfe90e1032a19031ec5fbb388b7940414763ce9a26e5b32"
     },
     {
       "path": "mlx-watch/src/mlx_agent/contextfit.py",
@@ -1005,18 +969,6 @@
       "sha256": "1a4068b405a409464939778fbd9caed0e321613dcb7be98767f77d93843ef3a5"
     },
     {
-      "path": "mlx-watch/src/mlx_agent/gemini_args.py",
-      "sha256": "3c8b5a91cd4c93c261a4ba039376633205086ac196a382dd32954bbf04d27e1d"
-    },
-    {
-      "path": "mlx-watch/src/mlx_agent/gemini_executor.py",
-      "sha256": "728ee036f0f94a146daec5d538782bcf585034890154600633b8c5d8b575225a"
-    },
-    {
-      "path": "mlx-watch/src/mlx_agent/gemini_transport.py",
-      "sha256": "8799e357851dab68bd00f82c13874953dc09f64b2cd94197c9124d471ab3e1cb"
-    },
-    {
       "path": "mlx-watch/src/mlx_agent/gguf.py",
       "sha256": "c7dad8898b6a07e1b615c8872c3515269a7dec4138e8e19d7759af83dac4dad0"
     },
@@ -1034,7 +986,7 @@
     },
     {
       "path": "mlx-watch/src/mlx_agent/installer.py",
-      "sha256": "70c5930a9cd0e5c2b19685276c3efda4b3cc94fe537b174c47d53822a8dca55e"
+      "sha256": "c7f0c4f7f999ae12662d844da0a120ff8e6c28c709dc710ec11412e429c059eb"
     },
     {
       "path": "mlx-watch/src/mlx_agent/interview.py",
@@ -1046,7 +998,7 @@
     },
     {
       "path": "mlx-watch/src/mlx_agent/mcp_server.py",
-      "sha256": "b3bbec4fae36563a4cdd134e74e0ae76538df7f93f708f06655dc6b6afa4e993"
+      "sha256": "86191b74a19fc7837b8ab63ec03604ad37a695d7c18324687000159e00de2fa2"
     },
     {
       "path": "mlx-watch/src/mlx_agent/modality.py",
@@ -1070,7 +1022,7 @@
     },
     {
       "path": "mlx-watch/src/mlx_agent/providers.py",
-      "sha256": "8857eb52c4bdb3072691e2e045bd3c35188e30a296ace24718f1c156c73dcf08"
+      "sha256": "0d109e26510efb465852d931ff82d7bacaec8d6aaa721f055b7b745ce675882a"
     },
     {
       "path": "mlx-watch/src/mlx_agent/research.py",
@@ -1142,7 +1094,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/__init__.py",
-      "sha256": "e45be5654f238ce06f27e386deece602fcb8c81d69fbb88fad74dffea456f1af"
+      "sha256": "1297bf460e56f23a5a3f00be92a9d761dc51ea2cba9a7ff4c675a8d91f2c2ed6"
     },
     {
       "path": "mlx-wire/src/mlx_agent/__main__.py",
@@ -1154,7 +1106,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/bench.py",
-      "sha256": "0b18b85a6cea27ed149dd1065904ba065d7adae82236a6ee3632686ecfe46bd4"
+      "sha256": "c906e7d89b6411dc6a5e3a7a23f7bbef5191e1325856845502f43e0870a21769"
     },
     {
       "path": "mlx-wire/src/mlx_agent/blueprint.py",
@@ -1165,8 +1117,12 @@
       "sha256": "c1170706671d819d0830e345ef078b9385e29b0a05be349a5d727640f2f924f0"
     },
     {
+      "path": "mlx-wire/src/mlx_agent/command_args.py",
+      "sha256": "2c8936d67b4d26745204bcb0b4938aee6829f032dece267d6fa3ab16a37ee5d0"
+    },
+    {
       "path": "mlx-wire/src/mlx_agent/command_executor.py",
-      "sha256": "ea96da41560947f4769da850577ecc8a241b767489fb35e131ad0888a5caa92f"
+      "sha256": "df07ae85a25780d23cfe90e1032a19031ec5fbb388b7940414763ce9a26e5b32"
     },
     {
       "path": "mlx-wire/src/mlx_agent/contextfit.py",
@@ -1193,18 +1149,6 @@
       "sha256": "1a4068b405a409464939778fbd9caed0e321613dcb7be98767f77d93843ef3a5"
     },
     {
-      "path": "mlx-wire/src/mlx_agent/gemini_args.py",
-      "sha256": "3c8b5a91cd4c93c261a4ba039376633205086ac196a382dd32954bbf04d27e1d"
-    },
-    {
-      "path": "mlx-wire/src/mlx_agent/gemini_executor.py",
-      "sha256": "728ee036f0f94a146daec5d538782bcf585034890154600633b8c5d8b575225a"
-    },
-    {
-      "path": "mlx-wire/src/mlx_agent/gemini_transport.py",
-      "sha256": "8799e357851dab68bd00f82c13874953dc09f64b2cd94197c9124d471ab3e1cb"
-    },
-    {
       "path": "mlx-wire/src/mlx_agent/gguf.py",
       "sha256": "c7dad8898b6a07e1b615c8872c3515269a7dec4138e8e19d7759af83dac4dad0"
     },
@@ -1222,7 +1166,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/installer.py",
-      "sha256": "70c5930a9cd0e5c2b19685276c3efda4b3cc94fe537b174c47d53822a8dca55e"
+      "sha256": "c7f0c4f7f999ae12662d844da0a120ff8e6c28c709dc710ec11412e429c059eb"
     },
     {
       "path": "mlx-wire/src/mlx_agent/interview.py",
@@ -1234,7 +1178,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/mcp_server.py",
-      "sha256": "b3bbec4fae36563a4cdd134e74e0ae76538df7f93f708f06655dc6b6afa4e993"
+      "sha256": "86191b74a19fc7837b8ab63ec03604ad37a695d7c18324687000159e00de2fa2"
     },
     {
       "path": "mlx-wire/src/mlx_agent/modality.py",
@@ -1258,7 +1202,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/providers.py",
-      "sha256": "8857eb52c4bdb3072691e2e045bd3c35188e30a296ace24718f1c156c73dcf08"
+      "sha256": "0d109e26510efb465852d931ff82d7bacaec8d6aaa721f055b7b745ce675882a"
     },
     {
       "path": "mlx-wire/src/mlx_agent/research.py",

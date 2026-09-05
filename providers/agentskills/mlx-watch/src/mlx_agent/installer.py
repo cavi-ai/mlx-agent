@@ -15,7 +15,7 @@ from .transactions import (
     _atomic_in_directory, _physical_absolute, _read_regular, _read_target, _walk_directory,
     _rollback_receipt_hash, legacy_lock_problem, rollback,
 )
-from .wiring import redact_secrets
+from .wiring import contains_resolved_secrets, redact_secrets
 
 
 class InstallerConflictError(ValueError):
@@ -64,12 +64,7 @@ class _ArtifactAdapter:
     def validate(self, content):
         if not isinstance(content, str):
             raise TypeError("installer artifacts must be UTF-8 text")
-        redacted = redact_secrets(content)
-        try:
-            contains_persisted_secret = json.loads(redacted) != json.loads(content)
-        except (TypeError, ValueError, json.JSONDecodeError):
-            contains_persisted_secret = redacted != content
-        if contains_persisted_secret:
+        if contains_resolved_secrets(content):
             raise ValueError("installer artifacts must not contain persisted secrets")
         return True
 
@@ -408,7 +403,7 @@ class Installer:
                     relative = destination.relative_to(provider_root)
                 except ValueError:
                     # Some providers own companion artifacts (for example,
-                    # Gemini command files) beneath a host-wide directory
+                    # provider command files) beneath a host-wide directory
                     # rather than their package directory.  Removing empty
                     # parents there could remove host-owned structure.
                     continue

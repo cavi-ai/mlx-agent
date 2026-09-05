@@ -9,6 +9,7 @@
     "schema_version",
     "version",
     "identity",
+    "publisher",
     "scopes",
     "roles",
     "requirements",
@@ -30,6 +31,26 @@
     },
     "identity": {
       "const": "mlx-agent"
+    },
+    "publisher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "organization",
+        "organization_url"
+      ],
+      "properties": {
+        "name": {
+          "const": "Sasan Sotoodehfar"
+        },
+        "organization": {
+          "const": "CAVI AI"
+        },
+        "organization_url": {
+          "const": "https://cavi-ai.xyz"
+        }
+      }
     },
     "scopes": {
       "type": "array",
@@ -259,7 +280,7 @@
       "required": [
         "claude",
         "codex",
-        "gemini",
+        "agy",
         "opencode",
         "agentskills"
       ],
@@ -270,7 +291,7 @@
         "codex": {
           "$ref": "#/$defs/provider"
         },
-        "gemini": {
+        "agy": {
           "$ref": "#/$defs/provider"
         },
         "opencode": {

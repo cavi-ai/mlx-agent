@@ -7,7 +7,7 @@ import io
 import json
 import sys
 
-from .gemini_args import GeminiArgumentError, parse_gemini_arguments
+from .command_args import CommandArgumentError, parse_command_arguments
 
 
 MAX_ARGUMENT_BYTES = 4096
@@ -40,8 +40,8 @@ def execute_command(provider, capability, stream, core=None):
     if provider not in _PROVIDERS or capability not in _CAPABILITIES:
         raise CommandExecutorError("custom tool request was rejected")
     try:
-        arguments = parse_gemini_arguments(capability, read_command_arguments(stream))
-    except (GeminiArgumentError, CommandExecutorError) as error:
+        arguments = parse_command_arguments(capability, read_command_arguments(stream))
+    except (CommandArgumentError, CommandExecutorError) as error:
         raise CommandExecutorError("custom tool request was rejected") from error
     if core is None:
         from .cli import main as core

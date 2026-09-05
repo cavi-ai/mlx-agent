@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-_GEMINI_EXTENSION_SUFFIX = Path(".gemini") / "extensions" / "mlx-agent"
+_AGY_USER_PLUGIN_SUFFIX = Path(".gemini") / "config" / "plugins" / "mlx-agent"
+_AGY_PROJECT_PLUGIN_SUFFIX = Path(".agents") / "plugins" / "mlx-agent"
 
 
 @dataclass(frozen=True)
@@ -272,8 +273,8 @@ class ProviderRegistry:
         config_paths = value["config_paths"]
         if not isinstance(config_paths, list) or not all(isinstance(item, str) for item in config_paths):
             raise ValueError("provider {0}.config_paths is invalid".format(provider_id))
-        if provider_id == "gemini":
-            self._validate_gemini_extension_layout(user_root, project_root, artifacts)
+        if provider_id == "agy":
+            self._validate_agy_plugin_layout(user_root, project_root, artifacts)
         if provider_id == "opencode":
             self._validate_opencode_layout(user_root, project_root, artifacts)
         return ProviderDefinition(
@@ -292,17 +293,16 @@ class ProviderRegistry:
             config_paths=tuple(config_paths),
         )
 
-    def _validate_gemini_extension_layout(self, user_root, project_root, artifacts):
-        """Keep Gemini's install roots aligned with its extension discovery layout."""
-        if user_root != _physical(_logical(self.home / _GEMINI_EXTENSION_SUFFIX)):
-            raise ValueError("provider gemini.user_root must target home/.gemini/extensions/mlx-agent")
-        if project_root != _GEMINI_EXTENSION_SUFFIX:
-            raise ValueError("provider gemini.project_root must target .gemini/extensions/mlx-agent")
-        if not any(item.destination == Path("gemini-extension.json") for item in artifacts):
-            raise ValueError("provider gemini must install gemini-extension.json")
-        for item in artifacts:
-            if item.project_destination is not None and item.project_destination.parts[:1] != (".gemini",):
-                raise ValueError("provider gemini project artifacts must stay under .gemini")
+    def _validate_agy_plugin_layout(self, user_root, project_root, artifacts):
+        """Keep Agy's convention-discovered plugin roots exact."""
+        if user_root != _physical(_logical(self.home / _AGY_USER_PLUGIN_SUFFIX)):
+            raise ValueError("provider agy.user_root must target home/.gemini/config/plugins/mlx-agent")
+        if project_root != _AGY_PROJECT_PLUGIN_SUFFIX:
+            raise ValueError("provider agy.project_root must target .agents/plugins/mlx-agent")
+        if not any(item.destination == Path("plugin.json") for item in artifacts):
+            raise ValueError("provider agy must install its plugin.json marker")
+        if not any(item.destination == Path("skills/mlx-scout/SKILL.md") for item in artifacts):
+            raise ValueError("provider agy must install native skills")
 
     def _validate_opencode_layout(self, user_root, project_root, artifacts):
         """Keep OpenCode's documented global and project discovery locations exact."""

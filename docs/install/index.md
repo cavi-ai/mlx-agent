@@ -1,6 +1,6 @@
 # Install mlx-agent
 
-Choose the host that owns your coding-agent surface: [Claude Code](claude.md), [Codex CLI](codex.md), [Gemini CLI](gemini.md), or [OpenCode](opencode.md). For any AgentSkills-compatible host, copy one generated `providers/agentskills/mlx-*` directory into that host's skills directory.
+Choose the host that owns your coding-agent surface: [Claude Code](claude.md), [Codex CLI](codex.md), [Agy](agy.md), or [OpenCode](opencode.md). For any AgentSkills-compatible host, copy one generated `providers/agentskills/mlx-*` directory into that host's skills directory.
 
 For a user-scoped portable install, copy all seven generated packages into the host's AgentSkills directory:
 
@@ -16,30 +16,30 @@ All provider packages contain the same structured Python core and require Python
 ```bash
 # Run from this repository or an unpacked release.
 python3 scripts/mlx-agent providers --json
-python3 scripts/mlx-agent install gemini --scope user --dry-run --json
+python3 scripts/mlx-agent install agy --scope user --dry-run --json
 ```
 
 Inspect the returned `preview.preview_hash`. Only then repeat the operation with the exact hash:
 
 ```bash
-python3 scripts/mlx-agent install gemini --scope user --confirm --preview-hash <preview-hash> --json
+python3 scripts/mlx-agent install agy --scope user --confirm --preview-hash <preview-hash> --json
 ```
 
 Use the same preview/confirmation sequence for `update` and `uninstall`. `doctor` is read-only and reports `portable`, `staged`, or `native-visible` integration separately from receipt-owned artifact validity:
 
 ```bash
-python3 scripts/mlx-agent update gemini --scope user --dry-run --json
-python3 scripts/mlx-agent uninstall gemini --scope user --dry-run --json
-python3 scripts/mlx-agent doctor gemini --scope user --json
+python3 scripts/mlx-agent update agy --scope user --dry-run --json
+python3 scripts/mlx-agent uninstall agy --scope user --dry-run --json
+python3 scripts/mlx-agent doctor agy --scope user --json
 ```
 
 The website catalog specializes these safe lifecycle previews for each provider and scope from the following canonical templates:
 
 ```bash
-python3 scripts/mlx-agent install claude codex gemini opencode agentskills --scope user --dry-run --json
-python3 scripts/mlx-agent doctor claude codex gemini opencode agentskills --scope user --json
-python3 scripts/mlx-agent update claude codex gemini opencode agentskills --scope user --dry-run --json
-python3 scripts/mlx-agent uninstall claude codex gemini opencode agentskills --scope user --dry-run --json
+python3 scripts/mlx-agent install claude codex agy opencode agentskills --scope user --dry-run --json
+python3 scripts/mlx-agent doctor claude codex agy opencode agentskills --scope user --json
+python3 scripts/mlx-agent update claude codex agy opencode agentskills --scope user --dry-run --json
+python3 scripts/mlx-agent uninstall claude codex agy opencode agentskills --scope user --dry-run --json
 ```
 
 For a mutating action, inspect the returned preview and rerun the specialized command with `--confirm --preview-hash <preview-hash> --json`.

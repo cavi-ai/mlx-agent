@@ -25,8 +25,8 @@ TOOL_USE_DOC_PATHS = (
     ROOT / "docs" / "guides" / "adopt.md",
     ROOT / "docs" / "security.md",
 )
-PROVIDERS = ("claude", "codex", "gemini", "opencode", "agentskills")
-NATIVE_PROVIDERS = ("claude", "codex", "gemini", "opencode")
+PROVIDERS = ("claude", "codex", "agy", "opencode", "agentskills")
+NATIVE_PROVIDERS = ("claude", "codex", "agy", "opencode")
 COMMANDS = ("mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet")
 EVIDENCE_FIELDS = ("schema", "install_round_trip", "native_discovery", "bundle_execution", "model_backed_invocation")
 
@@ -176,7 +176,7 @@ class DocumentationContractTests(unittest.TestCase):
             "claude plugin install mlx-agent@mlx-agent",
             "codex plugin marketplace add cavi-ai/mlx-agent --ref v{0}".format(mlx_agent.__version__),
             "codex plugin add mlx-agent@mlx-agent",
-            "gemini extensions install ./mlx-agent/providers/gemini",
+            "agy plugin install ./mlx-agent/providers/agy",
             "python3 scripts/mlx-agent install opencode --scope user --dry-run --json",
             "cp -R providers/agentskills/mlx-scout providers/agentskills/mlx-adopt providers/agentskills/mlx-wire",
         )
@@ -290,8 +290,8 @@ class DocumentationContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             release_evidence = Path(directory) / "release-evidence.json"
             evidence = json.loads(RELEASE_EVIDENCE_PATH.read_text(encoding="utf-8"))
-            current = evidence["providers"]["gemini"]["status"]
-            evidence["providers"]["gemini"]["status"] = "verified" if current != "verified" else "fixture"
+            current = evidence["providers"]["agy"]["status"]
+            evidence["providers"]["agy"]["status"] = "verified" if current != "verified" else "fixture"
             release_evidence.write_text(json.dumps(evidence), encoding="utf-8")
             result = subprocess.run(
                 ["python3", str(RENDERER_PATH), "--check", "--release-evidence", str(release_evidence)],

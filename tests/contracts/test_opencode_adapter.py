@@ -72,6 +72,7 @@ class OpenCodeAdapterContractTests(unittest.TestCase):
             self.assertFalse((package_root / "opencode.json").exists())
             self.assertFalse((package_root / "src" / "mlx_agent" / "gemini_executor.py").exists())
             self.assertFalse((package_root / "src" / "mlx_agent" / "gemini_transport.py").exists())
+            self.assertTrue((package_root / "src" / "mlx_agent" / "command_args.py").exists())
             plugin = package_root / "plugins" / "mlx-agent-command.ts"
             plugin_text = plugin.read_text(encoding="utf-8")
             self.assertIn('tool: {', plugin_text)

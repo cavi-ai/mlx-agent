@@ -2,7 +2,7 @@
 
 > Discover, verify, and **wire** local MLX-optimized models on Apple Silicon — for your coding agent.
 
-Current package version: **0.5.1**.
+Current package version: **0.5.2**.
 
 <!-- compatibility:begin -->
 ## Provider support
@@ -13,7 +13,7 @@ First-class adapters are included for each provider below. The universal install
 | --- | --- | --- |
 | [Claude Code](docs/install/claude.md) | Native plugin | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire`<br>`/mlx-bench`<br>`/mlx-doctor`<br>`/mlx-watch`<br>`/mlx-fleet` |
 | [Codex CLI](docs/install/codex.md) | Native plugin | `$mlx-agent:mlx-scout`<br>`$mlx-agent:mlx-adopt`<br>`$mlx-agent:mlx-wire`<br>`$mlx-agent:mlx-bench`<br>`$mlx-agent:mlx-doctor`<br>`$mlx-agent:mlx-watch`<br>`$mlx-agent:mlx-fleet` |
-| [Gemini CLI](docs/install/gemini.md) | Native extension | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire`<br>`/mlx-bench`<br>`/mlx-doctor`<br>`/mlx-watch`<br>`/mlx-fleet` |
+| [Agy](docs/install/agy.md) | Native plugin | `mlx-scout skill`<br>`mlx-adopt skill`<br>`mlx-wire skill`<br>`mlx-bench skill`<br>`mlx-doctor skill`<br>`mlx-watch skill`<br>`mlx-fleet skill` |
 | [OpenCode](docs/install/opencode.md) | Native plugin | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire`<br>`/mlx-bench`<br>`/mlx-doctor`<br>`/mlx-watch`<br>`/mlx-fleet` |
 | [AgentSkills-compatible hosts](docs/install/index.md) | Portable skills | `mlx-scout skill`<br>`mlx-adopt skill`<br>`mlx-wire skill`<br>`mlx-bench skill`<br>`mlx-doctor skill`<br>`mlx-watch skill`<br>`mlx-fleet skill` |
 <!-- compatibility:end -->
@@ -44,31 +44,32 @@ Restart Claude Code, then run `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-ben
 ### Codex CLI
 
 ```bash
-codex plugin marketplace add cavi-ai/mlx-agent --ref v0.5.1
+codex plugin marketplace add cavi-ai/mlx-agent --ref v0.5.2
 codex plugin add mlx-agent@mlx-agent
 codex plugin list
 ```
 
 Restart Codex, then invoke `$mlx-agent:mlx-scout`, `$mlx-agent:mlx-adopt`, `$mlx-agent:mlx-wire`, `$mlx-agent:mlx-bench`, `$mlx-agent:mlx-doctor`, `$mlx-agent:mlx-watch`, or `$mlx-agent:mlx-fleet`. Codex does not support custom slash commands.
 
-### Gemini CLI
+### Agy
 
-Gemini installs this extension from its packaged provider directory:
+Agy installs the native plugin from its packaged provider directory:
 
 ```bash
-git clone --depth 1 --branch v0.5.1 https://github.com/cavi-ai/mlx-agent.git
-gemini extensions install ./mlx-agent/providers/gemini
-gemini extensions list
+git clone --depth 1 --branch v0.5.2 https://github.com/cavi-ai/mlx-agent.git
+agy plugin validate ./mlx-agent/providers/agy
+agy plugin install ./mlx-agent/providers/agy
+agy plugin list
 ```
 
-Restart Gemini CLI, then run `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, or `/mlx-fleet`.
+Restart Agy, use `/skills` to confirm the package loaded, then ask it to use the `mlx-scout`, `mlx-adopt`, `mlx-wire`, `mlx-bench`, `mlx-doctor`, `mlx-watch`, or `mlx-fleet` skill.
 
 ### OpenCode
 
 OpenCode uses the confirmation-gated universal installer. Run these commands from a release checkout:
 
 ```bash
-git clone --depth 1 --branch v0.5.1 https://github.com/cavi-ai/mlx-agent.git
+git clone --depth 1 --branch v0.5.2 https://github.com/cavi-ai/mlx-agent.git
 cd mlx-agent
 python3 scripts/mlx-agent install opencode --scope user --dry-run --json
 # Copy data.preview.preview_hash from the output, then confirm that exact plan:
@@ -91,14 +92,14 @@ For project scope, copy them to `<project>/.agents/skills/` instead. Restart the
 
 ### Universal installer and lifecycle
 
-The universal installer supports `claude`, `codex`, `gemini`, and `opencode` in both user and project scopes:
+The universal installer supports `claude`, `codex`, `agy`, and `opencode` in both user and project scopes:
 
 ```bash
 python3 scripts/mlx-agent providers --json
-python3 scripts/mlx-agent install gemini --scope user --dry-run --json
+python3 scripts/mlx-agent install agy --scope user --dry-run --json
 # Copy data.preview.preview_hash from the output, then confirm that exact plan:
-python3 scripts/mlx-agent install gemini --scope user --confirm --preview-hash <preview-hash> --json
-python3 scripts/mlx-agent doctor gemini --scope user --json
+python3 scripts/mlx-agent install agy --scope user --confirm --preview-hash <preview-hash> --json
+python3 scripts/mlx-agent doctor agy --scope user --json
 ```
 
 Use the same preview-then-confirm sequence for `update` and `uninstall`. Project installs add `--scope project --project /absolute/project/path`. The installer changes only receipt-owned files; it does not download models, persist secrets, overwrite unowned configuration, or modify a provider's marketplace registry.

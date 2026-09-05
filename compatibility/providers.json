@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "plugin_version": "0.5.1",
+  "plugin_version": "0.5.2",
   "generated_from": "v0.4.0 provider validation evidence (2026-07-27)",
   "allowed_evidence_statuses": ["supported", "not-run", "blocked", "static", "fixture"],
   "providers": {
@@ -58,31 +58,31 @@
         "model_backed_invocation": {"status": "blocked", "summary": "Authenticated Codex model response was blocked by DNS policy and is not claimed."}
       }
     },
-    "gemini": {
-      "id": "gemini",
-      "display_name": "Gemini CLI",
-      "documentation": "docs/install/gemini.md",
-      "minimum_version": "0.46.0",
-      "last_tested_version": "0.46.0",
+    "agy": {
+      "id": "agy",
+      "display_name": "Agy",
+      "documentation": "docs/install/agy.md",
+      "minimum_version": "1.1.14",
+      "last_tested_version": "1.1.14",
       "scopes": ["user", "project"],
-      "config_paths": ["~/.gemini/extensions/mlx-agent", "<project>/.gemini/extensions/mlx-agent", "<project>/.gemini/commands", "<project>/.gemini/skills"],
+      "config_paths": ["~/.gemini/config/plugins/mlx-agent", "<project>/.agents/plugins/mlx-agent"],
       "capabilities": {
-        "scout": {"command": "mlx-scout", "invocation": "/mlx-scout"},
-        "adopt": {"command": "mlx-adopt", "invocation": "/mlx-adopt"},
-        "wire": {"command": "mlx-wire", "invocation": "/mlx-wire"},
-        "bench": {"command": "mlx-bench", "invocation": "/mlx-bench"},
-        "doctor": {"command": "mlx-doctor", "invocation": "/mlx-doctor"},
-        "watch": {"command": "mlx-watch", "invocation": "/mlx-watch"},
-        "fleet": {"command": "mlx-fleet", "invocation": "/mlx-fleet"}
+        "scout": {"command": "mlx-scout", "invocation": "mlx-scout skill"},
+        "adopt": {"command": "mlx-adopt", "invocation": "mlx-adopt skill"},
+        "wire": {"command": "mlx-wire", "invocation": "mlx-wire skill"},
+        "bench": {"command": "mlx-bench", "invocation": "mlx-bench skill"},
+        "doctor": {"command": "mlx-doctor", "invocation": "mlx-doctor skill"},
+        "watch": {"command": "mlx-watch", "invocation": "mlx-watch skill"},
+        "fleet": {"command": "mlx-fleet", "invocation": "mlx-fleet skill"}
       },
-      "last_smoke_test": {"status": "fixture", "date": "2026-07-29", "summary": "Gemini CLI 0.46.0 validation/install, user and project skill discovery, fixture-backed Scout, and cleanup passed in a disposable HOME; command-list routing and model invocation were not run."},
-      "release_evidence": {"id": "rc-2026-07-29-gemini", "status": "fixture", "date": "2026-07-29", "environment": "macOS 26.5.2 arm64, disposable HOME", "cli_version": "0.46.0", "scopes_tested": ["user", "project"], "native_discovery": "skills listed in both scopes; slash-command discovery not run", "fixture_bundle": "passed", "uninstall": "passed"},
+      "last_smoke_test": {"status": "fixture", "date": "2026-08-25", "summary": "Agy 1.1.14 validated and installed the native package in a disposable HOME, registered all seven skills, completed the receipt-owned project lifecycle, ran fixture-backed Scout, and uninstalled cleanly. A logged-in model invoked mlx-scout but Agy denied the bundled launcher permission before execution."},
+      "release_evidence": {"id": "rc-2026-08-25-agy", "status": "fixture", "date": "2026-08-25", "environment": "macOS arm64, disposable HOME and project", "cli_version": "1.1.14", "scopes_tested": ["user", "project"], "native_discovery": "Agy registered all seven packaged skills", "fixture_bundle": "passed", "uninstall": "passed"},
       "evidence": {
-        "schema": {"status": "supported", "summary": "Extension, command TOML, and structured transport contracts are covered by tests."},
-        "install_round_trip": {"status": "supported", "summary": "Isolated user extension install/remove and project installer round trip passed."},
-        "native_discovery": {"status": "fixture", "summary": "User and project bundled skills were discovered; the model-routable /commands list probe remained disabled."},
-        "bundle_execution": {"status": "fixture", "summary": "Installed launcher executed fixture-backed Scout; no native slash command was invoked."},
-        "model_backed_invocation": {"status": "not-run", "summary": "No Gemini model-backed slash-command response is claimed."}
+        "schema": {"status": "supported", "summary": "Generated Agy package and native plugin-root validation are covered by adapter tests."},
+        "install_round_trip": {"status": "supported", "summary": "Receipt-owned user and project package lifecycle is covered by adapter tests."},
+        "native_discovery": {"status": "supported", "summary": "Agy processed and registered all seven packaged skills during the isolated lifecycle."},
+        "bundle_execution": {"status": "fixture", "summary": "The installed Agy Scout skill launcher is covered with fixture-backed output."},
+        "model_backed_invocation": {"status": "blocked", "summary": "A logged-in Agy model loaded mlx-scout and attempted its bundled launcher, but the host denied command permission before fixture execution."}
       }
     },
     "opencode": {

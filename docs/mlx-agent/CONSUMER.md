@@ -8,7 +8,7 @@
 - `navigation.json` — `{title, version, sections[]}`; `version` equals the manifest version and every navigation path exists in the artifact.
 - One markdown page per navigation entry.
 
-`release` records `{tag: "v<version>", commit}` — the repository commit the artifact was built from (the build commit's parent once committed, since a commit cannot contain its own hash).
+`release` records `{tag: "v<version>", commit}` — the exact tagged repository commit the release workflow built from.
 
 ## Contract for hosts
 
@@ -19,8 +19,7 @@
 ## Regenerating
 
 ```bash
-python3 scripts/build_docs.py          # rebuild from docs/mlx-agent/source
-python3 scripts/build_docs.py --check  # verify the committed artifact
+python3 scripts/build_docs.py          # build a local artifact from docs/mlx-agent/source
 ```
 
-The artifact version follows `mlx_agent.__version__`; a release rebuilds it in the same commit as the version bump. `tests/contracts/test_docs_artifact.py` enforces integrity in CI.
+The artifact version follows `mlx_agent.__version__`; the tag workflow builds it in staging with the exact tagged commit before packaging. `tests/contracts/test_docs_artifact.py` enforces integrity in CI.

@@ -66,7 +66,7 @@ class CommandExecutorTests(unittest.TestCase):
 
     def test_rejects_untrusted_provider_invalid_utf8_and_oversized_stdin(self):
         with self.assertRaises(CommandExecutorError):
-            execute_command("gemini", "scout", io.BytesIO(b"--limit 1"))
+            execute_command("agy", "scout", io.BytesIO(b"--limit 1"))
         with self.assertRaises(CommandExecutorError):
             read_command_arguments(io.BytesIO(b"\xff"))
         with self.assertRaises(CommandExecutorError):

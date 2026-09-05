@@ -19,6 +19,18 @@ CANONICAL_ROLE_IDS = (
 
 
 class ManifestTests(unittest.TestCase):
+    def test_manifest_declares_the_canonical_cavi_publisher(self):
+        manifest = json.loads((ROOT / "plugin.json").read_text())
+
+        self.assertEqual(
+            manifest.get("publisher"),
+            {
+                "name": "Sasan Sotoodehfar",
+                "organization": "CAVI AI",
+                "organization_url": "https://cavi-ai.xyz",
+            },
+        )
+
     def test_manifest_has_seven_capabilities_five_providers_and_canonical_roles(self):
         manifest = json.loads((ROOT / "plugin.json").read_text())
         roles = manifest["roles"]
@@ -26,7 +38,7 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(set(manifest["capabilities"]), {"scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"})
         self.assertEqual(
             set(manifest["providers"]),
-            {"claude", "codex", "gemini", "opencode", "agentskills"},
+            {"claude", "codex", "agy", "opencode", "agentskills"},
         )
         self.assertEqual(validate_manifest(ROOT / "plugin.json"), [])
         self.assertEqual(manifest["schema_version"], "1.1")
@@ -52,7 +64,7 @@ class ManifestTests(unittest.TestCase):
         self.assertTrue(
             all(role["recommendation_minimum"] == "any" for role in primary_roles)
         )
-        for provider in ("claude", "gemini", "opencode"):
+        for provider in ("claude", "agy", "opencode"):
             self.assertEqual(
                 manifest["providers"][provider]["commands"],
                 ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"],
@@ -78,7 +90,7 @@ class ManifestTests(unittest.TestCase):
             ROOT / ".claude-plugin" / "plugin.json",
             ROOT / "providers" / "claude" / ".claude-plugin" / "plugin.json",
             ROOT / "providers" / "codex" / ".codex-plugin" / "plugin.json",
-            ROOT / "providers" / "gemini" / "gemini-extension.json",
+            ROOT / "providers" / "agy" / "plugin.json",
         )
         for path in native_manifests:
             with self.subTest(path=path):

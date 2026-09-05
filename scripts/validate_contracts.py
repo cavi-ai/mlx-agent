@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, List
 
 SCHEMA_VERSION = "1.1"
 RESULT_SCHEMA_VERSION = "1.0"
-PLUGIN_VERSION = "0.5.1"
+PLUGIN_VERSION = "0.5.2"
 CAPABILITIES = ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet")
 CANONICAL_ROLES = (
     "general",
@@ -30,19 +30,19 @@ CAPABILITY_ACTIONS = {
     "watch": ("snapshot", "diff"),
     "fleet": ("render", "apply"),
 }
-NATIVE_PROVIDERS = ("claude", "codex", "gemini", "opencode")
+NATIVE_PROVIDERS = ("claude", "codex", "agy", "opencode")
 PROVIDERS = NATIVE_PROVIDERS + ("agentskills",)
 PROVIDER_INVOCATIONS = {
     "claude": {"kind": "command", "prefix": "/"},
     "codex": {"kind": "skill", "prefix": "$"},
-    "gemini": {"kind": "command", "prefix": "/"},
+    "agy": {"kind": "skill", "prefix": ""},
     "opencode": {"kind": "command", "prefix": "/"},
     "agentskills": {"kind": "skill", "prefix": ""},
 }
 PROVIDER_COMMANDS = {
     "claude": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"],
     "codex": ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire", "mlx-agent:mlx-bench", "mlx-agent:mlx-doctor", "mlx-agent:mlx-watch", "mlx-agent:mlx-fleet"],
-    "gemini": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"],
+    "agy": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"],
     "opencode": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"],
     "agentskills": [],
 }
@@ -419,6 +419,7 @@ def validate_manifest(path: Path) -> List[str]:
         "schema_version",
         "version",
         "identity",
+        "publisher",
         "scopes",
         "roles",
         "requirements",
@@ -436,6 +437,20 @@ def validate_manifest(path: Path) -> List[str]:
         errors.append("schema_version must equal '1.1'")
     if value.get("identity") != "mlx-agent":
         errors.append("identity must equal 'mlx-agent'")
+    publisher = value.get("publisher")
+    publisher_keys = ("name", "organization", "organization_url")
+    if not _is_dict(publisher):
+        errors.append("publisher must be an object")
+    else:
+        _require_keys(publisher, publisher_keys, "publisher", errors)
+        _unexpected_keys(publisher, publisher_keys, "publisher", errors)
+        expected_publisher = {
+            "name": "Sasan Sotoodehfar",
+            "organization": "CAVI AI",
+            "organization_url": "https://cavi-ai.xyz",
+        }
+        if publisher != expected_publisher:
+            errors.append("publisher must equal the canonical CAVI publisher")
     if value.get("version") != PLUGIN_VERSION:
         errors.append("version must equal '{0}'".format(PLUGIN_VERSION))
 
@@ -485,7 +500,7 @@ def validate_manifest(path: Path) -> List[str]:
     else:
         if set(providers) != set(PROVIDERS):
             errors.append(
-                "providers must equal ['claude', 'codex', 'gemini', 'opencode', 'agentskills']"
+                "providers must equal ['claude', 'codex', 'agy', 'opencode', 'agentskills']"
             )
         for provider in PROVIDERS:
             if provider in providers:

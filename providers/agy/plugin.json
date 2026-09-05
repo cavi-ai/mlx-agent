@@ -1,0 +1,10 @@
+{
+  "name": "mlx-agent",
+  "version": "0.5.2",
+  "description": "Structured local MLX discovery, adoption, and confirmation-gated wiring for Apple Silicon agents.",
+  "author": {
+    "name": "Sasan Sotoodehfar",
+    "organization": "CAVI AI",
+    "organization_url": "https://cavi-ai.xyz"
+  }
+}

@@ -22,7 +22,7 @@ class ProviderRegistryTests(unittest.TestCase):
             definitions = registry.definitions()
 
             self.assertEqual(
-                {"claude", "codex", "gemini", "opencode", "agentskills"},
+                {"claude", "codex", "agy", "opencode", "agentskills"},
                 set(definitions),
             )
             for provider_id, definition in definitions.items():
@@ -33,7 +33,7 @@ class ProviderRegistryTests(unittest.TestCase):
                             expected_root = root / "home/.claude/plugins/mlx-agent"
                         elif provider_id == "agentskills":
                             expected_root = root / "home/.agents"
-                    elif provider_id in {"gemini", "opencode"}:
+                    elif provider_id in {"agy", "opencode"}:
                         expected_root = root / "home"
                     else:
                         expected_root = root / "config"
@@ -69,14 +69,14 @@ class ProviderRegistryTests(unittest.TestCase):
         states = {item.id: item.state for item in detections}
         self.assertEqual("native-visible", states["claude"])
         self.assertEqual("portable", states["agentskills"])
-        self.assertEqual("absent", states["gemini"])
+        self.assertEqual("absent", states["agy"])
 
     def test_detection_rejects_out_of_range_versions_with_a_bounded_no_shell_probe(self):
         calls = []
 
         def runner(argv, **kwargs):
             calls.append((argv, kwargs))
-            return subprocess.CompletedProcess(argv, 0, b"gemini 99.0.0\n")
+            return subprocess.CompletedProcess(argv, 0, b"agy 99.0.0\n")
 
         with tempfile.TemporaryDirectory() as directory:
             registry = ProviderRegistry(
@@ -84,17 +84,17 @@ class ProviderRegistryTests(unittest.TestCase):
                 home=Path(directory) / "home",
                 config_root=Path(directory) / "config",
             )
-            definition = registry.definitions()["gemini"]
+            definition = registry.definitions()["agy"]
         detection = detect_providers(
             [definition],
             env={"PATH": "/fake/bin"},
-            executable_lookup=lambda command, path=None: "/fake/bin/gemini",
+            executable_lookup=lambda command, path=None: "/fake/bin/agy",
             probe_runner=runner,
         )[0]
         self.assertFalse(detection.available)
         self.assertEqual("unsupported", detection.state)
         self.assertEqual("99.0.0", detection.version)
-        self.assertEqual(["/fake/bin/gemini", "--version"], calls[0][0])
+        self.assertEqual(["/fake/bin/agy", "--version"], calls[0][0])
         self.assertFalse(calls[0][1]["shell"])
         self.assertLessEqual(calls[0][1]["timeout"], 5)
 
@@ -141,7 +141,7 @@ class ProviderRegistryTests(unittest.TestCase):
             definitions = registry.definitions()
 
             self.assertEqual(
-                {"claude", "codex", "gemini", "opencode", "agentskills"},
+                {"claude", "codex", "agy", "opencode", "agentskills"},
                 set(definitions),
             )
             self.assertEqual(elsewhere.resolve(), definitions["opencode"].user_root)

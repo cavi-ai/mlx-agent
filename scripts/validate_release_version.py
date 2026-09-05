@@ -93,10 +93,6 @@ def validate(tag=None):
         expected = tag[1:] if tag.startswith("v") else tag
         if version and expected != version:
             errors.append("tag {0} does not match the declared version {1}".format(tag, version))
-    if version:
-        artifact = ROOT / "docs" / "mlx-agent" / "v{0}".format(version)
-        if not artifact.is_dir():
-            errors.append("documentation artifact {0} has not been built".format(artifact.relative_to(ROOT)))
     return version, errors
 
 

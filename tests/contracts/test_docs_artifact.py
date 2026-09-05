@@ -10,7 +10,6 @@ from scripts import build_docs
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "docs" / "mlx-agent" / "source"
-ARTIFACT = ROOT / "docs" / "mlx-agent" / "v{0}".format(__version__)
 _RELATIVE_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 
 
@@ -40,18 +39,11 @@ class DocsArtifactTests(unittest.TestCase):
         for relative in pages:
             self.assertTrue((SOURCE / "pages" / relative).is_file(), relative)
 
-    def test_artifact_is_current(self):
-        import subprocess
-        import sys
-
-        result = subprocess.run(
-            [sys.executable, str(ROOT / "scripts" / "build_docs.py"), "--check"],
-            capture_output=True, text=True, cwd=str(ROOT),
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_artifact_manifest_shape(self):
-        manifest = json.loads((ARTIFACT / "manifest.json").read_text(encoding="utf-8"))
+    def test_staged_artifact_has_the_shipping_manifest_shape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "docs"
+            build_docs.build(__version__, destination=destination, commit="2" * 40)
+            manifest = json.loads((destination / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["package"], "mlx-agent")
         self.assertEqual(manifest["product"], "mlx-agent")
         self.assertEqual(manifest["version"], __version__)
@@ -59,7 +51,7 @@ class DocsArtifactTests(unittest.TestCase):
         self.assertEqual(manifest["publicBasePath"], "/docs/mlx-agent/v{0}".format(__version__))
         self.assertEqual(manifest["stableAlias"], "/docs/mlx-agent")
         self.assertEqual(manifest["release"]["tag"], "v{0}".format(__version__))
-        self.assertRegex(manifest["release"]["commit"], r"^[0-9a-f]{40}$")
+        self.assertEqual("2" * 40, manifest["release"]["commit"])
 
     def test_pages_have_titles_and_no_broken_relative_links(self):
         for page in SOURCE.rglob("*.md"):

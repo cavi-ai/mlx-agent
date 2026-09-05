@@ -1,9 +1,11 @@
 {
   "name": "mlx-agent",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Structured local MLX discovery, adoption, and wiring for Apple Silicon agents.",
   "author": {
-    "name": "Sasan Sotoodehfar"
+    "name": "Sasan Sotoodehfar",
+    "organization": "CAVI AI",
+    "organization_url": "https://cavi-ai.xyz"
   },
   "homepage": "https://github.com/cavi-ai/mlx-agent",
   "repository": "https://github.com/cavi-ai/mlx-agent",

@@ -8,7 +8,7 @@
     "license": "MIT"
   },
   "release": {
-    "version": "0.5.1",
+    "version": "0.5.2",
     "channel": "source-checkout"
   },
   "links": {
@@ -97,10 +97,10 @@
       "scopes": ["user", "project"],
       "commands": ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire", "mlx-agent:mlx-bench", "mlx-agent:mlx-doctor", "mlx-agent:mlx-watch", "mlx-agent:mlx-fleet"]
     },
-    "gemini": {
-      "install_guide": "docs/install/gemini.md",
-      "minimum_version": "0.46.0",
-      "last_tested_version": "0.46.0",
+    "agy": {
+      "install_guide": "docs/install/agy.md",
+      "minimum_version": "1.1.14",
+      "last_tested_version": "1.1.14",
       "scopes": ["user", "project"],
       "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"]
     },
@@ -121,10 +121,10 @@
   },
   "scopes": ["user", "project"],
   "lifecycle_commands": {
-    "install": "python3 scripts/mlx-agent install claude codex gemini opencode agentskills --scope user --dry-run --json",
-    "verify": "python3 scripts/mlx-agent doctor claude codex gemini opencode agentskills --scope user --json",
-    "update": "python3 scripts/mlx-agent update claude codex gemini opencode agentskills --scope user --dry-run --json",
-    "uninstall": "python3 scripts/mlx-agent uninstall claude codex gemini opencode agentskills --scope user --dry-run --json"
+    "install": "python3 scripts/mlx-agent install claude codex agy opencode agentskills --scope user --dry-run --json",
+    "verify": "python3 scripts/mlx-agent doctor claude codex agy opencode agentskills --scope user --json",
+    "update": "python3 scripts/mlx-agent update claude codex agy opencode agentskills --scope user --dry-run --json",
+    "uninstall": "python3 scripts/mlx-agent uninstall claude codex agy opencode agentskills --scope user --dry-run --json"
   },
   "verification_evidence": {
     "compatibility_matrix": "compatibility/providers.json",
@@ -147,10 +147,10 @@
         "cli_smoke": "blocked",
         "last_tested": "2026-07-29"
       },
-      "gemini": {
+      "agy": {
         "schema_validation": "supported",
         "cli_smoke": "fixture",
-        "last_tested": "2026-07-29"
+        "last_tested": "2026-08-25"
       },
       "opencode": {
         "schema_validation": "static",

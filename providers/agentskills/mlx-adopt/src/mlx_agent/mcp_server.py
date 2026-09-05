@@ -8,7 +8,7 @@ import sys
 from contextlib import redirect_stderr, redirect_stdout
 
 from . import __version__
-from .gemini_args import GeminiArgumentError, parse_gemini_arguments
+from .command_args import CommandArgumentError, parse_command_arguments
 
 
 MAX_ARGUMENT_BYTES = 4096
@@ -62,18 +62,18 @@ def _tool_definition():
 
 def _tool_result(arguments, core=None):
     if not isinstance(arguments, dict) or set(arguments) != {"capability", "arguments"}:
-        raise GeminiArgumentError("tool arguments must contain capability and arguments")
+        raise CommandArgumentError("tool arguments must contain capability and arguments")
     capability = arguments["capability"]
     raw = arguments["arguments"]
     if not isinstance(raw, str):
-        raise GeminiArgumentError("tool arguments must be UTF-8 text")
+        raise CommandArgumentError("tool arguments must be UTF-8 text")
     try:
         encoded = raw.encode("utf-8")
     except UnicodeEncodeError as error:
-        raise GeminiArgumentError("tool arguments must be UTF-8 text") from error
+        raise CommandArgumentError("tool arguments must be UTF-8 text") from error
     if len(encoded) > MAX_ARGUMENT_BYTES:
-        raise GeminiArgumentError("tool arguments exceed the bounded UTF-8 input size")
-    argv = parse_gemini_arguments(capability, raw)
+        raise CommandArgumentError("tool arguments exceed the bounded UTF-8 input size")
+    argv = parse_command_arguments(capability, raw)
     if core is None:
         from .cli import main as core
     stdout = _BoundedWriter()
@@ -126,12 +126,12 @@ def handle_request(request, core=None):
         elif method == "tools/call":
             params = request.get("params")
             if not isinstance(params, dict) or params.get("name") != TOOL_NAME:
-                raise GeminiArgumentError("unknown tool")
+                raise CommandArgumentError("unknown tool")
             result = _tool_result(params.get("arguments"), core=core)
         else:
             return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "Method not found"}}
         return {"jsonrpc": "2.0", "id": request_id, "result": result}
-    except GeminiArgumentError:
+    except CommandArgumentError:
         return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "Invalid params"}}
 
 

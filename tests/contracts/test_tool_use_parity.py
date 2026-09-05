@@ -12,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 GENERATOR_PATH = ROOT / "scripts" / "generate_adapters.py"
-PROVIDERS = ("claude", "codex", "gemini", "opencode", "agentskills")
+PROVIDERS = ("claude", "codex", "agy", "opencode", "agentskills")
 
 
 def load_generator():
@@ -77,9 +77,7 @@ class ToolUseGeneratedParityTests(unittest.TestCase):
                     "skills/mlx-scout/SKILL.md",
                     "skills/mlx-adopt/SKILL.md",
                 ),
-                "gemini": (
-                    "commands/mlx-scout.toml",
-                    "commands/mlx-adopt.toml",
+                "agy": (
                     "skills/mlx-scout/SKILL.md",
                     "skills/mlx-adopt/SKILL.md",
                 ),

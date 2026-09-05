@@ -22,12 +22,14 @@ class FakeClock:
 class FakeStreamingRuntime:
     name = "fake-stream"
 
-    def __init__(self, installed, events=None, include_ollama_usage=False):
+    def __init__(self, installed, events=None, include_ollama_usage=False,
+                 include_openai_usage=False):
         self.installed = list(installed)
         self.events = events if events is not None else [
             {"choices": [{"delta": {"content": "word"}}]} for _ in range(10)
         ]
         self.include_ollama_usage = include_ollama_usage
+        self.include_openai_usage = include_openai_usage
         self.calls = 0
 
     def list_models(self):
@@ -45,6 +47,11 @@ class FakeStreamingRuntime:
                 "eval_duration": int(2e9),
                 "prompt_eval_count": 96,
                 "prompt_eval_duration": int(0.5e9),
+            }
+        if self.include_openai_usage:
+            yield {
+                "choices": [{"delta": {}}],
+                "usage": {"prompt_tokens": 120, "completion_tokens": 10},
             }
 
 
@@ -114,6 +121,20 @@ class BenchMeasurementTests(unittest.TestCase):
         )
         self.assertEqual(measurement.decode_toks, 50.0)
         self.assertEqual(measurement.prefill_toks, 192.0)
+
+    def test_openai_usage_prompt_tokens_beat_the_estimate(self):
+        clock = FakeClock(step=0.05)
+        runtime = FakeStreamingRuntime(["pub/model"], include_openai_usage=True)
+        measurement = measure_runtime(
+            "pub/model", runtime, runs=1, gen_tokens=64, timeout=120.0, clock=clock
+        )
+        # The server-reported count (120) replaces the fixed estimate (96)...
+        self.assertEqual(measurement.prompt_tokens, 120)
+        self.assertEqual(measurement.samples[0]["prompt_tokens"], 120)
+        # ...and prefill derives from the real count over measured TTFT:
+        # first content lands one 0.05s step in, so 120 / 0.05 = 2400.
+        self.assertEqual(measurement.samples[0]["prefill_toks"], 2400.0)
+        self.assertEqual(measurement.prefill_toks, 2400.0)
 
     def test_empty_stream_is_classified(self):
         runtime = FakeStreamingRuntime(["pub/model"], events=[])

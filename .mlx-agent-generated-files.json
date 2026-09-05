@@ -1,12 +1,16 @@
 {
   "files": [
     {
+      "path": ".agents/plugins/marketplace.json",
+      "sha256": "719e49e196d7be587ce47ab52049bddef32920e41c978bc1eb1136edbe38f533"
+    },
+    {
       "path": ".claude-plugin/marketplace.json",
-      "sha256": "535808925dfa59b21c18d1be91f78577f476e241a87e1428f74842e8e1d71af4"
+      "sha256": "ff3dcf1dd60738fcbe9f48a2d44a36aee05bc5041300f4e9db74dd6a17b60b3b"
     },
     {
       "path": ".claude-plugin/plugin.json",
-      "sha256": "7e5ef625e086636437b599db1491a6fe7dcff9f8198cf78e4a17e87468564001"
+      "sha256": "4219ba29dd353756976d6805490cb1d921b48e6d0835e15d62a028ca76b6f831"
     },
     {
       "path": ".mcp.json",

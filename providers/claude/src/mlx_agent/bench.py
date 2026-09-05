@@ -182,12 +182,20 @@ def measure_runtime(repo, runtime, runs=RUNS_DEFAULT, gen_tokens=GEN_TOKENS_DEFA
     prefill_values = [
         sample["prefill_toks"] for sample in samples if sample["prefill_toks"] is not None
     ]
+    # Prefer the server-reported prompt count over the fixed estimate.
+    prompt_token_values = [
+        sample["prompt_tokens"] for sample in samples if sample.get("prompt_tokens")
+    ]
+    prompt_tokens = (
+        int(round(statistics.median(prompt_token_values)))
+        if prompt_token_values else BENCH_PROMPT_TOKEN_ESTIMATE
+    )
     measured_at = now() if callable(now) else _utc_now()
     return BenchMeasurement(
         repo=repo,
         runtime=runtime_name,
         runs=runs,
-        prompt_tokens=BENCH_PROMPT_TOKEN_ESTIMATE,
+        prompt_tokens=prompt_tokens,
         gen_tokens=gen_tokens,
         ttft_ms=round(statistics.median(ttft_values), 1) if ttft_values else None,
         decode_toks=round(median_decode, 1),
@@ -248,11 +256,17 @@ def _timed_run(stream_generate, repo, gen_tokens, timeout, clock):
         )
         ttft_seconds = first_content_at - started
         if ttft_seconds > 0:
-            sample["prefill_toks"] = round(BENCH_PROMPT_TOKEN_ESTIMATE / ttft_seconds, 1)
+            # A server-reported prompt count beats the fixed estimate.
+            prompt_tokens = (usage or {}).get("prompt_tokens") or BENCH_PROMPT_TOKEN_ESTIMATE
+            sample["prefill_toks"] = round(prompt_tokens / ttft_seconds, 1)
     elif usage and usage.get("completion_tokens") and finished > started:
         sample["decode_toks"] = round(usage["completion_tokens"] / (finished - started), 1)
     else:
         sample["decode_toks"] = round(content_events / max(finished - started, 1e-9), 1)
+    # A server-reported prompt count always beats the estimate, whatever
+    # branch produced the decode number.
+    if usage and usage.get("prompt_tokens"):
+        sample["prompt_tokens"] = usage["prompt_tokens"]
     sample.setdefault("prefill_toks", None)
     return sample
 

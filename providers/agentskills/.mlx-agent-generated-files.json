@@ -26,7 +26,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/bench.py",
-      "sha256": "0b18b85a6cea27ed149dd1065904ba065d7adae82236a6ee3632686ecfe46bd4"
+      "sha256": "c906e7d89b6411dc6a5e3a7a23f7bbef5191e1325856845502f43e0870a21769"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/blueprint.py",
@@ -206,7 +206,7 @@
     },
     {
       "path": "mlx-bench/src/mlx_agent/bench.py",
-      "sha256": "0b18b85a6cea27ed149dd1065904ba065d7adae82236a6ee3632686ecfe46bd4"
+      "sha256": "c906e7d89b6411dc6a5e3a7a23f7bbef5191e1325856845502f43e0870a21769"
     },
     {
       "path": "mlx-bench/src/mlx_agent/blueprint.py",
@@ -386,7 +386,7 @@
     },
     {
       "path": "mlx-doctor/src/mlx_agent/bench.py",
-      "sha256": "0b18b85a6cea27ed149dd1065904ba065d7adae82236a6ee3632686ecfe46bd4"
+      "sha256": "c906e7d89b6411dc6a5e3a7a23f7bbef5191e1325856845502f43e0870a21769"
     },
     {
       "path": "mlx-doctor/src/mlx_agent/blueprint.py",
@@ -566,7 +566,7 @@
     },
     {
       "path": "mlx-fleet/src/mlx_agent/bench.py",
-      "sha256": "0b18b85a6cea27ed149dd1065904ba065d7adae82236a6ee3632686ecfe46bd4"
+      "sha256": "c906e7d89b6411dc6a5e3a7a23f7bbef5191e1325856845502f43e0870a21769"
     },
     {
       "path": "mlx-fleet/src/mlx_agent/blueprint.py",
@@ -746,7 +746,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/bench.py",
-      "sha256": "0b18b85a6cea27ed149dd1065904ba065d7adae82236a6ee3632686ecfe46bd4"
+      "sha256": "c906e7d89b6411dc6a5e3a7a23f7bbef5191e1325856845502f43e0870a21769"
     },
     {
       "path": "mlx-scout/src/mlx_agent/blueprint.py",
@@ -926,7 +926,7 @@
     },
     {
       "path": "mlx-watch/src/mlx_agent/bench.py",
-      "sha256": "0b18b85a6cea27ed149dd1065904ba065d7adae82236a6ee3632686ecfe46bd4"
+      "sha256": "c906e7d89b6411dc6a5e3a7a23f7bbef5191e1325856845502f43e0870a21769"
     },
     {
       "path": "mlx-watch/src/mlx_agent/blueprint.py",
@@ -1106,7 +1106,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/bench.py",
-      "sha256": "0b18b85a6cea27ed149dd1065904ba065d7adae82236a6ee3632686ecfe46bd4"
+      "sha256": "c906e7d89b6411dc6a5e3a7a23f7bbef5191e1325856845502f43e0870a21769"
     },
     {
       "path": "mlx-wire/src/mlx_agent/blueprint.py",

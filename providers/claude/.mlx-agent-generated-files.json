@@ -78,7 +78,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "c1170706671d819d0830e345ef078b9385e29b0a05be349a5d727640f2f924f0"
+      "sha256": "62073278fb72f1d7af88d2e55afb2616e4dfd3dc2cb1d27e2fb375e7c18026ee"
     },
     {
       "path": "src/mlx_agent/command_args.py",
@@ -206,7 +206,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "6ba51e2576c446810ae11132a33ca301c43544b0b5951e3da2b0f461c5839a7b"
+      "sha256": "cc8c82bb9e8af92d55b9c2662892da501229e83b86eb4333901efd18ba6d5a04"
     },
     {
       "path": "src/mlx_agent/transactions.py",

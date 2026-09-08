@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add local-path serving: `serve start --path DIR` serves a local model
+  directory (e.g. a converted output outside the Hugging Face cache) through
+  the same preview → confirm → receipt flow as `--repo`. The two are mutually
+  exclusive; path plans are gated on the directory existing instead of cache
+  membership, receipts carry `path` alongside `repo`, and status/stop argv
+  matching accepts either.
+
 ## 0.5.2 - 2026-08-25
 
 - Replace the discontinued Gemini CLI extension with a first-class Agy plugin package, including isolated native validation, user/project lifecycle coverage, and generated seven-skill bundles.

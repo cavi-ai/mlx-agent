@@ -64,6 +64,36 @@ class PlanStartTests(unittest.TestCase):
             plan_start("noslash", "mlx_lm", RECIPES)
         self.assertEqual(caught.exception.code, "invalid_repo")
 
+    def test_path_plan(self):
+        plan = _plan(repo=None, path="/models/foo-MLX-4bit")
+        self.assertIsNone(plan["repo"])
+        self.assertEqual(plan["path"], "/models/foo-MLX-4bit")
+        self.assertEqual(
+            plan["argv"],
+            ["mlx_lm.server", "--model", "/models/foo-MLX-4bit", "--port", "8080", "--max-tokens", "8192"],
+        )
+
+    def test_relative_path_is_absolutized(self):
+        plan = _plan(repo=None, path="models/foo")
+        self.assertTrue(plan["path"].startswith("/"))
+        self.assertTrue(plan["path"].endswith("models/foo"))
+
+    def test_repo_and_path_together_are_rejected(self):
+        with self.assertRaises(ServeError) as caught:
+            plan_start("pub/model", "mlx_lm", RECIPES, path="/models/foo")
+        self.assertEqual(caught.exception.code, "invalid_arguments")
+
+    def test_neither_repo_nor_path_is_rejected(self):
+        with self.assertRaises(ServeError) as caught:
+            plan_start(None, "mlx_lm", RECIPES)
+        self.assertEqual(caught.exception.code, "invalid_arguments")
+
+    def test_path_plan_hash_differs_from_repo_plan(self):
+        self.assertNotEqual(
+            _plan()["preview_hash"],
+            _plan(repo=None, path="/pub/model")["preview_hash"],
+        )
+
     def test_port_bounds(self):
         with self.assertRaises(ServeError):
             _plan(port=0)
@@ -123,6 +153,35 @@ class StartServeTests(unittest.TestCase):
         with self.assertRaises(ServeError) as caught:
             self._start(_plan(), model_present=lambda repo: False)
         self.assertEqual(caught.exception.code, "model_not_local")
+
+    def test_path_gate_rejects_a_missing_directory(self):
+        with self.assertRaises(ServeError) as caught:
+            self._start(_plan(repo=None, path="/definitely/not/a/model"))
+        self.assertEqual(caught.exception.code, "model_not_local")
+
+    def test_path_gate_via_injection(self):
+        with self.assertRaises(ServeError) as caught:
+            self._start(_plan(repo=None, path="/models/foo"), path_present=lambda path: False)
+        self.assertEqual(caught.exception.code, "model_not_local")
+
+    def test_repo_gate_is_not_applied_to_path_plans(self):
+        model_dir = self.root / "converted"
+        model_dir.mkdir()
+        outcome = self._start(
+            _plan(repo=None, path=str(model_dir)),
+            model_present=lambda repo: False,
+        )
+        self.assertEqual(outcome["status"], "started")
+
+    def test_path_success_writes_receipt(self):
+        model_dir = self.root / "converted"
+        model_dir.mkdir()
+        outcome = self._start(_plan(repo=None, path=str(model_dir)))
+        self.assertEqual(outcome["status"], "started")
+        receipt = outcome["receipt"]
+        self.assertIsNone(receipt["repo"])
+        self.assertEqual(receipt["path"], str(model_dir))
+        self.assertIn(str(model_dir), receipt["argv"])
 
     def test_port_gate(self):
         with self.assertRaises(ServeError) as caught:
@@ -259,6 +318,54 @@ class StatusAndStopTests(unittest.TestCase):
         self._start_one()
         outcome = stop_serve(8080, str(self.root), pid_alive=lambda pid: False)
         self.assertEqual(outcome["status"], "already_stopped")
+
+    def _start_path_one(self, model_dir):
+        plan = _plan(repo=None, path=str(model_dir))
+        return plan, start_serve(
+            plan,
+            receipts_dir=str(self.root),
+            confirm=True,
+            preview_hash=plan["preview_hash"],
+            which=lambda executable: "/bin/" + executable,
+            spawn=lambda argv, log_path: 4343,
+            readiness=lambda url, deadline: True,
+            now=lambda: "2026-07-25T00:00:00+00:00",
+        )
+
+    def test_status_includes_path_and_matches_argv(self):
+        model_dir = self.root / "converted"
+        model_dir.mkdir()
+        self._start_path_one(model_dir)
+        command = "mlx_lm.server --model {0} --port 8080 --max-tokens 8192".format(model_dir)
+        entries = status_serve(
+            str(self.root),
+            pid_alive=lambda pid: True,
+            pid_command=lambda pid: command,
+        )
+        self.assertEqual(len(entries), 1)
+        self.assertIsNone(entries[0]["repo"])
+        self.assertEqual(entries[0]["path"], str(model_dir))
+        self.assertTrue(entries[0]["argv_match"])
+
+    def test_stop_terminates_path_served_process(self):
+        model_dir = self.root / "converted"
+        model_dir.mkdir()
+        self._start_path_one(model_dir)
+        command = "mlx_lm.server --model {0} --port 8080 --max-tokens 8192".format(model_dir)
+        alive = {"value": True}
+
+        def terminate(pid, sig=signal.SIGTERM):
+            alive["value"] = False
+            return True
+
+        outcome = stop_serve(
+            8080, str(self.root),
+            pid_alive=lambda pid: alive["value"],
+            pid_command=lambda pid: command,
+            terminate=terminate,
+        )
+        self.assertEqual(outcome["status"], "stopped")
+        self.assertEqual(outcome["pid"], 4343)
 
 
 class WiredPortClaimTests(unittest.TestCase):

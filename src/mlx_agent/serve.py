@@ -77,14 +77,25 @@ def receipts_root(root=None):
 
 
 def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
-               adapter_path=None):
+               adapter_path=None, path=None):
     """Render the exact start plan; pure and side-effect free."""
-    if not isinstance(repo, str) or not repo.strip() or "/" not in repo:
+    has_repo = isinstance(repo, str) and bool(repo.strip())
+    has_path = isinstance(path, str) and bool(path.strip())
+    if has_repo == has_path:
+        raise ServeError(
+            "invalid_arguments",
+            "serve requires exactly one of a repository identifier or a local path.",
+            "Pass --repo as publisher/model from the Hugging Face cache, or --path to a local model directory.",
+        )
+    if has_repo and "/" not in repo:
         raise ServeError(
             "invalid_repo",
             "serve requires a publisher/model repository identifier.",
             "Pass --repo as publisher/model exactly as it appears in the Hugging Face cache.",
         )
+    local_path = None
+    if has_path:
+        local_path = os.path.abspath(os.path.expanduser(path.strip()))
     recipe = recipes.get(runtime)
     if recipe is None:
         raise ServeError(
@@ -123,9 +134,10 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
             "The {0} recipe does not support adapter serving.".format(runtime),
             "Serve adapters with a runtime whose recipe declares adapter support.",
         )
+    model_value = repo.strip() if has_repo else local_path
     values = {
         "executable": recipe["executable"],
-        "repo": repo,
+        "repo": model_value,
         "port": str(selected_port),
         "max_tokens": str(max_tokens),
     }
@@ -135,7 +147,8 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
             part.format(adapter_path=str(adapter_path)) for part in recipe["adapter_argv"]
         )
     plan = {
-        "repo": repo,
+        "repo": repo.strip() if has_repo else None,
+        "path": local_path,
         "runtime": runtime,
         "port": selected_port,
         "max_tokens": max_tokens,
@@ -216,8 +229,12 @@ def _pid_command(pid):
     return result.stdout.strip() or None
 
 
+def _default_path_present(path):
+    return Path(path).is_dir()
+
+
 def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
-                which=None, model_present=None, port_free=None,
+                which=None, model_present=None, path_present=None, port_free=None,
                 wired_claims=None, spawn=None, readiness=None,
                 readiness_deadline=READINESS_DEADLINE_DEFAULT, now=_utc_now,
                 pid_alive=None):
@@ -251,12 +268,20 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "The {0} executable is not installed.".format(plan["argv"][0]),
             "Install it yourself ({0}); serve never installs runtimes.".format(recipe_hint),
         )
-    if model_present is not None and not model_present(plan["repo"]):
+    if plan["repo"] is not None and model_present is not None and not model_present(plan["repo"]):
         raise ServeError(
             "model_not_local",
             "The model is not present in a local inventory.",
             "Download it with the runtime's own pull command first; serve never downloads models.",
         )
+    if plan["path"] is not None:
+        present = path_present or _default_path_present
+        if not present(plan["path"]):
+            raise ServeError(
+                "model_not_local",
+                "The model directory is not present: {0}".format(plan["path"]),
+                "Point --path at an existing local model directory; serve never downloads models.",
+            )
     if not port_free(plan["port"]):
         raise ServeError(
             "port_in_use",
@@ -303,6 +328,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         "schema_version": SERVE_RECEIPT_SCHEMA_VERSION,
         "kind": SERVE_RECEIPT_KIND,
         "repo": plan["repo"],
+        "path": plan["path"],
         "runtime": plan["runtime"],
         "port": plan["port"],
         "argv": list(plan["argv"]),
@@ -348,6 +374,7 @@ def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_comma
         entries.append({
             "receipt": str(path),
             "repo": receipt["repo"],
+            "path": receipt.get("path"),
             "runtime": receipt["runtime"],
             "port": receipt["port"],
             "pid": receipt["pid"],
@@ -366,7 +393,8 @@ def _argv_matches(receipt, command, require_port=True):
     if not argv:
         return False
     executable = Path(str(argv[0])).name
-    if executable not in command or str(receipt.get("repo")) not in command:
+    model = receipt.get("repo") or receipt.get("path")
+    if not model or executable not in command or str(model) not in command:
         return False
     if require_port:
         return "--port {0}".format(receipt.get("port")) in command

@@ -888,7 +888,8 @@ def _add_serve_arguments(parser):
         "start",
         help="preview, then confirmation-gated launch of a local MLX server",
     )
-    start.add_argument("--repo", required=True, help="publisher/model present in the local Hugging Face cache")
+    start.add_argument("--repo", default=None, help="publisher/model present in the local Hugging Face cache")
+    start.add_argument("--path", default=None, help="local model directory to serve instead of a cache repo id")
     start.add_argument("--runtime", required=True, choices=["mlx_lm", "mlx-vlm"])
     start.add_argument("--port", type=int, default=None, help="loopback port (defaults per runtime recipe)")
     start.add_argument("--max-tokens", type=int, default=MAX_TOKENS_DEFAULT)
@@ -934,6 +935,7 @@ def _run_serve(arguments):
             port=arguments.port,
             max_tokens=arguments.max_tokens,
             adapter_path=arguments.adapter_path,
+            path=arguments.path,
         )
         if arguments.launchd:
             return _run_serve_launchd(arguments, plan, operation)
@@ -944,7 +946,7 @@ def _run_serve(arguments):
             if arguments.json:
                 print(json.dumps(result.to_dict(), indent=2))
             else:
-                print("Serve plan: {0} on 127.0.0.1:{1}".format(plan["repo"], plan["port"]))
+                print("Serve plan: {0} on 127.0.0.1:{1}".format(plan["repo"] or plan["path"], plan["port"]))
                 print("  argv: {0}".format(" ".join(plan["argv"])))
                 print("  readiness: {0}".format(plan["readiness"]))
                 print("  preview_hash: {0}".format(plan["preview_hash"]))
@@ -962,10 +964,11 @@ def _run_serve(arguments):
             wired_claims=wired_claims,
         )
         receipt = outcome["receipt"]
+        served_model = receipt["repo"] or receipt.get("path")
         return _emit_serve_result(
             ResultEnvelope.ok(operation, outcome), arguments.json,
             human="serve started: {0} on 127.0.0.1:{1} (pid {2})\n  log: {3}".format(
-                receipt["repo"], receipt["port"], receipt["pid"], receipt["log_path"]
+                served_model, receipt["port"], receipt["pid"], receipt["log_path"]
             ),
         )
     except ServeError as error:
@@ -1015,12 +1018,20 @@ def _run_serve_launchd(arguments, plan, operation):
             "Create it yourself, or pass --launchd-dir.",
         )
         return _emit_serve_result(result, arguments.json)
-    if not default_model_present(arguments.hf_cache)(plan["repo"]):
+    if plan["repo"] is not None and not default_model_present(arguments.hf_cache)(plan["repo"]):
         result = ResultEnvelope.fail(
             operation,
             "model_not_local",
             "The model is not present in the local Hugging Face cache.",
             "Download it with the runtime's own pull command first; serve never downloads.",
+        )
+        return _emit_serve_result(result, arguments.json)
+    if plan["path"] is not None and not Path(plan["path"]).is_dir():
+        result = ResultEnvelope.fail(
+            operation,
+            "model_not_local",
+            "The model directory is not present: {0}.".format(plan["path"]),
+            "Point --path at an existing local model directory; serve never downloads models.",
         )
         return _emit_serve_result(result, arguments.json)
     transaction = Transaction(receipts_dir=arguments.receipts_dir)

@@ -122,7 +122,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        consumer: [cavi-ai/cavi-home, cavi-ai/mlx-workbench]
+        consumer: [cavi-ai/cavi-home]
     steps:
       - uses: actions/checkout@v4
         with:

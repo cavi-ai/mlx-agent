@@ -78,7 +78,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "62073278fb72f1d7af88d2e55afb2616e4dfd3dc2cb1d27e2fb375e7c18026ee"
+      "sha256": "eed52187e6bb2d3e7f083699de47a1c76d67c7e96e6701e7218eb0475eb524d7"
     },
     {
       "path": "src/mlx_agent/command_args.py",
@@ -106,7 +106,7 @@
     },
     {
       "path": "src/mlx_agent/fleet.py",
-      "sha256": "22b1d38415ec298d914945183afdecc323c373a2d5d9dde604a53c033a7ee415"
+      "sha256": "edc541aed67e8b8bebf5ffae1cf77e7f0dc30f0cca22387f1e96b6903c392c39"
     },
     {
       "path": "src/mlx_agent/fuse.py",

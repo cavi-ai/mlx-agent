@@ -32,6 +32,33 @@ class FleetCliTests(unittest.TestCase):
             warning_codes = [item["code"] for item in payload["warnings"]]
             self.assertIn("model_not_local", warning_codes)
 
+    def test_render_honors_port_map_overrides(self):
+        with TemporaryDirectory() as directory:
+            target = Path(directory) / "router.yaml"
+            code, output = self._run([
+                "fleet", "render", "--path", str(target),
+                "--assign", "coding=pub/coder", "--assign", "vision=pub/see",
+                "--port-map", "coding=8766",
+                "--allow-missing", "--json",
+            ])
+            self.assertEqual(code, 0)
+            config = json.loads(output)["data"]["config"]
+            self.assertIn("api_base: http://127.0.0.1:8766/v1", config)
+            self.assertIn("api_base: http://127.0.0.1:8083/v1", config)
+
+    def test_render_refuses_port_map_for_unassigned_role(self):
+        with TemporaryDirectory() as directory:
+            target = Path(directory) / "router.yaml"
+            code, output = self._run([
+                "fleet", "render", "--path", str(target),
+                "--assign", "coding=pub/coder",
+                "--port-map", "vision=8766",
+                "--allow-missing", "--json",
+            ])
+            self.assertNotEqual(code, 0)
+            payload = json.loads(output)
+            self.assertEqual(payload["error"]["code"], "unassigned_port_map")
+
     def test_render_fails_for_missing_models_without_flag(self):
         with TemporaryDirectory() as directory:
             target = Path(directory) / "router.yaml"

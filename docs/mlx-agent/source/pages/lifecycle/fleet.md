@@ -15,7 +15,7 @@ python3 scripts/mlx-agent fleet apply --path ./router.yaml --from-adoption ./ado
 - `--assign role=repo` (repeatable) for explicit picks, or
 - `--from-adoption <state.json>` to consume a completed adopt handoff's recommendations.
 
-Roles are canonical (`general`, `coding`, `reasoning`, `vision`, `embedding`, `tool-use`); each at most once. Vision defaults to `mlx-vlm` (:8083), text roles to `mlx_lm` (:8080); `--runtime-map role=runtime` overrides.
+Roles are canonical (`general`, `coding`, `reasoning`, `vision`, `embedding`, `tool-use`); each at most once. Vision defaults to `mlx-vlm` (:8083), text roles to `mlx_lm` (:8080); `--runtime-map role=runtime` overrides the runtime, and `--port-map role=port` (repeatable) overrides the per-role `api_base` port for supervisors with their own port discipline. Port overrides must reference assigned roles and stay within 1–65535 (loopback-only targets, as always).
 
 ## Guarantees
 

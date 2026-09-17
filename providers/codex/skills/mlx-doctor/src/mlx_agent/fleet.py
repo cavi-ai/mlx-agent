@@ -138,6 +138,54 @@ def parse_runtime_map(values):
     return runtime_map
 
 
+def parse_port_map(values):
+    """Parse repeatable role=port api_base overrides.
+
+    The defaults (mlx_lm 8080, mlx-vlm 8083) stay the bounded targets;
+    --port-map lets a supervisor with its own port discipline (for example
+    per-role always-on endpoints) point roles at its real loopback ports.
+    """
+    port_map = {}
+    for value in values or []:
+        if not isinstance(value, str) or "=" not in value:
+            raise FleetError(
+                "invalid_port_map",
+                "Port overrides must use role=port form: {0}".format(value),
+                "Pass --port-map coding=8766.",
+            )
+        role, port_text = value.split("=", 1)
+        role = role.strip()
+        port_text = port_text.strip()
+        if role not in ROLE_DEFAULT_RUNTIME:
+            raise FleetError(
+                "invalid_role",
+                "Unknown fleet role: {0}".format(role),
+                "Use one of: {0}.".format(", ".join(sorted(ROLE_DEFAULT_RUNTIME))),
+            )
+        if role in port_map:
+            raise FleetError(
+                "duplicate_role",
+                "Role {0} has two port overrides.".format(role),
+                "Override each role's port at most once.",
+            )
+        try:
+            port = int(port_text)
+        except ValueError:
+            raise FleetError(
+                "invalid_port",
+                "Port must be a number: {0}.".format(port_text),
+                "Pass a loopback port between 1 and 65535.",
+            )
+        if not 1 <= port <= 65535:
+            raise FleetError(
+                "invalid_port",
+                "Port {0} is outside 1-65535.".format(port),
+                "Pass a loopback port between 1 and 65535.",
+            )
+        port_map[role] = port
+    return port_map
+
+
 class FleetConfigAdapter:
     """Validate the exact bounded multi-model router subset fleet renders."""
 
@@ -147,13 +195,21 @@ class FleetConfigAdapter:
     def __init__(self, path=None):
         self.path = Path(path) if path is not None else None
 
-    def render(self, assignments, runtime_map=None, existing=""):
+    def render(self, assignments, runtime_map=None, existing="", port_map=None):
         runtime_map = runtime_map or {}
+        port_map = port_map or {}
         if not assignments:
             raise FleetError(
                 "missing_assignments",
                 "Fleet requires at least one role assignment.",
                 "Pass --assign role=repo or --from-adoption <state-path>.",
+            )
+        stray_ports = sorted(set(port_map) - set(assignments))
+        if stray_ports:
+            raise FleetError(
+                "unassigned_port_map",
+                "Port overrides reference unassigned roles: {0}.".format(", ".join(stray_ports)),
+                "Assign the role first, or drop its --port-map override.",
             )
         if not isinstance(existing, str):
             raise TypeError("existing config content must be text")
@@ -173,7 +229,7 @@ class FleetConfigAdapter:
                     "Fleet routes only through: {0}.".format(", ".join(FLEET_RUNTIMES)),
                     "Use mlx_lm or mlx-vlm for every role.",
                 )
-            port = RUNTIME_PORTS[runtime]
+            port = port_map.get(role, RUNTIME_PORTS[runtime])
             lines.extend([
                 "  - model_name: {0}".format(role),
                 "    litellm_params:",
@@ -182,13 +238,19 @@ class FleetConfigAdapter:
                 "      api_key: os.environ/MLX_AGENT_LOCAL_API_KEY",
             ])
         content = "\n".join(lines) + "\n"
-        self.validate(content)
+        self.validate(content, port_map=port_map)
         return content
 
-    def validate(self, content):
+    def validate(self, content, port_map=None):
         if not isinstance(content, str):
             raise TypeError("configuration content must be text")
         require_secret_free_config(content)
+        allowed_ports = {"8080", "8083"}
+        allowed_ports.update(str(port) for port in (port_map or {}).values())
+        allowed_api_bases = tuple(
+            "      api_base: http://127.0.0.1:{0}/v1".format(port)
+            for port in sorted(allowed_ports)
+        )
         lines = content.splitlines()
         if len(lines) < 7 or (len(lines) - 2) % 5 != 0:
             raise ValueError("fleet configuration must contain whole five-line entries")
@@ -205,10 +267,7 @@ class FleetConfigAdapter:
             model_match = re.fullmatch(r"      model: openai/(" + _MODEL.pattern[1:-1] + r")", model)
             if model_match is None:
                 raise ValueError("fleet entry has an invalid model identifier")
-            if api_base not in (
-                "      api_base: http://127.0.0.1:8080/v1",
-                "      api_base: http://127.0.0.1:8083/v1",
-            ):
+            if api_base not in allowed_api_bases:
                 raise ValueError("fleet entry api_base must be a bounded loopback port")
             if api_key != "      api_key: os.environ/MLX_AGENT_LOCAL_API_KEY":
                 raise ValueError("fleet entry must reference the managed API key env var")

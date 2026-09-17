@@ -34,6 +34,7 @@ from .fleet import (
     FleetError,
     assignments_from_adoption,
     parse_assignments,
+    parse_port_map,
     parse_runtime_map,
 )
 from .fuse import (
@@ -1119,6 +1120,8 @@ def _add_fleet_arguments(parser):
                             help="read role assignments from a completed adopt handoff")
         action.add_argument("--runtime-map", action="append", default=None, metavar="ROLE=RUNTIME",
                             help="per-role runtime override: mlx_lm or mlx-vlm (repeatable)")
+        action.add_argument("--port-map", action="append", default=None, metavar="ROLE=PORT",
+                            help="per-role api_base port override (repeatable; defaults are mlx_lm 8080, mlx-vlm 8083)")
         action.add_argument("--allow-missing", action="store_true",
                             help="warn instead of failing when a model is not in a local inventory")
         action.add_argument("--json", action="store_true")
@@ -1141,7 +1144,8 @@ def _fleet_inputs(arguments):
     else:
         assignments = parse_assignments(arguments.assign)
     runtime_map = parse_runtime_map(arguments.runtime_map)
-    return assignments, runtime_map
+    port_map = parse_port_map(arguments.port_map)
+    return assignments, runtime_map, port_map
 
 
 def _fleet_missing_models(assignments):
@@ -1169,11 +1173,11 @@ def _fleet_missing_models(assignments):
 def _run_fleet(arguments):
     operation = "fleet-{0}".format(arguments.fleet_command)
     try:
-        assignments, runtime_map = _fleet_inputs(arguments)
+        assignments, runtime_map, port_map = _fleet_inputs(arguments)
         path = _assert_safe_target(arguments.path)
         existing = _read_regular(path).decode("utf-8")
         adapter = FleetConfigAdapter(path)
-        content = adapter.render(assignments, runtime_map, existing=existing)
+        content = adapter.render(assignments, runtime_map, existing=existing, port_map=port_map)
         missing = _fleet_missing_models(assignments)
         warnings = []
         if missing and not arguments.allow_missing:

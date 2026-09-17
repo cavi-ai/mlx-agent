@@ -8,6 +8,7 @@ from mlx_agent.fleet import (
     FleetError,
     assignments_from_adoption,
     parse_assignments,
+    parse_port_map,
     parse_runtime_map,
 )
 
@@ -48,6 +49,36 @@ class RuntimeMapTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "unsupported_runtime")
 
 
+class PortMapTests(unittest.TestCase):
+    def test_valid_override(self):
+        self.assertEqual(parse_port_map(["coding=8766"]), {"coding": 8766})
+
+    def test_unknown_role(self):
+        with self.assertRaises(FleetError) as caught:
+            parse_port_map(["wizard=8766"])
+        self.assertEqual(caught.exception.code, "invalid_role")
+
+    def test_non_numeric_port(self):
+        with self.assertRaises(FleetError) as caught:
+            parse_port_map(["coding=8o66"])
+        self.assertEqual(caught.exception.code, "invalid_port")
+
+    def test_out_of_range_port(self):
+        with self.assertRaises(FleetError) as caught:
+            parse_port_map(["coding=70000"])
+        self.assertEqual(caught.exception.code, "invalid_port")
+
+    def test_duplicate_role(self):
+        with self.assertRaises(FleetError) as caught:
+            parse_port_map(["coding=8766", "coding=8767"])
+        self.assertEqual(caught.exception.code, "duplicate_role")
+
+    def test_malformed_value(self):
+        with self.assertRaises(FleetError) as caught:
+            parse_port_map(["coding"])
+        self.assertEqual(caught.exception.code, "invalid_port_map")
+
+
 class AdoptionAssignmentsTests(unittest.TestCase):
     def test_reads_recommendations(self):
         with TemporaryDirectory() as directory:
@@ -84,6 +115,37 @@ class FleetAdapterTests(unittest.TestCase):
         adapter = FleetConfigAdapter()
         content = adapter.render({"coding": "pub/coder"}, {"coding": "mlx-vlm"})
         self.assertIn("api_base: http://127.0.0.1:8083/v1", content)
+
+    def test_render_honors_port_map_override(self):
+        adapter = FleetConfigAdapter()
+        content = adapter.render(
+            {"coding": "pub/coder", "vision": "pub/see"},
+            port_map={"coding": 8766},
+        )
+        self.assertIn("api_base: http://127.0.0.1:8766/v1", content)
+        # Untouched roles keep their bounded default port.
+        self.assertIn("api_base: http://127.0.0.1:8083/v1", content)
+
+    def test_render_refuses_port_map_for_unassigned_role(self):
+        adapter = FleetConfigAdapter()
+        with self.assertRaises(FleetError) as caught:
+            adapter.render({"coding": "pub/coder"}, port_map={"vision": 8766})
+        self.assertEqual(caught.exception.code, "unassigned_port_map")
+
+    def test_roundtrip_validate_with_port_map(self):
+        adapter = FleetConfigAdapter()
+        port_map = {"coding": 8766, "reasoning": 8767}
+        content = adapter.render(
+            {"coding": "pub/a", "reasoning": "pub/b"},
+            port_map=port_map,
+        )
+        self.assertTrue(adapter.validate(content, port_map=port_map))
+
+    def test_validate_rejects_unmapped_custom_port(self):
+        adapter = FleetConfigAdapter()
+        content = adapter.render({"coding": "pub/a"}, port_map={"coding": 8766})
+        with self.assertRaises(ValueError):
+            adapter.validate(content)
 
     def test_roundtrip_validate(self):
         adapter = FleetConfigAdapter()

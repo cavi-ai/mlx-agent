@@ -27,6 +27,28 @@ _HTTP_READ_CHUNK_BYTES = 64 * 1024
 HF_CARD_HOST = "huggingface.co"
 MODEL_CARD_MAX_BYTES = 512 * 1024
 _CARD_PATH_SUFFIX = "/raw/main/README.md"
+RAW_TEXT_MAX_BYTES = 8 * 1024 * 1024
+_RAW_JSON_FILES = frozenset({"config.json", "model.safetensors.index.json"})
+_RAW_PY_FILE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\.py")
+_RAW_REVISION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+
+
+class HuggingFaceHTTPError(http.client.HTTPException):
+    """A non-2xx Hugging Face response; carries the HTTP status."""
+
+    def __init__(self, status, message):
+        super().__init__(message)
+        self.status = status
+
+
+def _is_valid_raw_path(path):
+    """Accept /<owner>/<repo>/raw/<revision>/<file> for intake files only."""
+    parts = path.split("/")
+    if len(parts) != 6 or parts[0] != "" or parts[3] != "raw":
+        return False
+    if not parts[1] or not parts[2] or not _RAW_REVISION.fullmatch(parts[4]):
+        return False
+    return parts[5] in _RAW_JSON_FILES or bool(_RAW_PY_FILE.fullmatch(parts[5]))
 
 
 def _is_allowed_api_path(path):
@@ -161,8 +183,9 @@ def _http_json_operation(connection, target, deadline, clock):
                 "redirect responses are not allowed for Hugging Face requests"
             )
         if not 200 <= response.status < 300:
-            raise http.client.HTTPException(
-                "Hugging Face returned HTTP status {0}".format(response.status)
+            raise HuggingFaceHTTPError(
+                response.status,
+                "Hugging Face returned HTTP status {0}".format(response.status),
             )
         content_length = response.headers.get("Content-Length")
         if content_length is not None:
@@ -226,7 +249,44 @@ def http_card_text(
     )
 
 
-def _http_text_operation(connection, target, deadline, clock):
+def http_raw_text(
+    url,
+    timeout=8.0,
+    connection_factory=None,
+    clock=time.monotonic,
+    completion_wait=None,
+):
+    """Read one bounded intake file (config, index, or top-level .py) as text."""
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme != "https" or parsed.hostname != HF_CARD_HOST:
+        raise ValueError("raw URL must use the fixed HTTPS host")
+    if parsed.port not in (None, 443):
+        raise ValueError("raw URL must use the default HTTPS port")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("raw URL must not contain credentials")
+    if parsed.query or parsed.fragment:
+        raise ValueError("raw URL must not contain a query or fragment")
+    if not _is_valid_raw_path(parsed.path):
+        raise ValueError("raw URL must target config.json, the safetensors index, or a top-level .py file")
+
+    deadline = clock() + timeout
+    remaining = _deadline_remaining(deadline, clock)
+    if connection_factory is None:
+        connection = http.client.HTTPSConnection(HF_CARD_HOST, 443, timeout=remaining)
+    else:
+        connection = connection_factory(HF_CARD_HOST, 443, remaining)
+    return _run_http_worker(
+        connection,
+        lambda: _http_text_operation(
+            connection, parsed.path, deadline, clock, max_bytes=RAW_TEXT_MAX_BYTES
+        ),
+        deadline,
+        clock,
+        completion_wait,
+    )
+
+
+def _http_text_operation(connection, target, deadline, clock, max_bytes=MODEL_CARD_MAX_BYTES):
     try:
         connection.request("GET", target, headers=UA)
         _set_connection_timeout(connection, _deadline_remaining(deadline, clock))
@@ -237,8 +297,9 @@ def _http_text_operation(connection, target, deadline, clock):
                 "redirect responses are not allowed for card requests"
             )
         if not 200 <= response.status < 300:
-            raise http.client.HTTPException(
-                "card host returned HTTP status {0}".format(response.status)
+            raise HuggingFaceHTTPError(
+                response.status,
+                "card host returned HTTP status {0}".format(response.status),
             )
         content_length = response.headers.get("Content-Length")
         if content_length is not None:
@@ -246,14 +307,14 @@ def _http_text_operation(connection, target, deadline, clock):
                 declared_length = int(content_length)
             except (TypeError, ValueError) as error:
                 raise ValueError("invalid card Content-Length") from error
-            if declared_length < 0 or declared_length > MODEL_CARD_MAX_BYTES:
+            if declared_length < 0 or declared_length > max_bytes:
                 raise ValueError("card response exceeds size limit")
         body = _read_bounded_body(
             response,
             connection,
             deadline,
             clock,
-            max_bytes=MODEL_CARD_MAX_BYTES,
+            max_bytes=max_bytes,
         )
         return body.decode("utf-8", errors="replace")
     finally:
@@ -295,9 +356,10 @@ def _set_connection_timeout(connection, timeout):
 
 
 class HuggingFaceClient:
-    def __init__(self, http_get=http_json, card_get=http_card_text):
+    def __init__(self, http_get=http_json, card_get=http_card_text, raw_get=http_raw_text):
         self._http_get = http_get
         self._card_get = card_get
+        self._raw_get = raw_get
 
     @property
     def http_get(self):
@@ -320,6 +382,25 @@ class HuggingFaceClient:
             return self._card_get(url, timeout=timeout)
         except Exception:
             return None
+
+    def fetch_model_info(self, repo, revision="main", timeout=8):
+        """Model API document with per-file sizes; raises on any failure."""
+        quoted = "/".join(urllib.parse.quote(part) for part in repo.split("/"))
+        if revision == "main":
+            url = "{0}/{1}?blobs=true".format(HF_API, quoted)
+        else:
+            url = "{0}/{1}/revision/{2}?blobs=true".format(
+                HF_API, quoted, urllib.parse.quote(revision)
+            )
+        return self._http_get(url, timeout=timeout)
+
+    def fetch_raw_text(self, repo, revision, filename, timeout=8):
+        """One intake file as text; raises on any failure."""
+        quoted = "/".join(urllib.parse.quote(part) for part in repo.split("/"))
+        url = "https://{0}/{1}/raw/{2}/{3}".format(
+            HF_CARD_HOST, quoted, urllib.parse.quote(revision), urllib.parse.quote(filename)
+        )
+        return self._raw_get(url, timeout=timeout)
 
     @staticmethod
     def list_models_url(sort="trendingScore", limit_fetch=300):

@@ -46,6 +46,8 @@ from .fuse import (
 from .host import HostInventory
 from .huggingface import HuggingFaceClient
 from .installer import Installer, InstallerConflictError, InstallerPathError
+from .intake import resolve as intake_resolve
+from .intake_source import IntakeSourceError
 from .interview import build_intent, run_interview
 from .lora import (
     BATCH_DEFAULT,
@@ -79,6 +81,7 @@ from .serve import (
     stop_serve,
     wired_port_claim,
 )
+from .taxonomy import annotate_inventory
 from .transactions import (
     COOPERATIVE_CONCURRENCY_NOTE,
     ConcurrentTransactionError,
@@ -1342,6 +1345,65 @@ def _run_watch(arguments):
     return 2
 
 
+def _add_intake_arguments(parser):
+    actions = parser.add_subparsers(dest="intake_command", required=True)
+    resolve = actions.add_parser(
+        "resolve", help="classify a pasted Hugging Face model and say how it converts (read-only)"
+    )
+    resolve.add_argument("source", help="Hugging Face link or org/name id")
+    resolve.add_argument("--revision", default=None)
+    resolve.add_argument("--json", action="store_true")
+
+
+def _intake_resolve_human(payload):
+    reasons = " ({0})".format(", ".join(payload["reasons"])) if payload["reasons"] else ""
+    lines = ["{0}: {1}{2}".format(payload["source"]["repo"], payload["verdict"], reasons)]
+    if payload["backend"]:
+        lines.append("  backend: {0} ({1})".format(
+            payload["backend"], "installed" if payload["backend_installed"] else "not installed"
+        ))
+    task = payload.get("task")
+    if task:
+        lines.append("  task: {0} [{1}] via {2}".format(task["type"], ", ".join(task["use_cases"]), task["source"]))
+    for component in payload["components"]:
+        if component["matches"]:
+            match = component["matches"][0]
+            target = "{0} {1} ({2})".format(match["backend"], match["module"], match["match"])
+        else:
+            target = "no MLX implementation"
+        lines.append("  {0}: {1} -> {2}".format(component["role"], component["model_type"], target))
+    for warning in payload["warnings"]:
+        lines.append("  warning: {0}".format(warning))
+    return "\n".join(lines)
+
+
+def _run_intake(arguments):
+    operation = "intake-{0}".format(arguments.intake_command)
+    try:
+        if arguments.intake_command == "resolve":
+            payload = intake_resolve(arguments.source, revision=arguments.revision)
+            return _emit_serve_result(
+                ResultEnvelope.ok(operation, payload), arguments.json,
+                human=_intake_resolve_human(payload),
+            )
+        raise ValueError("unknown intake command")
+    except IntakeSourceError as error:
+        result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        result = ResultEnvelope.fail(
+            operation, "intake_failed", str(error),
+            "Check the pasted link and your network, then retry.",
+        )
+    if arguments.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        payload = result.to_dict()["error"]
+        print("intake failed [{0}]: {1}\nremediation: {2}".format(
+            payload["code"], payload["message"], payload["remediation"]
+        ))
+    return 2
+
+
 def _add_convert_arguments(parser):
     actions = parser.add_subparsers(dest="convert_command", required=True)
     start = actions.add_parser(
@@ -1470,7 +1532,7 @@ def _convert_scan(arguments):
         report = dict(report, models=[
             item for item in report["models"] if item["status"] == "pending"
         ])
-    return report
+    return annotate_inventory(report)
 
 
 def _human_bytes(count):
@@ -2009,6 +2071,10 @@ def build_parser():
     _add_lora_arguments(lora_command)
     fuse_command = subcommands.add_parser("fuse", help="preview and fuse a LoRA adapter into its base (confirmation-gated)")
     _add_fuse_arguments(fuse_command)
+    intake_command = subcommands.add_parser(
+        "intake", help="resolve, download, and analyze pasted Hugging Face models"
+    )
+    _add_intake_arguments(intake_command)
     providers_command = subcommands.add_parser("providers", help="list detected supported provider CLIs")
     _add_installer_arguments(providers_command, include_providers=False)
     for name in ("install", "update", "uninstall", "doctor"):
@@ -2035,6 +2101,8 @@ def main(argv=None):
         return _run_fleet(arguments)
     if arguments.command == "watch":
         return _run_watch(arguments)
+    if arguments.command == "intake":
+        return _run_intake(arguments)
     if arguments.command == "convert":
         return _run_convert(arguments)
     if arguments.command == "lora":

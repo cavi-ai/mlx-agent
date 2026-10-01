@@ -239,6 +239,12 @@ python3 scripts/mlx-agent convert start --gguf ~/models/model-Q4_K_M.gguf --q-bi
 
 `convert scan` is read-only and stdlib-only: it parses bounded GGUF headers under the configured roots (`--gguf-root`, repeatable), pairs each file with an MLX output by provenance marker, receipt, or name, and groups redundant copies (`exact`, byte-identical or same-quantization) apart from quantization `variant`s. It reports; it never deletes.
 
+```bash
+python3 scripts/mlx-agent intake resolve https://huggingface.co/org/name   # what it is, which backend converts it
+```
+
+`intake resolve` reads only the model API document and `config.json` (never weights) and returns a verdict: `already_mlx`, `gguf`, `convertible` (an installed backend implements the architecture), `convertible_after_install` (a declared optional backend does), `unsupported` (no backend implements it; reasons and per-component matches say what exists), `blocked` (gated, private, or missing), or `unknown` (Hub unreachable). `convert scan` labels every model with a task type and use cases.
+
 `convert start --gguf` dequantizes the GGUF to Hugging Face weights with `transformers`, then quantizes those to MLX with `mlx_lm.convert`, under the same preview-confirm-receipt gates. It needs `torch`, `transformers`, and `gguf` importable by the same interpreter and never installs them. The output carries an `mlx-converter.json` provenance marker naming its source GGUF.
 
 LoRA training (confirmation-gated, dataset-validated):

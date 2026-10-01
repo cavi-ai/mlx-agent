@@ -8,6 +8,8 @@
   exclusive; path plans are gated on the directory existing instead of cache
   membership, receipts carry `path` alongside `repo`, and status/stop argv
   matching accepts either.
+- Add `intake resolve`: classify a pasted Hugging Face link and report which declared MLX backend (mlx-lm, mlx-vlm, mlx-audio) converts it, or which components have no MLX implementation, without downloading weights.
+- `convert scan` items carry a `task` label (type, use cases, source, confidence).
 
 ## 0.5.2 - 2026-08-25
 

@@ -19,7 +19,8 @@ def synthetic_manifests():
             "categories": {"vision_language": "models"},
             "remap_files": {"vision_language": ["utils.py"]},
             "registry": {"vision_language": {
-                "model_types": ["glm", "llama", "qwen2", "qwen2_vl"], "remapping": {},
+                "model_types": ["glm", "glm4_moe_lite", "llama", "moondream3", "qwen2", "qwen2_vl"],
+                "remapping": {}, "vision_types": ["moondream3", "qwen2_vl"],
             }},
         },
         "mlx-audio": {

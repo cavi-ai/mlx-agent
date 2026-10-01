@@ -6,7 +6,9 @@ import json
 import re
 from pathlib import Path
 
-from .backends import BackendError, load_manifests, load_registries, lookup, lookup_squashed
+from .backends import (
+    BackendError, is_vision_type, load_manifests, load_registries, lookup, lookup_squashed, squash_type,
+)
 from .gguf import MAX_CONFIG_BYTES
 from .modality import detect_facets, detect_modalities
 
@@ -54,6 +56,9 @@ _SPECIFIC_TOKENS = (
     ("voice_cloning", ("clone", "cloning", "zero-shot")),
     ("reranking", ("rerank",)),
 )
+# llama.cpp multimodal projectors (mmproj files) are model parts, not models.
+_GGUF_PROJECTOR_ARCHITECTURES = ("clip", "mmproj")
+_VISION_KEYS = ("vision_config", "vision_tower", "mm_vision_tower", "visual", "vision_encoder")
 _EMBEDDING_NAME = re.compile(r"(?<![a-z0-9])(embed|embedding|embeddings|bge|e5|gte)(?![a-z])")
 _VISION_NAME = re.compile(r"(?<![a-z0-9])(vl|vlm|vision|llava)(?![a-z])")
 _IMAGE_NAME = re.compile(r"(?<![a-z0-9])(sdxl|flux|stable-diffusion)(?![a-z])")
@@ -79,7 +84,7 @@ def use_cases_for(task_type, haystack):
     return [use_case for use_case in ordered[:-1] if use_case in specific] + [ordered[-1]]
 
 
-def _type_from_hits(hits, config_keys, haystack):
+def _type_from_hits(hits, config_keys, haystack, vision_module=False, allow_vision=True):
     preferred = [hit for hit in hits if hit["match"] != "remap"] or hits
     categories = {hit["category"] for hit in preferred}
     if "text_llm" in categories and categories & {"speech_to_text", "text_to_speech"}:
@@ -89,9 +94,12 @@ def _type_from_hits(hits, config_keys, haystack):
         return "speech_to_text"
     if "text_to_speech" in categories:
         return "text_to_speech"
-    if "vision_language" in categories and ("vision_config" in config_keys or "text_llm" not in categories):
+    if allow_vision and "vision_language" in categories and (
+        any(key in config_keys for key in _VISION_KEYS)
+        or (vision_module and "text_llm" not in categories)
+    ):
         return "vision_language"
-    if "text_llm" in categories:
+    if categories & {"text_llm", "vision_language"}:
         return "text_llm"
     return None
 
@@ -117,11 +125,20 @@ def _task_type(haystack, pipeline_tag, model_type, config_keys, gguf_architectur
     if pipeline_tag in PIPELINE_TYPES:
         return PIPELINE_TYPES[pipeline_tag], "pipeline_tag", "confirmed"
     if model_type and manifests:
-        found = _type_from_hits(lookup(model_type, manifests, registries), config_keys, haystack)
+        found = _type_from_hits(
+            lookup(model_type, manifests, registries), config_keys, haystack,
+            vision_module=is_vision_type(model_type, manifests, registries),
+        )
         if found:
             return found, "registry", "confirmed"
+    if gguf_architecture and squash_type(gguf_architecture) in _GGUF_PROJECTOR_ARCHITECTURES:
+        return "other", "gguf_architecture", "likely"
     if gguf_architecture and manifests:
-        found = _type_from_hits(lookup_squashed(gguf_architecture, manifests, registries), config_keys, haystack)
+        # GGUF main weights never carry a vision tower (projectors ship separately).
+        found = _type_from_hits(
+            lookup_squashed(gguf_architecture, manifests, registries), config_keys, haystack,
+            allow_vision=False,
+        )
         if found:
             return found, "gguf_architecture", "likely"
     found = _type_from_name(haystack)

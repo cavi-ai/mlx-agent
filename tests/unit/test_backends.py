@@ -14,6 +14,7 @@ from mlx_agent.backends import (
     choose_backend,
     component_matches,
     is_installed,
+    is_vision_type,
     load_manifests,
     load_registries,
     lookup,
@@ -109,6 +110,43 @@ class RegistryTests(unittest.TestCase):
         self.assertIsNone(choose_backend(qwen2, "speech_to_text"))
         glm = lookup("glm", self.manifests, self.registries)
         self.assertEqual(choose_backend(glm, "text_llm"), "mlx-lm")
+
+
+class VisionRegistryTests(unittest.TestCase):
+    SOURCES = {
+        "models/moondream3/__init__.py": "from .moondream3 import Model\n",
+        "models/moondream3/image_crops.py": "def crop():\n    pass\n",
+        "models/glm4_moe_lite/__init__.py": "from .glm4_moe_lite import Model\n",
+        "models/glm4_moe_lite/language.py": "class LanguageModel:\n    pass\n",
+        "utils.py": "MODEL_REMAPPING = {}\n",
+    }
+
+    def test_vision_types_come_from_vision_files(self):
+        manifest = synthetic_manifests()["mlx-vlm"]
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            wheel = root / "mlx_vlm-0.0-py3-none-any.whl"
+            package = root / "site" / "mlx_vlm"
+            with zipfile.ZipFile(wheel, "w") as archive:
+                for relative, text in self.SOURCES.items():
+                    archive.writestr("mlx_vlm/" + relative, text)
+                    location = package / relative
+                    location.parent.mkdir(parents=True, exist_ok=True)
+                    location.write_text(text, encoding="utf-8")
+            from_wheel = registry_from_sources(probe_sources_from_wheel(str(wheel), manifest), manifest)
+            from_directory = registry_from_sources(probe_sources_from_directory(package, manifest), manifest)
+        self.assertEqual(from_wheel, from_directory)
+        entry = from_wheel["vision_language"]
+        self.assertEqual(entry["model_types"], ["glm4_moe_lite", "moondream3"])
+        self.assertEqual(entry["vision_types"], ["moondream3"])
+
+    def test_is_vision_type(self):
+        manifests = synthetic_manifests()
+        registries = synthetic_registries(manifests)
+        self.assertTrue(is_vision_type("moondream3", manifests, registries))
+        self.assertTrue(is_vision_type("Qwen2-VL", manifests, registries))
+        self.assertFalse(is_vision_type("glm4_moe_lite", manifests, registries))
+        self.assertFalse(is_vision_type("whisper", manifests, registries))
 
 
 class InstallStateTests(unittest.TestCase):

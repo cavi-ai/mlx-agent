@@ -27,6 +27,7 @@ TYPE_PREFERENCE = {
 DEFAULT_PREFERENCE = ("mlx-lm", "mlx-vlm", "mlx-audio")
 _ID = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
 _STRIP_SUFFIXES = ("_encoder", "_decoder", "_text", "_vision", "_audio", "_model")
+_VISION_FILE = re.compile(r"(vision|visual|image|siglip|clip)", re.IGNORECASE)
 _ENV_ALLOWLIST = (
     "PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "HF_HOME", "HF_HUB_CACHE",
     "HF_HUB_OFFLINE", "XDG_CACHE_HOME", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE",
@@ -157,6 +158,16 @@ def _module_name(relative, prefix):
     return name
 
 
+def _vision_marker(relative, prefix):
+    """The module a `<prefix><module>/<file>.py` vision/image file belongs to."""
+    if not relative.startswith(prefix):
+        return None
+    parts = relative[len(prefix):].split("/")
+    if len(parts) != 2 or not parts[1].endswith(".py") or parts[1] == "__init__.py":
+        return None
+    return parts[0] if _VISION_FILE.search(parts[1][:-3]) else None
+
+
 def _category_prefixes(manifest):
     return [directory.strip("/") + "/" for directory in manifest["categories"].values()]
 
@@ -178,8 +189,10 @@ def probe_sources_from_wheel(wheel_path, manifest):
             relative = info.filename[len(package_prefix):]
             if relative in remap or any(_module_name(relative, prefix) for prefix in prefixes):
                 sources[relative] = archive.read(info).decode("utf-8", errors="replace")
-                if len(sources) >= MAX_PROBE_FILES:
-                    break
+            elif any(_vision_marker(relative, prefix) for prefix in prefixes):
+                sources[relative] = ""
+            if len(sources) >= MAX_PROBE_FILES:
+                break
     return sources
 
 
@@ -198,10 +211,15 @@ def probe_sources_from_directory(directory, manifest):
                 break
             if entry.is_dir():
                 _add_source(sources, directory, "{0}{1}/__init__.py".format(prefix, entry.name))
+                for child in sorted(entry.iterdir()):
+                    marker = "{0}{1}/{2}".format(prefix, entry.name, child.name)
+                    if child.is_file() and _vision_marker(marker, prefix):
+                        sources[marker] = ""
             elif entry.suffix == ".py":
                 _add_source(sources, directory, "{0}{1}".format(prefix, entry.name))
     return {key: sources[key] for key in sorted(sources) if any(
-        _module_name(key, prefix) for prefix in _category_prefixes(manifest)
+        _module_name(key, prefix) or _vision_marker(key, prefix)
+        for prefix in _category_prefixes(manifest)
     ) or key in _remap_files(manifest)}
 
 
@@ -275,6 +293,10 @@ def registry_from_sources(sources, manifest):
         for relative in manifest["remap_files"].get(category, ()):
             remapping.update(_remapping(sources.get(relative, "")))
         registry[category] = {"model_types": sorted(names), "remapping": dict(sorted(remapping.items()))}
+        if category == "vision_language":
+            vision = {normalize_type(_vision_marker(relative, prefix)) for relative in sources
+                      if _vision_marker(relative, prefix)}
+            registry[category]["vision_types"] = sorted(vision & names)
     return registry
 
 
@@ -346,6 +368,21 @@ def lookup_squashed(architecture, manifests, registries):
                     hits.append(_hit(backend_id, manifest, category, module, "squashed"))
                     break
     return hits
+
+
+def is_vision_type(model_type, manifests, registries):
+    """True when a vision-language backend's module for this type ships vision files."""
+    if not model_type:
+        return False
+    wanted = normalize_type(model_type)
+    for backend_id in sorted(manifests):
+        entry = _registry(backend_id, manifests[backend_id], registries).get("vision_language")
+        if not entry:
+            continue
+        module = entry.get("remapping", {}).get(wanted, wanted)
+        if module in entry.get("vision_types", ()):
+            return True
+    return False
 
 
 def component_matches(model_type, manifests, registries):

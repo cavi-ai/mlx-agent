@@ -78,7 +78,7 @@
     },
     {
       "path": "src/mlx_agent/backends.py",
-      "sha256": "9e534b3d5cf348951ef3c61f03c67c3d0e04dd8f66269047a4eeb8a8cd431528"
+      "sha256": "6b198506b3f4e8f5cee8602e148f9d64f8b9ae6681268b2d2d9cbf8dc8e3f017"
     },
     {
       "path": "src/mlx_agent/bench.py",
@@ -226,7 +226,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-vlm.json",
-      "sha256": "d06c2a83b38fdecb6fd224292549d08dc3e457390aa8eeaa1c9c6bdaf9027935"
+      "sha256": "fa6e7c92b7c9e511be84dc23431de1e1d8e503bb27bc8cc3f4cd8c3693ef744a"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-vlm.lock",
@@ -266,7 +266,7 @@
     },
     {
       "path": "src/mlx_agent/taxonomy.py",
-      "sha256": "02cb1775e015122861713d00932a993e18b860c8e2c0b83893067263d6524f8f"
+      "sha256": "025c36893f7d89680ef822ba1b711735e15d3065b1301065e42a2e511e17a583"
     },
     {
       "path": "src/mlx_agent/transactions.py",

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Task labels: a model is vision-language only with a vision config or a vision module (from the mlx-vlm registry's vision files); GGUF main weights are never vision, and GGUF multimodal projectors (`clip`/mmproj) are labelled other.
 - Add local-path serving: `serve start --path DIR` serves a local model
   directory (e.g. a converted output outside the Hugging Face cache) through
   the same preview → confirm → receipt flow as `--repo`. The two are mutually

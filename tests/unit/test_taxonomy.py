@@ -42,6 +42,20 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(self.classify("x", model_type="qwen2_vl")["type"], "text_llm")
         self.assertEqual(self.classify("x", model_type="qwen2")["source"], "registry")
 
+    def test_vision_needs_a_vision_tower(self):
+        # Only mlx-vlm implements these; that alone is not evidence of vision.
+        self.assertEqual(self.classify("x", model_type="glm4_moe_lite")["type"], "text_llm")
+        # A module that ships vision files is vision even without config keys.
+        self.assertEqual(self.classify("x", model_type="moondream3")["type"], "vision_language")
+        # GGUF main weights never carry the vision tower.
+        task = self.classify("moondream3.gguf", gguf_architecture="moondream3", local=True)
+        self.assertEqual((task["type"], task["source"]), ("text_llm", "gguf_architecture"))
+        self.assertEqual(self.classify("x.gguf", gguf_architecture="qwen2vl", local=True)["type"], "text_llm")
+
+    def test_gguf_vision_projectors_are_not_models(self):
+        task = self.classify("mmproj-Qwen3.8-27B-BF16.gguf", gguf_architecture="clip", local=True)
+        self.assertEqual((task["type"], task["source"], task["use_cases"]), ("other", "gguf_architecture", []))
+
     def test_gguf_architecture_is_likely(self):
         task = self.classify("Qwen3-30B-A3B-Q4_K_M.gguf", gguf_architecture="qwen3moe", local=True)
         self.assertEqual((task["type"], task["source"], task["confidence"]), ("text_llm", "gguf_architecture", "likely"))

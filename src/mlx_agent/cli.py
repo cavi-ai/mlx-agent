@@ -65,6 +65,7 @@ from .lora import (
 from .modality import ALL_FACET_IDS, FOUNDATION_IDS, resolve_facets, resolve_modalities
 from .models import DISCOVERY_ROLES, render_md, wire
 from .port_analysis import PortAnalysisError, analyze as port_analyze
+from .port_plan import draft_port_plan
 from .project_blueprint import (
     build_brief,
     generate_design_pack,
@@ -1378,6 +1379,17 @@ def _add_intake_arguments(parser):
     analysis.add_argument("source")
     analysis.add_argument("--revision", default=None)
     analysis.add_argument("--json", action="store_true")
+    port_plan = actions.add_parser(
+        "port-plan", help="draft a porting plan with a local loopback model (writes one Markdown file)"
+    )
+    port_plan.add_argument("source")
+    port_plan.add_argument("--endpoint", required=True, help="loopback OpenAI-compatible base URL")
+    port_plan.add_argument("--model", required=True, help="model id the endpoint serves")
+    port_plan.add_argument("--revision", default=None)
+    port_plan.add_argument("--context-tokens", type=int, default=32768)
+    port_plan.add_argument("--max-tokens", type=int, default=4096)
+    port_plan.add_argument("--out-dir", default=None)
+    port_plan.add_argument("--json", action="store_true")
 
 
 def _intake_resolve_human(payload):
@@ -1432,6 +1444,18 @@ def _run_intake(arguments):
         if arguments.intake_command == "port-analysis":
             payload = port_analyze(arguments.source, revision=arguments.revision)
             return _emit_serve_result(ResultEnvelope.ok(operation, payload), arguments.json)
+        if arguments.intake_command == "port-plan":
+            if not 1024 <= arguments.context_tokens <= 1048576 or not 256 <= arguments.max_tokens <= 32768:
+                raise ValueError("--context-tokens must be 1024..1048576 and --max-tokens 256..32768")
+            result = draft_port_plan(
+                arguments.source, arguments.endpoint, arguments.model, revision=arguments.revision,
+                context_tokens=arguments.context_tokens, max_tokens=arguments.max_tokens,
+                out_dir=arguments.out_dir,
+            )
+            return _emit_serve_result(
+                ResultEnvelope.ok(operation, result), arguments.json,
+                human="port plan draft written: {0}".format(result["path"]),
+            )
         raise ValueError("unknown intake command")
     except IntakeSourceError as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)

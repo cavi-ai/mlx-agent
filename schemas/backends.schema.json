@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cavi-ai/mlx-agent/schemas/backends.schema.json",
+  "title": "mlx-agent backend list data payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "root", "backends"],
+  "properties": {
+    "schema": {"const": "backends/1"},
+    "root": {"type": "string"},
+    "backends": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "version", "builtin", "state", "categories", "model_types", "registry_source",
+                   "target", "log_path", "started_at", "completed_at"],
+      "properties": {
+        "id": {"type": "string"},
+        "version": {"type": "string"},
+        "builtin": {"type": "boolean"},
+        "state": {"enum": ["installed", "installing", "failed", "absent"]},
+        "categories": {"type": "array", "items": {"enum": ["text_llm", "vision_language", "speech_to_text", "text_to_speech"]}},
+        "model_types": {"type": "integer", "minimum": 0},
+        "registry_source": {"enum": ["installed", "snapshot"]},
+        "target": {"type": ["string", "null"]},
+        "log_path": {"type": ["string", "null"]},
+        "started_at": {"type": ["string", "null"]},
+        "completed_at": {"type": ["string", "null"]}
+      }
+    }}
+  }
+}

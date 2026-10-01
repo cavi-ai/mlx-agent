@@ -1,0 +1,52 @@
+{
+  "backends": [
+    {
+      "builtin": false,
+      "categories": [
+        "speech_to_text",
+        "text_to_speech"
+      ],
+      "completed_at": null,
+      "id": "mlx-audio",
+      "log_path": null,
+      "model_types": 68,
+      "registry_source": "snapshot",
+      "started_at": null,
+      "state": "absent",
+      "target": "/backends/mlx-audio",
+      "version": "0.5.7"
+    },
+    {
+      "builtin": true,
+      "categories": [
+        "text_llm"
+      ],
+      "completed_at": null,
+      "id": "mlx-lm",
+      "log_path": null,
+      "model_types": 92,
+      "registry_source": "snapshot",
+      "started_at": null,
+      "state": "absent",
+      "target": null,
+      "version": "0.29.1"
+    },
+    {
+      "builtin": false,
+      "categories": [
+        "vision_language"
+      ],
+      "completed_at": null,
+      "id": "mlx-vlm",
+      "log_path": null,
+      "model_types": 220,
+      "registry_source": "snapshot",
+      "started_at": null,
+      "state": "absent",
+      "target": "/backends/mlx-vlm",
+      "version": "0.7.4"
+    }
+  ],
+  "root": "/backends",
+  "schema": "backends/1"
+}

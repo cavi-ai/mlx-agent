@@ -1,11 +1,16 @@
+import io
 import json
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from mlx_agent import cli
+from mlx_agent.backends import load_manifests, load_registries
 from mlx_agent.taxonomy import annotate_inventory, classify, read_config_type, use_cases_for
 
 from .backend_fixtures import synthetic_manifests, synthetic_registries
+from .test_gguf import write_gguf
 
 
 class ClassifyTests(unittest.TestCase):
@@ -85,6 +90,38 @@ class AnnotateInventoryTests(unittest.TestCase):
             self.assertEqual(read_config_type(directory), (None, ()))
             Path(directory, "config.json").write_text("{not json", encoding="utf-8")
             self.assertEqual(read_config_type(directory), (None, ()))
+
+
+class ScanTaskCliTests(unittest.TestCase):
+    def test_convert_scan_json_carries_task_labels(self):
+        with TemporaryDirectory() as directory:
+            write_gguf(Path(directory, "tiny-Q4_K_M.gguf"))
+            out = io.StringIO()
+            with redirect_stdout(out):
+                code = cli.main(["convert", "scan", "--gguf-root", directory, "--no-signature", "--json"])
+        envelope = json.loads(out.getvalue())
+        self.assertEqual(code, 0)
+        task = envelope["data"]["models"][0]["task"]
+        self.assertIn(task["type"], ("text_llm", "other"))
+        self.assertEqual(set(task), {"type", "use_cases", "source", "confidence"})
+
+
+class CommittedRegistryCollisionTests(unittest.TestCase):
+    def setUp(self):
+        self.manifests = load_manifests()
+        self.registries = load_registries(
+            self.manifests, root=Path("/nonexistent"), find_spec=lambda name: None
+        )
+
+    def classify(self, name, **kwargs):
+        return classify(name, manifests=self.manifests, registries=self.registries, **kwargs)
+
+    def test_llama_and_qwen3_are_text_llm_even_though_mlx_audio_lists_them(self):
+        self.assertEqual(self.classify("tiny.gguf", gguf_architecture="llama", local=True)["type"], "text_llm")
+        self.assertEqual(self.classify("Qwen3-8B-mlx", model_type="qwen3", local=True)["type"], "text_llm")
+
+    def test_audio_name_breaks_the_collision_toward_speech(self):
+        self.assertEqual(self.classify("orpheus-3b-tts-mlx", model_type="llama", local=True)["type"], "text_to_speech")
 
 
 if __name__ == "__main__":

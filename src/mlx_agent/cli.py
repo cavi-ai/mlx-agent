@@ -81,6 +81,7 @@ from .serve import (
     stop_serve,
     wired_port_claim,
 )
+from .taxonomy import annotate_inventory
 from .transactions import (
     COOPERATIVE_CONCURRENCY_NOTE,
     ConcurrentTransactionError,
@@ -1531,7 +1532,7 @@ def _convert_scan(arguments):
         report = dict(report, models=[
             item for item in report["models"] if item["status"] == "pending"
         ])
-    return report
+    return annotate_inventory(report)
 
 
 def _human_bytes(count):

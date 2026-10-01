@@ -79,9 +79,12 @@ def use_cases_for(task_type, haystack):
     return [use_case for use_case in ordered[:-1] if use_case in specific] + [ordered[-1]]
 
 
-def _type_from_hits(hits, config_keys):
+def _type_from_hits(hits, config_keys, haystack):
     preferred = [hit for hit in hits if hit["match"] != "remap"] or hits
     categories = {hit["category"] for hit in preferred}
+    if "text_llm" in categories and categories & {"speech_to_text", "text_to_speech"}:
+        named = _type_from_name(haystack)
+        return named if named in ("speech_to_text", "text_to_speech") else "text_llm"
     if "speech_to_text" in categories:
         return "speech_to_text"
     if "text_to_speech" in categories:
@@ -114,11 +117,11 @@ def _task_type(haystack, pipeline_tag, model_type, config_keys, gguf_architectur
     if pipeline_tag in PIPELINE_TYPES:
         return PIPELINE_TYPES[pipeline_tag], "pipeline_tag", "confirmed"
     if model_type and manifests:
-        found = _type_from_hits(lookup(model_type, manifests, registries), config_keys)
+        found = _type_from_hits(lookup(model_type, manifests, registries), config_keys, haystack)
         if found:
             return found, "registry", "confirmed"
     if gguf_architecture and manifests:
-        found = _type_from_hits(lookup_squashed(gguf_architecture, manifests, registries), config_keys)
+        found = _type_from_hits(lookup_squashed(gguf_architecture, manifests, registries), config_keys, haystack)
         if found:
             return found, "gguf_architecture", "likely"
     found = _type_from_name(haystack)

@@ -22,8 +22,10 @@ class PlanConvertTests(unittest.TestCase):
         self.assertEqual(plan["out"], "model-MLX-4bit")
         self.assertEqual(
             plan["argv"],
-            ["mlx_lm.convert", "--hf-path", "pub/model", "--mlx-path", "model-MLX-4bit", "--q-bits", "4"],
+            ["mlx_lm.convert", "--hf-path", "pub/model", "--mlx-path", "model-MLX-4bit",
+             "--quantize", "--q-bits", "4"],
         )
+        self.assertNotIn("backend", plan)
         self.assertEqual(len(plan["preview_hash"]), 64)
 
     def test_explicit_out_and_bits(self):
@@ -41,6 +43,48 @@ class PlanConvertTests(unittest.TestCase):
         with self.assertRaises(ConvertError) as caught:
             plan_convert("pub/model", q_bits=5)
         self.assertEqual(caught.exception.code, "invalid_arguments")
+
+
+class BackendConvertTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+
+    def test_backend_plan_uses_the_backend_venv(self):
+        plan = plan_convert("openai/whisper-tiny", backend="mlx-audio", backends_root_dir=self.root)
+        self.assertEqual(plan["backend"], "mlx-audio")
+        self.assertEqual(plan["argv"], [
+            str(self.root / "mlx-audio" / "bin" / "python"), "-m", "mlx_audio.convert",
+            "--hf-path", "openai/whisper-tiny", "--mlx-path", "whisper-tiny-MLX-4bit",
+            "--quantize", "--q-bits", "4",
+        ])
+        self.assertNotIn("--trust-remote-code", plan["argv"])
+
+    def test_unknown_backend_is_refused(self):
+        with self.assertRaises(ConvertError) as caught:
+            plan_convert("pub/model", backend="nope")
+        self.assertEqual(caught.exception.code, "unknown_backend")
+
+    def test_start_refuses_uninstalled_backend(self):
+        plan = plan_convert("openai/whisper-tiny", backend="mlx-audio", backends_root_dir=self.root)
+        with self.assertRaises(ConvertError) as caught:
+            start_convert(plan, receipts_dir=str(self.root), confirm=True, preview_hash=plan["preview_hash"],
+                          spawn=lambda argv, log: 1, model_present=lambda repo: True)
+        self.assertEqual(caught.exception.code, "backend_not_installed")
+        self.assertIn("backend install mlx-audio", caught.exception.remediation)
+
+    def test_start_with_installed_backend_records_it(self):
+        plan = plan_convert("openai/whisper-tiny", backend="mlx-audio", out=str(self.root / "out"), backends_root_dir=self.root)
+        venv = self.root / "mlx-audio"
+        (venv / "bin").mkdir(parents=True)
+        (venv / "bin" / "python").write_text("", encoding="utf-8")
+        (venv / ".mlx-agent-backend.json").write_text(json.dumps({"id": "mlx-audio", "version": "0.5.7"}), encoding="utf-8")
+        spawned = []
+        outcome = start_convert(plan, receipts_dir=str(self.root), confirm=True, preview_hash=plan["preview_hash"],
+                                spawn=lambda argv, log: spawned.append(argv) or 99, model_present=lambda repo: True)
+        self.assertEqual(outcome["receipt"]["backend"], "mlx-audio")
+        self.assertEqual(spawned[0], plan["argv"])
 
 
 class StartConvertTests(unittest.TestCase):
@@ -143,7 +187,7 @@ class StatusConvertTests(unittest.TestCase):
             now=lambda: "2026-07-26T00:00:00+00:00",
         )
 
-    _COMMAND = "mlx_lm.convert --hf-path pub/model --mlx-path out-new --q-bits 4"
+    _COMMAND = "mlx_lm.convert --hf-path pub/model --mlx-path out-new --quantize --q-bits 4"
 
     def test_running_job(self):
         out = self.root / "out-new"

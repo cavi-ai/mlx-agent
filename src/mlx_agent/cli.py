@@ -1483,6 +1483,10 @@ def _add_convert_arguments(parser):
     source = start.add_mutually_exclusive_group(required=True)
     source.add_argument("--repo", help="publisher/model present in the local Hugging Face cache")
     source.add_argument("--gguf", help="path to a local .gguf file to dequantize and convert")
+    start.add_argument(
+        "--backend", default=None,
+        help="optional converter backend for --repo (see backend list); default mlx-lm",
+    )
     start.add_argument("--q-bits", type=int, default=4, choices=Q_BITS_CHOICES)
     start.add_argument("--out", default=None, help="output directory (default <model>-MLX-<bits>bit)")
     start.add_argument("--confirm", action="store_true", help="authorize this reviewed conversion")
@@ -1531,11 +1535,18 @@ def _run_convert(arguments):
                 human=_convert_scan_human(report, arguments.pending_only),
             )
         if arguments.gguf:
+            if arguments.backend not in (None, "mlx-lm"):
+                raise ConvertError(
+                    "invalid_arguments",
+                    "GGUF conversion always uses the built-in mlx-lm backend.",
+                    "Drop --backend when converting a GGUF file.",
+                )
             plan = plan_gguf_convert(
                 arguments.gguf, q_bits=arguments.q_bits, out=arguments.out
             )
         else:
-            plan = plan_convert(arguments.repo, q_bits=arguments.q_bits, out=arguments.out)
+            plan = plan_convert(arguments.repo, q_bits=arguments.q_bits, out=arguments.out,
+                                backend=arguments.backend)
         if not arguments.confirm:
             result = ResultEnvelope.ok(
                 operation, {"plan": plan, "requires_confirmation": True}

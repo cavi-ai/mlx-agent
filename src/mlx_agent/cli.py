@@ -49,6 +49,7 @@ from .host import HostInventory
 from .huggingface import HuggingFaceClient
 from .installer import Installer, InstallerConflictError, InstallerPathError
 from .intake import resolve as intake_resolve
+from .intake_fetch import FetchError, plan_fetch, start_fetch, status_fetch
 from .intake_source import IntakeSourceError
 from .interview import build_intent, run_interview
 from .lora import (
@@ -1355,6 +1356,21 @@ def _add_intake_arguments(parser):
     resolve.add_argument("source", help="Hugging Face link or org/name id")
     resolve.add_argument("--revision", default=None)
     resolve.add_argument("--json", action="store_true")
+    fetch = actions.add_parser(
+        "fetch", help="preview, then confirmation-gated download of a model snapshot or one GGUF file"
+    )
+    fetch.add_argument("source")
+    fetch.add_argument("--file", default=None)
+    fetch.add_argument("--revision", default=None)
+    fetch.add_argument("--hf-cache", default=None)
+    fetch.add_argument("--local-dir", default=None)
+    fetch.add_argument("--confirm", action="store_true")
+    fetch.add_argument("--preview-hash")
+    fetch.add_argument("--receipts-dir", default=None)
+    fetch.add_argument("--json", action="store_true")
+    status = actions.add_parser("status", help="cross-check download receipts against live processes")
+    status.add_argument("--receipts-dir", default=None)
+    status.add_argument("--json", action="store_true")
 
 
 def _intake_resolve_human(payload):
@@ -1388,8 +1404,28 @@ def _run_intake(arguments):
                 ResultEnvelope.ok(operation, payload), arguments.json,
                 human=_intake_resolve_human(payload),
             )
+        if arguments.intake_command == "status":
+            jobs = status_fetch(arguments.receipts_dir)
+            return _emit_serve_result(ResultEnvelope.ok(operation, {"jobs": jobs}), arguments.json)
+        if arguments.intake_command == "fetch":
+            plan = plan_fetch(arguments.source, revision=arguments.revision, file=arguments.file,
+                              hf_cache=arguments.hf_cache, local_dir=arguments.local_dir)
+            outcome = start_fetch(plan, receipts_dir=arguments.receipts_dir,
+                                  confirm=arguments.confirm, preview_hash=arguments.preview_hash)
+            if outcome["status"] == "preview":
+                result = ResultEnvelope.ok(operation, {"plan": plan, "requires_confirmation": True})
+                if arguments.json:
+                    print(json.dumps(result.to_dict(), indent=2))
+                else:
+                    print("Fetch plan: {0} {1}; preview_hash: {2}".format(
+                        plan["repo"], plan["file"] or "(snapshot)", plan["preview_hash"]))
+                    print("Confirmation required: rerun with --confirm --preview-hash PREVIEW_HASH.")
+                return 2
+            return _emit_serve_result(ResultEnvelope.ok(operation, outcome), arguments.json)
         raise ValueError("unknown intake command")
     except IntakeSourceError as error:
+        result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
+    except FetchError as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         result = ResultEnvelope.fail(

@@ -10,6 +10,10 @@
   matching accepts either.
 - Add `intake resolve`: classify a pasted Hugging Face link and report which declared MLX backend (mlx-lm, mlx-vlm, mlx-audio) converts it, or which components have no MLX implementation, without downloading weights.
 - `convert scan` items carry a `task` label (type, use cases, source, confidence).
+- Add `backend list|install|remove`: optional mlx-vlm and mlx-audio converters in isolated, hash-locked environments (confirmation-gated; removal moves to the Trash).
+- Add `convert start --backend` for repo conversions through an installed optional backend.
+- Add `intake fetch` and `intake status`: confirmation-gated, receipt-tracked downloads.
+- Fix: `convert start --repo` now passes `--quantize`; repo conversions were previously written unquantized.
 
 ## 0.5.2 - 2026-08-25
 

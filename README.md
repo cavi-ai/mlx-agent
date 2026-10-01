@@ -245,6 +245,17 @@ python3 scripts/mlx-agent intake resolve https://huggingface.co/org/name   # wha
 
 `intake resolve` reads only the model API document and `config.json` (never weights) and returns a verdict: `already_mlx`, `gguf`, `convertible` (an installed backend implements the architecture), `convertible_after_install` (a declared optional backend does), `unsupported` (no backend implements it; reasons and per-component matches say what exists), `blocked` (gated, private, or missing), or `unknown` (Hub unreachable). `convert scan` labels every model with a task type and use cases.
 
+```bash
+python3 scripts/mlx-agent backend list
+python3 scripts/mlx-agent backend install mlx-audio                      # preview
+python3 scripts/mlx-agent backend install mlx-audio --confirm --preview-hash <hash>
+python3 scripts/mlx-agent convert start --repo openai/whisper-tiny --backend mlx-audio --q-bits 4
+python3 scripts/mlx-agent intake fetch https://huggingface.co/org/name  # preview, then --confirm --preview-hash
+python3 scripts/mlx-agent intake status
+```
+
+Optional backends (`mlx-vlm`, `mlx-audio`) install into their own virtual environment under `$XDG_DATA_HOME/mlx-workbench/backends/<id>` from a hash-locked requirements file that ships with mlx-agent; they need the agent to run on Python 3.12 and never touch the main runtime. `backend remove` moves the environment to the Trash. `convert start --backend` runs that backend's converter under the same preview → confirm → receipt gates; convert still never downloads or installs. `intake fetch` downloads a snapshot (or one GGUF file with `--file`) into the Hugging Face cache, or into `--local-dir`, as a receipt-tracked background job.
+
 `convert start --gguf` dequantizes the GGUF to Hugging Face weights with `transformers`, then quantizes those to MLX with `mlx_lm.convert`, under the same preview-confirm-receipt gates. It needs `torch`, `transformers`, and `gguf` importable by the same interpreter and never installs them. The output carries an `mlx-converter.json` provenance marker naming its source GGUF.
 
 LoRA training (confirmation-gated, dataset-validated):

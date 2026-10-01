@@ -17,6 +17,10 @@ from .serve import _pid_alive
 FETCH_RECEIPT_KIND = "fetch"
 FETCH_RUNNER = Path(__file__).resolve().with_name("fetch_runner.py")
 FETCH_MODULES = ("huggingface_hub",)
+FETCH_IGNORE_PATTERNS = (
+    "*.h5", "*.msgpack", "*.onnx", "*.onnx_data", "*.tflite", "*.ot", "*.mlmodel", "*.gguf", "*.mp4",
+    "onnx/*", "coreml/*",
+)
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
@@ -45,8 +49,13 @@ def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, py
                              "Pass the full destination directory.")
     python = str(python or sys.executable)
     argv = [python, str(FETCH_RUNNER), "--repo", source["repo"], "--revision", source["revision"]]
+    ignore_patterns = []
     if source["file"]:
         argv += ["--file", source["file"]]
+    else:
+        ignore_patterns = list(FETCH_IGNORE_PATTERNS)
+        for pattern in ignore_patterns:
+            argv += ["--ignore", pattern]
     if hf_cache:
         argv += ["--cache-dir", str(hf_cache)]
     if local is not None:
@@ -58,6 +67,7 @@ def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, py
         "repo": source["repo"], "revision": source["revision"], "file": source["file"],
         "cache_dir": str(hf_cache) if hf_cache else None,
         "local_dir": str(local) if local is not None else None,
+        "ignore_patterns": ignore_patterns,
         "slug": slug, "argv": argv, "network": ["huggingface.co"],
     }
     canonical = json.dumps(plan, sort_keys=True, separators=(",", ":"))

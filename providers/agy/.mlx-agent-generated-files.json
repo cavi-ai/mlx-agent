@@ -50,7 +50,7 @@
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/cli.py",
-      "sha256": "0a72db2c06a8a1e09e6682bb0bcee6de8e772c38a5e6cfac1cd2b9623d0ade89"
+      "sha256": "fa6f5a65398e3b9eb7d82e8240e967874e347a9f127a2757c6ae6225ebc63dfe"
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/command_args.py",
@@ -78,7 +78,7 @@
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/fetch_runner.py",
-      "sha256": "257b414222e393ac9e068f5c2810fdb9e5bb45b246c9b383336e6e4097ecccc8"
+      "sha256": "bdf09c9b2681c09122263af264f8801dce376210fec3bc7990232bc2871a9148"
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/fleet.py",
@@ -114,7 +114,7 @@
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/intake_fetch.py",
-      "sha256": "fc7ed9c65bb2655f83e646fbd0910936acb6c9a6288201944e93457fdcac1de8"
+      "sha256": "da91ac8e520e982c2cd173843f200df4fe20b237c099c56bec8a504f5ae4175e"
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/intake_source.py",
@@ -143,6 +143,14 @@
     {
       "path": "skills/mlx-adopt/src/mlx_agent/models.py",
       "sha256": "50ea93a89ae703321bad496e1475334603f3ef298c392580d91e839949137941"
+    },
+    {
+      "path": "skills/mlx-adopt/src/mlx_agent/port_analysis.py",
+      "sha256": "4cfa1d53309ca759556c607e51fb6c6e683f42f66b0057bbd4c092f463f9fe1a"
+    },
+    {
+      "path": "skills/mlx-adopt/src/mlx_agent/port_plan.py",
+      "sha256": "424dab3653a9f65400cb141e980ff72dc16e50ac53c5136df3d56f80cc6a4480"
     },
     {
       "path": "skills/mlx-adopt/src/mlx_agent/probe_assets.py",
@@ -282,7 +290,7 @@
     },
     {
       "path": "skills/mlx-bench/src/mlx_agent/cli.py",
-      "sha256": "0a72db2c06a8a1e09e6682bb0bcee6de8e772c38a5e6cfac1cd2b9623d0ade89"
+      "sha256": "fa6f5a65398e3b9eb7d82e8240e967874e347a9f127a2757c6ae6225ebc63dfe"
     },
     {
       "path": "skills/mlx-bench/src/mlx_agent/command_args.py",
@@ -310,7 +318,7 @@
     },
     {
       "path": "skills/mlx-bench/src/mlx_agent/fetch_runner.py",
-      "sha256": "257b414222e393ac9e068f5c2810fdb9e5bb45b246c9b383336e6e4097ecccc8"
+      "sha256": "bdf09c9b2681c09122263af264f8801dce376210fec3bc7990232bc2871a9148"
     },
     {
       "path": "skills/mlx-bench/src/mlx_agent/fleet.py",
@@ -346,7 +354,7 @@
     },
     {
       "path": "skills/mlx-bench/src/mlx_agent/intake_fetch.py",
-      "sha256": "fc7ed9c65bb2655f83e646fbd0910936acb6c9a6288201944e93457fdcac1de8"
+      "sha256": "da91ac8e520e982c2cd173843f200df4fe20b237c099c56bec8a504f5ae4175e"
     },
     {
       "path": "skills/mlx-bench/src/mlx_agent/intake_source.py",
@@ -375,6 +383,14 @@
     {
       "path": "skills/mlx-bench/src/mlx_agent/models.py",
       "sha256": "50ea93a89ae703321bad496e1475334603f3ef298c392580d91e839949137941"
+    },
+    {
+      "path": "skills/mlx-bench/src/mlx_agent/port_analysis.py",
+      "sha256": "4cfa1d53309ca759556c607e51fb6c6e683f42f66b0057bbd4c092f463f9fe1a"
+    },
+    {
+      "path": "skills/mlx-bench/src/mlx_agent/port_plan.py",
+      "sha256": "424dab3653a9f65400cb141e980ff72dc16e50ac53c5136df3d56f80cc6a4480"
     },
     {
       "path": "skills/mlx-bench/src/mlx_agent/probe_assets.py",
@@ -514,7 +530,7 @@
     },
     {
       "path": "skills/mlx-doctor/src/mlx_agent/cli.py",
-      "sha256": "0a72db2c06a8a1e09e6682bb0bcee6de8e772c38a5e6cfac1cd2b9623d0ade89"
+      "sha256": "fa6f5a65398e3b9eb7d82e8240e967874e347a9f127a2757c6ae6225ebc63dfe"
     },
     {
       "path": "skills/mlx-doctor/src/mlx_agent/command_args.py",
@@ -542,7 +558,7 @@
     },
     {
       "path": "skills/mlx-doctor/src/mlx_agent/fetch_runner.py",
-      "sha256": "257b414222e393ac9e068f5c2810fdb9e5bb45b246c9b383336e6e4097ecccc8"
+      "sha256": "bdf09c9b2681c09122263af264f8801dce376210fec3bc7990232bc2871a9148"
     },
     {
       "path": "skills/mlx-doctor/src/mlx_agent/fleet.py",
@@ -578,7 +594,7 @@
     },
     {
       "path": "skills/mlx-doctor/src/mlx_agent/intake_fetch.py",
-      "sha256": "fc7ed9c65bb2655f83e646fbd0910936acb6c9a6288201944e93457fdcac1de8"
+      "sha256": "da91ac8e520e982c2cd173843f200df4fe20b237c099c56bec8a504f5ae4175e"
     },
     {
       "path": "skills/mlx-doctor/src/mlx_agent/intake_source.py",
@@ -607,6 +623,14 @@
     {
       "path": "skills/mlx-doctor/src/mlx_agent/models.py",
       "sha256": "50ea93a89ae703321bad496e1475334603f3ef298c392580d91e839949137941"
+    },
+    {
+      "path": "skills/mlx-doctor/src/mlx_agent/port_analysis.py",
+      "sha256": "4cfa1d53309ca759556c607e51fb6c6e683f42f66b0057bbd4c092f463f9fe1a"
+    },
+    {
+      "path": "skills/mlx-doctor/src/mlx_agent/port_plan.py",
+      "sha256": "424dab3653a9f65400cb141e980ff72dc16e50ac53c5136df3d56f80cc6a4480"
     },
     {
       "path": "skills/mlx-doctor/src/mlx_agent/probe_assets.py",
@@ -746,7 +770,7 @@
     },
     {
       "path": "skills/mlx-fleet/src/mlx_agent/cli.py",
-      "sha256": "0a72db2c06a8a1e09e6682bb0bcee6de8e772c38a5e6cfac1cd2b9623d0ade89"
+      "sha256": "fa6f5a65398e3b9eb7d82e8240e967874e347a9f127a2757c6ae6225ebc63dfe"
     },
     {
       "path": "skills/mlx-fleet/src/mlx_agent/command_args.py",
@@ -774,7 +798,7 @@
     },
     {
       "path": "skills/mlx-fleet/src/mlx_agent/fetch_runner.py",
-      "sha256": "257b414222e393ac9e068f5c2810fdb9e5bb45b246c9b383336e6e4097ecccc8"
+      "sha256": "bdf09c9b2681c09122263af264f8801dce376210fec3bc7990232bc2871a9148"
     },
     {
       "path": "skills/mlx-fleet/src/mlx_agent/fleet.py",
@@ -810,7 +834,7 @@
     },
     {
       "path": "skills/mlx-fleet/src/mlx_agent/intake_fetch.py",
-      "sha256": "fc7ed9c65bb2655f83e646fbd0910936acb6c9a6288201944e93457fdcac1de8"
+      "sha256": "da91ac8e520e982c2cd173843f200df4fe20b237c099c56bec8a504f5ae4175e"
     },
     {
       "path": "skills/mlx-fleet/src/mlx_agent/intake_source.py",
@@ -839,6 +863,14 @@
     {
       "path": "skills/mlx-fleet/src/mlx_agent/models.py",
       "sha256": "50ea93a89ae703321bad496e1475334603f3ef298c392580d91e839949137941"
+    },
+    {
+      "path": "skills/mlx-fleet/src/mlx_agent/port_analysis.py",
+      "sha256": "4cfa1d53309ca759556c607e51fb6c6e683f42f66b0057bbd4c092f463f9fe1a"
+    },
+    {
+      "path": "skills/mlx-fleet/src/mlx_agent/port_plan.py",
+      "sha256": "424dab3653a9f65400cb141e980ff72dc16e50ac53c5136df3d56f80cc6a4480"
     },
     {
       "path": "skills/mlx-fleet/src/mlx_agent/probe_assets.py",
@@ -978,7 +1010,7 @@
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/cli.py",
-      "sha256": "0a72db2c06a8a1e09e6682bb0bcee6de8e772c38a5e6cfac1cd2b9623d0ade89"
+      "sha256": "fa6f5a65398e3b9eb7d82e8240e967874e347a9f127a2757c6ae6225ebc63dfe"
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/command_args.py",
@@ -1006,7 +1038,7 @@
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/fetch_runner.py",
-      "sha256": "257b414222e393ac9e068f5c2810fdb9e5bb45b246c9b383336e6e4097ecccc8"
+      "sha256": "bdf09c9b2681c09122263af264f8801dce376210fec3bc7990232bc2871a9148"
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/fleet.py",
@@ -1042,7 +1074,7 @@
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/intake_fetch.py",
-      "sha256": "fc7ed9c65bb2655f83e646fbd0910936acb6c9a6288201944e93457fdcac1de8"
+      "sha256": "da91ac8e520e982c2cd173843f200df4fe20b237c099c56bec8a504f5ae4175e"
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/intake_source.py",
@@ -1071,6 +1103,14 @@
     {
       "path": "skills/mlx-scout/src/mlx_agent/models.py",
       "sha256": "50ea93a89ae703321bad496e1475334603f3ef298c392580d91e839949137941"
+    },
+    {
+      "path": "skills/mlx-scout/src/mlx_agent/port_analysis.py",
+      "sha256": "4cfa1d53309ca759556c607e51fb6c6e683f42f66b0057bbd4c092f463f9fe1a"
+    },
+    {
+      "path": "skills/mlx-scout/src/mlx_agent/port_plan.py",
+      "sha256": "424dab3653a9f65400cb141e980ff72dc16e50ac53c5136df3d56f80cc6a4480"
     },
     {
       "path": "skills/mlx-scout/src/mlx_agent/probe_assets.py",
@@ -1210,7 +1250,7 @@
     },
     {
       "path": "skills/mlx-watch/src/mlx_agent/cli.py",
-      "sha256": "0a72db2c06a8a1e09e6682bb0bcee6de8e772c38a5e6cfac1cd2b9623d0ade89"
+      "sha256": "fa6f5a65398e3b9eb7d82e8240e967874e347a9f127a2757c6ae6225ebc63dfe"
     },
     {
       "path": "skills/mlx-watch/src/mlx_agent/command_args.py",
@@ -1238,7 +1278,7 @@
     },
     {
       "path": "skills/mlx-watch/src/mlx_agent/fetch_runner.py",
-      "sha256": "257b414222e393ac9e068f5c2810fdb9e5bb45b246c9b383336e6e4097ecccc8"
+      "sha256": "bdf09c9b2681c09122263af264f8801dce376210fec3bc7990232bc2871a9148"
     },
     {
       "path": "skills/mlx-watch/src/mlx_agent/fleet.py",
@@ -1274,7 +1314,7 @@
     },
     {
       "path": "skills/mlx-watch/src/mlx_agent/intake_fetch.py",
-      "sha256": "fc7ed9c65bb2655f83e646fbd0910936acb6c9a6288201944e93457fdcac1de8"
+      "sha256": "da91ac8e520e982c2cd173843f200df4fe20b237c099c56bec8a504f5ae4175e"
     },
     {
       "path": "skills/mlx-watch/src/mlx_agent/intake_source.py",
@@ -1303,6 +1343,14 @@
     {
       "path": "skills/mlx-watch/src/mlx_agent/models.py",
       "sha256": "50ea93a89ae703321bad496e1475334603f3ef298c392580d91e839949137941"
+    },
+    {
+      "path": "skills/mlx-watch/src/mlx_agent/port_analysis.py",
+      "sha256": "4cfa1d53309ca759556c607e51fb6c6e683f42f66b0057bbd4c092f463f9fe1a"
+    },
+    {
+      "path": "skills/mlx-watch/src/mlx_agent/port_plan.py",
+      "sha256": "424dab3653a9f65400cb141e980ff72dc16e50ac53c5136df3d56f80cc6a4480"
     },
     {
       "path": "skills/mlx-watch/src/mlx_agent/probe_assets.py",
@@ -1442,7 +1490,7 @@
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/cli.py",
-      "sha256": "0a72db2c06a8a1e09e6682bb0bcee6de8e772c38a5e6cfac1cd2b9623d0ade89"
+      "sha256": "fa6f5a65398e3b9eb7d82e8240e967874e347a9f127a2757c6ae6225ebc63dfe"
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/command_args.py",
@@ -1470,7 +1518,7 @@
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/fetch_runner.py",
-      "sha256": "257b414222e393ac9e068f5c2810fdb9e5bb45b246c9b383336e6e4097ecccc8"
+      "sha256": "bdf09c9b2681c09122263af264f8801dce376210fec3bc7990232bc2871a9148"
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/fleet.py",
@@ -1506,7 +1554,7 @@
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/intake_fetch.py",
-      "sha256": "fc7ed9c65bb2655f83e646fbd0910936acb6c9a6288201944e93457fdcac1de8"
+      "sha256": "da91ac8e520e982c2cd173843f200df4fe20b237c099c56bec8a504f5ae4175e"
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/intake_source.py",
@@ -1535,6 +1583,14 @@
     {
       "path": "skills/mlx-wire/src/mlx_agent/models.py",
       "sha256": "50ea93a89ae703321bad496e1475334603f3ef298c392580d91e839949137941"
+    },
+    {
+      "path": "skills/mlx-wire/src/mlx_agent/port_analysis.py",
+      "sha256": "4cfa1d53309ca759556c607e51fb6c6e683f42f66b0057bbd4c092f463f9fe1a"
+    },
+    {
+      "path": "skills/mlx-wire/src/mlx_agent/port_plan.py",
+      "sha256": "424dab3653a9f65400cb141e980ff72dc16e50ac53c5136df3d56f80cc6a4480"
     },
     {
       "path": "skills/mlx-wire/src/mlx_agent/probe_assets.py",

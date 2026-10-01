@@ -258,7 +258,7 @@ Optional backends (`mlx-vlm`, `mlx-audio`) install into their own virtual enviro
 
 ```bash
 python3 scripts/mlx-agent intake port-analysis https://huggingface.co/org/name
-python3 scripts/mlx-agent intake port-plan https://huggingface.co/org/name --endpoint http://127.0.0.1:8080 --model <served-id>
+python3 scripts/mlx-agent intake port-plan https://huggingface.co/org/name --endpoint http://localhost:8080 --model <served-id>
 ```
 
 `intake port-analysis` lists, without downloading weights, which components of an unsupported architecture already exist in an MLX backend (with module paths), which weight prefixes and files map to nothing, and the classes in the repository's custom code (parsed, never executed). `intake port-plan` sends that analysis and the custom source to a model you already serve on a loopback port and writes the reply, labeled as a draft with the analysis hash, under `$XDG_STATE_HOME/mlx-workbench/port-plans/`.

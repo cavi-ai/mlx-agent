@@ -9,6 +9,14 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .backends import (
+    BackendError,
+    backend_environment,
+    backend_python,
+    load_manifests,
+    read_install_marker,
+    spawn_with_env,
+)
 from .gguf import GGUFError, describe_gguf
 from .serve import (
     _argv_matches,
@@ -48,7 +56,7 @@ def receipts_root(root=None, kind="convert"):
     return base / ".mlx-agent-receipts" / kind
 
 
-def plan_convert(repo, q_bits=4, out=None):
+def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backends_root_dir=None):
     """Render the exact conversion plan; pure and side-effect free."""
     if not isinstance(repo, str) or not _MODEL.fullmatch(repo):
         raise ConvertError(
@@ -60,19 +68,32 @@ def plan_convert(repo, q_bits=4, out=None):
     if out is None:
         name = repo.split("/", 1)[1]
         out = "{0}-MLX-{1}bit".format(name, q_bits)
+    flags = ["--hf-path", repo, "--mlx-path", str(out), "--quantize", "--q-bits", str(q_bits)]
     plan = {
         "repo": repo,
         "source": {"kind": "hf-cache", "repo": repo},
         "slug": "{0}-{1}bit".format(repo.split("/", 1)[1], q_bits),
         "q_bits": q_bits,
         "out": str(out),
-        "argv": [
-            EXECUTABLE,
-            "--hf-path", repo,
-            "--mlx-path", str(out),
-            "--q-bits", str(q_bits),
-        ],
     }
+    if backend in (None, "mlx-lm"):
+        plan["argv"] = [EXECUTABLE] + flags
+        return _finalize_plan(plan)
+    try:
+        manifests = load_manifests() if manifests is None else manifests
+    except BackendError as error:
+        raise ConvertError(error.code, str(error), error.remediation) from error
+    manifest = manifests.get(backend)
+    if manifest is None or manifest["builtin"]:
+        raise ConvertError(
+            "unknown_backend",
+            "No optional backend named {0}.".format(backend),
+            "Run mlx-agent backend list to see the declared backends.",
+        )
+    python = backend_python(manifest, backends_root_dir)
+    plan["backend"] = backend
+    plan["backends_root"] = str(python.parent.parent.parent)
+    plan["argv"] = [str(python), "-m", manifest["convert"]] + flags
     return _finalize_plan(plan)
 
 
@@ -218,7 +239,6 @@ def start_convert(plan, receipts_dir=None, confirm=False, preview_hash=None,
     from .serve import _default_spawn, _default_which
 
     which = which or _default_which
-    spawn = spawn or _default_spawn
     pid_alive = pid_alive or _pid_alive
     root = receipts_root(receipts_dir)
 
@@ -236,7 +256,21 @@ def start_convert(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "The supplied preview hash does not match this convert plan.",
             "Re-run convert start without --confirm and review the fresh plan.",
         )
-    if which(EXECUTABLE) is None:
+    backend = plan.get("backend")
+    if backend:
+        manifest = load_manifests().get(backend)
+        root_dir = plan.get("backends_root")
+        if (
+            manifest is None
+            or read_install_marker(manifest, root_dir) is None
+            or not Path(plan["argv"][0]).exists()
+        ):
+            raise ConvertError(
+                "backend_not_installed",
+                "The {0} backend is not installed.".format(backend),
+                "Install it first: mlx-agent backend install {0}; convert never installs runtimes.".format(backend),
+            )
+    elif which(EXECUTABLE) is None:
         raise ConvertError(
             "runtime_not_installed",
             "The {0} executable is not installed.".format(EXECUTABLE),
@@ -284,6 +318,13 @@ def start_convert(plan, receipts_dir=None, confirm=False, preview_hash=None,
     root.mkdir(parents=True, exist_ok=True)
     slug = _slug(plan)
     log_path = root / "{0}.log".format(slug)
+    if spawn is None and backend:
+        environment = backend_environment()
+
+        def spawn(argv, log_path):
+            return spawn_with_env(argv, log_path, environment)
+
+    spawn = spawn or _default_spawn
     pid = spawn(plan["argv"], str(log_path))
     receipt = {
         "schema_version": CONVERT_RECEIPT_SCHEMA_VERSION,
@@ -301,6 +342,8 @@ def start_convert(plan, receipts_dir=None, confirm=False, preview_hash=None,
         "completed_at": None,
         "exit_status": None,
     }
+    if backend:
+        receipt["backend"] = backend
     _write_receipt(root, receipt, "{0}.json".format(slug))
     return {"status": "started", "receipt": receipt}
 

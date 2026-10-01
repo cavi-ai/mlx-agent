@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .adoption import ADOPTION_SCHEMA_VERSION, AdoptionRequest, AdoptionWorkflow
+from .backend_install import list_backends, plan_install, plan_remove, remove_backend, start_install
+from .backends import BackendError
 from .bench import (
     BENCH_PROBE_ID,
     GEN_TOKENS_DEFAULT,
@@ -47,6 +49,7 @@ from .host import HostInventory
 from .huggingface import HuggingFaceClient
 from .installer import Installer, InstallerConflictError, InstallerPathError
 from .intake import resolve as intake_resolve
+from .intake_fetch import FetchError, plan_fetch, start_fetch, status_fetch
 from .intake_source import IntakeSourceError
 from .interview import build_intent, run_interview
 from .lora import (
@@ -1353,6 +1356,21 @@ def _add_intake_arguments(parser):
     resolve.add_argument("source", help="Hugging Face link or org/name id")
     resolve.add_argument("--revision", default=None)
     resolve.add_argument("--json", action="store_true")
+    fetch = actions.add_parser(
+        "fetch", help="preview, then confirmation-gated download of a model snapshot or one GGUF file"
+    )
+    fetch.add_argument("source")
+    fetch.add_argument("--file", default=None)
+    fetch.add_argument("--revision", default=None)
+    fetch.add_argument("--hf-cache", default=None)
+    fetch.add_argument("--local-dir", default=None)
+    fetch.add_argument("--confirm", action="store_true")
+    fetch.add_argument("--preview-hash")
+    fetch.add_argument("--receipts-dir", default=None)
+    fetch.add_argument("--json", action="store_true")
+    status = actions.add_parser("status", help="cross-check download receipts against live processes")
+    status.add_argument("--receipts-dir", default=None)
+    status.add_argument("--json", action="store_true")
 
 
 def _intake_resolve_human(payload):
@@ -1386,8 +1404,28 @@ def _run_intake(arguments):
                 ResultEnvelope.ok(operation, payload), arguments.json,
                 human=_intake_resolve_human(payload),
             )
+        if arguments.intake_command == "status":
+            jobs = status_fetch(arguments.receipts_dir)
+            return _emit_serve_result(ResultEnvelope.ok(operation, {"jobs": jobs}), arguments.json)
+        if arguments.intake_command == "fetch":
+            plan = plan_fetch(arguments.source, revision=arguments.revision, file=arguments.file,
+                              hf_cache=arguments.hf_cache, local_dir=arguments.local_dir)
+            outcome = start_fetch(plan, receipts_dir=arguments.receipts_dir,
+                                  confirm=arguments.confirm, preview_hash=arguments.preview_hash)
+            if outcome["status"] == "preview":
+                result = ResultEnvelope.ok(operation, {"plan": plan, "requires_confirmation": True})
+                if arguments.json:
+                    print(json.dumps(result.to_dict(), indent=2))
+                else:
+                    print("Fetch plan: {0} {1}; preview_hash: {2}".format(
+                        plan["repo"], plan["file"] or "(snapshot)", plan["preview_hash"]))
+                    print("Confirmation required: rerun with --confirm --preview-hash PREVIEW_HASH.")
+                return 2
+            return _emit_serve_result(ResultEnvelope.ok(operation, outcome), arguments.json)
         raise ValueError("unknown intake command")
     except IntakeSourceError as error:
+        result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
+    except FetchError as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         result = ResultEnvelope.fail(
@@ -1404,6 +1442,74 @@ def _run_intake(arguments):
     return 2
 
 
+def _add_backend_arguments(parser):
+    actions = parser.add_subparsers(dest="backend_command", required=True)
+    listing = actions.add_parser("list", help="list declared converter backends and their install state")
+    listing.add_argument("--receipts-dir", default=None)
+    listing.add_argument("--json", action="store_true")
+    for name, text in (
+        ("install", "preview, then confirmation-gated install of an optional backend into its own venv"),
+        ("remove", "preview, then move an installed optional backend to the Trash"),
+    ):
+        action = actions.add_parser(name, help=text)
+        action.add_argument("backend")
+        action.add_argument("--confirm", action="store_true")
+        action.add_argument("--preview-hash")
+        action.add_argument("--receipts-dir", default=None)
+        action.add_argument("--json", action="store_true")
+
+
+def _backend_list_human(report):
+    lines = ["Backends under {0}:".format(report["root"])]
+    for entry in report["backends"]:
+        lines.append("  {0} {1}: {2} ({3} model types, {4})".format(
+            entry["id"], entry["version"], entry["state"], entry["model_types"], entry["registry_source"]
+        ))
+    return "\n".join(lines)
+
+
+def _run_backend(arguments):
+    operation = "backend-{0}".format(arguments.backend_command)
+    try:
+        if arguments.backend_command == "list":
+            report = list_backends(receipts_dir=arguments.receipts_dir)
+            return _emit_serve_result(
+                ResultEnvelope.ok(operation, report), arguments.json, human=_backend_list_human(report)
+            )
+        if arguments.backend_command == "install":
+            plan = plan_install(arguments.backend)
+            outcome = start_install(plan, receipts_dir=arguments.receipts_dir,
+                                    confirm=arguments.confirm, preview_hash=arguments.preview_hash)
+        else:
+            plan = plan_remove(arguments.backend)
+            outcome = remove_backend(plan, receipts_dir=arguments.receipts_dir,
+                                     confirm=arguments.confirm, preview_hash=arguments.preview_hash)
+        if outcome["status"] == "preview":
+            result = ResultEnvelope.ok(operation, {"plan": plan, "requires_confirmation": True})
+            if arguments.json:
+                print(json.dumps(result.to_dict(), indent=2))
+            else:
+                print("Backend {0} plan for {1}; preview_hash: {2}".format(
+                    arguments.backend_command, plan["id"], plan["preview_hash"]
+                ))
+                print("Confirmation required: rerun with --confirm --preview-hash PREVIEW_HASH.")
+            return 2
+        return _emit_serve_result(ResultEnvelope.ok(operation, outcome), arguments.json)
+    except BackendError as error:
+        result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        result = ResultEnvelope.fail(operation, "backend_failed", str(error),
+                                     "Correct the backend arguments or state, then retry.")
+    if arguments.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        payload = result.to_dict()["error"]
+        print("backend failed [{0}]: {1}\nremediation: {2}".format(
+            payload["code"], payload["message"], payload["remediation"]
+        ))
+    return 2
+
+
 def _add_convert_arguments(parser):
     actions = parser.add_subparsers(dest="convert_command", required=True)
     start = actions.add_parser(
@@ -1413,6 +1519,10 @@ def _add_convert_arguments(parser):
     source = start.add_mutually_exclusive_group(required=True)
     source.add_argument("--repo", help="publisher/model present in the local Hugging Face cache")
     source.add_argument("--gguf", help="path to a local .gguf file to dequantize and convert")
+    start.add_argument(
+        "--backend", default=None,
+        help="optional converter backend for --repo (see backend list); default mlx-lm",
+    )
     start.add_argument("--q-bits", type=int, default=4, choices=Q_BITS_CHOICES)
     start.add_argument("--out", default=None, help="output directory (default <model>-MLX-<bits>bit)")
     start.add_argument("--confirm", action="store_true", help="authorize this reviewed conversion")
@@ -1461,11 +1571,18 @@ def _run_convert(arguments):
                 human=_convert_scan_human(report, arguments.pending_only),
             )
         if arguments.gguf:
+            if arguments.backend not in (None, "mlx-lm"):
+                raise ConvertError(
+                    "invalid_arguments",
+                    "GGUF conversion always uses the built-in mlx-lm backend.",
+                    "Drop --backend when converting a GGUF file.",
+                )
             plan = plan_gguf_convert(
                 arguments.gguf, q_bits=arguments.q_bits, out=arguments.out
             )
         else:
-            plan = plan_convert(arguments.repo, q_bits=arguments.q_bits, out=arguments.out)
+            plan = plan_convert(arguments.repo, q_bits=arguments.q_bits, out=arguments.out,
+                                backend=arguments.backend)
         if not arguments.confirm:
             result = ResultEnvelope.ok(
                 operation, {"plan": plan, "requires_confirmation": True}
@@ -2075,6 +2192,10 @@ def build_parser():
         "intake", help="resolve, download, and analyze pasted Hugging Face models"
     )
     _add_intake_arguments(intake_command)
+    backend_command = subcommands.add_parser(
+        "backend", help="list, install, or remove optional MLX converter backends (confirmation-gated)"
+    )
+    _add_backend_arguments(backend_command)
     providers_command = subcommands.add_parser("providers", help="list detected supported provider CLIs")
     _add_installer_arguments(providers_command, include_providers=False)
     for name in ("install", "update", "uninstall", "doctor"):
@@ -2103,6 +2224,8 @@ def main(argv=None):
         return _run_watch(arguments)
     if arguments.command == "intake":
         return _run_intake(arguments)
+    if arguments.command == "backend":
+        return _run_backend(arguments)
     if arguments.command == "convert":
         return _run_convert(arguments)
     if arguments.command == "lora":

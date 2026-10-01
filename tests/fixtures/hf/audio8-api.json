@@ -1,0 +1,90 @@
+{
+ "config": {
+  "architectures": [
+   "Audio8ASRInfiniteForConditionalGeneration"
+  ],
+  "auto_map": {
+   "AutoConfig": "configuration_audio8_asr_infinite.Audio8ASRInfiniteConfig",
+   "AutoModelForCausalLM": "modeling_audio8_asr_infinite.Audio8ASRInfiniteForConditionalGeneration"
+  },
+  "model_type": "audio8_asr_infinite"
+ },
+ "gated": false,
+ "id": "Edge0/Audio8-ASR-Infinite",
+ "library_name": "transformers",
+ "pipeline_tag": "automatic-speech-recognition",
+ "siblings": [
+  {
+   "rfilename": ".gitattributes",
+   "size": 1635
+  },
+  {
+   "rfilename": "Audio8-Asr-Infinite-Demo.mp4",
+   "size": 6087408
+  },
+  {
+   "rfilename": "README.md",
+   "size": 7825
+  },
+  {
+   "rfilename": "chat_template.jinja",
+   "size": 2507
+  },
+  {
+   "rfilename": "config.json",
+   "size": 3942
+  },
+  {
+   "rfilename": "configuration_audio8_asr_infinite.py",
+   "size": 9506
+  },
+  {
+   "rfilename": "generation_config.json",
+   "size": 241
+  },
+  {
+   "rfilename": "model.safetensors",
+   "size": 8172565584
+  },
+  {
+   "rfilename": "model.safetensors.index.json",
+   "size": 72930
+  },
+  {
+   "rfilename": "modeling_audio8_asr_infinite.py",
+   "size": 50568
+  },
+  {
+   "rfilename": "preprocessor_config.json",
+   "size": 286
+  },
+  {
+   "rfilename": "semantic_vad_heads.safetensors",
+   "size": 131888
+  },
+  {
+   "rfilename": "tokenizer.json",
+   "size": 11422657
+  },
+  {
+   "rfilename": "tokenizer_config.json",
+   "size": 508
+  }
+ ],
+ "tags": [
+  "transformers",
+  "safetensors",
+  "audio8_asr_infinite",
+  "text-generation",
+  "streaming",
+  "realtime",
+  "speech-recognition",
+  "audio",
+  "automatic-speech-recognition",
+  "custom_code",
+  "zh",
+  "en",
+  "license:apache-2.0",
+  "region:us"
+ ]
+}

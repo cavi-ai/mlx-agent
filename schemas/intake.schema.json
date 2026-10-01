@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cavi-ai/mlx-agent/schemas/intake.schema.json",
+  "title": "mlx-agent intake resolve data payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "source", "verdict", "reasons", "backend", "backend_installed", "model_type",
+               "components", "task", "custom_code", "gated", "library_name", "pipeline_tag",
+               "transformers_version", "bytes", "files", "warnings"],
+  "properties": {
+    "schema": {"const": "intake/1"},
+    "source": {"$ref": "#/$defs/source"},
+    "verdict": {"enum": ["unknown", "blocked", "already_mlx", "gguf", "convertible", "convertible_after_install", "unsupported"]},
+    "reasons": {"type": "array", "items": {"enum": ["gated", "not_found_or_private", "hub_unreachable", "no_config", "arch_not_in_registry", "custom_code"]}},
+    "backend": {"type": ["string", "null"]},
+    "backend_installed": {"type": "boolean"},
+    "model_type": {"type": ["string", "null"]},
+    "components": {"type": "array", "items": {"$ref": "#/$defs/component"}},
+    "task": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/task"}]},
+    "custom_code": {"type": "boolean"},
+    "gated": {"type": "boolean"},
+    "library_name": {"type": ["string", "null"]},
+    "pipeline_tag": {"type": ["string", "null"]},
+    "transformers_version": {"type": ["string", "null"]},
+    "bytes": {"type": "integer", "minimum": 0},
+    "files": {
+      "type": "object", "additionalProperties": false,
+      "required": ["safetensors", "gguf", "python"],
+      "properties": {
+        "safetensors": {"type": "integer", "minimum": 0},
+        "gguf": {"type": "array", "items": {
+          "type": "object", "additionalProperties": false, "required": ["name", "bytes"],
+          "properties": {"name": {"type": "string"}, "bytes": {"type": "integer", "minimum": 0}}
+        }},
+        "python": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["input", "repo", "revision", "file", "url"],
+      "properties": {
+        "input": {"type": "string"},
+        "repo": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$"},
+        "revision": {"type": "string"},
+        "file": {"type": ["string", "null"]},
+        "url": {"type": "string"}
+      }
+    },
+    "match": {
+      "type": "object", "additionalProperties": false,
+      "required": ["backend", "category", "match", "module"],
+      "properties": {
+        "backend": {"type": "string"},
+        "category": {"enum": ["text_llm", "vision_language", "speech_to_text", "text_to_speech"]},
+        "match": {"enum": ["exact", "remap", "stripped", "squashed"]},
+        "module": {"type": "string"}
+      }
+    },
+    "component": {
+      "type": "object", "additionalProperties": false,
+      "required": ["role", "config_key", "model_type", "matches"],
+      "properties": {
+        "role": {"type": "string"},
+        "config_key": {"type": ["string", "null"]},
+        "model_type": {"type": "string"},
+        "matches": {"type": "array", "items": {"$ref": "#/$defs/match"}}
+      }
+    },
+    "task": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "use_cases", "source", "confidence"],
+      "properties": {
+        "type": {"enum": ["text_llm", "vision_language", "speech_to_text", "text_to_speech", "embedding", "image_generation", "other"]},
+        "use_cases": {"type": "array", "items": {"type": "string"}},
+        "source": {"enum": ["pipeline_tag", "registry", "gguf_architecture", "name", "default"]},
+        "confidence": {"enum": ["confirmed", "likely"]}
+      }
+    }
+  }
+}

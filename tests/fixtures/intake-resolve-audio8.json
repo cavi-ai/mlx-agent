@@ -1,0 +1,82 @@
+{
+  "backend": null,
+  "backend_installed": false,
+  "bytes": 8190357485,
+  "components": [
+    {
+      "config_key": null,
+      "matches": [],
+      "model_type": "audio8_asr_infinite",
+      "role": "model"
+    },
+    {
+      "config_key": "audio_config",
+      "matches": [
+        {
+          "backend": "mlx-audio",
+          "category": "speech_to_text",
+          "match": "stripped",
+          "module": "mlx_audio.stt.models.voxtral_realtime"
+        }
+      ],
+      "model_type": "voxtral_realtime_encoder",
+      "role": "audio"
+    },
+    {
+      "config_key": "text_config",
+      "matches": [
+        {
+          "backend": "mlx-lm",
+          "category": "text_llm",
+          "match": "exact",
+          "module": "mlx_lm.models.qwen2"
+        },
+        {
+          "backend": "mlx-vlm",
+          "category": "vision_language",
+          "match": "exact",
+          "module": "mlx_vlm.models.qwen2"
+        }
+      ],
+      "model_type": "qwen2",
+      "role": "text"
+    }
+  ],
+  "custom_code": true,
+  "files": {
+    "gguf": [],
+    "python": [
+      "configuration_audio8_asr_infinite.py",
+      "modeling_audio8_asr_infinite.py"
+    ],
+    "safetensors": 2
+  },
+  "gated": false,
+  "library_name": "transformers",
+  "model_type": "audio8_asr_infinite",
+  "pipeline_tag": "automatic-speech-recognition",
+  "reasons": [
+    "arch_not_in_registry",
+    "custom_code"
+  ],
+  "schema": "intake/1",
+  "source": {
+    "file": null,
+    "input": "https://huggingface.co/Edge0/Audio8-ASR-Infinite",
+    "repo": "Edge0/Audio8-ASR-Infinite",
+    "revision": "main",
+    "url": "https://huggingface.co/Edge0/Audio8-ASR-Infinite"
+  },
+  "task": {
+    "confidence": "confirmed",
+    "source": "pipeline_tag",
+    "type": "speech_to_text",
+    "use_cases": [
+      "realtime_transcription",
+      "transcription"
+    ]
+  },
+  "transformers_version": "5.13.0",
+  "verdict": "unsupported",
+  "warnings": []
+}

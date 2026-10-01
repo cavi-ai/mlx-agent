@@ -13,6 +13,7 @@
 - Add `backend list|install|remove`: optional mlx-vlm and mlx-audio converters in isolated, hash-locked environments (confirmation-gated; removal moves to the Trash).
 - Add `convert start --backend` for repo conversions through an installed optional backend.
 - Add `intake fetch` and `intake status`: confirmation-gated, receipt-tracked downloads.
+- `intake fetch` skips weight formats MLX converters never read (TensorFlow, Flax, ONNX, Core ML, GGUF) in snapshot downloads.
 - Fix: `convert start --repo` now passes `--quantize`; repo conversions were previously written unquantized.
 
 ## 0.5.2 - 2026-08-25

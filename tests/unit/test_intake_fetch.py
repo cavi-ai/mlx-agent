@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from mlx_agent import fetch_runner
-from mlx_agent.intake_fetch import FETCH_RUNNER, FetchError, plan_fetch, start_fetch, status_fetch
+from mlx_agent.intake_fetch import FETCH_IGNORE_PATTERNS, FETCH_RUNNER, FetchError, plan_fetch, start_fetch, status_fetch
 
 
 class FetchTests(unittest.TestCase):
@@ -29,6 +29,20 @@ class FetchTests(unittest.TestCase):
         self.assertIsNone(snapshot["file"])
         with self.assertRaises(FetchError):
             plan_fetch("org/name", local_dir="relative/dir")
+
+    def test_snapshot_plan_skips_formats_mlx_never_reads(self):
+        snapshot = plan_fetch("org/name", hf_cache="/hf", python="/venv/bin/python")
+        argv = snapshot["argv"]
+        for pattern in ("*.h5", "*.msgpack"):
+            self.assertIn(pattern, argv)
+            self.assertEqual(argv[argv.index(pattern) - 1], "--ignore")
+        self.assertEqual(argv[-2:], ["--cache-dir", "/hf"])
+        self.assertEqual(snapshot["ignore_patterns"], list(FETCH_IGNORE_PATTERNS))
+        self.assertEqual(argv[:6], ["/venv/bin/python", str(FETCH_RUNNER), "--repo", "org/name", "--revision", "main"])
+        self.assertEqual(argv[6:8], ["--ignore", FETCH_IGNORE_PATTERNS[0]])
+        single = plan_fetch("org/name", file="model.gguf", python="/venv/bin/python")
+        self.assertNotIn("--ignore", single["argv"])
+        self.assertEqual(single["ignore_patterns"], [])
 
     def test_start_and_status_lifecycle(self):
         plan = plan_fetch("org/name", python="/venv/bin/python")
@@ -72,6 +86,19 @@ class FetchTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(seen, {"repo_id": "org/name", "revision": "main", "allow_patterns": ["a.gguf"], "local_dir": "/models/x"})
         self.assertEqual(json.loads(marker.read_text(encoding="utf-8"))["path"], "/models/x")
+
+    def test_runner_passes_ignore_patterns(self):
+        marker = self.base / "m.done.json"
+        seen = {}
+
+        def download(**kwargs):
+            seen.update(kwargs)
+            return "/models/x"
+
+        code = fetch_runner.main(["--repo", "org/name", "--revision", "main", "--ignore", "*.h5",
+                                  "--ignore", "*.msgpack", "--marker", str(marker)], download=download)
+        self.assertEqual(code, 0)
+        self.assertEqual(seen, {"repo_id": "org/name", "revision": "main", "ignore_patterns": ["*.h5", "*.msgpack"]})
 
 
 if __name__ == "__main__":

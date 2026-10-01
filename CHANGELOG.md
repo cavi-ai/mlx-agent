@@ -14,6 +14,8 @@
 - Add `convert start --backend` for repo conversions through an installed optional backend.
 - Add `intake fetch` and `intake status`: confirmation-gated, receipt-tracked downloads.
 - `intake fetch` skips weight formats MLX converters never read (TensorFlow, Flax, ONNX, Core ML, GGUF) in snapshot downloads.
+- Add `intake port-analysis`: deterministic component, weight-prefix, and custom-code analysis for architectures no backend implements.
+- Add `intake port-plan`: draft a porting plan from that analysis with a locally served model (loopback endpoints only).
 - Fix: `convert start --repo` now passes `--quantize`; repo conversions were previously written unquantized.
 
 ## 0.5.2 - 2026-08-25

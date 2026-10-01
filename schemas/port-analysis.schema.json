@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cavi-ai/mlx-agent/schemas/port-analysis.schema.json",
+  "title": "mlx-agent intake port-analysis data payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "source", "model_type", "architectures", "processor_class", "transformers_version",
+               "components", "weights", "code", "missing", "warnings"],
+  "properties": {
+    "schema": {"const": "port-analysis/1"},
+    "source": {"type": "object", "additionalProperties": false,
+               "required": ["input", "repo", "revision", "file", "url"],
+               "properties": {"input": {"type": "string"}, "repo": {"type": "string"}, "revision": {"type": "string"},
+                              "file": {"type": ["string", "null"]}, "url": {"type": "string"}}},
+    "model_type": {"type": ["string", "null"]},
+    "architectures": {"type": "array", "items": {"type": "string"}},
+    "processor_class": {"type": ["string", "null"]},
+    "transformers_version": {"type": ["string", "null"]},
+    "components": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["role", "config_key", "model_type", "status", "matches"],
+      "properties": {
+        "role": {"type": "string"}, "config_key": {"type": ["string", "null"]},
+        "model_type": {"type": "string"}, "status": {"enum": ["exists", "missing"]},
+        "matches": {"type": "array", "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["backend", "category", "match", "module"],
+          "properties": {"backend": {"type": "string"}, "category": {"type": "string"},
+                         "match": {"enum": ["exact", "remap", "stripped", "squashed"]}, "module": {"type": "string"}}
+        }}
+      }
+    }},
+    "weights": {"type": "object", "additionalProperties": false,
+                "required": ["index_available", "prefixes", "extra_files"],
+                "properties": {
+                  "index_available": {"type": "boolean"},
+                  "prefixes": {"type": "array", "items": {
+                    "type": "object", "additionalProperties": false, "required": ["prefix", "tensors", "component"],
+                    "properties": {"prefix": {"type": "string"}, "tensors": {"type": "integer", "minimum": 0},
+                                   "component": {"type": ["string", "null"]}}}},
+                  "extra_files": {"type": "array", "items": {"type": "string"}}}},
+    "code": {"type": "object", "additionalProperties": false, "required": ["files", "truncated"],
+             "properties": {
+               "truncated": {"type": "boolean"},
+               "files": {"type": "array", "items": {
+                 "type": "object", "additionalProperties": false, "required": ["name", "bytes", "parsed", "classes"],
+                 "properties": {
+                   "name": {"type": "string"}, "bytes": {"type": "integer", "minimum": 0}, "parsed": {"type": "boolean"},
+                   "classes": {"type": "array", "items": {
+                     "type": "object", "additionalProperties": false, "required": ["name", "bases", "methods", "lineno"],
+                     "properties": {"name": {"type": "string"}, "bases": {"type": "array", "items": {"type": "string"}},
+                                    "methods": {"type": "array", "items": {"type": "string"}}, "lineno": {"type": "integer"}}}}}}}}},
+    "missing": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "name"],
+      "properties": {"kind": {"enum": ["component", "weights", "file"]}, "name": {"type": "string"}}}},
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  }
+}

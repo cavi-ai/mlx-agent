@@ -1,0 +1,146 @@
+{
+  "architectures": [
+    "ToyAsrForConditionalGeneration"
+  ],
+  "code": {
+    "files": [
+      {
+        "bytes": 303,
+        "classes": [
+          {
+            "bases": [
+              "nn.Module"
+            ],
+            "lineno": 5,
+            "methods": [
+              "__init__",
+              "forward"
+            ],
+            "name": "ToyProjector"
+          },
+          {
+            "bases": [
+              "PreTrainedModel",
+              "GenerationMixin"
+            ],
+            "lineno": 13,
+            "methods": [
+              "forward"
+            ],
+            "name": "ToyAsrForConditionalGeneration"
+          }
+        ],
+        "name": "modeling_toy_asr.py",
+        "parsed": true
+      },
+      {
+        "bytes": 62,
+        "classes": [
+          {
+            "bases": [
+              "PretrainedConfig"
+            ],
+            "lineno": 1,
+            "methods": [],
+            "name": "ToyConfig"
+          }
+        ],
+        "name": "configuration_toy_asr.py",
+        "parsed": true
+      }
+    ],
+    "truncated": false
+  },
+  "components": [
+    {
+      "config_key": null,
+      "matches": [],
+      "model_type": "toy_asr",
+      "role": "model",
+      "status": "missing"
+    },
+    {
+      "config_key": "audio_config",
+      "matches": [
+        {
+          "backend": "mlx-audio",
+          "category": "speech_to_text",
+          "match": "stripped",
+          "module": "mlx_audio.stt.models.whisper"
+        }
+      ],
+      "model_type": "whisper_encoder",
+      "role": "audio",
+      "status": "exists"
+    },
+    {
+      "config_key": "text_config",
+      "matches": [
+        {
+          "backend": "mlx-lm",
+          "category": "text_llm",
+          "match": "exact",
+          "module": "mlx_lm.models.qwen2"
+        },
+        {
+          "backend": "mlx-vlm",
+          "category": "vision_language",
+          "match": "exact",
+          "module": "mlx_vlm.models.qwen2"
+        }
+      ],
+      "model_type": "qwen2",
+      "role": "text",
+      "status": "exists"
+    }
+  ],
+  "missing": [
+    {
+      "kind": "component",
+      "name": "model"
+    },
+    {
+      "kind": "weights",
+      "name": "multi_modal_projector"
+    },
+    {
+      "kind": "file",
+      "name": "vad_heads.safetensors"
+    }
+  ],
+  "model_type": "toy_asr",
+  "processor_class": "ToyFeatureExtractor",
+  "schema": "port-analysis/1",
+  "source": {
+    "file": null,
+    "input": "org/toy-asr",
+    "repo": "org/toy-asr",
+    "revision": "main",
+    "url": "https://huggingface.co/org/toy-asr"
+  },
+  "transformers_version": "5.13.0",
+  "warnings": [],
+  "weights": {
+    "extra_files": [
+      "vad_heads.safetensors"
+    ],
+    "index_available": true,
+    "prefixes": [
+      {
+        "component": "audio",
+        "prefix": "audio_tower",
+        "tensors": 2
+      },
+      {
+        "component": "text",
+        "prefix": "language_model",
+        "tensors": 1
+      },
+      {
+        "component": null,
+        "prefix": "multi_modal_projector",
+        "tensors": 1
+      }
+    ]
+  }
+}

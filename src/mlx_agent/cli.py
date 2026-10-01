@@ -64,6 +64,7 @@ from .lora import (
 )
 from .modality import ALL_FACET_IDS, FOUNDATION_IDS, resolve_facets, resolve_modalities
 from .models import DISCOVERY_ROLES, render_md, wire
+from .port_analysis import PortAnalysisError, analyze as port_analyze
 from .project_blueprint import (
     build_brief,
     generate_design_pack,
@@ -1371,6 +1372,12 @@ def _add_intake_arguments(parser):
     status = actions.add_parser("status", help="cross-check download receipts against live processes")
     status.add_argument("--receipts-dir", default=None)
     status.add_argument("--json", action="store_true")
+    analysis = actions.add_parser(
+        "port-analysis", help="deterministic facts for porting an unsupported architecture (no weights)"
+    )
+    analysis.add_argument("source")
+    analysis.add_argument("--revision", default=None)
+    analysis.add_argument("--json", action="store_true")
 
 
 def _intake_resolve_human(payload):
@@ -1422,8 +1429,13 @@ def _run_intake(arguments):
                     print("Confirmation required: rerun with --confirm --preview-hash PREVIEW_HASH.")
                 return 2
             return _emit_serve_result(ResultEnvelope.ok(operation, outcome), arguments.json)
+        if arguments.intake_command == "port-analysis":
+            payload = port_analyze(arguments.source, revision=arguments.revision)
+            return _emit_serve_result(ResultEnvelope.ok(operation, payload), arguments.json)
         raise ValueError("unknown intake command")
     except IntakeSourceError as error:
+        result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
+    except PortAnalysisError as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
     except FetchError as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)

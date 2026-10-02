@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import zipfile
 import sys
 from pathlib import Path
 
 BACKENDS_DIR = Path(__file__).resolve().parent / "resources" / "backends"
+PORTS_DIR = Path(__file__).resolve().parent / "resources" / "ports"
 MANIFEST_SCHEMA = "backend/1"
 INSTALL_MARKER = ".mlx-agent-backend.json"
+PORT_MARKER = ".mlx-agent-port.json"
 CATEGORIES = ("text_llm", "vision_language", "speech_to_text", "text_to_speech")
 MAX_PROBE_FILES = 4000
 MAX_PROBE_FILE_BYTES = 1024 * 1024
@@ -26,6 +30,7 @@ TYPE_PREFERENCE = {
 }
 DEFAULT_PREFERENCE = ("mlx-lm", "mlx-vlm", "mlx-audio")
 _ID = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
+_PORT = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _STRIP_SUFFIXES = ("_encoder", "_decoder", "_text", "_vision", "_audio", "_model")
 _VISION_FILE = re.compile(r"(vision|visual|image|siglip|clip)", re.IGNORECASE)
 _ENV_ALLOWLIST = (
@@ -86,6 +91,12 @@ def _validate_manifest(value, path):
         raise _invalid(path, "remap_files keys must be declared categories")
     if not value["builtin"] and not isinstance(value.get("lock"), str):
         raise _invalid(path, "an optional backend needs a lock file")
+    ports = value.get("ports", {})
+    if not isinstance(ports, dict) or not set(ports) <= set(value["categories"]):
+        raise _invalid(path, "ports keys must be declared categories")
+    for names in ports.values():
+        if not isinstance(names, list) or not all(isinstance(name, str) and _PORT.fullmatch(name) for name in names):
+            raise _invalid(path, "ports must list module names")
 
 
 def backends_root(env=None):
@@ -312,8 +323,100 @@ def load_registries(manifests, root=None, find_spec=importlib.util.find_spec):
                 live = registry_from_sources(probe_sources_from_directory(directory, manifest), manifest)
                 if any(entry["model_types"] for entry in live.values()):
                     registry, source = live, "installed"
-        registries[backend_id] = {"registry": registry, "source": source, "installed": installed}
+        registries[backend_id] = {"registry": with_ports(registry, manifest), "source": source, "installed": installed}
     return registries
+
+
+def with_ports(registry, manifest):
+    """The registry plus the model modules mlx-agent ports into this backend."""
+    ports = manifest.get("ports") or {}
+    if not ports:
+        return registry
+    merged = {category: dict(entry) for category, entry in registry.items()}
+    for category, names in ports.items():
+        entry = merged.setdefault(category, {"model_types": [], "remapping": {}})
+        entry["model_types"] = sorted(set(entry.get("model_types", ())) | {normalize_type(name) for name in names})
+    return merged
+
+
+def _port_digest(directory):
+    digest = hashlib.sha256()
+    for path in sorted(Path(directory).rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        digest.update(path.relative_to(directory).as_posix().encode("utf-8") + b"\0")
+        digest.update(path.read_bytes() + b"\0")
+    return digest.hexdigest()
+
+
+def _read_port_marker(target):
+    try:
+        value = json.loads((target / PORT_MARKER).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def sync_ports(manifest, root=None, find_spec=importlib.util.find_spec, ports_dir=PORTS_DIR):
+    """Copy the backend's bundled model ports into its installed package; returns the names written.
+
+    A port directory carries a marker naming the source digest, so an
+    up-to-date port is left alone and a same-named module the backend
+    itself ships is never overwritten.
+    """
+    ports = manifest.get("ports") or {}
+    if not ports:
+        return []
+    directory = package_dir(manifest, root, find_spec)
+    if directory is None:
+        raise BackendError(
+            "backend_not_installed", "The {0} backend is not installed.".format(manifest["id"]),
+            "Install it first: mlx-agent backend install {0}.".format(manifest["id"]),
+        )
+    written = []
+    for category, names in sorted(ports.items()):
+        base = directory / manifest["categories"][category].strip("/")
+        for name in names:
+            source = Path(ports_dir) / manifest["id"] / name
+            if not (source / "__init__.py").is_file():
+                raise BackendError(
+                    "port_missing", "mlx-agent ships no {0} port for {1}.".format(name, manifest["id"]),
+                    "Reinstall mlx-agent; ports ship under resources/ports.",
+                )
+            digest = _port_digest(source)
+            target = base / name
+            if target.is_symlink():
+                raise BackendError(
+                    "port_target_symlink", "{0} is a symbolic link.".format(target),
+                    "Remove the link; ports are only written to real directories.",
+                )
+            marker = _read_port_marker(target) if target.exists() else None
+            if target.exists() and (marker is None or marker.get("port") != name):
+                raise BackendError(
+                    "port_conflict", "{0} already ships {1}; mlx-agent will not replace it.".format(manifest["id"], name),
+                    "Use the backend's own module, or remove the mlx-agent port from the manifest.",
+                )
+            if marker is not None and marker.get("sha256") == digest:
+                continue
+            staging = base / ".{0}.mlx-agent-staging".format(name)
+            if staging.exists():
+                shutil.rmtree(staging)
+            shutil.copytree(source, staging, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            (staging / PORT_MARKER).write_text(
+                json.dumps({"backend": manifest["id"], "port": name, "sha256": digest}, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            if target.exists():
+                retired = base / ".{0}.mlx-agent-retired".format(name)
+                if retired.exists():
+                    shutil.rmtree(retired)
+                target.rename(retired)
+                staging.rename(target)
+                shutil.rmtree(retired)
+            else:
+                staging.rename(target)
+            written.append(name)
+    return written
 
 
 def _module_path(manifest, category, module):
@@ -332,7 +435,8 @@ def _hit(backend_id, manifest, category, module, match):
 
 
 def _registry(backend_id, manifest, registries):
-    return registries.get(backend_id, {}).get("registry", manifest["registry"])
+    entry = registries.get(backend_id, {})
+    return entry["registry"] if "registry" in entry else with_ports(manifest["registry"], manifest)
 
 
 def lookup(model_type, manifests, registries):

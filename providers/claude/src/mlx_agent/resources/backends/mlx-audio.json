@@ -6,6 +6,11 @@
   "package": "mlx_audio",
   "convert": "mlx_audio.convert",
   "lock": "mlx-audio.lock",
+  "ports": {
+    "speech_to_text": [
+      "audio8_asr_infinite"
+    ]
+  },
   "categories": {
     "speech_to_text": "stt/models",
     "text_to_speech": "tts/models"

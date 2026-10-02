@@ -7,6 +7,8 @@ from tempfile import TemporaryDirectory
 from mlx_agent.backends import (
     BackendError,
     INSTALL_MARKER,
+    PORT_MARKER,
+    PORTS_DIR,
     backend_environment,
     backend_python,
     backend_target,
@@ -22,6 +24,8 @@ from mlx_agent.backends import (
     probe_sources_from_directory,
     probe_sources_from_wheel,
     registry_from_sources,
+    sync_ports,
+    with_ports,
 )
 
 from .backend_fixtures import synthetic_manifests, synthetic_registries
@@ -193,6 +197,82 @@ class ManifestTests(unittest.TestCase):
             with self.assertRaises(BackendError) as caught:
                 load_manifests(Path(directory))
             self.assertEqual(caught.exception.code, "manifest_invalid")
+
+class PortTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.manifest = load_manifests()["mlx-audio"]
+        self.models = self.root / "mlx-audio" / "lib" / "python3.12" / "site-packages" / "mlx_audio" / "stt" / "models"
+
+    def install(self):
+        self.models.mkdir(parents=True)
+
+    def write_manifest(self, ports):
+        directory = self.root / "manifests"
+        directory.mkdir(exist_ok=True)
+        manifest = dict(self.manifest, ports=ports)
+        (directory / "mlx-audio.json").write_text(json.dumps(manifest), encoding="utf-8")
+        return directory
+
+    def test_manifest_ports_must_name_modules_in_declared_categories(self):
+        self.assertEqual(self.manifest["ports"], {"speech_to_text": ["audio8_asr_infinite"]})
+        for bad in ({"text_llm": ["x"]}, {"speech_to_text": "x"}, {"speech_to_text": ["../x"]}):
+            with self.assertRaises(BackendError) as caught:
+                load_manifests(self.write_manifest(bad))
+            self.assertEqual(caught.exception.code, "manifest_invalid")
+
+    def test_ports_join_the_registry_whether_or_not_the_backend_is_installed(self):
+        manifests = load_manifests()
+        self.assertNotIn("audio8_asr_infinite", self.manifest["registry"]["speech_to_text"]["model_types"])
+        merged = with_ports(self.manifest["registry"], self.manifest)
+        self.assertIn("audio8_asr_infinite", merged["speech_to_text"]["model_types"])
+        self.assertIn("whisper", merged["speech_to_text"]["model_types"])
+        registries = load_registries(manifests, root=self.root, find_spec=lambda name: None)
+        hits = lookup("audio8_asr_infinite", manifests, registries)
+        self.assertEqual(hits, [{
+            "backend": "mlx-audio", "category": "speech_to_text", "match": "exact",
+            "module": "mlx_audio.stt.models.audio8_asr_infinite",
+        }])
+        self.assertEqual(lookup("audio8_asr_infinite", manifests, {}), hits)
+
+    def test_sync_copies_once_marks_and_replaces_a_stale_copy(self):
+        self.install()
+        self.assertEqual(sync_ports(self.manifest, self.root), ["audio8_asr_infinite"])
+        target = self.models / "audio8_asr_infinite"
+        sources = sorted(path.name for path in (PORTS_DIR / "mlx-audio" / "audio8_asr_infinite").glob("*.py"))
+        self.assertEqual(sorted(path.name for path in target.glob("*.py")), sources)
+        marker = json.loads((target / PORT_MARKER).read_text(encoding="utf-8"))
+        self.assertEqual((marker["backend"], marker["port"]), ("mlx-audio", "audio8_asr_infinite"))
+        self.assertEqual(sync_ports(self.manifest, self.root), [])
+        (target / "config.py").write_text("stale = True\n", encoding="utf-8")
+        (target / PORT_MARKER).write_text(json.dumps(dict(marker, sha256="stale")), encoding="utf-8")
+        self.assertEqual(sync_ports(self.manifest, self.root), ["audio8_asr_infinite"])
+        self.assertNotIn("stale", (target / "config.py").read_text(encoding="utf-8"))
+        self.assertEqual(sorted(path.name for path in self.models.iterdir()), ["audio8_asr_infinite"])
+
+    def test_sync_refuses_a_module_the_backend_ships_and_symlinks(self):
+        self.install()
+        (self.models / "audio8_asr_infinite").mkdir()
+        with self.assertRaises(BackendError) as caught:
+            sync_ports(self.manifest, self.root)
+        self.assertEqual(caught.exception.code, "port_conflict")
+        (self.models / "audio8_asr_infinite").rename(self.root / "elsewhere")
+        (self.models / "audio8_asr_infinite").symlink_to(self.root / "elsewhere")
+        with self.assertRaises(BackendError) as caught:
+            sync_ports(self.manifest, self.root)
+        self.assertEqual(caught.exception.code, "port_target_symlink")
+
+    def test_sync_needs_an_installed_backend_and_a_shipped_port(self):
+        with self.assertRaises(BackendError) as caught:
+            sync_ports(self.manifest, self.root)
+        self.assertEqual(caught.exception.code, "backend_not_installed")
+        self.install()
+        with self.assertRaises(BackendError) as caught:
+            sync_ports(self.manifest, self.root, ports_dir=self.root / "no-ports")
+        self.assertEqual(caught.exception.code, "port_missing")
+        self.assertEqual(sync_ports(load_manifests()["mlx-vlm"], self.root), [])
 
 
 if __name__ == "__main__":

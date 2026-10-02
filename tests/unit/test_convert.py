@@ -74,17 +74,41 @@ class BackendConvertTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "backend_not_installed")
         self.assertIn("backend install mlx-audio", caught.exception.remediation)
 
-    def test_start_with_installed_backend_records_it(self):
+    def test_backend_plan_names_the_ports_it_installs(self):
+        plan = plan_convert("Edge0/Audio8-ASR-Infinite", backend="mlx-audio", backends_root_dir=self.root)
+        self.assertEqual(plan["ports"], ["audio8_asr_infinite"])
+        self.assertNotIn("ports", plan_convert("pub/model", backend="mlx-vlm", backends_root_dir=self.root))
+
+    def test_start_with_installed_backend_records_it_and_syncs_ports(self):
         plan = plan_convert("openai/whisper-tiny", backend="mlx-audio", out=str(self.root / "out"), backends_root_dir=self.root)
         venv = self.root / "mlx-audio"
         (venv / "bin").mkdir(parents=True)
         (venv / "bin" / "python").write_text("", encoding="utf-8")
         (venv / ".mlx-agent-backend.json").write_text(json.dumps({"id": "mlx-audio", "version": "0.5.7"}), encoding="utf-8")
+        models = venv / "lib" / "python3.12" / "site-packages" / "mlx_audio" / "stt" / "models"
+        models.mkdir(parents=True)
         spawned = []
         outcome = start_convert(plan, receipts_dir=str(self.root), confirm=True, preview_hash=plan["preview_hash"],
                                 spawn=lambda argv, log: spawned.append(argv) or 99, model_present=lambda repo: True)
         self.assertEqual(outcome["receipt"]["backend"], "mlx-audio")
         self.assertEqual(spawned[0], plan["argv"])
+        self.assertTrue((models / "audio8_asr_infinite" / "__init__.py").is_file())
+        self.assertTrue((models / "audio8_asr_infinite" / ".mlx-agent-port.json").is_file())
+
+    def test_refused_start_leaves_the_backend_untouched(self):
+        plan = plan_convert("openai/whisper-tiny", backend="mlx-audio", out=str(self.root / "out"), backends_root_dir=self.root)
+        venv = self.root / "mlx-audio"
+        (venv / "bin").mkdir(parents=True)
+        (venv / "bin" / "python").write_text("", encoding="utf-8")
+        (venv / ".mlx-agent-backend.json").write_text(json.dumps({"id": "mlx-audio", "version": "0.5.7"}), encoding="utf-8")
+        models = venv / "lib" / "python3.12" / "site-packages" / "mlx_audio" / "stt" / "models"
+        models.mkdir(parents=True)
+        (self.root / "out").mkdir()
+        with self.assertRaises(ConvertError) as caught:
+            start_convert(plan, receipts_dir=str(self.root), confirm=True, preview_hash=plan["preview_hash"],
+                          spawn=lambda argv, log: 99, model_present=lambda repo: True)
+        self.assertEqual(caught.exception.code, "output_exists")
+        self.assertEqual(list(models.iterdir()), [])
 
 
 class StartConvertTests(unittest.TestCase):

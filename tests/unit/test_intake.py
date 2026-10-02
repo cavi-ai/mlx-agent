@@ -79,16 +79,17 @@ class ResolveTests(unittest.TestCase):
         self.validator.validate(payload)
         return payload
 
-    def test_audio8_is_unsupported_with_components_and_no_download(self):
+    def test_audio8_converts_through_the_mlx_audio_port_with_no_download(self):
         payload = golden_audio8()
         self.validator.validate(payload)
-        self.assertEqual(payload["verdict"], "unsupported")
-        self.assertEqual(payload["reasons"], ["arch_not_in_registry", "custom_code"])
+        self.assertEqual(payload["verdict"], "convertible_after_install")
+        self.assertEqual((payload["backend"], payload["reasons"]), ("mlx-audio", []))
+        self.assertTrue(payload["custom_code"])
         self.assertEqual(payload["task"]["type"], "speech_to_text")
         self.assertEqual(payload["task"]["use_cases"], ["realtime_transcription", "transcription"])
         roles = {c["role"]: c for c in payload["components"]}
         self.assertEqual(sorted(roles), ["audio", "model", "text"])
-        self.assertEqual(roles["model"]["matches"], [])
+        self.assertEqual([m["module"] for m in roles["model"]["matches"]], ["mlx_audio.stt.models.audio8_asr_infinite"])
         self.assertIn("mlx_audio.stt.models.voxtral_realtime", [m["module"] for m in roles["audio"]["matches"]])
         self.assertIn("mlx_lm.models.qwen2", [m["module"] for m in roles["text"]["matches"]])
         self.assertGreater(payload["bytes"], 8_000_000_000)
@@ -131,6 +132,13 @@ class ResolveTests(unittest.TestCase):
         broken = self.run_resolve(FakeClient(info_error=http.client.HTTPException("boom")))
         self.assertEqual(broken["verdict"], "unknown")
 
+    def test_unknown_architecture_with_custom_code_is_unsupported(self):
+        config = {"model_type": "made_up_asr", "auto_map": {"AutoConfig": "configuration_made_up.Config"}}
+        client = FakeClient(info=repo_info(pipeline_tag="automatic-speech-recognition"), files={"config.json": json.dumps(config)})
+        payload = self.run_resolve(client, installed=("mlx-audio",))
+        self.assertEqual((payload["verdict"], payload["reasons"], payload["backend"]),
+                         ("unsupported", ["arch_not_in_registry", "custom_code"], None))
+
     def test_missing_config_is_unsupported_no_config(self):
         payload = self.run_resolve(FakeClient(info=repo_info(files=("model.safetensors",))))
         self.assertEqual((payload["verdict"], payload["reasons"]), ("unsupported", ["no_config"]))
@@ -158,7 +166,7 @@ class IntakeCliTests(unittest.TestCase):
         envelope = json.loads(out.getvalue())
         self.assertEqual(code, 0)
         self.assertEqual(envelope["operation"], "intake-resolve")
-        self.assertEqual(envelope["data"]["verdict"], "unsupported")
+        self.assertEqual(envelope["data"]["verdict"], "convertible_after_install")
 
     def test_invalid_source_fails_cleanly(self):
         out = io.StringIO()

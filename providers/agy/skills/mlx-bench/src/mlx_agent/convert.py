@@ -16,6 +16,7 @@ from .backends import (
     load_manifests,
     read_install_marker,
     spawn_with_env,
+    sync_ports,
 )
 from .gguf import GGUFError, describe_gguf
 from .serve import (
@@ -94,6 +95,9 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
     plan["backend"] = backend
     plan["backends_root"] = str(python.parent.parent.parent)
     plan["argv"] = [str(python), "-m", manifest["convert"]] + flags
+    ports = sorted(name for names in (manifest.get("ports") or {}).values() for name in names)
+    if ports:
+        plan["ports"] = ports
     return _finalize_plan(plan)
 
 
@@ -315,6 +319,11 @@ def start_convert(plan, receipts_dir=None, confirm=False, preview_hash=None,
                 "Wait for it to finish (convert status) before starting another.",
             )
 
+    if backend:
+        try:
+            sync_ports(manifest, plan.get("backends_root"))
+        except BackendError as error:
+            raise ConvertError(error.code, str(error), error.remediation) from error
     root.mkdir(parents=True, exist_ok=True)
     slug = _slug(plan)
     log_path = root / "{0}.log".format(slug)

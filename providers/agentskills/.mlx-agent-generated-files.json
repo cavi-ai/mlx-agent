@@ -34,7 +34,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/backends.py",
-      "sha256": "6b198506b3f4e8f5cee8602e148f9d64f8b9ae6681268b2d2d9cbf8dc8e3f017"
+      "sha256": "7aa71b961d88ed6b484399d61628db20e6507846fdb8d4ff3ea125d682311b55"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/bench.py",
@@ -66,7 +66,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/convert.py",
-      "sha256": "9941e281471e53fa50fa730f13662f8abc2407a435976e4274eb3cb56146de16"
+      "sha256": "bbd9413ef2ecaf964d5887d45c8f1dac9af6824b6d4a87ad7e61a18bd8989a0c"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/discovery.py",
@@ -170,7 +170,7 @@
     },
     {
       "path": "mlx-adopt/src/mlx_agent/resources/backends/mlx-audio.json",
-      "sha256": "deae17df580b008ef080564abe5002723ca7d19b0193b8861fe6f9b79f832713"
+      "sha256": "15aa25978bc319a9f4a4e2a63b7a6fe313df1fe363a09293e2577b7f0768a49b"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/resources/backends/mlx-audio.lock",
@@ -191,6 +191,22 @@
     {
       "path": "mlx-adopt/src/mlx_agent/resources/bench-community.json",
       "sha256": "2e127b8ca192b0f5a087109156d9ff604aa4cdd7a1b48b0af031d71b33eef429"
+    },
+    {
+      "path": "mlx-adopt/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/__init__.py",
+      "sha256": "0a80265ab58ff2d104ca0ff8b1f71aa91118e40d6007250d8ae1a4ef82935259"
+    },
+    {
+      "path": "mlx-adopt/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/audio.py",
+      "sha256": "3a26d558976ce293530f01287ab1fe31412b99808714f63837119317a4acc769"
+    },
+    {
+      "path": "mlx-adopt/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/audio8_asr_infinite.py",
+      "sha256": "f85f362fb872c702a7cb19e741a16a748e6701df9a03992185a14e3a5ebacd97"
+    },
+    {
+      "path": "mlx-adopt/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/config.py",
+      "sha256": "cfb47d80f58904bef993f6caf3111ee6dafe35fb20fa099663ddde3b16207584"
     },
     {
       "path": "mlx-adopt/src/mlx_agent/resources/references/model-families.md",
@@ -274,7 +290,7 @@
     },
     {
       "path": "mlx-bench/src/mlx_agent/backends.py",
-      "sha256": "6b198506b3f4e8f5cee8602e148f9d64f8b9ae6681268b2d2d9cbf8dc8e3f017"
+      "sha256": "7aa71b961d88ed6b484399d61628db20e6507846fdb8d4ff3ea125d682311b55"
     },
     {
       "path": "mlx-bench/src/mlx_agent/bench.py",
@@ -306,7 +322,7 @@
     },
     {
       "path": "mlx-bench/src/mlx_agent/convert.py",
-      "sha256": "9941e281471e53fa50fa730f13662f8abc2407a435976e4274eb3cb56146de16"
+      "sha256": "bbd9413ef2ecaf964d5887d45c8f1dac9af6824b6d4a87ad7e61a18bd8989a0c"
     },
     {
       "path": "mlx-bench/src/mlx_agent/discovery.py",
@@ -410,7 +426,7 @@
     },
     {
       "path": "mlx-bench/src/mlx_agent/resources/backends/mlx-audio.json",
-      "sha256": "deae17df580b008ef080564abe5002723ca7d19b0193b8861fe6f9b79f832713"
+      "sha256": "15aa25978bc319a9f4a4e2a63b7a6fe313df1fe363a09293e2577b7f0768a49b"
     },
     {
       "path": "mlx-bench/src/mlx_agent/resources/backends/mlx-audio.lock",
@@ -431,6 +447,22 @@
     {
       "path": "mlx-bench/src/mlx_agent/resources/bench-community.json",
       "sha256": "2e127b8ca192b0f5a087109156d9ff604aa4cdd7a1b48b0af031d71b33eef429"
+    },
+    {
+      "path": "mlx-bench/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/__init__.py",
+      "sha256": "0a80265ab58ff2d104ca0ff8b1f71aa91118e40d6007250d8ae1a4ef82935259"
+    },
+    {
+      "path": "mlx-bench/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/audio.py",
+      "sha256": "3a26d558976ce293530f01287ab1fe31412b99808714f63837119317a4acc769"
+    },
+    {
+      "path": "mlx-bench/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/audio8_asr_infinite.py",
+      "sha256": "f85f362fb872c702a7cb19e741a16a748e6701df9a03992185a14e3a5ebacd97"
+    },
+    {
+      "path": "mlx-bench/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/config.py",
+      "sha256": "cfb47d80f58904bef993f6caf3111ee6dafe35fb20fa099663ddde3b16207584"
     },
     {
       "path": "mlx-bench/src/mlx_agent/resources/references/model-families.md",
@@ -514,7 +546,7 @@
     },
     {
       "path": "mlx-doctor/src/mlx_agent/backends.py",
-      "sha256": "6b198506b3f4e8f5cee8602e148f9d64f8b9ae6681268b2d2d9cbf8dc8e3f017"
+      "sha256": "7aa71b961d88ed6b484399d61628db20e6507846fdb8d4ff3ea125d682311b55"
     },
     {
       "path": "mlx-doctor/src/mlx_agent/bench.py",
@@ -546,7 +578,7 @@
     },
     {
       "path": "mlx-doctor/src/mlx_agent/convert.py",
-      "sha256": "9941e281471e53fa50fa730f13662f8abc2407a435976e4274eb3cb56146de16"
+      "sha256": "bbd9413ef2ecaf964d5887d45c8f1dac9af6824b6d4a87ad7e61a18bd8989a0c"
     },
     {
       "path": "mlx-doctor/src/mlx_agent/discovery.py",
@@ -650,7 +682,7 @@
     },
     {
       "path": "mlx-doctor/src/mlx_agent/resources/backends/mlx-audio.json",
-      "sha256": "deae17df580b008ef080564abe5002723ca7d19b0193b8861fe6f9b79f832713"
+      "sha256": "15aa25978bc319a9f4a4e2a63b7a6fe313df1fe363a09293e2577b7f0768a49b"
     },
     {
       "path": "mlx-doctor/src/mlx_agent/resources/backends/mlx-audio.lock",
@@ -671,6 +703,22 @@
     {
       "path": "mlx-doctor/src/mlx_agent/resources/bench-community.json",
       "sha256": "2e127b8ca192b0f5a087109156d9ff604aa4cdd7a1b48b0af031d71b33eef429"
+    },
+    {
+      "path": "mlx-doctor/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/__init__.py",
+      "sha256": "0a80265ab58ff2d104ca0ff8b1f71aa91118e40d6007250d8ae1a4ef82935259"
+    },
+    {
+      "path": "mlx-doctor/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/audio.py",
+      "sha256": "3a26d558976ce293530f01287ab1fe31412b99808714f63837119317a4acc769"
+    },
+    {
+      "path": "mlx-doctor/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/audio8_asr_infinite.py",
+      "sha256": "f85f362fb872c702a7cb19e741a16a748e6701df9a03992185a14e3a5ebacd97"
+    },
+    {
+      "path": "mlx-doctor/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/config.py",
+      "sha256": "cfb47d80f58904bef993f6caf3111ee6dafe35fb20fa099663ddde3b16207584"
     },
     {
       "path": "mlx-doctor/src/mlx_agent/resources/references/model-families.md",
@@ -754,7 +802,7 @@
     },
     {
       "path": "mlx-fleet/src/mlx_agent/backends.py",
-      "sha256": "6b198506b3f4e8f5cee8602e148f9d64f8b9ae6681268b2d2d9cbf8dc8e3f017"
+      "sha256": "7aa71b961d88ed6b484399d61628db20e6507846fdb8d4ff3ea125d682311b55"
     },
     {
       "path": "mlx-fleet/src/mlx_agent/bench.py",
@@ -786,7 +834,7 @@
     },
     {
       "path": "mlx-fleet/src/mlx_agent/convert.py",
-      "sha256": "9941e281471e53fa50fa730f13662f8abc2407a435976e4274eb3cb56146de16"
+      "sha256": "bbd9413ef2ecaf964d5887d45c8f1dac9af6824b6d4a87ad7e61a18bd8989a0c"
     },
     {
       "path": "mlx-fleet/src/mlx_agent/discovery.py",
@@ -890,7 +938,7 @@
     },
     {
       "path": "mlx-fleet/src/mlx_agent/resources/backends/mlx-audio.json",
-      "sha256": "deae17df580b008ef080564abe5002723ca7d19b0193b8861fe6f9b79f832713"
+      "sha256": "15aa25978bc319a9f4a4e2a63b7a6fe313df1fe363a09293e2577b7f0768a49b"
     },
     {
       "path": "mlx-fleet/src/mlx_agent/resources/backends/mlx-audio.lock",
@@ -911,6 +959,22 @@
     {
       "path": "mlx-fleet/src/mlx_agent/resources/bench-community.json",
       "sha256": "2e127b8ca192b0f5a087109156d9ff604aa4cdd7a1b48b0af031d71b33eef429"
+    },
+    {
+      "path": "mlx-fleet/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/__init__.py",
+      "sha256": "0a80265ab58ff2d104ca0ff8b1f71aa91118e40d6007250d8ae1a4ef82935259"
+    },
+    {
+      "path": "mlx-fleet/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/audio.py",
+      "sha256": "3a26d558976ce293530f01287ab1fe31412b99808714f63837119317a4acc769"
+    },
+    {
+      "path": "mlx-fleet/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/audio8_asr_infinite.py",
+      "sha256": "f85f362fb872c702a7cb19e741a16a748e6701df9a03992185a14e3a5ebacd97"
+    },
+    {
+      "path": "mlx-fleet/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/config.py",
+      "sha256": "cfb47d80f58904bef993f6caf3111ee6dafe35fb20fa099663ddde3b16207584"
     },
     {
       "path": "mlx-fleet/src/mlx_agent/resources/references/model-families.md",
@@ -994,7 +1058,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/backends.py",
-      "sha256": "6b198506b3f4e8f5cee8602e148f9d64f8b9ae6681268b2d2d9cbf8dc8e3f017"
+      "sha256": "7aa71b961d88ed6b484399d61628db20e6507846fdb8d4ff3ea125d682311b55"
     },
     {
       "path": "mlx-scout/src/mlx_agent/bench.py",
@@ -1026,7 +1090,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/convert.py",
-      "sha256": "9941e281471e53fa50fa730f13662f8abc2407a435976e4274eb3cb56146de16"
+      "sha256": "bbd9413ef2ecaf964d5887d45c8f1dac9af6824b6d4a87ad7e61a18bd8989a0c"
     },
     {
       "path": "mlx-scout/src/mlx_agent/discovery.py",
@@ -1130,7 +1194,7 @@
     },
     {
       "path": "mlx-scout/src/mlx_agent/resources/backends/mlx-audio.json",
-      "sha256": "deae17df580b008ef080564abe5002723ca7d19b0193b8861fe6f9b79f832713"
+      "sha256": "15aa25978bc319a9f4a4e2a63b7a6fe313df1fe363a09293e2577b7f0768a49b"
     },
     {
       "path": "mlx-scout/src/mlx_agent/resources/backends/mlx-audio.lock",
@@ -1151,6 +1215,22 @@
     {
       "path": "mlx-scout/src/mlx_agent/resources/bench-community.json",
       "sha256": "2e127b8ca192b0f5a087109156d9ff604aa4cdd7a1b48b0af031d71b33eef429"
+    },
+    {
+      "path": "mlx-scout/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/__init__.py",
+      "sha256": "0a80265ab58ff2d104ca0ff8b1f71aa91118e40d6007250d8ae1a4ef82935259"
+    },
+    {
+      "path": "mlx-scout/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/audio.py",
+      "sha256": "3a26d558976ce293530f01287ab1fe31412b99808714f63837119317a4acc769"
+    },
+    {
+      "path": "mlx-scout/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/audio8_asr_infinite.py",
+      "sha256": "f85f362fb872c702a7cb19e741a16a748e6701df9a03992185a14e3a5ebacd97"
+    },
+    {
+      "path": "mlx-scout/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/config.py",
+      "sha256": "cfb47d80f58904bef993f6caf3111ee6dafe35fb20fa099663ddde3b16207584"
     },
     {
       "path": "mlx-scout/src/mlx_agent/resources/references/model-families.md",
@@ -1234,7 +1314,7 @@
     },
     {
       "path": "mlx-watch/src/mlx_agent/backends.py",
-      "sha256": "6b198506b3f4e8f5cee8602e148f9d64f8b9ae6681268b2d2d9cbf8dc8e3f017"
+      "sha256": "7aa71b961d88ed6b484399d61628db20e6507846fdb8d4ff3ea125d682311b55"
     },
     {
       "path": "mlx-watch/src/mlx_agent/bench.py",
@@ -1266,7 +1346,7 @@
     },
     {
       "path": "mlx-watch/src/mlx_agent/convert.py",
-      "sha256": "9941e281471e53fa50fa730f13662f8abc2407a435976e4274eb3cb56146de16"
+      "sha256": "bbd9413ef2ecaf964d5887d45c8f1dac9af6824b6d4a87ad7e61a18bd8989a0c"
     },
     {
       "path": "mlx-watch/src/mlx_agent/discovery.py",
@@ -1370,7 +1450,7 @@
     },
     {
       "path": "mlx-watch/src/mlx_agent/resources/backends/mlx-audio.json",
-      "sha256": "deae17df580b008ef080564abe5002723ca7d19b0193b8861fe6f9b79f832713"
+      "sha256": "15aa25978bc319a9f4a4e2a63b7a6fe313df1fe363a09293e2577b7f0768a49b"
     },
     {
       "path": "mlx-watch/src/mlx_agent/resources/backends/mlx-audio.lock",
@@ -1391,6 +1471,22 @@
     {
       "path": "mlx-watch/src/mlx_agent/resources/bench-community.json",
       "sha256": "2e127b8ca192b0f5a087109156d9ff604aa4cdd7a1b48b0af031d71b33eef429"
+    },
+    {
+      "path": "mlx-watch/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/__init__.py",
+      "sha256": "0a80265ab58ff2d104ca0ff8b1f71aa91118e40d6007250d8ae1a4ef82935259"
+    },
+    {
+      "path": "mlx-watch/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/audio.py",
+      "sha256": "3a26d558976ce293530f01287ab1fe31412b99808714f63837119317a4acc769"
+    },
+    {
+      "path": "mlx-watch/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/audio8_asr_infinite.py",
+      "sha256": "f85f362fb872c702a7cb19e741a16a748e6701df9a03992185a14e3a5ebacd97"
+    },
+    {
+      "path": "mlx-watch/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/config.py",
+      "sha256": "cfb47d80f58904bef993f6caf3111ee6dafe35fb20fa099663ddde3b16207584"
     },
     {
       "path": "mlx-watch/src/mlx_agent/resources/references/model-families.md",
@@ -1474,7 +1570,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/backends.py",
-      "sha256": "6b198506b3f4e8f5cee8602e148f9d64f8b9ae6681268b2d2d9cbf8dc8e3f017"
+      "sha256": "7aa71b961d88ed6b484399d61628db20e6507846fdb8d4ff3ea125d682311b55"
     },
     {
       "path": "mlx-wire/src/mlx_agent/bench.py",
@@ -1506,7 +1602,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/convert.py",
-      "sha256": "9941e281471e53fa50fa730f13662f8abc2407a435976e4274eb3cb56146de16"
+      "sha256": "bbd9413ef2ecaf964d5887d45c8f1dac9af6824b6d4a87ad7e61a18bd8989a0c"
     },
     {
       "path": "mlx-wire/src/mlx_agent/discovery.py",
@@ -1610,7 +1706,7 @@
     },
     {
       "path": "mlx-wire/src/mlx_agent/resources/backends/mlx-audio.json",
-      "sha256": "deae17df580b008ef080564abe5002723ca7d19b0193b8861fe6f9b79f832713"
+      "sha256": "15aa25978bc319a9f4a4e2a63b7a6fe313df1fe363a09293e2577b7f0768a49b"
     },
     {
       "path": "mlx-wire/src/mlx_agent/resources/backends/mlx-audio.lock",
@@ -1631,6 +1727,22 @@
     {
       "path": "mlx-wire/src/mlx_agent/resources/bench-community.json",
       "sha256": "2e127b8ca192b0f5a087109156d9ff604aa4cdd7a1b48b0af031d71b33eef429"
+    },
+    {
+      "path": "mlx-wire/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/__init__.py",
+      "sha256": "0a80265ab58ff2d104ca0ff8b1f71aa91118e40d6007250d8ae1a4ef82935259"
+    },
+    {
+      "path": "mlx-wire/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/audio.py",
+      "sha256": "3a26d558976ce293530f01287ab1fe31412b99808714f63837119317a4acc769"
+    },
+    {
+      "path": "mlx-wire/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/audio8_asr_infinite.py",
+      "sha256": "f85f362fb872c702a7cb19e741a16a748e6701df9a03992185a14e3a5ebacd97"
+    },
+    {
+      "path": "mlx-wire/src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/config.py",
+      "sha256": "cfb47d80f58904bef993f6caf3111ee6dafe35fb20fa099663ddde3b16207584"
     },
     {
       "path": "mlx-wire/src/mlx_agent/resources/references/model-families.md",

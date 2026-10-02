@@ -1,11 +1,18 @@
 {
-  "backend": null,
+  "backend": "mlx-audio",
   "backend_installed": false,
   "bytes": 8190357485,
   "components": [
     {
       "config_key": null,
-      "matches": [],
+      "matches": [
+        {
+          "backend": "mlx-audio",
+          "category": "speech_to_text",
+          "match": "exact",
+          "module": "mlx_audio.stt.models.audio8_asr_infinite"
+        }
+      ],
       "model_type": "audio8_asr_infinite",
       "role": "model"
     },
@@ -55,10 +62,7 @@
   "library_name": "transformers",
   "model_type": "audio8_asr_infinite",
   "pipeline_tag": "automatic-speech-recognition",
-  "reasons": [
-    "arch_not_in_registry",
-    "custom_code"
-  ],
+  "reasons": [],
   "schema": "intake/1",
   "source": {
     "file": null,
@@ -77,6 +81,6 @@
     ]
   },
   "transformers_version": "5.13.0",
-  "verdict": "unsupported",
+  "verdict": "convertible_after_install",
   "warnings": []
 }

@@ -23,6 +23,7 @@ from mlx_agent.backends import (
     lookup_squashed,
     probe_sources_from_directory,
     probe_sources_from_wheel,
+    quantize_rule,
     registry_from_sources,
     sync_ports,
     with_ports,
@@ -221,6 +222,21 @@ class PortTests(unittest.TestCase):
         for bad in ({"text_llm": ["x"]}, {"speech_to_text": "x"}, {"speech_to_text": ["../x"]}):
             with self.assertRaises(BackendError) as caught:
                 load_manifests(self.write_manifest(bad))
+            self.assertEqual(caught.exception.code, "manifest_invalid")
+
+    def test_port_quantize_rules_name_declared_ports(self):
+        manifests = load_manifests()
+        self.assertEqual(quantize_rule("Audio8_ASR_Infinite", "mlx-audio", manifests),
+                         {"include": ["language_model."], "exclude": ["ada_rms_norm"]})
+        self.assertIsNone(quantize_rule("whisper", "mlx-audio", manifests))
+        self.assertIsNone(quantize_rule("audio8_asr_infinite", None, manifests))
+        directory = self.write_manifest(self.manifest["ports"])
+        for bad in ({"whisper": {"include": ["x."]}}, {"audio8_asr_infinite": {"only": ["x."]}},
+                    {"audio8_asr_infinite": {"include": "x."}}):
+            manifest = dict(self.manifest, port_quantize=bad)
+            (directory / "mlx-audio.json").write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaises(BackendError) as caught:
+                load_manifests(directory)
             self.assertEqual(caught.exception.code, "manifest_invalid")
 
     def test_ports_join_the_registry_whether_or_not_the_backend_is_installed(self):

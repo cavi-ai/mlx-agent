@@ -50,6 +50,10 @@
     }
   ],
   "custom_code": true,
+  "estimated_output_bytes": {
+    "4": 3748321085,
+    "8": 5291169597
+  },
   "files": {
     "gguf": [],
     "python": [

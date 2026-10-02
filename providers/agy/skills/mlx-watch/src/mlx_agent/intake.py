@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import http.client
 import json
+import math
 
-from .backends import choose_backend, component_matches, load_manifests, load_registries, lookup
+from .backends import choose_backend, component_matches, load_manifests, load_registries, lookup, quantize_rule
 from .huggingface import HuggingFaceClient, HuggingFaceHTTPError
 from .intake_source import parse_hf_source, validate_revision
 from .taxonomy import classify
@@ -13,6 +14,14 @@ from .taxonomy import classify
 INTAKE_SCHEMA = "intake/1"
 TRANSPORT_ERRORS = (OSError, TimeoutError, http.client.HTTPException, ValueError)
 _BLOCKING_STATUSES = (401, 403, 404, 410)
+ESTIMATE_BITS = (4, 8)
+ESTIMATE_MAX_SHARDS = 16
+QUANT_GROUP_SIZE = 64
+_DTYPE_BYTES = {
+    "F64": 8, "F32": 4, "F16": 2, "BF16": 2, "F8_E4M3": 1, "F8_E5M2": 1,
+    "I64": 8, "I32": 4, "I16": 2, "I8": 1, "U8": 1, "BOOL": 1,
+}
+_SUPPORT_SUFFIXES = (".json", ".jinja", ".model", ".tiktoken", ".txt")
 
 
 def _text(value):
@@ -22,7 +31,7 @@ def _text(value):
 def summarize_files(info):
     siblings = info.get("siblings") if isinstance(info.get("siblings"), list) else []
     names, gguf, python = set(), [], []
-    total, safetensors = 0, 0
+    total, safetensors, sizes = 0, 0, {}
     for sibling in siblings:
         if not isinstance(sibling, dict) or not isinstance(sibling.get("rfilename"), str):
             continue
@@ -31,6 +40,7 @@ def summarize_files(info):
         if not isinstance(size, int) or isinstance(size, bool) or size < 0:
             size = 0
         names.add(name)
+        sizes[name] = size
         total += size
         lowered = name.lower()
         if lowered.endswith(".gguf"):
@@ -41,6 +51,7 @@ def summarize_files(info):
             python.append(name)
     return {
         "names": names,
+        "sizes": sizes,
         "bytes": total,
         "summary": {
             "safetensors": safetensors,
@@ -60,6 +71,56 @@ def fetch_config(client, repo, revision, warnings):
         warnings.append("config.json is not a JSON object")
         return {}
     return value
+
+
+def _quantizes(name, shape, rule):
+    if len(shape) < 2 or shape[-1] % QUANT_GROUP_SIZE:
+        return False
+    if rule is None:
+        return name.endswith(".weight")
+    return any(name.startswith(prefix) for prefix in rule.get("include", ())) and not any(
+        part in name for part in rule.get("exclude", ())
+    )
+
+
+def estimate_output_bytes(client, repo, revision, files, rule, warnings):
+    """Converted size per bit width from the weight files' headers (no weights read).
+
+    Quantized tensors cost bits/8 bytes per weight plus an affine scale and
+    bias per group of 64 in the weight's dtype; everything else keeps its
+    source size. Supporting files (config, tokenizer) are added as listed.
+    """
+    shards = sorted(name for name in files["names"] if name.endswith(".safetensors") and "/" not in name)
+    if not shards or len(shards) > ESTIMATE_MAX_SHARDS:
+        return None
+    totals = {bits: 0 for bits in ESTIMATE_BITS}
+    for shard in shards:
+        try:
+            header = client.fetch_safetensors_header(repo, revision, shard)
+        except TRANSPORT_ERRORS as error:
+            warnings.append("output size estimate unavailable: {0} header unreadable: {1}".format(shard, error))
+            return None
+        for name, tensor in header.items():
+            if name == "__metadata__":
+                continue
+            shape = tensor.get("shape") if isinstance(tensor, dict) else None
+            width = _DTYPE_BYTES.get(tensor.get("dtype")) if isinstance(tensor, dict) else None
+            if width is None or not isinstance(shape, list) or not all(
+                isinstance(dim, int) and not isinstance(dim, bool) and dim >= 0 for dim in shape
+            ):
+                warnings.append("output size estimate unavailable: {0} has an unreadable tensor {1}".format(shard, name))
+                return None
+            count = math.prod(shape)
+            for bits in totals:
+                if _quantizes(name, shape, rule):
+                    totals[bits] += -(-count * bits // 8) + (count // QUANT_GROUP_SIZE) * 2 * width
+                else:
+                    totals[bits] += count * width
+    support = sum(
+        size for name, size in files["sizes"].items()
+        if "/" not in name and name.endswith(_SUPPORT_SUFFIXES) and name != "model.safetensors.index.json"
+    )
+    return {str(bits): total + support for bits, total in totals.items()}
 
 
 def components(model_type, config, manifests, registries):
@@ -89,6 +150,7 @@ def _empty_payload(text, source):
         "verdict": "unknown", "reasons": [], "backend": None, "backend_installed": False,
         "model_type": None, "components": [], "task": None, "custom_code": False, "gated": False,
         "library_name": None, "pipeline_tag": None, "transformers_version": None, "bytes": 0,
+        "estimated_output_bytes": None,
         "files": {"safetensors": 0, "gguf": [], "python": []}, "warnings": [],
     }
 
@@ -165,4 +227,9 @@ def resolve(text, revision=None, client=None, manifests=None, registries=None):
         verdict=verdict, reasons=reasons, backend=backend,
         backend_installed=bool(backend and registries.get(backend, {}).get("installed")),
     )
+    if verdict in ("convertible", "convertible_after_install"):
+        payload["estimated_output_bytes"] = estimate_output_bytes(
+            client, source["repo"], source["revision"], files,
+            quantize_rule(payload["model_type"], backend, manifests), payload["warnings"],
+        )
     return payload

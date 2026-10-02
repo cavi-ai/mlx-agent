@@ -21,11 +21,13 @@ SCHEMA = json.loads((ROOT / "schemas" / "intake.schema.json").read_text(encoding
 
 
 class FakeClient:
-    def __init__(self, info=None, files=None, info_error=None):
+    def __init__(self, info=None, files=None, info_error=None, headers=None):
         self.info = info
         self.files = files or {}
         self.info_error = info_error
+        self.headers = headers or {}
         self.raw_requests = []
+        self.header_requests = []
 
     def fetch_model_info(self, repo, revision="main", timeout=8):
         if self.info_error is not None:
@@ -38,11 +40,18 @@ class FakeClient:
             raise HuggingFaceHTTPError(404, "missing")
         return self.files[filename]
 
+    def fetch_safetensors_header(self, repo, revision, filename, timeout=8):
+        self.header_requests.append(filename)
+        if filename not in self.headers:
+            raise HuggingFaceHTTPError(404, "missing")
+        return self.headers[filename]
+
 
 def audio8_client():
     info = json.loads((FIXTURES / "hf" / "audio8-api.json").read_text(encoding="utf-8"))
     config = (FIXTURES / "hf" / "audio8-config.json").read_text(encoding="utf-8")
-    return FakeClient(info=info, files={"config.json": config})
+    headers = json.loads((FIXTURES / "hf" / "audio8-safetensors-headers.json").read_text(encoding="utf-8"))
+    return FakeClient(info=info, files={"config.json": config}, headers=headers)
 
 
 def golden_audio8():
@@ -93,6 +102,35 @@ class ResolveTests(unittest.TestCase):
         self.assertIn("mlx_audio.stt.models.voxtral_realtime", [m["module"] for m in roles["audio"]["matches"]])
         self.assertIn("mlx_lm.models.qwen2", [m["module"] for m in roles["text"]["matches"]])
         self.assertGreater(payload["bytes"], 8_000_000_000)
+
+    def test_audio8_estimate_counts_only_the_ported_decoder_as_quantized(self):
+        payload = golden_audio8()
+        self.assertEqual(payload["estimated_output_bytes"], {"4": 3748321085, "8": 5291169597})
+
+    def test_estimate_quantizes_matrix_weights_and_keeps_the_rest(self):
+        header = {
+            "__metadata__": {"format": "pt"},
+            "layer.weight": {"dtype": "BF16", "shape": [128, 64], "data_offsets": [0, 0]},
+            "layer.bias": {"dtype": "BF16", "shape": [128], "data_offsets": [0, 0]},
+            "norm.weight": {"dtype": "BF16", "shape": [64], "data_offsets": [0, 0]},
+            "odd.weight": {"dtype": "F32", "shape": [10, 30], "data_offsets": [0, 0]},
+        }
+        info = repo_info(pipeline_tag="text-generation", files=("config.json", "model.safetensors", "tokenizer.json"))
+        client = FakeClient(info=info, files={"config.json": json.dumps({"model_type": "qwen2"})}, headers={"model.safetensors": header})
+        payload = self.run_resolve(client, installed=("mlx-lm",))
+        kept = 128 * 2 + 64 * 2 + 300 * 4
+        quantized = {4: 8192 // 2 + 128 * 2 * 2, 8: 8192 + 128 * 2 * 2}
+        self.assertEqual(payload["estimated_output_bytes"], {str(bits): quantized[bits] + kept + 2000 for bits in (4, 8)})
+        self.assertEqual(client.header_requests, ["model.safetensors"])
+
+    def test_estimate_is_null_when_a_header_is_unreadable_or_the_verdict_is_not_a_conversion(self):
+        client = FakeClient(info=repo_info(pipeline_tag="text-generation"), files={"config.json": json.dumps({"model_type": "qwen2"})})
+        payload = self.run_resolve(client, installed=("mlx-lm",))
+        self.assertIsNone(payload["estimated_output_bytes"])
+        self.assertTrue(any("output size estimate unavailable" in warning for warning in payload["warnings"]))
+        gguf_client = FakeClient(info=repo_info(files=("a-Q4_K_M.gguf",)))
+        self.assertIsNone(self.run_resolve(gguf_client)["estimated_output_bytes"])
+        self.assertEqual(gguf_client.header_requests, [])
 
     def test_golden_fixture_matches(self):
         expected = json.loads((FIXTURES / "intake-resolve-audio8.json").read_text(encoding="utf-8"))

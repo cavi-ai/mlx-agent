@@ -11,6 +11,16 @@
       "audio8_asr_infinite"
     ]
   },
+  "port_quantize": {
+    "audio8_asr_infinite": {
+      "include": [
+        "language_model."
+      ],
+      "exclude": [
+        "ada_rms_norm"
+      ]
+    }
+  },
   "categories": {
     "speech_to_text": "stt/models",
     "text_to_speech": "tts/models"

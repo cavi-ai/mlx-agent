@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema", "source", "verdict", "reasons", "backend", "backend_installed", "model_type",
                "components", "task", "custom_code", "gated", "library_name", "pipeline_tag",
-               "transformers_version", "bytes", "files", "warnings"],
+               "transformers_version", "bytes", "estimated_output_bytes", "files", "warnings"],
   "properties": {
     "schema": {"const": "intake/1"},
     "source": {"$ref": "#/$defs/source"},
@@ -23,6 +23,7 @@
     "pipeline_tag": {"type": ["string", "null"]},
     "transformers_version": {"type": ["string", "null"]},
     "bytes": {"type": "integer", "minimum": 0},
+    "estimated_output_bytes": {"oneOf": [{"type": "null"}, {"type": "object", "properties": {"4": {"type": "integer", "minimum": 0}, "8": {"type": "integer", "minimum": 0}}, "required": ["4", "8"], "additionalProperties": false}]},
     "files": {
       "type": "object", "additionalProperties": false,
       "required": ["safetensors", "gguf", "python"],

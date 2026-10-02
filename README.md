@@ -243,7 +243,7 @@ python3 scripts/mlx-agent convert start --gguf ~/models/model-Q4_K_M.gguf --q-bi
 python3 scripts/mlx-agent intake resolve https://huggingface.co/org/name   # what it is, which backend converts it
 ```
 
-`intake resolve` reads only the model API document and `config.json` (never weights) and returns a verdict: `already_mlx`, `gguf`, `convertible` (an installed backend implements the architecture), `convertible_after_install` (a declared optional backend does), `unsupported` (no backend implements it; reasons and per-component matches say what exists), `blocked` (gated, private, or missing), or `unknown` (Hub unreachable). `convert scan` labels every model with a task type and use cases.
+`intake resolve` reads only the model API document and `config.json` (never weights) and returns a verdict: `already_mlx`, `gguf`, `convertible` (an installed backend implements the architecture), `convertible_after_install` (a declared optional backend does), `unsupported` (no backend implements it; reasons and per-component matches say what exists), `blocked` (gated, private, or missing), or `unknown` (Hub unreachable). For `convertible` and `convertible_after_install` verdicts, `estimated_output_bytes` gives the converted size at 4 and 8 bits, computed from the safetensors headers (ranged reads of the header only, following one redirect to Hub storage): matrix weights the backend quantizes cost bits/8 plus an affine scale and bias per group of 64, everything else keeps its size; a port's `port_quantize` rule names what its converter quantizes. `convert scan` labels every model with a task type and use cases.
 
 ```bash
 python3 scripts/mlx-agent backend list

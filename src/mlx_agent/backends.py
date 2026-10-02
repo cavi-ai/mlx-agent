@@ -97,6 +97,22 @@ def _validate_manifest(value, path):
     for names in ports.values():
         if not isinstance(names, list) or not all(isinstance(name, str) and _PORT.fullmatch(name) for name in names):
             raise _invalid(path, "ports must list module names")
+    ported = {name for names in ports.values() for name in names}
+    rules = value.get("port_quantize", {})
+    if not isinstance(rules, dict) or not set(rules) <= ported:
+        raise _invalid(path, "port_quantize keys must be declared ports")
+    for rule in rules.values():
+        if not isinstance(rule, dict) or not set(rule) <= {"include", "exclude"} or not all(
+            isinstance(rule.get(key, []), list) and all(isinstance(item, str) for item in rule.get(key, []))
+            for key in ("include", "exclude")
+        ):
+            raise _invalid(path, "port_quantize rules list include and exclude name parts")
+
+
+def quantize_rule(model_type, backend_id, manifests):
+    """The tensor-name rule a port declares for what its converter quantizes, or None."""
+    manifest = manifests.get(backend_id) or {}
+    return (manifest.get("port_quantize") or {}).get(normalize_type(model_type or ""))
 
 
 def backends_root(env=None):

@@ -4,6 +4,7 @@ import http.client
 import json
 import queue
 import re
+import struct
 import threading
 import time
 import urllib.parse
@@ -31,6 +32,9 @@ RAW_TEXT_MAX_BYTES = 8 * 1024 * 1024
 _RAW_JSON_FILES = frozenset({"config.json", "model.safetensors.index.json"})
 _RAW_PY_FILE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\.py")
 _RAW_REVISION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+_SAFETENSORS_FILE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\.safetensors")
+SAFETENSORS_HEADER_MAX_BYTES = 16 * 1024 * 1024
+_SAFETENSORS_PROBE_BYTES = 1024 * 1024
 
 
 class HuggingFaceHTTPError(http.client.HTTPException):
@@ -49,6 +53,22 @@ def _is_valid_raw_path(path):
     if not parts[1] or not parts[2] or not _RAW_REVISION.fullmatch(parts[4]):
         return False
     return parts[5] in _RAW_JSON_FILES or bool(_RAW_PY_FILE.fullmatch(parts[5]))
+
+
+def _is_valid_resolve_path(path):
+    """Accept /<owner>/<repo>/resolve/<revision>/<file>.safetensors for top-level weight files."""
+    parts = path.split("/")
+    if len(parts) != 6 or parts[0] != "" or parts[3] != "resolve":
+        return False
+    if not parts[1] or not parts[2] or not _RAW_REVISION.fullmatch(parts[4]):
+        return False
+    return bool(_SAFETENSORS_FILE.fullmatch(parts[5]))
+
+
+def _is_hub_storage_host(host):
+    """Hosts the Hub redirects weight downloads to (its CDN and Xet storage)."""
+    host = (host or "").lower()
+    return host == "hf.co" or host.endswith(".hf.co") or host.endswith(".huggingface.co")
 
 
 def _is_allowed_api_path(path):
@@ -321,6 +341,101 @@ def _http_text_operation(connection, target, deadline, clock, max_bytes=MODEL_CA
         connection.close()
 
 
+def http_safetensors_header(
+    url,
+    timeout=8.0,
+    connection_factory=None,
+    clock=time.monotonic,
+    completion_wait=None,
+):
+    """Read only the JSON header of one safetensors file through ranged GETs.
+
+    The Hub answers with one redirect to its storage host; that redirect is
+    followed only to a Hub storage host over HTTPS, and every body is bounded
+    by the requested range, so no weights are downloaded.
+    """
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme != "https" or parsed.hostname != HF_CARD_HOST:
+        raise ValueError("safetensors URL must use the fixed HTTPS host")
+    if parsed.port not in (None, 443):
+        raise ValueError("safetensors URL must use the default HTTPS port")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("safetensors URL must not contain credentials")
+    if parsed.query or parsed.fragment:
+        raise ValueError("safetensors URL must not contain a query or fragment")
+    if not _is_valid_resolve_path(parsed.path):
+        raise ValueError("safetensors URL must target a top-level .safetensors file")
+
+    deadline = clock() + timeout
+
+    def ranged(host, target, start, end):
+        remaining = _deadline_remaining(deadline, clock)
+        if connection_factory is None:
+            connection = http.client.HTTPSConnection(host, 443, timeout=remaining)
+        else:
+            connection = connection_factory(host, 443, remaining)
+        return _run_http_worker(
+            connection,
+            lambda: _http_range_operation(connection, target, start, end, deadline, clock),
+            deadline,
+            clock,
+            completion_wait,
+        )
+
+    host, target = HF_CARD_HOST, parsed.path
+    status, location, body = ranged(host, target, 0, _SAFETENSORS_PROBE_BYTES - 1)
+    if location is not None:
+        redirected = urllib.parse.urlsplit(location)
+        if redirected.scheme != "https" or not _is_hub_storage_host(redirected.hostname):
+            raise ValueError("safetensors redirect must stay on a Hub storage host")
+        if redirected.port not in (None, 443) or redirected.username is not None or redirected.password is not None:
+            raise ValueError("safetensors redirect must use the default HTTPS port without credentials")
+        host = redirected.hostname
+        target = redirected.path + ("?" + redirected.query if redirected.query else "")
+        status, location, body = ranged(host, target, 0, _SAFETENSORS_PROBE_BYTES - 1)
+        if location is not None:
+            raise http.client.HTTPException("safetensors requests follow at most one redirect")
+    if len(body) < 8:
+        raise ValueError("safetensors file is shorter than its header length")
+    (length,) = struct.unpack("<Q", body[:8])
+    if length > SAFETENSORS_HEADER_MAX_BYTES:
+        raise ValueError("safetensors header exceeds size limit")
+    if len(body) < 8 + length:
+        status, location, rest = ranged(host, target, len(body), 8 + length - 1)
+        if location is not None:
+            raise http.client.HTTPException("safetensors requests follow at most one redirect")
+        body += rest
+    header = json.loads(body[8: 8 + length].decode("utf-8"))
+    if not isinstance(header, dict):
+        raise ValueError("safetensors header is not a JSON object")
+    return header
+
+
+def _http_range_operation(connection, target, start, end, deadline, clock):
+    """One ranged GET: (status, redirect location or None, bounded body)."""
+    try:
+        headers = dict(UA)
+        headers["Range"] = "bytes={0}-{1}".format(start, end)
+        connection.request("GET", target, headers=headers)
+        _set_connection_timeout(connection, _deadline_remaining(deadline, clock))
+        response = connection.getresponse()
+        _deadline_remaining(deadline, clock)
+        if 300 <= response.status < 400:
+            location = response.getheader("Location")
+            if not location:
+                raise http.client.HTTPException("redirect without a Location header")
+            return response.status, location, b""
+        if response.status not in (200, 206):
+            raise HuggingFaceHTTPError(
+                response.status,
+                "safetensors host returned HTTP status {0}".format(response.status),
+            )
+        body = _read_bounded_body(response, connection, deadline, clock, max_bytes=end - start + 1)
+        return response.status, None, body
+    finally:
+        connection.close()
+
+
 def _read_bounded_body(response, connection, deadline, clock, max_bytes=HF_RESPONSE_MAX_BYTES):
     chunks = []
     total = 0
@@ -356,10 +471,12 @@ def _set_connection_timeout(connection, timeout):
 
 
 class HuggingFaceClient:
-    def __init__(self, http_get=http_json, card_get=http_card_text, raw_get=http_raw_text):
+    def __init__(self, http_get=http_json, card_get=http_card_text, raw_get=http_raw_text,
+                 header_get=http_safetensors_header):
         self._http_get = http_get
         self._card_get = card_get
         self._raw_get = raw_get
+        self._header_get = header_get
 
     @property
     def http_get(self):
@@ -401,6 +518,14 @@ class HuggingFaceClient:
             HF_CARD_HOST, quoted, urllib.parse.quote(revision), urllib.parse.quote(filename)
         )
         return self._raw_get(url, timeout=timeout)
+
+    def fetch_safetensors_header(self, repo, revision, filename, timeout=8):
+        """One weight file's tensor header (names, dtypes, shapes); raises on any failure."""
+        quoted = "/".join(urllib.parse.quote(part) for part in repo.split("/"))
+        url = "https://{0}/{1}/resolve/{2}/{3}".format(
+            HF_CARD_HOST, quoted, urllib.parse.quote(revision), urllib.parse.quote(filename)
+        )
+        return self._header_get(url, timeout=timeout)
 
     @staticmethod
     def list_models_url(sort="trendingScore", limit_fetch=300):

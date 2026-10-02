@@ -65,6 +65,7 @@ from .lora import (
 from .modality import ALL_FACET_IDS, FOUNDATION_IDS, resolve_facets, resolve_modalities
 from .models import DISCOVERY_ROLES, render_md, wire
 from .port_analysis import PortAnalysisError, analyze as port_analyze
+from .transcribe import TranscribeError, plan_transcribe, run_transcribe
 from .port_plan import draft_port_plan
 from .project_blueprint import (
     build_brief,
@@ -1589,6 +1590,15 @@ def _add_convert_arguments(parser):
     )
     scan.add_argument("--pending-only", action="store_true", help="list only unconverted models")
     scan.add_argument("--json", action="store_true")
+    transcribe = actions.add_parser(
+        "transcribe",
+        help="transcribe one audio file with a converted speech model (read-only verification canary)",
+    )
+    transcribe.add_argument("--path", required=True, help="converted speech model directory")
+    transcribe.add_argument("--audio", required=True, help="audio file (WAV, FLAC, MP3)")
+    transcribe.add_argument("--language", default=None, help="language code passed to models that take one")
+    transcribe.add_argument("--timeout", type=int, default=300, help="seconds before the backend run is stopped")
+    transcribe.add_argument("--json", action="store_true")
 
 
 def _run_convert(arguments):
@@ -1599,6 +1609,14 @@ def _run_convert(arguments):
             return _emit_serve_result(
                 ResultEnvelope.ok(operation, {"jobs": entries}), arguments.json,
                 human=_convert_status_human(entries),
+            )
+        if arguments.convert_command == "transcribe":
+            if not 1 <= arguments.timeout <= 3600:
+                raise ValueError("--timeout must be 1..3600 seconds")
+            plan = plan_transcribe(arguments.path, arguments.audio, language=arguments.language)
+            result = run_transcribe(plan, timeout=arguments.timeout)
+            return _emit_serve_result(
+                ResultEnvelope.ok(operation, result), arguments.json, human=result["text"],
             )
         if arguments.convert_command == "scan":
             report = _convert_scan(arguments)
@@ -1647,7 +1665,7 @@ def _run_convert(arguments):
                 receipt["repo"], receipt["out"], receipt["pid"], receipt["log_path"]
             ),
         )
-    except (ConvertError, GGUFError) as error:
+    except (ConvertError, GGUFError, TranscribeError) as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         result = ResultEnvelope.fail(

@@ -137,6 +137,24 @@ class DiffTests(unittest.TestCase):
         codes = [finding["code"] for finding in diff_snapshots(self._baseline(), current)]
         self.assertIn("gated_changed", codes)
 
+    def test_unreported_access_is_not_a_gated_change(self):
+        for gated in ("unknown", None):
+            data = {
+                "roles": {
+                    "coding": [
+                        {
+                            "repo": "pub/model-a-4bit",
+                            "base": "pub/model-a",
+                            "license": "apache-2.0",
+                            "facts": {"weight_bytes": 1000, "gated": gated},
+                        }
+                    ]
+                }
+            }
+            current = build_snapshot(OWNED, snapshot_candidates(data), now="t2")
+            codes = [finding["code"] for finding in diff_snapshots(self._baseline(), current)]
+            self.assertNotIn("gated_changed", codes, gated)
+
     def test_owned_missing_is_reported(self):
         current = build_snapshot([], snapshot_candidates(DISCOVERY_DATA), now="t2")
         codes = [finding["code"] for finding in diff_snapshots(self._baseline(), current)]

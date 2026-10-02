@@ -98,7 +98,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "fa6f5a65398e3b9eb7d82e8240e967874e347a9f127a2757c6ae6225ebc63dfe"
+      "sha256": "79409bb81dd3c8eddb4d68f60a2af701c6e31397b84d643e1ddaae0da7ae066e"
     },
     {
       "path": "src/mlx_agent/command_args.py",
@@ -297,12 +297,20 @@
       "sha256": "7ffa94dc11efa8b019671b669c039e4c7c71d451bece6ff4e4721cd677d3cb78"
     },
     {
+      "path": "src/mlx_agent/transcribe.py",
+      "sha256": "3a61c2bcb26727b2b65265ed40b6c260b3f0d9e5d50ca64486c08b203ca6e719"
+    },
+    {
+      "path": "src/mlx_agent/transcribe_runner.py",
+      "sha256": "e88a2eeff17fc641f3cd69e195b92c3222675d72ef8282659afbcb4c02427b79"
+    },
+    {
       "path": "src/mlx_agent/verification.py",
       "sha256": "c66c471871c23c6b732c4d0adc683a3039f46cd0b8188067fb1be53b4c1f4b17"
     },
     {
       "path": "src/mlx_agent/watch.py",
-      "sha256": "34f6ab4af7ca6ebf25329cd2e3e01e8982c471b11b1d19450b9adfdbd153b11b"
+      "sha256": "970047c193f8d3a5527e1679a0c3c8dfff26d732cd0476b80f544232179ddacf"
     },
     {
       "path": "src/mlx_agent/wiring.py",

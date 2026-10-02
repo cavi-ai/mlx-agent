@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `convert transcribe`: transcribe one audio file with a converted speech-to-text model through its backend (read-only).
+- `watch diff` no longer reports a gated change when either side is unknown or missing.
 - `intake resolve` reports `estimated_output_bytes` (4- and 8-bit) for convertible repos from the safetensors headers; ports declare what they quantize (`port_quantize`). Edge0/Audio8-ASR-Infinite: 3.75 GB at 4 bits, matching the real conversion.
 - Add backend model ports: mlx-agent ships an MLX implementation of Edge0/Audio8-ASR-Infinite (`audio8_asr_infinite`: Voxtral Realtime audio tower, Qwen2 decoder with delay conditioning, projector, frame-length embedding, semantic VAD heads, streaming greedy decode with the 30 s rolling window) for the mlx-audio backend. `intake resolve` now reports Audio8 as convertible through mlx-audio; `convert start --backend mlx-audio` installs the port into the backend before converting. Conversion quantizes the decoder only.
 - Task labels: a model is vision-language only with a vision config or a vision module (from the mlx-vlm registry's vision files); GGUF main weights are never vision, and GGUF multimodal projectors (`clip`/mmproj) are labelled other.

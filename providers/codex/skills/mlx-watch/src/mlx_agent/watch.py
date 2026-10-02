@@ -180,7 +180,8 @@ def diff_snapshots(baseline, current):
                 "base": base,
                 "detail": "weight bytes changed from {0} to {1}".format(old_bytes, new_bytes),
             })
-        if previous.get("gated") != info.get("gated"):
+        # "unknown" (or a missing value) means the Hub did not report access; that is not a change.
+        if previous.get("gated") != info.get("gated") and not {previous.get("gated"), info.get("gated")} & {None, "unknown"}:
             findings.append({
                 "code": "gated_changed",
                 "repo": repo,

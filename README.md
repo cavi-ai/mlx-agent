@@ -256,6 +256,8 @@ python3 scripts/mlx-agent intake status
 
 Optional backends (`mlx-vlm`, `mlx-audio`) install into their own virtual environment under `$XDG_DATA_HOME/mlx-workbench/backends/<id>` from a hash-locked requirements file that ships with mlx-agent; they need the agent to run on Python 3.12 and never touch the main runtime. `backend remove` moves the environment to the Trash. `convert start --backend` runs that backend's converter under the same preview → confirm → receipt gates; convert still never downloads or installs. `intake fetch` downloads a snapshot (or one GGUF file with `--file`) into the Hugging Face cache, or into `--local-dir`, as a receipt-tracked background job.
 
+`convert transcribe --path DIR --audio FILE [--language en]` runs one clip through a converted speech-to-text model in its backend environment and returns the text with timings (read-only; used as a verification canary).
+
 A backend manifest can declare model ports that ship with mlx-agent under `resources/ports/<backend>/`: MLX implementations of architectures the pinned backend lacks (mlx-audio: `audio8_asr_infinite`, Edge0/Audio8-ASR-Infinite). Ported types count as supported in `intake resolve` and `backend list`, the convert plan lists them under `ports`, and `convert start --confirm` copies them into the backend's package before the job starts. A port directory carries a digest marker: an up-to-date port is left alone, and a module the backend itself ships under the same name is never replaced.
 
 ```bash

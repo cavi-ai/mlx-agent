@@ -14,11 +14,14 @@ from .backends import (
     backend_environment,
     backend_python,
     load_manifests,
+    port_bits,
+    port_converter,
     read_install_marker,
     spawn_with_env,
     sync_ports,
 )
 from .gguf import GGUFError, describe_gguf
+from .intake_source import validate_subfolder
 from .serve import (
     _argv_matches,
     _pid_alive,
@@ -37,6 +40,7 @@ GGUF_RUNNER = Path(__file__).resolve().with_name("gguf_runner.py")
 GGUF_REQUIRED_MODULES = ("torch", "transformers", "gguf")
 MAX_LOG_TAIL_BYTES = 64 * 1024
 _UNSAFE_SLUG = re.compile(r"[^A-Za-z0-9._-]+")
+_MODEL_TYPE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 
 
 class ConvertError(RuntimeError):
@@ -57,23 +61,64 @@ def receipts_root(root=None, kind="convert"):
     return base / ".mlx-agent-receipts" / kind
 
 
-def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backends_root_dir=None):
-    """Render the exact conversion plan; pure and side-effect free."""
+def cached_subfolder(repo, subfolder, hf_cache=None):
+    """``<cache>/models--org--name/snapshots/<refs/main>/<subfolder>`` when that folder is cached, else None."""
+    from .model_doctor import default_hf_cache
+
+    entry = (Path(hf_cache) if hf_cache else default_hf_cache()) / "models--{0}".format(repo.replace("/", "--"))
+    try:
+        revision = (entry / "refs" / "main").read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    folder = entry / "snapshots" / revision / subfolder
+    if not revision or "/" in revision or not folder.is_dir():
+        return None
+    return folder
+
+
+def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backends_root_dir=None, model_type=None,
+                 subfolder=None, hf_cache=None):
+    """Render the exact conversion plan; side-effect free (a subfolder is looked up in the cache).
+
+    ``model_type`` (from intake) selects a port's own converter when the port
+    ships one; otherwise the backend's converter runs. A ``subfolder``
+    checkpoint converts from its cached folder, so every converter reads it
+    as a local directory.
+    """
     if not isinstance(repo, str) or not _MODEL.fullmatch(repo):
         raise ConvertError(
             "invalid_repo",
             "convert requires a safe publisher/model identifier.",
             "Pass --repo as publisher/model exactly as it appears in the Hugging Face cache.",
         )
+    if model_type is not None and (not isinstance(model_type, str) or not _MODEL_TYPE.fullmatch(model_type)):
+        raise ConvertError(
+            "invalid_arguments", "model_type must be a config model_type such as qwen2 or laya.",
+            "Pass --model-type exactly as intake resolve reports it.",
+        )
     _validate_q_bits(q_bits)
+    if subfolder is not None:
+        try:
+            validate_subfolder(subfolder)
+        except ValueError as error:
+            raise ConvertError("invalid_arguments", str(error), "Pass --subfolder as the folder path inside the repository.") from error
+    name = repo.split("/", 1)[1] + ("-" + subfolder.replace("/", "-") if subfolder else "")
     if out is None:
-        name = repo.split("/", 1)[1]
         out = "{0}-MLX-{1}bit".format(name, q_bits)
-    flags = ["--hf-path", repo, "--mlx-path", str(out), "--quantize", "--q-bits", str(q_bits)]
+    hf_path = repo
+    if subfolder:
+        folder = cached_subfolder(repo, subfolder, hf_cache)
+        if folder is None:
+            raise ConvertError(
+                "subfolder_not_cached", "{0}/{1} is not in the Hugging Face cache.".format(repo, subfolder),
+                "Download it first: mlx-agent intake fetch {0}/{1}.".format(repo, subfolder),
+            )
+        hf_path = str(folder)
+    flags = ["--hf-path", hf_path, "--mlx-path", str(out), "--quantize", "--q-bits", str(q_bits)]
     plan = {
         "repo": repo,
-        "source": {"kind": "hf-cache", "repo": repo},
-        "slug": "{0}-{1}bit".format(repo.split("/", 1)[1], q_bits),
+        "source": dict({"kind": "hf-cache", "repo": repo}, **({"subfolder": subfolder} if subfolder else {})),
+        "slug": "{0}-{1}bit".format(name, q_bits),
         "q_bits": q_bits,
         "out": str(out),
     }
@@ -91,13 +136,23 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
             "No optional backend named {0}.".format(backend),
             "Run mlx-agent backend list to see the declared backends.",
         )
+    widths = port_bits(model_type, backend, manifests)
+    if widths and q_bits not in widths:
+        raise ConvertError(
+            "invalid_arguments",
+            "The {0} port converts at {1} bits only.".format(model_type, " or ".join(str(width) for width in widths)),
+            "Pass --q-bits {0}.".format(widths[-1]),
+        )
     python = backend_python(manifest, backends_root_dir)
     plan["backend"] = backend
     plan["backends_root"] = str(python.parent.parent.parent)
-    plan["argv"] = [str(python), "-m", manifest["convert"]] + flags
+    converter = port_converter(model_type, backend, manifests)
+    plan["argv"] = [str(python), "-m", converter or manifest["convert"]] + flags
     ports = sorted(name for names in (manifest.get("ports") or {}).values() for name in names)
     if ports:
         plan["ports"] = ports
+    if converter:
+        plan["port_converter"] = converter
     return _finalize_plan(plan)
 
 

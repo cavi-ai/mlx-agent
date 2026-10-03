@@ -14,7 +14,7 @@ from .modality import detect_facets, detect_modalities
 
 TASK_TYPES = (
     "text_llm", "vision_language", "speech_to_text", "text_to_speech",
-    "embedding", "image_generation", "other",
+    "embedding", "classification", "image_generation", "other",
 )
 # Ordered specific-first; the last entry is the type's default use case.
 USE_CASES = {
@@ -23,6 +23,7 @@ USE_CASES = {
     "speech_to_text": ("realtime_transcription", "diarization", "speech_translation", "transcription"),
     "text_to_speech": ("voice_cloning", "narration"),
     "embedding": ("reranking", "retrieval"),
+    "classification": ("moderation", "routing", "classification"),
     "image_generation": ("image_generation",),
     "other": (),
 }
@@ -42,6 +43,8 @@ PIPELINE_TYPES = {
     "feature-extraction": "embedding",
     "sentence-similarity": "embedding",
     "text-ranking": "embedding",
+    "text-classification": "classification",
+    "zero-shot-classification": "classification",
     "text-to-image": "image_generation",
     "image-to-image": "image_generation",
 }
@@ -55,6 +58,8 @@ _SPECIFIC_TOKENS = (
     ("speech_translation", ("translat",)),
     ("voice_cloning", ("clone", "cloning", "zero-shot")),
     ("reranking", ("rerank",)),
+    ("moderation", ("moderation", "guardrail", "toxic")),
+    ("routing", ("routing", "router")),
 )
 # llama.cpp multimodal projectors (mmproj files) are model parts, not models.
 _GGUF_PROJECTOR_ARCHITECTURES = ("clip", "mmproj")
@@ -94,6 +99,8 @@ def _type_from_hits(hits, config_keys, haystack, vision_module=False, allow_visi
         return "speech_to_text"
     if "text_to_speech" in categories:
         return "text_to_speech"
+    if "classification" in categories:
+        return "classification"
     if allow_vision and "vision_language" in categories and (
         any(key in config_keys for key in _VISION_KEYS)
         or (vision_module and "text_llm" not in categories)

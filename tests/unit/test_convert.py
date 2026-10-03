@@ -12,7 +12,13 @@ from mlx_agent.convert import (
     status_convert,
 )
 
+from jsonschema import Draft202012Validator
+
 from .test_gguf import write_gguf
+
+RECEIPT_SCHEMA = Draft202012Validator(json.loads(
+    (Path(__file__).resolve().parents[2] / "schemas" / "convert-receipt.schema.json").read_text(encoding="utf-8")
+))
 
 
 class PlanConvertTests(unittest.TestCase):
@@ -79,6 +85,64 @@ class BackendConvertTests(unittest.TestCase):
         self.assertEqual(plan["ports"], ["audio8_asr_infinite"])
         self.assertNotIn("ports", plan_convert("pub/model", backend="mlx-vlm", backends_root_dir=self.root))
 
+    def test_model_type_selects_a_port_converter_only_where_the_port_ships_one(self):
+        plan = plan_convert("convaiinnovations/laya", q_bits=8, backend="mlx-embeddings", model_type="laya", backends_root_dir=self.root)
+        self.assertEqual(plan["argv"][1:3], ["-m", "mlx_embeddings.classifiers.laya.convert"])
+        self.assertEqual(plan["port_converter"], "mlx_embeddings.classifiers.laya.convert")
+        self.assertEqual(plan["ports"], ["laya"])
+        default = plan_convert("convaiinnovations/laya", q_bits=8, backend="mlx-embeddings", backends_root_dir=self.root)
+        self.assertEqual(default["argv"][1:3], ["-m", "mlx_embeddings.convert"])
+        self.assertNotIn("port_converter", default)
+        self.assertNotEqual(plan["preview_hash"], default["preview_hash"])
+        whisper = plan_convert("openai/whisper-tiny", backend="mlx-audio", model_type="whisper", backends_root_dir=self.root)
+        self.assertEqual(whisper["argv"][1:3], ["-m", "mlx_audio.convert"])
+        for bad in ("../x", "laya; rm", "", 3):
+            with self.subTest(model_type=bad):
+                with self.assertRaises(ConvertError) as caught:
+                    plan_convert("pub/model", backend="mlx-embeddings", model_type=bad, backends_root_dir=self.root)
+                self.assertEqual(caught.exception.code, "invalid_arguments")
+
+    def test_a_port_converts_only_at_its_declared_bit_widths(self):
+        with self.assertRaises(ConvertError) as caught:
+            plan_convert("convaiinnovations/laya", q_bits=4, backend="mlx-embeddings", model_type="laya", backends_root_dir=self.root)
+        self.assertEqual(caught.exception.code, "invalid_arguments")
+        self.assertIn("--q-bits 8", caught.exception.remediation)
+        self.assertEqual(plan_convert("pub/model", q_bits=4, backend="mlx-embeddings", backends_root_dir=self.root)["q_bits"], 4)
+
+    def cache(self, repo, subfolder):
+        entry = self.root / "hub" / "models--{0}".format(repo.replace("/", "--"))
+        (entry / "refs").mkdir(parents=True)
+        (entry / "refs" / "main").write_text("abc123\n", encoding="utf-8")
+        folder = entry / "snapshots" / "abc123" / subfolder
+        folder.mkdir(parents=True)
+        return folder
+
+    def test_a_subfolder_receipt_matches_the_receipt_schema(self):
+        self.cache("org/name", "chat")
+        plan = plan_convert("org/name", subfolder="chat", out=str(self.root / "out"), hf_cache=str(self.root / "hub"))
+        outcome = start_convert(plan, receipts_dir=str(self.root), confirm=True, preview_hash=plan["preview_hash"],
+                                spawn=lambda argv, log: 99, model_present=lambda repo: True, which=lambda name: "/bin/x")
+        RECEIPT_SCHEMA.validate(outcome["receipt"])
+        self.assertEqual(outcome["receipt"]["source"]["subfolder"], "chat")
+
+    def test_a_subfolder_converts_from_its_cached_folder_with_any_converter(self):
+        folder = self.cache("convaiinnovations/laya", "multilingual")
+        plan = plan_convert("convaiinnovations/laya", q_bits=8, backend="mlx-embeddings", model_type="laya",
+                            subfolder="multilingual", hf_cache=str(self.root / "hub"), backends_root_dir=self.root)
+        self.assertEqual(plan["argv"][plan["argv"].index("--hf-path") + 1], str(folder))
+        self.assertEqual((plan["out"], plan["slug"]), ("laya-multilingual-MLX-8bit", "laya-multilingual-8bit"))
+        self.assertEqual(plan["source"], {"kind": "hf-cache", "repo": "convaiinnovations/laya", "subfolder": "multilingual"})
+        chat = self.cache("org/name", "a/chat")
+        builtin = plan_convert("org/name", subfolder="a/chat", hf_cache=str(self.root / "hub"))
+        self.assertEqual(builtin["argv"][builtin["argv"].index("--hf-path") + 1], str(chat))
+        self.assertEqual(builtin["out"], "name-a-chat-MLX-4bit")
+        self.assertEqual(plan_convert("org/name")["source"], {"kind": "hf-cache", "repo": "org/name"})
+        for subfolder, code in (("missing", "subfolder_not_cached"), ("../x", "invalid_arguments")):
+            with self.subTest(subfolder=subfolder):
+                with self.assertRaises(ConvertError) as caught:
+                    plan_convert("org/name", subfolder=subfolder, hf_cache=str(self.root / "hub"))
+                self.assertEqual(caught.exception.code, code)
+
     def test_start_with_installed_backend_records_it_and_syncs_ports(self):
         plan = plan_convert("openai/whisper-tiny", backend="mlx-audio", out=str(self.root / "out"), backends_root_dir=self.root)
         venv = self.root / "mlx-audio"
@@ -91,6 +155,7 @@ class BackendConvertTests(unittest.TestCase):
         outcome = start_convert(plan, receipts_dir=str(self.root), confirm=True, preview_hash=plan["preview_hash"],
                                 spawn=lambda argv, log: spawned.append(argv) or 99, model_present=lambda repo: True)
         self.assertEqual(outcome["receipt"]["backend"], "mlx-audio")
+        RECEIPT_SCHEMA.validate(outcome["receipt"])
         self.assertEqual(spawned[0], plan["argv"])
         self.assertTrue((models / "audio8_asr_infinite" / "__init__.py").is_file())
         self.assertTrue((models / "audio8_asr_infinite" / ".mlx-agent-port.json").is_file())

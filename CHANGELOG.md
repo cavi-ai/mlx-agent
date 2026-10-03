@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add the mlx-embeddings backend (0.1.0, hash-locked) with a `classification` category, and a Laya port (`laya`, convaiinnovations/laya root checkpoint): ModernBERT encoder plus the option-marker decision head, with the shipped temperatures. Repos without a root `config.json` resolve through a port's `port_signatures`; `convert start --model-type` runs a port's own converter (`port_convert`); `port_quantize` takes a `group_size` (Laya: encoder and head linears at group 32).
+- Subfolder checkpoints: `org/name/folder` and `tree/<rev>/<folder>` links resolve against that folder's files (config, weights headers, port signature, download size); `intake fetch` downloads only that folder; `convert start --subfolder` converts from the cached folder with any backend's converter. Laya's `multilingual` (mmBERT-base) and `typed-decisions` checkpoints convert this way.
+- The convert receipt schema allows `backend` (written by optional-backend conversions) and `source.subfolder`; tests validate real receipts against it.
+- Ports can declare the bit widths their conversions keep accurate (`port_bits`); `intake resolve` reports them as `q_bits` and `convert start` refuses others. Laya converts at 8 bits only: at 4 bits the multilingual checkpoint changes 3 of 25 reference answers.
+- `intake resolve` reports `download_bytes`, what a snapshot fetch takes; `intake fetch --model-type` downloads only a ported type's files (Laya: 846 MB of the 2.4 GB repo).
+- Add `convert decide`: answer typed questions (choice, score, noul) about a state with a converted classification model through its backend (read-only).
+- Task labels: `text-classification` and `zero-shot-classification` repos, and models a classification backend implements, are `classification` (use cases: moderation, routing, classification).
 - Add `convert transcribe`: transcribe one audio file with a converted speech-to-text model through its backend (read-only).
 - `watch diff` no longer reports a gated change when either side is unknown or missing.
 - `intake resolve` reports `estimated_output_bytes` (4- and 8-bit) for convertible repos from the safetensors headers; ports declare what they quantize (`port_quantize`). Edge0/Audio8-ASR-Infinite: 3.75 GB at 4 bits, matching the real conversion.

@@ -22,7 +22,8 @@ class IntakeSourceError(ValueError):
     code = "invalid_source"
     remediation = (
         "Paste a model link such as https://huggingface.co/org/name "
-        "(tree, blob, and resolve links work) or a bare org/name id."
+        "(tree, blob, and resolve links work) or a bare org/name id; "
+        "org/name/folder or a tree link names a checkpoint in a subfolder."
     )
 
 
@@ -41,8 +42,16 @@ def validate_file(text):
     return text
 
 
+def validate_subfolder(text):
+    parts = text.split("/") if isinstance(text, str) else []
+    if not parts or not all(_FILE_SEGMENT.fullmatch(part) for part in parts):
+        raise IntakeSourceError("Invalid subfolder: {0!r}".format(text))
+    return text
+
+
 def parse_hf_source(text):
-    """Return {"repo", "revision", "file"}; file is set only for a .gguf link."""
+    """Return {"repo", "revision", "file", "subfolder"}; file is set only for a .gguf link, subfolder for
+    a checkpoint below the repository root (bare org/name/folder, or a tree link into a folder)."""
     if not isinstance(text, str):
         raise IntakeSourceError("The source must be text.")
     value = text.strip()
@@ -75,8 +84,8 @@ def parse_hf_source(text):
 
 
 def _from_segments(segments, bare, original):
-    if bare and len(segments) != 2:
-        raise IntakeSourceError("A bare id must be exactly org/name: {0}".format(original))
+    if bare and len(segments) < 2:
+        raise IntakeSourceError("A bare id must be org/name or org/name/folder: {0}".format(original))
     if len(segments) < 2:
         raise IntakeSourceError("The link does not name a model repository: {0}".format(original))
     owner, name = segments[0], segments[1]
@@ -84,10 +93,14 @@ def _from_segments(segments, bare, original):
         raise IntakeSourceError("Datasets, Spaces, and site pages are not models: {0}".format(original))
     if not _SEGMENT.fullmatch(owner) or not _SEGMENT.fullmatch(name):
         raise IntakeSourceError("Invalid repository id: {0}/{1}".format(owner, name))
-    result = {"repo": "{0}/{1}".format(owner, name), "revision": "main", "file": None}
+    result = {"repo": "{0}/{1}".format(owner, name), "revision": "main", "file": None, "subfolder": None}
     if len(segments) >= 4 and segments[2] in ("tree", "blob", "resolve"):
         result["revision"] = validate_revision(segments[3])
         rest = segments[4:]
         if segments[2] != "tree" and rest and rest[-1].lower().endswith(".gguf"):
             result["file"] = validate_file("/".join(rest))
+        elif segments[2] == "tree" and rest:
+            result["subfolder"] = validate_subfolder("/".join(rest))
+    elif bare and len(segments) > 2:
+        result["subfolder"] = validate_subfolder("/".join(segments[2:]))
     return result

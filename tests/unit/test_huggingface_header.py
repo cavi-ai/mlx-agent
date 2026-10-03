@@ -124,10 +124,23 @@ class SafetensorsHeaderTests(unittest.TestCase):
             http_safetensors_header(URL, connection_factory=factory)
         self.assertEqual(caught.exception.status, 404)
 
-    def test_only_top_level_safetensors_on_the_hub_host(self):
+    def test_subfolder_weights_and_configs_are_hub_paths_but_traversal_is_not(self):
+        from mlx_agent.huggingface import _is_valid_raw_path, _is_valid_resolve_path
+
+        self.assertTrue(_is_valid_resolve_path("/org/name/resolve/main/multilingual/model.safetensors"))
+        self.assertTrue(_is_valid_raw_path("/org/name/raw/main/a/b/config.json"))
+        deep = "/org/name/resolve/main/" + "d/" * 9 + "model.safetensors"
+        for path in ("/org/name/resolve/main/../model.safetensors", "/org/name/resolve/main/./model.safetensors",
+                     "/org/name/resolve/main//model.safetensors", "/org/name/resolve/main/%2e%2e/model.safetensors", deep,
+                     "/org/name/raw/main/sub/model.safetensors"):
+            with self.subTest(path=path):
+                self.assertFalse(_is_valid_resolve_path(path) and _is_valid_raw_path(path))
+                self.assertFalse(_is_valid_resolve_path(path))
+
+    def test_only_safetensors_on_the_hub_host(self):
         for url in (
             "https://huggingface.co/org/name/resolve/main/config.json",
-            "https://huggingface.co/org/name/resolve/main/sub/model.safetensors",
+            "https://huggingface.co/org/name/resolve/main/../model.safetensors",
             "https://huggingface.co/org/name/raw/main/model.safetensors",
             "https://huggingface.co/org/name/resolve/main/model.safetensors?download=1",
             "https://evil.example/org/name/resolve/main/model.safetensors",

@@ -6,12 +6,12 @@
   "additionalProperties": false,
   "required": ["schema", "source", "verdict", "reasons", "backend", "backend_installed", "model_type",
                "components", "task", "custom_code", "gated", "library_name", "pipeline_tag",
-               "transformers_version", "bytes", "estimated_output_bytes", "files", "warnings"],
+               "transformers_version", "bytes", "download_bytes", "estimated_output_bytes", "q_bits", "files", "warnings"],
   "properties": {
     "schema": {"const": "intake/1"},
     "source": {"$ref": "#/$defs/source"},
     "verdict": {"enum": ["unknown", "blocked", "already_mlx", "gguf", "convertible", "convertible_after_install", "unsupported"]},
-    "reasons": {"type": "array", "items": {"enum": ["gated", "not_found_or_private", "hub_unreachable", "no_config", "arch_not_in_registry", "custom_code"]}},
+    "reasons": {"type": "array", "items": {"enum": ["gated", "not_found_or_private", "hub_unreachable", "no_config", "arch_not_in_registry", "custom_code", "subfolder_not_found"]}},
     "backend": {"type": ["string", "null"]},
     "backend_installed": {"type": "boolean"},
     "model_type": {"type": ["string", "null"]},
@@ -23,6 +23,8 @@
     "pipeline_tag": {"type": ["string", "null"]},
     "transformers_version": {"type": ["string", "null"]},
     "bytes": {"type": "integer", "minimum": 0},
+    "download_bytes": {"type": "integer", "minimum": 0},
+    "q_bits": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": [4, 8]}},
     "estimated_output_bytes": {"oneOf": [{"type": "null"}, {"type": "object", "properties": {"4": {"type": "integer", "minimum": 0}, "8": {"type": "integer", "minimum": 0}}, "required": ["4", "8"], "additionalProperties": false}]},
     "files": {
       "type": "object", "additionalProperties": false,
@@ -41,12 +43,13 @@
   "$defs": {
     "source": {
       "type": "object", "additionalProperties": false,
-      "required": ["input", "repo", "revision", "file", "url"],
+      "required": ["input", "repo", "revision", "file", "subfolder", "url"],
       "properties": {
         "input": {"type": "string"},
         "repo": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$"},
         "revision": {"type": "string"},
         "file": {"type": ["string", "null"]},
+        "subfolder": {"type": ["string", "null"]},
         "url": {"type": "string"}
       }
     },
@@ -55,7 +58,7 @@
       "required": ["backend", "category", "match", "module"],
       "properties": {
         "backend": {"type": "string"},
-        "category": {"enum": ["text_llm", "vision_language", "speech_to_text", "text_to_speech"]},
+        "category": {"enum": ["text_llm", "vision_language", "speech_to_text", "text_to_speech", "classification"]},
         "match": {"enum": ["exact", "remap", "stripped", "squashed"]},
         "module": {"type": "string"}
       }
@@ -74,7 +77,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["type", "use_cases", "source", "confidence"],
       "properties": {
-        "type": {"enum": ["text_llm", "vision_language", "speech_to_text", "text_to_speech", "embedding", "image_generation", "other"]},
+        "type": {"enum": ["text_llm", "vision_language", "speech_to_text", "text_to_speech", "embedding", "classification", "image_generation", "other"]},
         "use_cases": {"type": "array", "items": {"type": "string"}},
         "source": {"enum": ["pipeline_tag", "registry", "gguf_architecture", "name", "default"]},
         "confidence": {"enum": ["confirmed", "likely"]}

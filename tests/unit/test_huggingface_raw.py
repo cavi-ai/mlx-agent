@@ -37,7 +37,8 @@ class HttpRawTextTests(unittest.TestCase):
     def test_rejects_other_paths_and_hosts(self):
         for url in (
             "https://huggingface.co/org/name/raw/main/README.md",
-            "https://huggingface.co/org/name/raw/main/sub/config.json",
+            "https://huggingface.co/org/name/raw/main/../config.json",
+            "https://huggingface.co/org/name/raw/main/sub/../config.json",
             "https://huggingface.co/org/name/resolve/main/config.json",
             "https://huggingface.co/org/name/raw/refs%2Fpr%2F1/config.json",
             "https://huggingface.co/org/name/raw/main/model.safetensors",
@@ -47,6 +48,11 @@ class HttpRawTextTests(unittest.TestCase):
             with self.subTest(url=url):
                 with self.assertRaises(ValueError):
                     http_raw_text(url)
+
+    def test_a_subfolder_config_is_an_intake_file(self):
+        factory, seen = _factory(FakeCardResponse(body=b'{"model_type": "qwen2"}'))
+        text = http_raw_text("https://huggingface.co/org/name/raw/main/chat/config.json", connection_factory=factory)
+        self.assertEqual(text, '{"model_type": "qwen2"}')
 
     def test_status_errors_carry_the_status(self):
         factory, _ = _factory(FakeCardResponse(status=401))

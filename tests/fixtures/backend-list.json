@@ -17,6 +17,21 @@
       "version": "0.5.7"
     },
     {
+      "builtin": false,
+      "categories": [
+        "classification"
+      ],
+      "completed_at": null,
+      "id": "mlx-embeddings",
+      "log_path": null,
+      "model_types": 1,
+      "registry_source": "snapshot",
+      "started_at": null,
+      "state": "absent",
+      "target": "/backends/mlx-embeddings",
+      "version": "0.1.0"
+    },
+    {
       "builtin": true,
       "categories": [
         "text_llm"

@@ -33,6 +33,8 @@ _RAW_JSON_FILES = frozenset({"config.json", "model.safetensors.index.json"})
 _RAW_PY_FILE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\.py")
 _RAW_REVISION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 _SAFETENSORS_FILE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\.safetensors")
+_FOLDER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,254}")
+MAX_FOLDER_DEPTH = 8
 SAFETENSORS_HEADER_MAX_BYTES = 16 * 1024 * 1024
 _SAFETENSORS_PROBE_BYTES = 1024 * 1024
 
@@ -45,24 +47,27 @@ class HuggingFaceHTTPError(http.client.HTTPException):
         self.status = status
 
 
-def _is_valid_raw_path(path):
-    """Accept /<owner>/<repo>/raw/<revision>/<file> for intake files only."""
-    parts = path.split("/")
-    if len(parts) != 6 or parts[0] != "" or parts[3] != "raw":
+def _is_hub_file_path(parts, kind):
+    """/<owner>/<repo>/<kind>/<revision>[/<folder>...]/<file>: folders are plain names, never . or .."""
+    if len(parts) < 6 or len(parts) > 6 + MAX_FOLDER_DEPTH or parts[0] != "" or parts[3] != kind:
         return False
     if not parts[1] or not parts[2] or not _RAW_REVISION.fullmatch(parts[4]):
         return False
-    return parts[5] in _RAW_JSON_FILES or bool(_RAW_PY_FILE.fullmatch(parts[5]))
+    return all(_FOLDER.fullmatch(folder) for folder in parts[5:-1])
+
+
+def _is_valid_raw_path(path):
+    """Accept /<owner>/<repo>/raw/<revision>[/<folder>...]/<file> for intake files only."""
+    parts = path.split("/")
+    if not _is_hub_file_path(parts, "raw"):
+        return False
+    return parts[-1] in _RAW_JSON_FILES or bool(_RAW_PY_FILE.fullmatch(parts[-1]))
 
 
 def _is_valid_resolve_path(path):
-    """Accept /<owner>/<repo>/resolve/<revision>/<file>.safetensors for top-level weight files."""
+    """Accept /<owner>/<repo>/resolve/<revision>[/<folder>...]/<file>.safetensors for weight files."""
     parts = path.split("/")
-    if len(parts) != 6 or parts[0] != "" or parts[3] != "resolve":
-        return False
-    if not parts[1] or not parts[2] or not _RAW_REVISION.fullmatch(parts[4]):
-        return False
-    return bool(_SAFETENSORS_FILE.fullmatch(parts[5]))
+    return _is_hub_file_path(parts, "resolve") and bool(_SAFETENSORS_FILE.fullmatch(parts[-1]))
 
 
 def _is_hub_storage_host(host):
@@ -287,7 +292,7 @@ def http_raw_text(
     if parsed.query or parsed.fragment:
         raise ValueError("raw URL must not contain a query or fragment")
     if not _is_valid_raw_path(parsed.path):
-        raise ValueError("raw URL must target config.json, the safetensors index, or a top-level .py file")
+        raise ValueError("raw URL must target config.json, the safetensors index, or a .py file")
 
     deadline = clock() + timeout
     remaining = _deadline_remaining(deadline, clock)
@@ -364,7 +369,7 @@ def http_safetensors_header(
     if parsed.query or parsed.fragment:
         raise ValueError("safetensors URL must not contain a query or fragment")
     if not _is_valid_resolve_path(parsed.path):
-        raise ValueError("safetensors URL must target a top-level .safetensors file")
+        raise ValueError("safetensors URL must target a .safetensors file")
 
     deadline = clock() + timeout
 

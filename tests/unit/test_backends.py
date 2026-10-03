@@ -22,6 +22,10 @@ from mlx_agent.backends import (
     lookup,
     lookup_squashed,
     probe_sources_from_directory,
+    port_bits,
+    port_converter,
+    port_files,
+    port_for_files,
     probe_sources_from_wheel,
     quantize_rule,
     registry_from_sources,
@@ -186,10 +190,11 @@ class InstallStateTests(unittest.TestCase):
 class ManifestTests(unittest.TestCase):
     def test_declared_manifests_load(self):
         manifests = load_manifests()
-        self.assertEqual(sorted(manifests), ["mlx-audio", "mlx-lm", "mlx-vlm"])
+        self.assertEqual(sorted(manifests), ["mlx-audio", "mlx-embeddings", "mlx-lm", "mlx-vlm"])
         self.assertTrue(manifests["mlx-lm"]["builtin"])
         self.assertEqual(manifests["mlx-audio"]["version"], "0.5.7")
         self.assertEqual(manifests["mlx-vlm"]["version"], "0.7.4")
+        self.assertEqual(manifests["mlx-embeddings"]["version"], "0.1.0")
 
     def test_invalid_manifest_is_refused(self):
         with TemporaryDirectory() as directory:
@@ -289,6 +294,73 @@ class PortTests(unittest.TestCase):
             sync_ports(self.manifest, self.root, ports_dir=self.root / "no-ports")
         self.assertEqual(caught.exception.code, "port_missing")
         self.assertEqual(sync_ports(load_manifests()["mlx-vlm"], self.root), [])
+
+
+class ClassificationPortTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.manifests = load_manifests()
+        self.manifest = self.manifests["mlx-embeddings"]
+
+    def load_with(self, **fields):
+        directory = Path(self.directory.name) / "manifests"
+        directory.mkdir(exist_ok=True)
+        (directory / "mlx-embeddings.json").write_text(json.dumps(dict(self.manifest, **fields)), encoding="utf-8")
+        return load_manifests(directory)
+
+    def test_laya_is_a_classification_port_with_its_own_converter_and_signature(self):
+        self.assertEqual(self.manifest["ports"], {"classification": ["laya"]})
+        self.assertEqual(port_converter("Laya", "mlx-embeddings", self.manifests), "mlx_embeddings.classifiers.laya.convert")
+        self.assertIsNone(port_converter("bert", "mlx-embeddings", self.manifests))
+        self.assertIsNone(port_converter("audio8_asr_infinite", "mlx-audio", self.manifests))
+        self.assertEqual(quantize_rule("laya", "mlx-embeddings", self.manifests)["group_size"], 32)
+        self.assertEqual(port_bits("laya", "mlx-embeddings", self.manifests), [8])
+        self.assertIsNone(port_bits("audio8_asr_infinite", "mlx-audio", self.manifests))
+        signature = port_files("laya", "mlx-embeddings", self.manifests)
+        self.assertEqual(port_for_files(signature + ["README.md", "multilingual/model.safetensors"], self.manifests), "laya")
+        self.assertIsNone(port_for_files(signature[1:], self.manifests))
+        self.assertIsNone(port_for_files(["config.json", "model.safetensors"], self.manifests))
+        registries = load_registries(self.manifests, root=Path(self.directory.name), find_spec=lambda name: None)
+        hits = lookup("laya", self.manifests, registries)
+        self.assertEqual([(hit["backend"], hit["category"]) for hit in hits], [("mlx-embeddings", "classification")])
+        self.assertEqual(choose_backend(hits, "classification"), "mlx-embeddings")
+        self.assertIsNone(choose_backend(hits, "text_llm"))
+
+    def test_the_estimate_rule_matches_what_the_laya_converter_quantizes(self):
+        import ast
+
+        source = (PORTS_DIR / "mlx-embeddings" / "laya" / "convert.py").read_text(encoding="utf-8")
+        constants = {
+            node.targets[0].id: ast.literal_eval(node.value)
+            for node in ast.parse(source).body
+            if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id in ("QUANTIZE_INCLUDE", "GROUP_SIZE")
+        }
+        rule = quantize_rule("laya", "mlx-embeddings", self.manifests)
+        self.assertEqual((tuple(rule["include"]), rule.get("exclude", [])), (constants["QUANTIZE_INCLUDE"], []))
+        self.assertEqual(rule["group_size"], constants["GROUP_SIZE"])
+        sources = next(
+            ast.literal_eval(node.value) for node in ast.parse(source).body
+            if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", None) == "SOURCE_FILES"
+        )
+        self.assertEqual(sorted(port_files("laya", "mlx-embeddings", self.manifests)), sorted(sources))
+
+    def test_port_converter_signature_and_group_size_are_validated(self):
+        bad = [
+            {"port_convert": {"other": "convert"}}, {"port_convert": {"laya": "../convert"}},
+            {"port_signatures": {"laya": []}}, {"port_signatures": {"laya": ["../config.json"]}},
+            {"port_signatures": {"other": ["config.json"]}}, {"port_signatures": {"laya": ["/abs.json"]}},
+            {"port_quantize": {"laya": {"include": ["encoder."], "group_size": 48}}},
+            {"port_quantize": {"laya": {"include": ["encoder."], "group_size": True}}},
+            {"port_bits": {"laya": []}}, {"port_bits": {"laya": [16]}}, {"port_bits": {"other": [8]}},
+            {"port_bits": {"laya": [True]}},
+        ]
+        for fields in bad:
+            with self.subTest(fields=fields):
+                with self.assertRaises(BackendError) as caught:
+                    self.load_with(**fields)
+                self.assertEqual(caught.exception.code, "manifest_invalid")
 
 
 if __name__ == "__main__":

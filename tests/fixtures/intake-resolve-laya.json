@@ -1,0 +1,65 @@
+{
+  "backend": "mlx-embeddings",
+  "backend_installed": false,
+  "bytes": 2372594769,
+  "components": [
+    {
+      "config_key": null,
+      "matches": [
+        {
+          "backend": "mlx-embeddings",
+          "category": "classification",
+          "match": "exact",
+          "module": "mlx_embeddings.classifiers.laya"
+        }
+      ],
+      "model_type": "laya",
+      "role": "model"
+    }
+  ],
+  "custom_code": false,
+  "download_bytes": 846195574,
+  "estimated_output_bytes": {
+    "4": 339744590,
+    "8": 523900750
+  },
+  "files": {
+    "gguf": [],
+    "python": [
+      "email_utils.py",
+      "rl_agent_api.py",
+      "rl_common.py"
+    ],
+    "safetensors": 3
+  },
+  "gated": false,
+  "library_name": "transformers",
+  "model_type": "laya",
+  "pipeline_tag": "text-classification",
+  "q_bits": [
+    8
+  ],
+  "reasons": [],
+  "schema": "intake/1",
+  "source": {
+    "file": null,
+    "input": "convaiinnovations/laya",
+    "repo": "convaiinnovations/laya",
+    "revision": "main",
+    "subfolder": null,
+    "url": "https://huggingface.co/convaiinnovations/laya"
+  },
+  "task": {
+    "confidence": "confirmed",
+    "source": "pipeline_tag",
+    "type": "classification",
+    "use_cases": [
+      "moderation",
+      "routing",
+      "classification"
+    ]
+  },
+  "transformers_version": null,
+  "verdict": "convertible_after_install",
+  "warnings": []
+}

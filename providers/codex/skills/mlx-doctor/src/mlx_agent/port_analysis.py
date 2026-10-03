@@ -105,6 +105,11 @@ def _fetch_json(client, repo, revision, name, warnings):
 
 def analyze_with_sources(text, revision=None, client=None, manifests=None, registries=None):
     source = parse_hf_source(text)
+    if source.get("subfolder"):
+        raise PortAnalysisError(
+            "invalid_source", "Port analysis reads the repository root, not {0}/.".format(source["subfolder"]),
+            "Pass the repository without the folder.",
+        )
     if revision:
         source["revision"] = validate_revision(revision)
     client = client or HuggingFaceClient()

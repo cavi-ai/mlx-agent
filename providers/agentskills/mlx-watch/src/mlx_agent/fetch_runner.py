@@ -21,6 +21,7 @@ def main(argv=None, download=None):
     parser.add_argument("--revision", default="main")
     parser.add_argument("--file", default=None)
     parser.add_argument("--ignore", action="append", default=None)
+    parser.add_argument("--allow", action="append", default=None)
     parser.add_argument("--cache-dir", default=None)
     parser.add_argument("--local-dir", default=None)
     parser.add_argument("--marker", required=True)
@@ -28,6 +29,8 @@ def main(argv=None, download=None):
     kwargs = {"repo_id": arguments.repo, "revision": arguments.revision}
     if arguments.file:
         kwargs["allow_patterns"] = [arguments.file]
+    if arguments.allow:
+        kwargs["allow_patterns"] = arguments.allow
     if arguments.ignore:
         kwargs["ignore_patterns"] = arguments.ignore
     if arguments.cache_dir:

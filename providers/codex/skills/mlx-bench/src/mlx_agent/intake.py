@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import fnmatch
 import http.client
 import json
 import math
 
-from .backends import choose_backend, component_matches, load_manifests, load_registries, lookup, quantize_rule
+from .backends import (
+    choose_backend, component_matches, load_manifests, load_registries, lookup, port_bits, port_files,
+    port_for_files, quantize_rule, snapshot_files,
+)
 from .huggingface import HuggingFaceClient, HuggingFaceHTTPError
+from .intake_fetch import FETCH_IGNORE_PATTERNS
 from .intake_source import parse_hf_source, validate_revision
 from .taxonomy import classify
 
@@ -61,9 +66,9 @@ def summarize_files(info):
     }
 
 
-def fetch_config(client, repo, revision, warnings):
+def fetch_config(client, repo, revision, warnings, prefix=""):
     try:
-        value = json.loads(client.fetch_raw_text(repo, revision, "config.json"))
+        value = json.loads(client.fetch_raw_text(repo, revision, prefix + "config.json"))
     except TRANSPORT_ERRORS as error:
         warnings.append("config.json unreadable: {0}".format(error))
         return {}
@@ -73,8 +78,12 @@ def fetch_config(client, repo, revision, warnings):
     return value
 
 
+def _group_size(rule):
+    return (rule or {}).get("group_size", QUANT_GROUP_SIZE)
+
+
 def _quantizes(name, shape, rule):
-    if len(shape) < 2 or shape[-1] % QUANT_GROUP_SIZE:
+    if len(shape) < 2 or shape[-1] % _group_size(rule):
         return False
     if rule is None:
         return name.endswith(".weight")
@@ -83,12 +92,14 @@ def _quantizes(name, shape, rule):
     )
 
 
-def estimate_output_bytes(client, repo, revision, files, rule, warnings):
+def estimate_output_bytes(client, repo, revision, files, rule, warnings, support_files=None, prefix=""):
     """Converted size per bit width from the weight files' headers (no weights read).
 
     Quantized tensors cost bits/8 bytes per weight plus an affine scale and
-    bias per group of 64 in the weight's dtype; everything else keeps its
-    source size. Supporting files (config, tokenizer) are added as listed.
+    bias per group (64, or the port's group size) in the weight's dtype;
+    everything else keeps its source size. Supporting files (config,
+    tokenizer) are added as listed: root-level files, or the non-weight
+    files a port's signature names.
     """
     shards = sorted(name for name in files["names"] if name.endswith(".safetensors") and "/" not in name)
     if not shards or len(shards) > ESTIMATE_MAX_SHARDS:
@@ -96,7 +107,7 @@ def estimate_output_bytes(client, repo, revision, files, rule, warnings):
     totals = {bits: 0 for bits in ESTIMATE_BITS}
     for shard in shards:
         try:
-            header = client.fetch_safetensors_header(repo, revision, shard)
+            header = client.fetch_safetensors_header(repo, revision, prefix + shard)
         except TRANSPORT_ERRORS as error:
             warnings.append("output size estimate unavailable: {0} header unreadable: {1}".format(shard, error))
             return None
@@ -113,13 +124,16 @@ def estimate_output_bytes(client, repo, revision, files, rule, warnings):
             count = math.prod(shape)
             for bits in totals:
                 if _quantizes(name, shape, rule):
-                    totals[bits] += -(-count * bits // 8) + (count // QUANT_GROUP_SIZE) * 2 * width
+                    totals[bits] += -(-count * bits // 8) + (count // _group_size(rule)) * 2 * width
                 else:
                     totals[bits] += count * width
-    support = sum(
-        size for name, size in files["sizes"].items()
-        if "/" not in name and name.endswith(_SUPPORT_SUFFIXES) and name != "model.safetensors.index.json"
-    )
+    if support_files is not None:
+        support = sum(files["sizes"].get(name, 0) for name in support_files if not name.endswith(".safetensors"))
+    else:
+        support = sum(
+            size for name, size in files["sizes"].items()
+            if "/" not in name and name.endswith(_SUPPORT_SUFFIXES) and name != "model.safetensors.index.json"
+        )
     return {str(bits): total + support for bits, total in totals.items()}
 
 
@@ -140,19 +154,53 @@ def components(model_type, config, manifests, registries):
     return result
 
 
+def scope_files(info, subfolder):
+    """The repository's file summary, or one subfolder's with names relative to it (GGUF names stay full)."""
+    if not subfolder:
+        return summarize_files(info)
+    prefix = subfolder + "/"
+    siblings = [
+        dict(sibling, rfilename=sibling["rfilename"][len(prefix):])
+        for sibling in (info.get("siblings") if isinstance(info.get("siblings"), list) else [])
+        if isinstance(sibling, dict) and isinstance(sibling.get("rfilename"), str) and sibling["rfilename"].startswith(prefix)
+    ]
+    files = summarize_files({"siblings": siblings})
+    for item in files["summary"]["gguf"]:
+        item["name"] = prefix + item["name"]
+    return files
+
+
+def _source_url(source):
+    url = "https://huggingface.co/{0}".format(source["repo"])
+    if source.get("subfolder"):
+        url += "/tree/{0}/{1}".format(source["revision"], source["subfolder"])
+    return url
+
+
 def _empty_payload(text, source):
     return {
         "schema": INTAKE_SCHEMA,
         "source": {
             "input": text.strip(), "repo": source["repo"], "revision": source["revision"],
-            "file": source["file"], "url": "https://huggingface.co/{0}".format(source["repo"]),
+            "file": source["file"], "subfolder": source.get("subfolder"), "url": _source_url(source),
         },
         "verdict": "unknown", "reasons": [], "backend": None, "backend_installed": False,
         "model_type": None, "components": [], "task": None, "custom_code": False, "gated": False,
         "library_name": None, "pipeline_tag": None, "transformers_version": None, "bytes": 0,
-        "estimated_output_bytes": None,
+        "download_bytes": 0, "estimated_output_bytes": None, "q_bits": list(ESTIMATE_BITS),
         "files": {"safetensors": 0, "gguf": [], "python": []}, "warnings": [],
     }
+
+
+def download_bytes(files, model_type, manifests):
+    """What ``intake fetch`` of the snapshot takes: a ported type's files, else every file but ignored formats."""
+    ported = snapshot_files(model_type, manifests)
+    if ported:
+        return sum(files["sizes"].get(name, 0) for name in ported)
+    return sum(
+        size for name, size in files["sizes"].items()
+        if not any(fnmatch.fnmatch(name, pattern) for pattern in FETCH_IGNORE_PATTERNS)
+    )
 
 
 def _verdict(payload, tags, files, config, manifests, registries):
@@ -201,21 +249,31 @@ def resolve(text, revision=None, client=None, manifests=None, registries=None):
         payload["warnings"].append("the model API returned a non-object document")
         return payload
 
-    files = summarize_files(info)
+    subfolder = source.get("subfolder")
+    prefix = subfolder + "/" if subfolder else ""
+    files = scope_files(info, subfolder)
     tags = [tag for tag in info.get("tags") or [] if isinstance(tag, str)]
-    api_config = info.get("config") if isinstance(info.get("config"), dict) else {}
+    # The model card's config describes the repository root, not a subfolder checkpoint.
+    api_config = info.get("config") if isinstance(info.get("config"), dict) and not subfolder else {}
     payload.update(
         files=files["summary"], bytes=files["bytes"], gated=bool(info.get("gated")),
         library_name=_text(info.get("library_name")), pipeline_tag=_text(info.get("pipeline_tag")),
     )
+    if subfolder and not files["names"]:
+        payload.update(verdict="unsupported", reasons=["subfolder_not_found"])
+        return payload
     config = {}
     if "config.json" in files["names"] and not payload["gated"]:
-        config = fetch_config(client, source["repo"], source["revision"], payload["warnings"])
-    payload["model_type"] = _text(config.get("model_type")) or _text(api_config.get("model_type"))
+        config = fetch_config(client, source["repo"], source["revision"], payload["warnings"], prefix)
+    payload["model_type"] = (
+        _text(config.get("model_type")) or _text(api_config.get("model_type"))
+        or (None if payload["gated"] else port_for_files(files["names"], manifests))
+    )
     payload["transformers_version"] = _text(config.get("transformers_version"))
     payload["custom_code"] = (
         "custom_code" in tags or bool(config.get("auto_map")) or bool(api_config.get("auto_map"))
     )
+    payload["download_bytes"] = download_bytes(files, payload["model_type"], manifests)
     payload["components"] = components(payload["model_type"], config, manifests, registries)
     payload["task"] = classify(
         source["repo"], tags=tags, pipeline_tag=payload["pipeline_tag"],
@@ -228,8 +286,10 @@ def resolve(text, revision=None, client=None, manifests=None, registries=None):
         backend_installed=bool(backend and registries.get(backend, {}).get("installed")),
     )
     if verdict in ("convertible", "convertible_after_install"):
+        payload["q_bits"] = port_bits(payload["model_type"], backend, manifests) or list(ESTIMATE_BITS)
         payload["estimated_output_bytes"] = estimate_output_bytes(
             client, source["repo"], source["revision"], files,
             quantize_rule(payload["model_type"], backend, manifests), payload["warnings"],
+            support_files=port_files(payload["model_type"], backend, manifests), prefix=prefix,
         )
     return payload

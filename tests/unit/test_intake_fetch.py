@@ -4,6 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from mlx_agent import fetch_runner
+from mlx_agent.backends import load_manifests
 from mlx_agent.intake_fetch import FETCH_IGNORE_PATTERNS, FETCH_RUNNER, FetchError, plan_fetch, start_fetch, status_fetch
 
 
@@ -44,6 +45,31 @@ class FetchTests(unittest.TestCase):
         self.assertNotIn("--ignore", single["argv"])
         self.assertEqual(single["ignore_patterns"], [])
 
+    def test_a_ported_snapshot_downloads_only_the_port_files(self):
+        plan = plan_fetch("convaiinnovations/laya", python="/venv/bin/python", model_type="laya")
+        files = load_manifests()["mlx-embeddings"]["port_signatures"]["laya"]
+        self.assertEqual((plan["allow_patterns"], plan["ignore_patterns"]), (files, []))
+        argv = plan["argv"]
+        self.assertEqual([argv[index + 1] for index, value in enumerate(argv) if value == "--allow"], files)
+        self.assertNotIn("--ignore", argv)
+        other = plan_fetch("org/name", python="/venv/bin/python", model_type="qwen2")
+        self.assertEqual((other["allow_patterns"], other["ignore_patterns"]), ([], list(FETCH_IGNORE_PATTERNS)))
+        self.assertEqual(other["preview_hash"], plan_fetch("org/name", python="/venv/bin/python")["preview_hash"])
+        single = plan_fetch("org/name", file="a.gguf", python="/venv/bin/python", model_type="laya")
+        self.assertEqual((single["allow_patterns"], single["file"]), ([], "a.gguf"))
+
+    def test_a_subfolder_snapshot_downloads_only_that_folder(self):
+        ported = plan_fetch("convaiinnovations/laya/multilingual", python="/venv/bin/python", model_type="laya")
+        files = load_manifests()["mlx-embeddings"]["port_signatures"]["laya"]
+        self.assertEqual(ported["allow_patterns"], ["multilingual/" + name for name in files])
+        self.assertEqual((ported["subfolder"], ported["ignore_patterns"]), ("multilingual", []))
+        self.assertIn("multilingual", ported["slug"])
+        generic = plan_fetch("https://huggingface.co/org/name/tree/main/chat", python="/venv/bin/python")
+        self.assertEqual((generic["allow_patterns"], generic["ignore_patterns"]), (["chat/*"], list(FETCH_IGNORE_PATTERNS)))
+        argv = generic["argv"]
+        self.assertEqual(argv[argv.index("--allow") + 1], "chat/*")
+        self.assertNotEqual(generic["preview_hash"], plan_fetch("org/name", python="/venv/bin/python")["preview_hash"])
+
     def test_start_and_status_lifecycle(self):
         plan = plan_fetch("org/name", python="/venv/bin/python")
         self.assertEqual(start_fetch(plan)["status"], "preview")
@@ -59,6 +85,14 @@ class FetchTests(unittest.TestCase):
         marker = Path(outcome["receipt"]["marker"])
         running = status_fetch(str(self.base), pid_alive=lambda pid: True)
         self.assertEqual([job["state"] for job in running], ["running"])
+        self.assertEqual((outcome["receipt"]["subfolder"], running[0]["subfolder"]), (plan["subfolder"], plan["subfolder"]))
+        folder = plan_fetch("org/name/chat", python="/venv/bin/python")
+        start_fetch(folder, receipts_dir=str(self.base), confirm=True, preview_hash=folder["preview_hash"],
+                    spawn=self.spawn, module_present=lambda names: [])
+        jobs = status_fetch(str(self.base), pid_alive=lambda pid: True)
+        self.assertEqual({(job["repo"], job["subfolder"]) for job in jobs},
+                         {(plan["repo"], plan["subfolder"]), ("org/name", "chat")})
+        (self.base / ".mlx-agent-receipts" / "fetch" / "{0}.json".format(folder["slug"])).unlink()
         marker.write_text(json.dumps({"exit_status": "done", "path": "/hf/snap", "finished_at": "t"}), encoding="utf-8")
         done = status_fetch(str(self.base), pid_alive=lambda pid: False)
         self.assertEqual((done[0]["state"], done[0]["path"]), ("done", "/hf/snap"))
@@ -99,6 +133,10 @@ class FetchTests(unittest.TestCase):
                                   "--ignore", "*.msgpack", "--marker", str(marker)], download=download)
         self.assertEqual(code, 0)
         self.assertEqual(seen, {"repo_id": "org/name", "revision": "main", "ignore_patterns": ["*.h5", "*.msgpack"]})
+        seen.clear()
+        fetch_runner.main(["--repo", "org/name", "--revision", "main", "--allow", "model.safetensors",
+                           "--allow", "encoder/config.json", "--marker", str(marker)], download=download)
+        self.assertEqual(seen["allow_patterns"], ["model.safetensors", "encoder/config.json"])
 
 
 if __name__ == "__main__":

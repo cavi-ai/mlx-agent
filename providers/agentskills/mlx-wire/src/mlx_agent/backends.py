@@ -19,7 +19,7 @@ PORTS_DIR = Path(__file__).resolve().parent / "resources" / "ports"
 MANIFEST_SCHEMA = "backend/1"
 INSTALL_MARKER = ".mlx-agent-backend.json"
 PORT_MARKER = ".mlx-agent-port.json"
-CATEGORIES = ("text_llm", "vision_language", "speech_to_text", "text_to_speech")
+CATEGORIES = ("text_llm", "vision_language", "speech_to_text", "text_to_speech", "classification")
 MAX_PROBE_FILES = 4000
 MAX_PROBE_FILE_BYTES = 1024 * 1024
 TYPE_PREFERENCE = {
@@ -27,10 +27,12 @@ TYPE_PREFERENCE = {
     "text_to_speech": ("mlx-audio",),
     "vision_language": ("mlx-vlm", "mlx-lm"),
     "text_llm": ("mlx-lm", "mlx-vlm"),
+    "classification": ("mlx-embeddings",),
 }
 DEFAULT_PREFERENCE = ("mlx-lm", "mlx-vlm", "mlx-audio")
 _ID = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
 _PORT = re.compile(r"[a-z][a-z0-9_]{0,63}")
+_PORT_FILE = re.compile(r"[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*")
 _STRIP_SUFFIXES = ("_encoder", "_decoder", "_text", "_vision", "_audio", "_model")
 _VISION_FILE = re.compile(r"(vision|visual|image|siglip|clip)", re.IGNORECASE)
 _ENV_ALLOWLIST = (
@@ -102,17 +104,89 @@ def _validate_manifest(value, path):
     if not isinstance(rules, dict) or not set(rules) <= ported:
         raise _invalid(path, "port_quantize keys must be declared ports")
     for rule in rules.values():
-        if not isinstance(rule, dict) or not set(rule) <= {"include", "exclude"} or not all(
+        if not isinstance(rule, dict) or not set(rule) <= {"include", "exclude", "group_size"} or not all(
             isinstance(rule.get(key, []), list) and all(isinstance(item, str) for item in rule.get(key, []))
             for key in ("include", "exclude")
         ):
             raise _invalid(path, "port_quantize rules list include and exclude name parts")
+        group = rule.get("group_size", 64)
+        if not isinstance(group, int) or isinstance(group, bool) or group not in (32, 64, 128):
+            raise _invalid(path, "port_quantize group_size must be 32, 64, or 128")
+    bits = value.get("port_bits", {})
+    if not isinstance(bits, dict) or not set(bits) <= ported or not all(
+        isinstance(widths, list) and widths and all(width in (4, 8) and not isinstance(width, bool) for width in widths)
+        for widths in bits.values()
+    ):
+        raise _invalid(path, "port_bits map declared ports to the bit widths (4, 8) their conversions keep accurate")
+    converters = value.get("port_convert", {})
+    if not isinstance(converters, dict) or not set(converters) <= ported or not all(
+        isinstance(module, str) and _PORT.fullmatch(module) for module in converters.values()
+    ):
+        raise _invalid(path, "port_convert maps declared ports to a module inside the port")
+    signatures = value.get("port_signatures", {})
+    if not isinstance(signatures, dict) or not set(signatures) <= ported or not all(
+        isinstance(files, list) and files and all(
+            isinstance(name, str) and _PORT_FILE.fullmatch(name) and ".." not in name.split("/") for name in files
+        )
+        for files in signatures.values()
+    ):
+        raise _invalid(path, "port_signatures map declared ports to the relative files that identify them")
 
 
 def quantize_rule(model_type, backend_id, manifests):
     """The tensor-name rule a port declares for what its converter quantizes, or None."""
     manifest = manifests.get(backend_id) or {}
     return (manifest.get("port_quantize") or {}).get(normalize_type(model_type or ""))
+
+
+def _port_category(manifest, name):
+    for category, names in sorted((manifest.get("ports") or {}).items()):
+        if name in names:
+            return category
+    return None
+
+
+def port_converter(model_type, backend_id, manifests):
+    """The module a port ships for converting its own checkpoints, or None for the backend's converter."""
+    manifest = manifests.get(backend_id) or {}
+    name = normalize_type(model_type or "")
+    module = (manifest.get("port_convert") or {}).get(name)
+    category = _port_category(manifest, name)
+    if module is None or category is None:
+        return None
+    return "{0}.{1}".format(_module_path(manifest, category, name), module)
+
+
+def port_bits(model_type, backend_id, manifests):
+    """The bit widths a port converts to, or None for every supported width."""
+    manifest = manifests.get(backend_id) or {}
+    widths = (manifest.get("port_bits") or {}).get(normalize_type(model_type or ""))
+    return sorted(widths) if widths else None
+
+
+def port_files(model_type, backend_id, manifests):
+    """The files that identify a port's checkpoints (its signature), or None."""
+    manifest = manifests.get(backend_id) or {}
+    return (manifest.get("port_signatures") or {}).get(normalize_type(model_type or ""))
+
+
+def snapshot_files(model_type, manifests):
+    """A ported type's files, the whole of what its converter reads, in whichever backend declares it; or None."""
+    for backend_id in sorted(manifests):
+        files = port_files(model_type, backend_id, manifests)
+        if files:
+            return files
+    return None
+
+
+def port_for_files(names, manifests):
+    """The ported model type whose identifying files a repository carries (repos without a root config)."""
+    present = set(names)
+    for backend_id in sorted(manifests):
+        for port, files in sorted((manifests[backend_id].get("port_signatures") or {}).items()):
+            if set(files) <= present:
+                return port
+    return None
 
 
 def backends_root(env=None):

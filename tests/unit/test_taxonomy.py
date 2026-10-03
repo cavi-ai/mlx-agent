@@ -138,5 +138,19 @@ class CommittedRegistryCollisionTests(unittest.TestCase):
         self.assertEqual(self.classify("orpheus-3b-tts-mlx", model_type="llama", local=True)["type"], "text_to_speech")
 
 
+class ClassificationTaxonomyTests(unittest.TestCase):
+    def test_text_classification_repos_and_ported_classifiers_are_classification(self):
+        manifests = load_manifests()
+        registries = load_registries(manifests, root=Path("/nonexistent"), find_spec=lambda name: None)
+        task = classify("convaiinnovations/laya", tags=["routing", "guardrails", "moderation"],
+                        pipeline_tag="text-classification", model_type="laya", manifests=manifests, registries=registries)
+        self.assertEqual(task, {"type": "classification", "use_cases": ["moderation", "routing", "classification"],
+                                "source": "pipeline_tag", "confidence": "confirmed"})
+        self.assertEqual(classify("x", pipeline_tag="zero-shot-classification")["type"], "classification")
+        local = classify("laya-MLX-4bit", model_type="laya", manifests=manifests, registries=registries, local=True)
+        self.assertEqual((local["type"], local["source"]), ("classification", "registry"))
+        self.assertEqual(use_cases_for("classification", "plain"), ["classification"])
+
+
 if __name__ == "__main__":
     unittest.main()

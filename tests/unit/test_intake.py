@@ -63,6 +63,17 @@ def golden_audio8():
     )
 
 
+def golden_laya(text="convaiinnovations/laya", config=None):
+    info = json.loads((FIXTURES / "hf" / "laya-api.json").read_text(encoding="utf-8"))
+    if config is not None:
+        info = dict(info, config=config)
+    headers = json.loads((FIXTURES / "hf" / "laya-safetensors-headers.json").read_text(encoding="utf-8"))
+    client = FakeClient(info=info, headers=headers)
+    manifests = load_manifests()
+    registries = load_registries(manifests, root=Path("/nonexistent"), find_spec=lambda name: None)
+    return client, resolve(text, client=client, manifests=manifests, registries=registries)
+
+
 def repo_info(model_type=None, tags=(), pipeline_tag=None, library_name="transformers", files=("config.json", "model.safetensors"), gated=False, sizes=True):
     siblings = []
     for name in files:
@@ -106,6 +117,62 @@ class ResolveTests(unittest.TestCase):
     def test_audio8_estimate_counts_only_the_ported_decoder_as_quantized(self):
         payload = golden_audio8()
         self.assertEqual(payload["estimated_output_bytes"], {"4": 3748321085, "8": 5291169597})
+
+    def test_a_configless_repo_matching_a_port_signature_converts_through_that_port(self):
+        client, payload = golden_laya()
+        self.validator.validate(payload)
+        self.assertEqual((payload["verdict"], payload["backend"], payload["model_type"]),
+                         ("convertible_after_install", "mlx-embeddings", "laya"))
+        self.assertEqual(payload["task"]["type"], "classification")
+        self.assertEqual(client.raw_requests, [])
+        self.assertEqual(client.header_requests, ["model.safetensors"])
+        self.assertEqual([m["module"] for m in payload["components"][0]["matches"]], ["mlx_embeddings.classifiers.laya"])
+
+    def test_laya_estimate_uses_the_port_group_size_and_its_signature_files(self):
+        _, payload = golden_laya()
+        self.assertEqual(payload["estimated_output_bytes"], {"4": 339744590, "8": 523900750})
+
+    def test_download_bytes_count_what_a_snapshot_fetch_takes(self):
+        _, laya = golden_laya()
+        self.assertEqual(laya["download_bytes"], 846195574)
+        self.assertGreater(laya["bytes"], 2_000_000_000)
+        info = repo_info(pipeline_tag="text-generation",
+                         files=("config.json", "model.safetensors", "model.onnx", "onnx/decoder.onnx", "flax_model.msgpack"))
+        client = FakeClient(info=info, files={"config.json": json.dumps({"model_type": "qwen2"})})
+        payload = self.run_resolve(client, installed=("mlx-lm",))
+        self.assertEqual((payload["bytes"], payload["download_bytes"]), (5000, 2000))
+
+    def test_a_subfolder_checkpoint_resolves_against_its_own_files(self):
+        client, payload = golden_laya("https://huggingface.co/convaiinnovations/laya/tree/main/multilingual",
+                                      config={"model_type": "bert"})
+        self.validator.validate(payload)
+        self.assertEqual(payload["source"]["subfolder"], "multilingual")
+        self.assertEqual(payload["source"]["url"], "https://huggingface.co/convaiinnovations/laya/tree/main/multilingual")
+        self.assertEqual((payload["verdict"], payload["backend"], payload["model_type"]),
+                         ("convertible_after_install", "mlx-embeddings", "laya"))
+        self.assertEqual(client.header_requests, ["multilingual/model.safetensors"])
+        self.assertEqual(payload["bytes"], payload["download_bytes"])
+        self.assertEqual(payload["download_bytes"], 678201636)
+        self.assertEqual(payload["estimated_output_bytes"], {"4": 507061436, "8": 569287868})
+        self.assertEqual(payload["q_bits"], [8])
+        self.assertEqual(payload["files"]["python"], [])
+
+    def test_a_missing_subfolder_is_unsupported_and_a_subfolder_config_is_read_there(self):
+        _, payload = golden_laya("convaiinnovations/laya/nope")
+        self.validator.validate(payload)
+        self.assertEqual((payload["verdict"], payload["reasons"], payload["bytes"]), ("unsupported", ["subfolder_not_found"], 0))
+        info = repo_info(pipeline_tag="text-generation", model_type="llama",
+                         files=("README.md", "chat/config.json", "chat/model.safetensors", "chat/model.onnx"))
+        client = FakeClient(info=info, files={"chat/config.json": json.dumps({"model_type": "qwen2"})},
+                            headers={"chat/model.safetensors": {}})
+        payload = self.run_resolve(client, installed=("mlx-lm",), text="org/name/chat")
+        self.assertEqual((payload["model_type"], payload["verdict"], payload["q_bits"]), ("qwen2", "convertible", [4, 8]))
+        self.assertEqual(client.raw_requests, ["chat/config.json"])
+        self.assertEqual((payload["bytes"], payload["download_bytes"]), (3000, 2000))
+
+    def test_laya_golden_fixture_matches(self):
+        expected = json.loads((FIXTURES / "intake-resolve-laya.json").read_text(encoding="utf-8"))
+        self.assertEqual(golden_laya()[1], expected)
 
     def test_estimate_quantizes_matrix_weights_and_keeps_the_rest(self):
         header = {

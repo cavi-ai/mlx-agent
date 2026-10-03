@@ -108,6 +108,9 @@ class PortAnalysisTests(unittest.TestCase):
                 with self.assertRaises(PortAnalysisError) as caught:
                     analyze("org/x", client=client, manifests=manifests, registries=registries)
                 self.assertEqual(caught.exception.code, code)
+        with self.assertRaises(PortAnalysisError) as caught:
+            analyze("org/x/sub", client=FakeClient(info={"siblings": []}), manifests=manifests, registries=registries)
+        self.assertEqual(caught.exception.code, "invalid_source")
 
     def test_weight_prefixes_without_index(self):
         self.assertEqual(weight_prefixes(None, {"text"}), [])

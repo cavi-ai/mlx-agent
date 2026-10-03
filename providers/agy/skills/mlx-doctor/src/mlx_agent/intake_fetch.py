@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .backends import backend_environment, spawn_with_env
+from .backends import backend_environment, load_manifests, snapshot_files, spawn_with_env
 from .convert import _default_module_present, _write_receipt, receipts_root
 from .intake_source import parse_hf_source, validate_file, validate_revision
 from .serve import _pid_alive
@@ -35,7 +35,10 @@ def _utc_now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, python=None):
+def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, python=None, model_type=None,
+               manifests=None):
+    """A download plan. A snapshot of a ported model type (``model_type`` from intake) takes only the
+    port's files; any other snapshot skips formats MLX never reads. A subfolder source takes only that folder."""
     source = parse_hf_source(text)
     if revision:
         source["revision"] = validate_revision(revision)
@@ -49,11 +52,22 @@ def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, py
                              "Pass the full destination directory.")
     python = str(python or sys.executable)
     argv = [python, str(FETCH_RUNNER), "--repo", source["repo"], "--revision", source["revision"]]
-    ignore_patterns = []
+    ignore_patterns, allow_patterns = [], []
+    prefix = source["subfolder"] + "/" if source.get("subfolder") else ""
+    ported = None
+    if not source["file"] and model_type:
+        ported = snapshot_files(model_type, load_manifests() if manifests is None else manifests)
     if source["file"]:
         argv += ["--file", source["file"]]
     else:
-        ignore_patterns = list(FETCH_IGNORE_PATTERNS)
+        if ported:
+            allow_patterns = [prefix + name for name in ported]
+        elif prefix:
+            allow_patterns = [prefix + "*"]
+        if not ported:
+            ignore_patterns = list(FETCH_IGNORE_PATTERNS)
+        for name in allow_patterns:
+            argv += ["--allow", name]
         for pattern in ignore_patterns:
             argv += ["--ignore", pattern]
     if hf_cache:
@@ -61,13 +75,15 @@ def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, py
     if local is not None:
         argv += ["--local-dir", str(local)]
     slug = _UNSAFE.sub("-", "{0}--{1}".format(
-        source["repo"].replace("/", "--"), source["file"] or "snapshot"
+        source["repo"].replace("/", "--"), source["file"] or (source.get("subfolder") or "snapshot").replace("/", "--")
     )).strip("-.")[:160]
     plan = {
         "repo": source["repo"], "revision": source["revision"], "file": source["file"],
+        "subfolder": source.get("subfolder"),
         "cache_dir": str(hf_cache) if hf_cache else None,
         "local_dir": str(local) if local is not None else None,
         "ignore_patterns": ignore_patterns,
+        "allow_patterns": allow_patterns,
         "slug": slug, "argv": argv, "network": ["huggingface.co"],
     }
     canonical = json.dumps(plan, sort_keys=True, separators=(",", ":"))
@@ -114,8 +130,8 @@ def start_fetch(plan, receipts_dir=None, confirm=False, preview_hash=None, spawn
     pid = (spawn or spawn_with_env)(argv, str(log_path), backend_environment(env))
     receipt = {
         "schema_version": "1.0", "kind": FETCH_RECEIPT_KIND, "repo": plan["repo"],
-        "revision": plan["revision"], "file": plan["file"], "local_dir": plan["local_dir"],
-        "cache_dir": plan["cache_dir"], "slug": plan["slug"], "argv": argv, "pid": pid,
+        "revision": plan["revision"], "file": plan["file"], "subfolder": plan.get("subfolder"),
+        "local_dir": plan["local_dir"], "cache_dir": plan["cache_dir"], "slug": plan["slug"], "argv": argv, "pid": pid,
         "log_path": str(log_path), "marker": str(marker), "started_at": now(),
         "preview_hash": plan["preview_hash"], "completed_at": None, "exit_status": None,
     }
@@ -136,7 +152,8 @@ def status_fetch(receipts_dir=None, pid_alive=_pid_alive):
             continue
         entry = {
             "receipt": str(path), "repo": receipt.get("repo"), "revision": receipt.get("revision"),
-            "file": receipt.get("file"), "local_dir": receipt.get("local_dir"), "state": "failed",
+            "file": receipt.get("file"), "subfolder": receipt.get("subfolder"), "local_dir": receipt.get("local_dir"),
+            "state": "failed",
             "path": None, "log_path": receipt.get("log_path"), "started_at": receipt.get("started_at"),
             "completed_at": None,
         }

@@ -66,6 +66,7 @@ from .modality import ALL_FACET_IDS, FOUNDATION_IDS, resolve_facets, resolve_mod
 from .models import DISCOVERY_ROLES, render_md, wire
 from .port_analysis import PortAnalysisError, analyze as port_analyze
 from .transcribe import TranscribeError, plan_transcribe, run_transcribe
+from .decide import DecideError, plan_decide, run_decide
 from .port_plan import draft_port_plan
 from .project_blueprint import (
     build_brief,
@@ -1367,6 +1368,10 @@ def _add_intake_arguments(parser):
     fetch.add_argument("--revision", default=None)
     fetch.add_argument("--hf-cache", default=None)
     fetch.add_argument("--local-dir", default=None)
+    fetch.add_argument(
+        "--model-type", default=None,
+        help="model_type from intake resolve; a ported type downloads only the port's files",
+    )
     fetch.add_argument("--confirm", action="store_true")
     fetch.add_argument("--preview-hash")
     fetch.add_argument("--receipts-dir", default=None)
@@ -1429,7 +1434,8 @@ def _run_intake(arguments):
             return _emit_serve_result(ResultEnvelope.ok(operation, {"jobs": jobs}), arguments.json)
         if arguments.intake_command == "fetch":
             plan = plan_fetch(arguments.source, revision=arguments.revision, file=arguments.file,
-                              hf_cache=arguments.hf_cache, local_dir=arguments.local_dir)
+                              hf_cache=arguments.hf_cache, local_dir=arguments.local_dir,
+                              model_type=arguments.model_type)
             outcome = start_fetch(plan, receipts_dir=arguments.receipts_dir,
                                   confirm=arguments.confirm, preview_hash=arguments.preview_hash)
             if outcome["status"] == "preview":
@@ -1560,6 +1566,11 @@ def _add_convert_arguments(parser):
         "--backend", default=None,
         help="optional converter backend for --repo (see backend list); default mlx-lm",
     )
+    start.add_argument(
+        "--model-type", default=None,
+        help="model_type from intake resolve; selects a port's own converter when it ships one",
+    )
+    start.add_argument("--subfolder", default=None, help="checkpoint folder inside the repository (converts from the cache)")
     start.add_argument("--q-bits", type=int, default=4, choices=Q_BITS_CHOICES)
     start.add_argument("--out", default=None, help="output directory (default <model>-MLX-<bits>bit)")
     start.add_argument("--confirm", action="store_true", help="authorize this reviewed conversion")
@@ -1599,6 +1610,14 @@ def _add_convert_arguments(parser):
     transcribe.add_argument("--language", default=None, help="language code passed to models that take one")
     transcribe.add_argument("--timeout", type=int, default=300, help="seconds before the backend run is stopped")
     transcribe.add_argument("--json", action="store_true")
+    decide = actions.add_parser(
+        "decide",
+        help="answer typed questions about a state with a converted classification model (read-only verification canary)",
+    )
+    decide.add_argument("--path", required=True, help="converted classification model directory")
+    decide.add_argument("--request", required=True, help='JSON file: {"state": ..., "questions": {...}}')
+    decide.add_argument("--timeout", type=int, default=300, help="seconds before the backend run is stopped")
+    decide.add_argument("--json", action="store_true")
 
 
 def _run_convert(arguments):
@@ -1618,6 +1637,13 @@ def _run_convert(arguments):
             return _emit_serve_result(
                 ResultEnvelope.ok(operation, result), arguments.json, human=result["text"],
             )
+        if arguments.convert_command == "decide":
+            if not 1 <= arguments.timeout <= 3600:
+                raise ValueError("--timeout must be 1..3600 seconds")
+            result = run_decide(plan_decide(arguments.path, arguments.request), timeout=arguments.timeout)
+            return _emit_serve_result(
+                ResultEnvelope.ok(operation, result), arguments.json, human=json.dumps(result["answers"], indent=2),
+            )
         if arguments.convert_command == "scan":
             report = _convert_scan(arguments)
             return _emit_serve_result(
@@ -1636,7 +1662,8 @@ def _run_convert(arguments):
             )
         else:
             plan = plan_convert(arguments.repo, q_bits=arguments.q_bits, out=arguments.out,
-                                backend=arguments.backend)
+                                backend=arguments.backend, model_type=arguments.model_type,
+                                subfolder=arguments.subfolder, hf_cache=arguments.hf_cache)
         if not arguments.confirm:
             result = ResultEnvelope.ok(
                 operation, {"plan": plan, "requires_confirmation": True}
@@ -1665,7 +1692,7 @@ def _run_convert(arguments):
                 receipt["repo"], receipt["out"], receipt["pid"], receipt["log_path"]
             ),
         )
-    except (ConvertError, GGUFError, TranscribeError) as error:
+    except (ConvertError, GGUFError, TranscribeError, DecideError) as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         result = ResultEnvelope.fail(

@@ -1,0 +1,180 @@
+{
+ "config": {},
+ "gated": false,
+ "id": "convaiinnovations/laya",
+ "library_name": "transformers",
+ "pipeline_tag": "text-classification",
+ "siblings": [
+  {
+   "rfilename": ".gitattributes",
+   "size": 1913
+  },
+  {
+   "rfilename": "README.md",
+   "size": 23187
+  },
+  {
+   "rfilename": "assets/laya_benchmark.png",
+   "size": 260892
+  },
+  {
+   "rfilename": "assets/laya_benchmark_common.png",
+   "size": 278159
+  },
+  {
+   "rfilename": "assets/laya_vs_jev.png",
+   "size": 216412
+  },
+  {
+   "rfilename": "assets/laya_vs_jev_full.png",
+   "size": 487005
+  },
+  {
+   "rfilename": "assets/logo-lockup-dark.png",
+   "size": 27666
+  },
+  {
+   "rfilename": "assets/logo-lockup-dark.svg",
+   "size": 1590
+  },
+  {
+   "rfilename": "assets/logo-lockup.png",
+   "size": 26761
+  },
+  {
+   "rfilename": "assets/logo-lockup.svg",
+   "size": 1590
+  },
+  {
+   "rfilename": "assets/logo-mark-ink.png",
+   "size": 17378
+  },
+  {
+   "rfilename": "assets/logo-mark-ink.svg",
+   "size": 1320
+  },
+  {
+   "rfilename": "assets/logo-mark-mono.svg",
+   "size": 1380
+  },
+  {
+   "rfilename": "assets/logo-mark.png",
+   "size": 17962
+  },
+  {
+   "rfilename": "assets/logo-mark.svg",
+   "size": 1320
+  },
+  {
+   "rfilename": "email_utils.py",
+   "size": 3937
+  },
+  {
+   "rfilename": "encoder/config.json",
+   "size": 2083
+  },
+  {
+   "rfilename": "eval/benchmark_comparison.png",
+   "size": 467466
+  },
+  {
+   "rfilename": "eval/reliability_eval_in.png",
+   "size": 65436
+  },
+  {
+   "rfilename": "eval/reliability_eval_zs.png",
+   "size": 72014
+  },
+  {
+   "rfilename": "eval/results.json",
+   "size": 2976
+  },
+  {
+   "rfilename": "eval/results.md",
+   "size": 1608
+  },
+  {
+   "rfilename": "model.safetensors",
+   "size": 842609210
+  },
+  {
+   "rfilename": "multilingual/encoder/config.json",
+   "size": 1938
+  },
+  {
+   "rfilename": "multilingual/model.safetensors",
+   "size": 643835514
+  },
+  {
+   "rfilename": "multilingual/rl_agent_config.json",
+   "size": 472
+  },
+  {
+   "rfilename": "multilingual/tokenizer/tokenizer.json",
+   "size": 34363188
+  },
+  {
+   "rfilename": "multilingual/tokenizer/tokenizer_config.json",
+   "size": 524
+  },
+  {
+   "rfilename": "rl_agent_api.py",
+   "size": 4732
+  },
+  {
+   "rfilename": "rl_agent_config.json",
+   "size": 745
+  },
+  {
+   "rfilename": "rl_common.py",
+   "size": 19139
+  },
+  {
+   "rfilename": "tokenizer/tokenizer.json",
+   "size": 3583228
+  },
+  {
+   "rfilename": "tokenizer/tokenizer_config.json",
+   "size": 308
+  },
+  {
+   "rfilename": "typed-decisions/encoder/config.json",
+   "size": 2084
+  },
+  {
+   "rfilename": "typed-decisions/model.safetensors",
+   "size": 842609220
+  },
+  {
+   "rfilename": "typed-decisions/rl_agent_config.json",
+   "size": 847
+  },
+  {
+   "rfilename": "typed-decisions/tokenizer/tokenizer.json",
+   "size": 3583228
+  },
+  {
+   "rfilename": "typed-decisions/tokenizer/tokenizer_config.json",
+   "size": 337
+  }
+ ],
+ "tags": [
+  "transformers",
+  "safetensors",
+  "laya",
+  "system-one",
+  "calibrated-decisions",
+  "rlcd",
+  "classification",
+  "routing",
+  "scoring",
+  "guardrails",
+  "moderation",
+  "reinforcement-learning",
+  "commercial-use",
+  "text-classification",
+  "license:apache-2.0",
+  "endpoints_compatible",
+  "region:us"
+ ]
+}

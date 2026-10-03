@@ -50,6 +50,7 @@
     }
   ],
   "custom_code": true,
+  "download_bytes": 8184270077,
   "estimated_output_bytes": {
     "4": 3748321085,
     "8": 5291169597
@@ -66,6 +67,10 @@
   "library_name": "transformers",
   "model_type": "audio8_asr_infinite",
   "pipeline_tag": "automatic-speech-recognition",
+  "q_bits": [
+    4,
+    8
+  ],
   "reasons": [],
   "schema": "intake/1",
   "source": {
@@ -73,6 +78,7 @@
     "input": "https://huggingface.co/Edge0/Audio8-ASR-Infinite",
     "repo": "Edge0/Audio8-ASR-Infinite",
     "revision": "main",
+    "subfolder": null,
     "url": "https://huggingface.co/Edge0/Audio8-ASR-Infinite"
   },
   "task": {

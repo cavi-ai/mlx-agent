@@ -31,12 +31,31 @@ class ParseHfSourceTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(
                     parse_hf_source(text),
-                    {"repo": repo, "revision": revision, "file": file},
+                    {"repo": repo, "revision": revision, "file": file, "subfolder": None},
                 )
+
+    def test_subfolder_checkpoints(self):
+        cases = {
+            "convaiinnovations/laya/multilingual": ("main", "multilingual"),
+            "convaiinnovations/laya/a/b": ("main", "a/b"),
+            "https://huggingface.co/convaiinnovations/laya/tree/main/multilingual": ("main", "multilingual"),
+            "https://huggingface.co/convaiinnovations/laya/tree/v2/typed-decisions/": ("v2", "typed-decisions"),
+            "https://huggingface.co/convaiinnovations/laya/tree/main": ("main", None),
+            "https://huggingface.co/convaiinnovations/laya/blob/main/multilingual/rl_agent_config.json": ("main", None),
+        }
+        for text, (revision, subfolder) in cases.items():
+            with self.subTest(text=text):
+                source = parse_hf_source(text)
+                self.assertEqual((source["repo"], source["revision"], source["subfolder"], source["file"]),
+                                 ("convaiinnovations/laya", revision, subfolder, None))
+        for text in ("org/name/..", "org/name/a b", "org/name//x", "https://huggingface.co/org/name/tree/main/../x"):
+            with self.subTest(text=text):
+                with self.assertRaises(IntakeSourceError):
+                    parse_hf_source(text)
 
     def test_rejected_forms(self):
         rejected = [
-            "", "   ", "Edge0", "a/b/c", "../etc/passwd", "org/..", "org/na me",
+            "", "   ", "Edge0", "../etc/passwd", "org/..", "org/na me",
             "org/name\x00", "x" * 3000,
             "https://github.com/Edge0/Audio8-ASR-Infinite",
             "https://huggingface.co/datasets/org/name",

@@ -18,6 +18,7 @@
       "properties": {
         "kind": { "enum": ["hf-cache", "gguf"] },
         "repo": { "type": "string", "minLength": 1 },
+        "subfolder": { "type": "string", "minLength": 1 },
         "path": { "type": "string", "minLength": 1 },
         "name": { "type": "string", "minLength": 1 },
         "bytes": { "type": "integer", "minimum": 0 },
@@ -29,6 +30,7 @@
       "additionalProperties": false
     },
     "q_bits": { "enum": [4, 8] },
+    "backend": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,31}$" },
     "out": { "type": "string", "minLength": 1 },
     "argv": {
       "type": "array",

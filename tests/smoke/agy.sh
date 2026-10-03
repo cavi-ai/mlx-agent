@@ -32,7 +32,7 @@ python3 "$ROOT/scripts/mlx-agent" install agy --scope project --project "$PROJEC
 test -f "$PROJECT/.agents/plugins/mlx-agent/plugin.json"
 
 MLX_AGENT_FIXTURE="$ROOT/tests/fixtures/scout_responses.json" \
-  python3 "$PROJECT/.agents/plugins/mlx-agent/skills/mlx-scout/scripts/mlx-agent" discover --limit 1 --json >/dev/null
+  python3 "$PROJECT/.agents/plugins/mlx-agent/scripts/mlx-agent" discover --limit 1 --json >/dev/null
 
 PROJECT_REMOVE="$(python3 "$ROOT/scripts/mlx-agent" uninstall agy --scope project --project "$PROJECT" --dry-run --json)"
 PROJECT_REMOVE_HASH="$(printf '%s' "$PROJECT_REMOVE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["preview"]["preview_hash"])')"

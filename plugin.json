@@ -873,8 +873,36 @@
       "project_root": "{project}/.claude/plugins/mlx-agent",
       "artifacts": [
         {
-          "source": "providers/claude",
-          "destination": "."
+          "source": ".claude-plugin",
+          "destination": ".claude-plugin"
+        },
+        {
+          "source": ".mcp.json",
+          "destination": ".mcp.json"
+        },
+        {
+          "source": "commands",
+          "destination": "commands"
+        },
+        {
+          "source": "agents",
+          "destination": "agents"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "scripts/mlx-adopt.workflow.mjs",
+          "destination": "scripts/mlx-adopt.workflow.mjs"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "src/mlx_agent"
         }
       ],
       "config_paths": []
@@ -949,6 +977,14 @@
         {
           "source": "providers/codex/skills/mlx-fleet",
           "destination": "skills/mlx-fleet"
+        },
+        {
+          "source": "providers/codex/scripts",
+          "destination": "scripts"
+        },
+        {
+          "source": "providers/codex/src",
+          "destination": "src"
         }
       ],
       "config_paths": []
@@ -1051,8 +1087,8 @@
           "destination": "plugins"
         },
         {
-          "source": "providers/opencode/src",
-          "destination": "src"
+          "source": "src/mlx_agent",
+          "destination": "src/mlx_agent"
         },
         {
           "source": "providers/opencode/skills/mlx-scout",
@@ -1110,32 +1146,116 @@
       "project_root": "{project}/.agents",
       "artifacts": [
         {
-          "source": "providers/agentskills/mlx-scout",
-          "destination": "skills/mlx-scout"
+          "source": "providers/agentskills/mlx-scout/SKILL.md",
+          "destination": "skills/mlx-scout/SKILL.md"
         },
         {
-          "source": "providers/agentskills/mlx-adopt",
-          "destination": "skills/mlx-adopt"
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-scout/src/mlx_agent"
         },
         {
-          "source": "providers/agentskills/mlx-wire",
-          "destination": "skills/mlx-wire"
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-scout/scripts/mlx-agent"
         },
         {
-          "source": "providers/agentskills/mlx-bench",
-          "destination": "skills/mlx-bench"
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-scout/scripts/mlx-agent-mcp"
         },
         {
-          "source": "providers/agentskills/mlx-doctor",
-          "destination": "skills/mlx-doctor"
+          "source": "providers/agentskills/mlx-adopt/SKILL.md",
+          "destination": "skills/mlx-adopt/SKILL.md"
         },
         {
-          "source": "providers/agentskills/mlx-watch",
-          "destination": "skills/mlx-watch"
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-adopt/src/mlx_agent"
         },
         {
-          "source": "providers/agentskills/mlx-fleet",
-          "destination": "skills/mlx-fleet"
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-adopt/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-adopt/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-wire/SKILL.md",
+          "destination": "skills/mlx-wire/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-wire/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-wire/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-wire/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-bench/SKILL.md",
+          "destination": "skills/mlx-bench/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-bench/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-bench/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-bench/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-doctor/SKILL.md",
+          "destination": "skills/mlx-doctor/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-doctor/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-doctor/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-doctor/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-watch/SKILL.md",
+          "destination": "skills/mlx-watch/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-watch/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-watch/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-watch/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-fleet/SKILL.md",
+          "destination": "skills/mlx-fleet/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-fleet/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-fleet/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-fleet/scripts/mlx-agent-mcp"
         }
       ],
       "config_paths": []

@@ -81,18 +81,19 @@ Restart OpenCode, press `Ctrl+P`, filter for `mlx`, then run `/mlx-scout`, `/mlx
 
 ### AgentSkills-compatible hosts
 
-From a release checkout, copy all seven self-contained packages into the host's user skills directory:
+From a release checkout, install all seven skills into the host's user skills directory with the universal installer. Each installed skill carries its own launcher and runtime, so a skill folder still runs when it is copied alone:
 
 ```bash
-mkdir -p ~/.agents/skills
-cp -R providers/agentskills/mlx-scout providers/agentskills/mlx-adopt providers/agentskills/mlx-wire providers/agentskills/mlx-bench providers/agentskills/mlx-doctor providers/agentskills/mlx-watch providers/agentskills/mlx-fleet ~/.agents/skills/
+python3 scripts/mlx-agent install agentskills --scope user --dry-run --json
+# Copy data.preview.preview_hash from the output, then confirm that exact plan:
+python3 scripts/mlx-agent install agentskills --scope user --confirm --preview-hash <preview-hash> --json
 ```
 
-For project scope, copy them to `<project>/.agents/skills/` instead. Restart the host and confirm that `mlx-scout`, `mlx-adopt`, `mlx-wire`, `mlx-bench`, `mlx-doctor`, `mlx-watch`, and `mlx-fleet` appear in its skills list.
+For project scope, add `--scope project --project /absolute/project/path`; skills go to `<project>/.agents/skills/`. Restart the host and confirm that `mlx-scout`, `mlx-adopt`, `mlx-wire`, `mlx-bench`, `mlx-doctor`, `mlx-watch`, and `mlx-fleet` appear in its skills list.
 
 ### Universal installer and lifecycle
 
-The universal installer supports `claude`, `codex`, `agy`, and `opencode` in both user and project scopes:
+The universal installer supports `claude`, `codex`, `agy`, `opencode`, and `agentskills` in both user and project scopes:
 
 ```bash
 python3 scripts/mlx-agent providers --json
@@ -119,7 +120,7 @@ Hosted documentation is built from `docs/mlx-agent/source` into an immutable art
 | **`mlx-converter`** skill | Auto-activates on "convert this GGUF" / "what have I already converted?"; wraps the GGUF inventory and conversion core. |
 | **`mlx-advisor`** agent | On-demand expert for picking + wiring a local model for a role. |
 | **`scout.py`** | The stdlib-only discovery/wiring core — runs standalone, too. |
-| **Reference packs** | Quant guide, model-family quirks, and a troubleshooting playbook, bundled into every generated skill (`src/mlx_agent/resources/references/`). |
+| **Reference packs** | Quant guide, model-family quirks, and a troubleshooting playbook, shipped with the runtime (`src/mlx_agent/resources/references/`). |
 
 ## Quick look
 
@@ -314,7 +315,7 @@ The opt-in release live smoke automatically selects only direct local Ollama, LM
 
 ## Use anywhere
 
-The generated `providers/agentskills/mlx-scout/`, `providers/agentskills/mlx-adopt/`, and `providers/agentskills/mlx-wire/` directories are self-contained [AgentSkills](https://agentskills.io) packages. Copy the complete provider directory you need into an isolated compatible host skills path; each contains its own launcher and runtime. The legacy root `skills/mlx-scout/` is repository-relative compatibility code and is not the portable package.
+The generated `providers/agentskills/mlx-*/` directories hold only each skill's `SKILL.md`. `python3 scripts/mlx-agent install agentskills` copies the one runtime from the repository root (`scripts/` and `src/`) into every installed skill, so each skill under `~/.agents/skills/` is a self-contained [AgentSkills](https://agentskills.io) package. Codex and Agy each commit one runtime at the package root (`providers/codex/`, `providers/agy/`), shared by all seven skills. The legacy root `skills/mlx-scout/` is repository-relative compatibility code and is not the portable package.
 
 ## Requirements
 

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Committed provider packages hold one runtime per installed package instead of one per skill: tracked files under `providers/` drop from 1871 to about 200. `providers/claude/` is removed (Claude Code and the installer's `claude` provider use the repository-root plugin files); `providers/codex` and `providers/agy` carry one runtime at the package root, which their skills resolve as `<plugin-root>/scripts/mlx-agent`; `providers/opencode` and `providers/agentskills` carry none.
+- `install agentskills` copies the root launcher and runtime into each installed skill, and `install opencode` copies root `src/mlx_agent`; the `cp -R providers/agentskills/...` route is removed from the docs.
+- `update` and `uninstall` remove receipt-owned files that the current manifest no longer declares (the per-skill runtime copies of earlier releases), refusing any whose content changed. Transaction changes accept `remove`, receipted with a backup and restored by rollback.
+- Scout command and skill text point at the reference packs under the package runtime root (`${CLAUDE_PLUGIN_ROOT}/src/...`, `<plugin-root>/src/...`, `<skill-dir>/src/...`, `<config-dir>/src/...`) instead of a bare `src/...`.
+- Fix: the OpenCode `mlx_agent_command` tool accepts all seven capabilities (it accepted only scout, adopt, and wire while bench, doctor, watch, and fleet commands called it).
+- Fix: the Codex plugin author is generated from the manifest publisher (`organization_url`) instead of a hardcoded GitHub profile.
 - Add the mflux backend (0.20.0, hash-locked) with an `image_generation` category and a Qwen-Image 2.1 port (`qwen_image_21`): its converter merges an optional PEFT LoRA into the transformer (W + scale·B@A, rounded to the weight dtype), quantizes with mflux, saves mflux's component layout, and writes a root `config.json` (`components`, `quantization`). Diffusers repos resolve by `model_index.json` class (`port_pipelines`); curated `port_recipes` name a repository's pinned base plus its LoRA (abenzerps/Qwen-Image-2.1-Uncensored-GGUF: Qwen/Qwen-Image-2.1@d26bb61 + its LoRA at 1.0, equal bit for bit to its BF16 GGUF on the checked tensors). `intake fetch` downloads a recipe's base snapshot and LoRA; `convert start` reads both from the cache. `intake resolve` reports `recipe`.
 - Add `convert generate`: render one prompt with a converted image-generation model to a new PNG (size, steps, seed).
 - `convert scan` lists outputs saved as per-component folders when `config.json` names the `components`.

@@ -178,7 +178,7 @@ class DocumentationContractTests(unittest.TestCase):
             "codex plugin add mlx-agent@mlx-agent",
             "agy plugin install ./mlx-agent/providers/agy",
             "python3 scripts/mlx-agent install opencode --scope user --dry-run --json",
-            "cp -R providers/agentskills/mlx-scout providers/agentskills/mlx-adopt providers/agentskills/mlx-wire",
+            "python3 scripts/mlx-agent install agentskills --scope user --dry-run --json",
         )
         for command in commands:
             with self.subTest(command=command):

@@ -17,6 +17,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from mlx_agent import command_executor
 from mlx_agent.installer import Installer
 from mlx_agent.providers import ProviderRegistry
 
@@ -55,7 +56,8 @@ class OpenCodeAdapterContractTests(unittest.TestCase):
         self.assertEqual(["opencode"], opencode["detect_commands"])
         sources = {item["source"] for item in opencode["artifacts"]}
         self.assertIn("providers/opencode/plugins", sources)
-        self.assertIn("providers/opencode/src", sources)
+        self.assertIn("src/mlx_agent", sources)
+        self.assertNotIn("providers/opencode/src", sources)
         self.assertNotIn("providers/opencode/opencode.json", sources)
         self.assertIn("providers/opencode/commands", sources)
         self.assertIn("providers/opencode/agents/mlx-advisor.md", sources)
@@ -70,14 +72,12 @@ class OpenCodeAdapterContractTests(unittest.TestCase):
             package_root = output_root / "providers" / "opencode"
             self.assertEqual([], generator._check(("opencode",), output_root))
             self.assertFalse((package_root / "opencode.json").exists())
-            self.assertFalse((package_root / "src" / "mlx_agent" / "gemini_executor.py").exists())
-            self.assertFalse((package_root / "src" / "mlx_agent" / "gemini_transport.py").exists())
-            self.assertTrue((package_root / "src" / "mlx_agent" / "command_args.py").exists())
+            self.assertFalse((package_root / "src").exists())
             plugin = package_root / "plugins" / "mlx-agent-command.ts"
             plugin_text = plugin.read_text(encoding="utf-8")
             self.assertIn('tool: {', plugin_text)
             self.assertIn('mlx_agent_command', plugin_text)
-            self.assertIn('tool.schema.enum(["scout", "adopt", "wire"])', plugin_text)
+            self.assertIn('tool.schema.enum(["scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"])', plugin_text)
             self.assertIn('tool.schema.string().max(MAX_ARGUMENT_BYTES)', plugin_text)
             self.assertIn('Bun.spawn({', plugin_text)
             self.assertIn('cmd: ["python3", "-m", "mlx_agent.command_executor"', plugin_text)
@@ -114,6 +114,55 @@ class OpenCodeAdapterContractTests(unittest.TestCase):
                 skill_text = skill.read_text(encoding="utf-8")
                 self.assertIn("mlx_agent_command", skill_text)
                 self.assertNotIn("gemini", skill_text.lower())
+
+    def test_custom_tool_accepts_exactly_the_capabilities_the_package_ships_commands_for(self):
+        generator = load_generator()
+        manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory)
+            generator.generate(("opencode",), output_root)
+            package_root = output_root / "providers" / "opencode"
+            plugin_text = (package_root / "plugins" / "mlx-agent-command.ts").read_text(encoding="utf-8")
+            accepted = json.loads(re.search(r"tool\.schema\.enum\((\[[^\]]*\])\)", plugin_text).group(1))
+            shipped = sorted(path.stem[len("mlx-"):] for path in (package_root / "commands").glob("mlx-*.md"))
+            self.assertEqual(sorted(accepted), shipped)
+            self.assertEqual(sorted(manifest["capabilities"]), sorted(accepted))
+            self.assertEqual(
+                ["mlx-{0}".format(capability) for capability in accepted],
+                manifest["providers"]["opencode"]["commands"],
+            )
+            self.assertEqual(sorted(accepted), sorted(command_executor._CAPABILITIES))
+
+    def test_installed_opencode_runtime_comes_from_the_root_source_and_runs_from_an_unrelated_directory(self):
+        fixture = ROOT / "tests" / "fixtures" / "scout_responses.json"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            project.mkdir()
+            unrelated = root / "unrelated"
+            unrelated.mkdir()
+            installer = Installer(
+                ProviderRegistry(ROOT / "plugin.json", home=root / "home", config_root=root / "config"),
+                project_root=project,
+            )
+            plan = installer.plan("install", ["opencode"], "user", project)
+            installer.execute(plan, confirmed=plan.preview["preview_hash"])
+            package_root = root / "home" / ".config" / "opencode"
+            runtime_root = package_root / "src"
+            for source in sorted((ROOT / "src" / "mlx_agent").rglob("*.py")):
+                installed = runtime_root / "mlx_agent" / source.relative_to(ROOT / "src" / "mlx_agent")
+                self.assertEqual(source.read_bytes(), installed.read_bytes(), str(installed))
+            for capability in ("bench", "doctor", "watch", "fleet"):
+                self.assertTrue((package_root / "commands" / "mlx-{0}.md".format(capability)).is_file())
+            result = subprocess.run(
+                [sys.executable, "-m", "mlx_agent.command_executor", "--provider", "opencode", "--capability", "scout"],
+                input="--limit 1 --json", cwd=str(unrelated), text=True,
+                env=dict(os.environ, PYTHONPATH=str(runtime_root), MLX_AGENT_FIXTURE=str(fixture)),
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("ok", json.loads(result.stdout.strip().splitlines()[-1])["status"])
+            self.assertIn('"operation": "discover"', result.stdout)
 
     def test_adopt_subtask_is_bounded_and_advisor_requires_confirmation_for_mutations(self):
         generator = load_generator()

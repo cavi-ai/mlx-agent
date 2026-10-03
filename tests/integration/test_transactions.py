@@ -89,6 +89,64 @@ class TransactionTests(unittest.TestCase):
             self.assertEqual(before, target.read_bytes())
             self.assertEqual(hashlib.sha256(before).hexdigest(), restored.after_hashes[str(target)])
 
+    def test_removal_is_receipted_with_a_backup_and_rollback_restores_the_exact_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            kept = root / "kept.json"
+            removed = root / "removed.json"
+            kept.write_text('{"kept": 1}\n')
+            before = b'{"removed": 1}\n'
+            removed.write_bytes(before)
+            os.chmod(removed, 0o640)
+            transaction = Transaction(receipts_dir=root / "receipts")
+            preview = transaction.preview([
+                self._change(kept, '{"kept": 2}\n'),
+                {"path": str(removed), "remove": True, "runtime": "mlx_lm"},
+            ])
+            self.assertIn('-{"removed": 1}', preview["diff"])
+            receipt = transaction.apply(preview["preview_hash"])
+            self.assertEqual("applied", receipt.status)
+            self.assertFalse(removed.exists())
+            self.assertEqual('{"kept": 2}\n', kept.read_text())
+            recorded = Receipt.from_dict(json.loads(Path(receipt.receipt_path).read_text()), receipt.receipt_path)
+            self.assertIsNone(recorded.after_modes[str(removed)])
+            self.assertEqual(hashlib.sha256(before).hexdigest(), recorded.before_hashes[str(removed)])
+            self.assertTrue(Path(recorded.backup_paths[str(removed)]).is_file())
+
+            restored = rollback(
+                receipt.receipt_path,
+                expected_after_hashes=recorded.after_hashes,
+            )
+            self.assertEqual("rolled_back", restored.status)
+            self.assertEqual(before, removed.read_bytes())
+            self.assertEqual(0o640, removed.stat().st_mode & 0o777)
+            self.assertEqual('{"kept": 1}\n', kept.read_text())
+
+    def test_removal_rollback_refuses_a_recreated_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            removed = root / "removed.json"
+            removed.write_text('{"removed": 1}\n')
+            transaction = Transaction(receipts_dir=root / "receipts")
+            transaction.preview([{"path": str(removed), "remove": True, "runtime": "mlx_lm"}])
+            receipt = transaction.apply(True)
+            removed.write_text('{"user": "recreated"}\n')
+            with self.assertRaisesRegex(ValueError, "changed after reviewed rollback preview"):
+                rollback(receipt.receipt_path, expected_after_hashes=receipt.after_hashes)
+            self.assertEqual('{"user": "recreated"}\n', removed.read_text())
+
+    def test_removal_requires_an_existing_target_and_carries_no_content(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            existing = root / "existing.json"
+            existing.write_text("{}\n")
+            transaction = Transaction(receipts_dir=root / "receipts")
+            with self.assertRaisesRegex(ValueError, "existing target"):
+                transaction.preview([{"path": str(root / "missing.json"), "remove": True, "runtime": "mlx_lm"}])
+            with self.assertRaisesRegex(ValueError, "path and content, or path and remove"):
+                transaction.preview([{"path": str(existing), "remove": True, "content": "{}\n", "runtime": "mlx_lm"}])
+            self.assertTrue(existing.exists())
+
     def test_normal_rollback_requires_reviewed_hash_and_refuses_post_apply_changes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

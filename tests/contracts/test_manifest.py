@@ -88,7 +88,6 @@ class ManifestTests(unittest.TestCase):
         )
         native_manifests = (
             ROOT / ".claude-plugin" / "plugin.json",
-            ROOT / "providers" / "claude" / ".claude-plugin" / "plugin.json",
             ROOT / "providers" / "codex" / ".codex-plugin" / "plugin.json",
             ROOT / "providers" / "agy" / "plugin.json",
         )
@@ -97,7 +96,6 @@ class ManifestTests(unittest.TestCase):
                 self.assertEqual(version, json.loads(path.read_text())["version"])
         marketplaces = (
             ROOT / ".claude-plugin" / "marketplace.json",
-            ROOT / "providers" / "claude" / ".claude-plugin" / "marketplace.json",
         )
         for path in marketplaces:
             with self.subTest(path=path):

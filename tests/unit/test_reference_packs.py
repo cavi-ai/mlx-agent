@@ -19,27 +19,21 @@ class ReferencePackTests(unittest.TestCase):
             self.assertTrue(content.startswith("# "), name)
             self.assertGreater(len(content), 1000, name)
 
-    def test_packs_are_bundled_into_every_generated_skill(self):
+    def test_packs_ship_once_per_package_that_installs_the_whole_plugin(self):
         generator = load_generator()
         with tempfile.TemporaryDirectory() as directory:
-            generated = generator.generate(("agentskills", "claude"), Path(directory))
+            generated = generator.generate(("agentskills", "claude", "codex", "agy", "opencode"), Path(directory))
             bundled = {
                 path.relative_to(directory)
                 for path in generated
                 if "references" in path.parts and path.name in PACKS
             }
-            for skill in ("mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench"):
-                for name in PACKS:
-                    expected = Path(
-                        "providers/agentskills", skill,
-                        "src/mlx_agent/resources/references", name,
-                    )
-                    self.assertIn(expected, bundled, str(expected))
-            claude = {
-                path for path in bundled
-                if path.parts[:2] == ("providers", "claude")
-            }
-            self.assertEqual(len(claude), 3)
+        expected = {
+            Path("providers", provider, "src/mlx_agent/resources/references", name)
+            for provider in ("codex", "agy")
+            for name in PACKS
+        }
+        self.assertEqual(expected, bundled)
 
     def test_scout_skills_point_at_the_packs(self):
         generator = load_generator()
@@ -52,6 +46,7 @@ class ReferencePackTests(unittest.TestCase):
             self.assertIn("references/quantization.md", skill)
             self.assertIn("references/model-families.md", skill)
             self.assertIn("references/troubleshooting.md", skill)
+            self.assertIn("<skill-dir>/src/mlx_agent/resources/references/quantization.md", skill)
 
 
 if __name__ == "__main__":

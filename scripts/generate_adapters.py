@@ -18,6 +18,7 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Union
 
 ROOT = Path(__file__).resolve().parents[1]
 SUPPORTED_PROVIDERS = ("claude", "codex", "agy", "opencode", "agentskills")
+CAPABILITIES = ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet")
 INVENTORY_NAME = ".mlx-agent-generated-files.json"
 INVENTORY_SCHEMA_VERSION = 2
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -102,6 +103,17 @@ def _yaml_scalar(value: object) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+def _reference_pack_pointer(root: str) -> str:
+    """Point at the bundled reference packs beneath an explicit runtime root."""
+
+    packs = "{0}/src/mlx_agent/resources/references".format(root)
+    return (
+        "Bundled references (read when relevant): `{0}/quantization.md` for quant tradeoffs, "
+        "`{0}/model-families.md` for chat-template and tool-calling quirks, "
+        "`{0}/troubleshooting.md` for serving symptoms."
+    ).format(packs)
+
+
 def _command_markdown(manifest: Mapping[str, object], capability: str, root: str) -> str:
     identifier = _capability_id(manifest, capability)
     descriptions = manifest["capabilities"]
@@ -119,8 +131,8 @@ Run the provider-neutral discovery command:
 
 `{invocation} discover $ARGUMENTS`
 
-Present its evidence and recommendations as returned. Discovery must not download model weights or change configuration. If a later download or configuration mutation would help, describe the exact CLI preview first and obtain explicit user confirmation before it. Bundled references (read when relevant): `src/mlx_agent/resources/references/quantization.md` for quant tradeoffs, `src/mlx_agent/resources/references/model-families.md` for chat-template and tool-calling quirks, `src/mlx_agent/resources/references/troubleshooting.md` for serving symptoms.
-""".format(identifier=identifier, invocation=invocation)
+Present its evidence and recommendations as returned. Discovery must not download model weights or change configuration. If a later download or configuration mutation would help, describe the exact CLI preview first and obtain explicit user confirmation before it. {references}
+""".format(identifier=identifier, invocation=invocation, references=_reference_pack_pointer(root))
     elif capability == "adopt":
         body = """# MLX Adopt
 
@@ -244,7 +256,7 @@ def _claude_command_markdown(manifest: Mapping[str, object], capability: str) ->
     elif capability == "fleet":
         boundary = "The validated tool sequence is `fleet render --path <router.yaml> --assign <role=repo> --json`, then `fleet apply --path <router.yaml> --assign <role=repo> --json` to obtain the preview. After the user explicitly confirms that exact preview, call `fleet apply --path <router.yaml> --assign <role=repo> --confirm --preview-hash <preview-hash> --json`."
     else:
-        boundary = "Scout is read-only and must not download model weights or change configuration. Bundled references (read when relevant): `src/mlx_agent/resources/references/quantization.md` for quant tradeoffs, `src/mlx_agent/resources/references/model-families.md` for chat-template and tool-calling quirks, `src/mlx_agent/resources/references/troubleshooting.md` for serving symptoms."
+        boundary = "Scout is read-only and must not download model weights or change configuration. {0}".format(_reference_pack_pointer("${CLAUDE_PLUGIN_ROOT}"))
     return _with_tool_use_guidance(manifest, """---
 name: {name}
 description: {description}
@@ -278,19 +290,40 @@ Never download model weights automatically.
     ), capability)
 
 
-def _generic_skill_markdown(manifest: Mapping[str, object], capability: str) -> str:
-    content = _command_markdown(manifest, capability, "<skill-dir>")
+def _generic_skill_markdown(manifest: Mapping[str, object], capability: str, plugin_package: bool = False) -> str:
+    """Render a SKILL.md that runs a launcher it can resolve from its own location.
+
+    An AgentSkills skill is installed alone, so its runtime sits inside the skill
+    directory (``<skill-dir>``). Codex and Agy install the whole plugin, so one
+    runtime sits at the plugin root, two directories above the skill's folder
+    (``<plugin-root>``).
+    """
+
+    if plugin_package:
+        root = "<plugin-root>"
+        resolution = (
+            "Resolve `<plugin-root>` as the absolute directory two levels above the directory "
+            "containing this SKILL.md; it holds `scripts/` and `src/`. Never resolve the "
+            "bundled executable from the shell working directory."
+        )
+    else:
+        root = "<skill-dir>"
+        resolution = (
+            "Resolve `<skill-dir>` as the absolute directory containing this SKILL.md. "
+            "Never resolve the bundled executable from the shell working directory."
+        )
+    content = _command_markdown(manifest, capability, root)
     content = content.replace("$ARGUMENTS", "<arguments>")
     return content.replace(
         "# MLX {0}\n".format(capability.title()),
-        "# MLX {0}\n\nResolve `<skill-dir>` as the absolute directory containing this SKILL.md. Never resolve the bundled executable from the shell working directory.\n".format(capability.title()),
+        "# MLX {0}\n\n{1}\n".format(capability.title(), resolution),
     )
 
 
 def _codex_skill_markdown(manifest: Mapping[str, object], capability: str) -> str:
     """Render a Codex skill rather than an unsupported custom slash command."""
 
-    content = _generic_skill_markdown(manifest, capability)
+    content = _generic_skill_markdown(manifest, capability, plugin_package=True)
     invocation = "$mlx-agent:mlx-{0}".format(capability)
     marker = "\n# MLX {0}\n".format(capability.title())
     return content.replace(
@@ -365,7 +398,7 @@ def _opencode_skill_markdown(manifest: Mapping[str, object], capability: str) ->
 
     description = manifest["capabilities"][capability]["description"]
     capability_notes = {
-        "scout": "The validated operation may discover only. It must not download model weights or mutate configuration. Bundled references (read when relevant): `src/mlx_agent/resources/references/quantization.md` for quant tradeoffs, `src/mlx_agent/resources/references/model-families.md` for chat-template and tool-calling quirks, `src/mlx_agent/resources/references/troubleshooting.md` for serving symptoms.",
+        "scout": "The validated operation may discover only. It must not download model weights or mutate configuration. {0} Here `<config-dir>` is the OpenCode configuration directory that contains this `skills/` folder.".format(_reference_pack_pointer("<config-dir>")),
         "adopt": "Allow one bounded independent verification record only; do not use unbounded subtask fan-out. Preserve durable state returned by the executor.",
         "wire": "Use the transaction CLI for render, then the unconfirmed preview and hash, then confirmed apply only after the user confirms that exact hash. Do not write configuration directly.",
         "bench": "The validated operation measures only models already served by a running local runtime. It must not start servers or download model weights.",
@@ -428,9 +461,12 @@ is unavailable.
 
 
 def _opencode_plugin() -> str:
-    """Render a local OpenCode plugin with one narrow stdin-only custom tool."""
+    """Render a local OpenCode plugin with one narrow stdin-only custom tool.
 
-    return """import { tool } from "@opencode-ai/plugin"
+    The tool accepts exactly the capabilities the package ships commands for.
+    """
+
+    content = """import { tool } from "@opencode-ai/plugin"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -469,9 +505,9 @@ async function readBounded(stream: ReadableStream<Uint8Array>) {
 export const MLXAgentCommandPlugin = async () => ({
   tool: {
     mlx_agent_command: tool({
-      description: "Run one validated MLX Scout, Adopt, or Wire command without shell interpolation.",
+      description: "Run one validated MLX agent command (__MLX_AGENT_CAPABILITY_LIST__) without shell interpolation.",
       args: {
-        capability: tool.schema.enum(["scout", "adopt", "wire"]),
+        capability: tool.schema.enum(__MLX_AGENT_CAPABILITIES__),
         arguments: tool.schema.string().max(MAX_ARGUMENT_BYTES),
       },
       async execute(args) {
@@ -505,6 +541,11 @@ export const MLXAgentCommandPlugin = async () => ({
   },
 })
 """
+    return content.replace(
+        "__MLX_AGENT_CAPABILITIES__", json.dumps(list(CAPABILITIES))
+    ).replace(
+        "__MLX_AGENT_CAPABILITY_LIST__", ", ".join(CAPABILITIES[:-1]) + ", or " + CAPABILITIES[-1]
+    )
 
 
 def _plugin_metadata(manifest: Mapping[str, object]) -> str:
@@ -561,11 +602,12 @@ def _codex_plugin_metadata(manifest: Mapping[str, object]) -> str:
     assets/samples/plugin-creator/references/plugin-json-spec.md
     """
 
+    publisher = _publisher(manifest)
     payload = {
         "name": manifest["identity"],
         "version": manifest["version"],
         "description": "Structured local MLX discovery, adoption, and wiring for Apple Silicon agents.",
-        "author": {"name": "Sasan Sotoodehfar", "url": "https://github.com/sasan1200"},
+        "author": {"name": publisher["name"], "url": publisher["organization_url"]},
         "homepage": "https://github.com/cavi-ai/mlx-agent",
         "repository": "https://github.com/cavi-ai/mlx-agent",
         "license": "MIT",
@@ -575,7 +617,7 @@ def _codex_plugin_metadata(manifest: Mapping[str, object]) -> str:
             "displayName": "MLX Agent",
             "shortDescription": "Discover, adopt, and wire local MLX models.",
             "longDescription": "Structured local MLX discovery, adoption, and confirmation-gated wiring for Apple Silicon agents.",
-            "developerName": "Sasan Sotoodehfar",
+            "developerName": publisher["name"],
             "category": "Developer Tools",
             "capabilities": ["Interactive", "Write"],
             "defaultPrompt": [
@@ -648,12 +690,6 @@ def _production_bundle_sources(source_root: Optional[Path] = None) -> List[Path]
     return files
 
 
-def _opencode_runtime_sources() -> List[Path]:
-    """Return the native OpenCode runtime."""
-
-    return _production_bundle_sources()
-
-
 def _runtime_bundle(destination: Path, source_root: Optional[Path] = None) -> Dict[Path, Content]:
     root = Path(source_root) if source_root is not None else ROOT / "src" / "mlx_agent"
     bundle = {
@@ -666,8 +702,6 @@ def _runtime_bundle(destination: Path, source_root: Optional[Path] = None) -> Di
 
 
 def _surface(path: Path) -> Optional[Path]:
-    if path.parts[:2] == ("providers", "claude"):
-        return Path("providers/claude")
     if path.parts[:2] == ("providers", "codex"):
         return Path("providers/codex")
     if path.parts[:2] == ("providers", "agy"):
@@ -686,8 +720,6 @@ def _surface_relative(path: Path, surface: Optional[Path]) -> Path:
 def _surface_id(surface: Optional[Path]) -> str:
     if surface is None:
         return "root-claude-compat"
-    if surface == Path("providers/claude"):
-        return "claude-package"
     if surface == Path("providers/codex"):
         return "codex-package"
     if surface == Path("providers/agy"):
@@ -716,50 +748,43 @@ def _allowed_surface_paths(surface: Optional[Path]) -> set:
         Path("src/mlx_agent/gemini_executor.py"),
         Path("src/mlx_agent/gemini_transport.py"),
     }
+    # Compatibility-only entries: a runtime copy that earlier releases committed
+    # where this surface no longer carries one. They are never rendered, so
+    # `generate` removes them from an existing inventory after hash
+    # verification and `--check` reports any that remain on disk.
+    former_runtime = runtime | legacy_gemini_runtime
     if surface is None:
         return root_paths
-    if surface == Path("providers/claude"):
-        return root_paths | runtime | legacy_gemini_runtime
     if surface == Path("providers/codex"):
-        allowed = {Path(".codex-plugin/plugin.json")}
-        for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
+        allowed = {Path(".codex-plugin/plugin.json")} | runtime | legacy_gemini_runtime
+        for capability in CAPABILITIES:
             skill = Path("skills/mlx-{0}".format(capability))
             allowed.add(skill / "SKILL.md")
-            allowed.update(skill / path for path in runtime)
-            allowed.update(skill / path for path in legacy_gemini_runtime)
+            allowed.update(skill / path for path in former_runtime)
         return allowed
     if surface == Path("providers/agy"):
-        allowed = {Path("plugin.json")}
-        for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
+        allowed = {Path("plugin.json")} | runtime | legacy_gemini_runtime
+        for capability in CAPABILITIES:
             skill = Path("skills/mlx-{0}".format(capability))
             allowed.add(skill / "SKILL.md")
-            allowed.update(skill / path for path in runtime)
-            allowed.update(skill / path for path in legacy_gemini_runtime)
+            allowed.update(skill / path for path in former_runtime)
         return allowed
     if surface == Path("providers/opencode"):
         allowed = {Path("plugins/mlx-agent-command.ts"), Path("agents/mlx-advisor.md")}
-        allowed.update(Path("src/mlx_agent") / source.relative_to(ROOT / "src" / "mlx_agent") for source in _opencode_runtime_sources())
-        # Compatibility-only entries remove the former Gemini adapter runtime
-        # from an existing OpenCode inventory after hash verification.
-        allowed.update(legacy_gemini_runtime)
-        for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
+        allowed.update(former_runtime)
+        for capability in CAPABILITIES:
             skill = Path("skills/mlx-{0}".format(capability))
             allowed.add(Path("commands/mlx-{0}.md".format(capability)))
             allowed.add(skill / "SKILL.md")
-            # Compatibility-only inventory entries allow a safe hash-checked
-            # cleanup of Task 10's former self-contained skill bundles.
-            allowed.add(skill / "scripts/mlx-agent")
-            allowed.update(skill / path for path in runtime)
-            allowed.update(skill / path for path in legacy_gemini_runtime)
+            allowed.update(skill / path for path in former_runtime)
         allowed.add(Path("opencode.json"))
         return allowed
     if surface == Path("providers/agentskills"):
         allowed = set()
-        for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
+        for capability in CAPABILITIES:
             skill = Path("mlx-{0}".format(capability))
             allowed.add(skill / "SKILL.md")
-            allowed.update(skill / path for path in runtime)
-            allowed.update(skill / path for path in legacy_gemini_runtime)
+            allowed.update(skill / path for path in former_runtime)
         return allowed
     raise ValueError("unknown generated surface: {0}".format(surface))
 
@@ -820,38 +845,32 @@ def _render(manifest: Mapping[str, object], provider_ids: Sequence[str]) -> Dict
             Path("scripts/mlx-adopt.workflow.mjs"): _workflow(manifest),
         }
         rendered.update(claude_paths)
-        for path, content in claude_paths.items():
-            rendered[Path("providers/claude") / path] = content
-        rendered.update(_runtime_bundle(Path("providers/claude")))
     if "codex" in selected:
         codex_root = Path("providers/codex")
         rendered[codex_root / ".codex-plugin" / "plugin.json"] = _codex_plugin_metadata(manifest)
-        for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
+        rendered.update(_runtime_bundle(codex_root))
+        for capability in CAPABILITIES:
             skill_root = codex_root / "skills" / "mlx-{0}".format(capability)
             rendered[skill_root / "SKILL.md"] = _codex_skill_markdown(manifest, capability)
-            rendered.update(_runtime_bundle(skill_root))
     if "agy" in selected:
         agy_root = Path("providers/agy")
         rendered[agy_root / "plugin.json"] = _agy_plugin_metadata(manifest)
-        for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
+        rendered.update(_runtime_bundle(agy_root))
+        for capability in CAPABILITIES:
             skill_root = agy_root / "skills" / "mlx-{0}".format(capability)
-            rendered[skill_root / "SKILL.md"] = _generic_skill_markdown(manifest, capability)
-            rendered.update(_runtime_bundle(skill_root))
+            rendered[skill_root / "SKILL.md"] = _generic_skill_markdown(manifest, capability, plugin_package=True)
     if "opencode" in selected:
         opencode_root = Path("providers/opencode")
         rendered[opencode_root / "plugins" / "mlx-agent-command.ts"] = _opencode_plugin()
         rendered[opencode_root / "agents" / "mlx-advisor.md"] = _opencode_advisor_markdown(manifest)
-        for source in _opencode_runtime_sources():
-            rendered[opencode_root / "src" / "mlx_agent" / source.relative_to(ROOT / "src" / "mlx_agent")] = source.read_bytes()
-        for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
+        for capability in CAPABILITIES:
             skill_root = opencode_root / "skills" / "mlx-{0}".format(capability)
             rendered[opencode_root / "commands" / "mlx-{0}.md".format(capability)] = _opencode_command_markdown(manifest, capability)
             rendered[skill_root / "SKILL.md"] = _opencode_skill_markdown(manifest, capability)
     if "agentskills" in selected:
-        for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
+        for capability in CAPABILITIES:
             skill_root = Path("providers/agentskills/mlx-{0}".format(capability))
             rendered[skill_root / "SKILL.md"] = _generic_skill_markdown(manifest, capability)
-            rendered.update(_runtime_bundle(skill_root))
     return _with_inventories(rendered)
 
 
@@ -1124,11 +1143,29 @@ def generate(provider_ids: Iterable[str], output_root: Path, path_race_hook=None
     return written
 
 
+def _retired_surface_present(path: Path) -> bool:
+    """Report a retired generated surface that still holds anything but bytecode."""
+
+    info = _path_lstat(path)
+    if info is None:
+        return False
+    if not stat.S_ISDIR(info.st_mode):
+        return True
+    for _directory, names, files in os.walk(str(path)):
+        names[:] = [name for name in names if name != "__pycache__"]
+        if any(not name.endswith(".pyc") for name in files):
+            return True
+    return False
+
+
 def _check(provider_ids: Sequence[str], output_root: Path = ROOT, path_race_hook=None) -> List[Path]:
     manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
     root = Path(output_root)
     drift = []
     rendered = _render(manifest, provider_ids)
+    retired = Path("providers/claude")
+    if _retired_surface_present(root / retired):
+        drift.append(retired)
     for relative_path, content in rendered.items():
         expected = _content_bytes(content)
         try:

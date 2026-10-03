@@ -12,7 +12,7 @@ python3 scripts/mlx-agent uninstall opencode --scope user --dry-run --json
 python3 scripts/mlx-agent doctor opencode --scope user --json
 ```
 
-User-scope artifacts go to `$XDG_CONFIG_HOME/opencode` when `XDG_CONFIG_HOME` is set, otherwise `~/.config/opencode`. Project scope uses `<project>/.opencode`. The package includes commands, the `mlx-advisor` agent, the TypeScript plugin, skills, and the bundled Python runtime.
+User-scope artifacts go to `$XDG_CONFIG_HOME/opencode` when `XDG_CONFIG_HOME` is set, otherwise `~/.config/opencode`. Project scope uses `<project>/.opencode`. The package includes commands, the `mlx-advisor` agent, the TypeScript plugin, skills, and the Python runtime (`src/mlx_agent`, copied from the repository root).
 
 A symlinked config directory needs no configuration. If `~/.config/opencode` points at another location, the installer resolves it once and writes to the real directory; the resolved path is what the preview and the receipt record.
 

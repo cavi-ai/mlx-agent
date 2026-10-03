@@ -73,7 +73,7 @@ class GeneratedAdapterTests(unittest.TestCase):
         generator = load_generator()
         with tempfile.TemporaryDirectory() as directory:
             output_root = Path(directory)
-            generated = generator.generate(("claude", "agentskills"), output_root)
+            generated = generator.generate(generator.SUPPORTED_PROVIDERS, output_root)
             relative_paths = [path.relative_to(output_root) for path in generated]
             self.assertEqual(relative_paths, sorted(relative_paths, key=str))
             for relative_path in relative_paths:
@@ -92,7 +92,7 @@ class GeneratedAdapterTests(unittest.TestCase):
                 if path.name in {"mlx-wire.md", "mlx-advisor.md"}
                 or (path.name == "SKILL.md" and "mlx-wire" in path.parts)
             ]
-            self.assertEqual(5, len(wire_prompts))
+            self.assertEqual(3, len(wire_prompts))
             for prompt in wire_prompts:
                 content = prompt.read_text(encoding="utf-8")
                 render = content.index("wire render <model>")
@@ -108,7 +108,7 @@ class GeneratedAdapterTests(unittest.TestCase):
         fixture = ROOT / "tests" / "fixtures" / "scout_responses.json"
         with tempfile.TemporaryDirectory() as directory:
             output_root = Path(directory) / "package"
-            generator.generate(("claude", "agy", "agentskills"), output_root)
+            generator.generate(("claude", "codex", "agy", "agentskills"), output_root)
             unrelated = Path(directory) / "unrelated"
             unrelated.mkdir()
             environment = dict(os.environ, MLX_AGENT_FIXTURE=str(fixture))
@@ -121,7 +121,7 @@ class GeneratedAdapterTests(unittest.TestCase):
             installer.execute(plan, confirmed=plan.preview["preview_hash"])
             executions = [
                 (
-                    output_root / "providers" / "claude" / "scripts" / "mlx-agent",
+                    ROOT / "scripts" / "mlx-agent",
                     ["discover", "--limit", "1", "--json"],
                     "discover",
                 ),
@@ -147,7 +147,12 @@ class GeneratedAdapterTests(unittest.TestCase):
                     "wire-render",
                 ),
                 (
-                    output_root / "providers" / "agy" / "skills" / "mlx-scout" / "scripts" / "mlx-agent",
+                    output_root / "providers" / "agy" / "scripts" / "mlx-agent",
+                    ["discover", "--limit", "1", "--json"],
+                    "discover",
+                ),
+                (
+                    output_root / "providers" / "codex" / "scripts" / "mlx-agent",
                     ["discover", "--limit", "1", "--json"],
                     "discover",
                 ),
@@ -165,7 +170,7 @@ class GeneratedAdapterTests(unittest.TestCase):
         fixture = ROOT / "tests" / "fixtures" / "scout_responses.json"
         with tempfile.TemporaryDirectory() as directory:
             output_root = Path(directory) / "package"
-            generator.generate(("claude",), output_root)
+            generator.generate(("codex", "agy"), output_root)
             unrelated = Path(directory) / "unrelated"
             unrelated.mkdir()
             environment = dict(os.environ, MLX_AGENT_FIXTURE=str(fixture))
@@ -178,7 +183,7 @@ class GeneratedAdapterTests(unittest.TestCase):
                     "arguments": {"capability": "scout", "arguments": "--limit 1 --json"},
                 },
             }
-            for provider in ("claude",):
+            for provider in ("codex", "agy"):
                 executable = output_root / "providers" / provider / "scripts" / "mlx-agent-mcp"
                 result = subprocess.run(
                     [sys.executable, str(executable)], input=json.dumps(request) + "\n",
@@ -280,7 +285,7 @@ class GeneratedAdapterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output_root = Path(directory) / "output"
             generator.generate(("claude", "agentskills"), output_root)
-            leaf_relative = Path("providers/claude/commands/mlx-scout.md")
+            leaf_relative = Path("commands/mlx-scout.md")
             leaf = output_root / leaf_relative
             external_leaf = Path(directory) / "external-leaf.md"
             external_leaf.write_bytes(leaf.read_bytes())
@@ -291,11 +296,11 @@ class GeneratedAdapterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output_root = Path(directory) / "output"
             generator.generate(("claude", "agentskills"), output_root)
-            provider = output_root / "providers" / "claude"
-            external_provider = Path(directory) / "external-claude"
+            provider = output_root / "providers" / "agentskills"
+            external_provider = Path(directory) / "external-agentskills"
             provider.replace(external_provider)
             os.symlink(str(external_provider), str(provider))
-            artifact = Path("providers/claude/commands/mlx-scout.md")
+            artifact = Path("providers/agentskills/mlx-scout/SKILL.md")
             self.assertIn(artifact, generator._check(("claude", "agentskills"), output_root))
 
     def test_check_refuses_surface_swap_during_descriptor_descent(self):
@@ -303,24 +308,24 @@ class GeneratedAdapterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output_root = Path(directory) / "output"
             generator.generate(("claude", "agentskills"), output_root)
-            provider = output_root / "providers" / "claude"
-            external_provider = Path(directory) / "external-claude"
+            provider = output_root / "providers" / "agentskills"
+            external_provider = Path(directory) / "external-agentskills"
             swapped = [False]
 
             def swap_surface(_parent_fd, component):
-                if component == "claude" and not swapped[0]:
+                if component == "agentskills" and not swapped[0]:
                     provider.replace(external_provider)
                     os.symlink(str(external_provider), str(provider))
                     swapped[0] = True
 
-            artifact = Path("providers/claude/commands/mlx-scout.md")
+            artifact = Path("providers/agentskills/mlx-scout/SKILL.md")
             drift = generator._check(("claude", "agentskills"), output_root, path_race_hook=swap_surface)
             self.assertTrue(swapped[0])
             self.assertIn(artifact, drift)
 
     def test_tampered_inventory_rejects_cross_surface_traversal_duplicates_and_root_files(self):
         generator = load_generator()
-        cases = ("README.md", "../outside.md", "/absolute.md", "providers/claude/commands/mlx-scout.md")
+        cases = ("README.md", "../outside.md", "/absolute.md", "providers/codex/skills/mlx-scout/SKILL.md")
         with tempfile.TemporaryDirectory() as directory:
             output_root = Path(directory)
             generator.generate(("claude", "agentskills"), output_root)
@@ -369,16 +374,17 @@ class GeneratedAdapterTests(unittest.TestCase):
         self.assertTrue(resource.is_file())
         with tempfile.TemporaryDirectory() as directory:
             output_root = Path(directory)
-            generator.generate(("claude", "agentskills"), output_root)
+            providers = ("claude", "codex", "agy", "opencode", "agentskills")
+            generator.generate(providers, output_root)
             relative = Path("src/mlx_agent/resources/adapter-runtime.json")
-            copies = [
-                output_root / "providers" / "claude" / relative,
-                *(output_root / "providers" / "agentskills" / "mlx-{0}".format(capability) / relative for capability in ("scout", "adopt", "wire")),
-            ]
-            for copy in copies:
-                self.assertTrue(copy.is_file(), str(copy))
-            copies[0].unlink()
-            self.assertIn(Path("providers/claude") / relative, generator._check(("claude", "agentskills"), output_root))
+            for package in ("codex", "agy"):
+                self.assertTrue((output_root / "providers" / package / relative).is_file(), package)
+            for capability in generator.CAPABILITIES:
+                self.assertFalse((output_root / "providers" / "agentskills" / "mlx-{0}".format(capability) / relative).exists())
+                self.assertFalse((output_root / "providers" / "codex" / "skills" / "mlx-{0}".format(capability) / relative).exists())
+            self.assertFalse((output_root / "providers" / "opencode" / relative).exists())
+            (output_root / "providers" / "codex" / relative).unlink()
+            self.assertIn(Path("providers/codex") / relative, generator._check(providers, output_root))
 
     def test_check_detects_uninventoried_stale_file_in_allowed_generated_surface(self):
         generator = load_generator()
@@ -411,14 +417,143 @@ class GeneratedAdapterTests(unittest.TestCase):
                 generator._check(("opencode",), output_root),
             )
 
-    def test_manifest_uses_three_portable_agentskills_artifacts(self):
+    def test_manifest_installs_the_root_runtime_into_each_portable_agentskills_skill(self):
+        generator = load_generator()
         manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
         artifacts = manifest["providers"]["agentskills"]["artifacts"]
-        for capability in ("scout", "adopt", "wire"):
-            self.assertIn(
-                {"source": "providers/agentskills/mlx-{0}".format(capability), "destination": "skills/mlx-{0}".format(capability)},
-                artifacts,
+        self.assertEqual(4 * len(generator.CAPABILITIES), len(artifacts))
+        for capability in generator.CAPABILITIES:
+            skill = "mlx-{0}".format(capability)
+            for source, destination in (
+                ("providers/agentskills/{0}/SKILL.md".format(skill), "skills/{0}/SKILL.md".format(skill)),
+                ("src/mlx_agent", "skills/{0}/src/mlx_agent".format(skill)),
+                ("scripts/mlx-agent", "skills/{0}/scripts/mlx-agent".format(skill)),
+                ("scripts/mlx-agent-mcp", "skills/{0}/scripts/mlx-agent-mcp".format(skill)),
+            ):
+                self.assertIn({"source": source, "destination": destination}, artifacts)
+
+    def test_claude_installs_the_repository_root_and_no_generated_provider_copy(self):
+        manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+        sources = [item["source"] for item in manifest["providers"]["claude"]["artifacts"]]
+        self.assertEqual(
+            [".claude-plugin", ".mcp.json", "commands", "agents", "scripts/mlx-agent", "scripts/mlx-agent-mcp",
+             "scripts/mlx-adopt.workflow.mjs", "src/mlx_agent"],
+            sources,
+        )
+        self.assertFalse((ROOT / "providers" / "claude").exists())
+
+    def test_one_runtime_per_installed_package_and_none_elsewhere(self):
+        generator = load_generator()
+        manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory)
+            generator.generate(generator.SUPPORTED_PROVIDERS, output_root)
+            providers = output_root / "providers"
+            self.assertEqual(["agentskills", "agy", "codex", "opencode"], sorted(path.name for path in providers.iterdir()))
+            source_files = sorted(
+                path.relative_to(ROOT / "src" / "mlx_agent")
+                for path in (ROOT / "src" / "mlx_agent").rglob("*")
+                if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
             )
+            for package in ("codex", "agy"):
+                runtime = providers / package / "src" / "mlx_agent"
+                self.assertEqual(
+                    source_files,
+                    sorted(path.relative_to(runtime) for path in runtime.rglob("*") if path.is_file()),
+                )
+                for relative in source_files:
+                    self.assertEqual((ROOT / "src" / "mlx_agent" / relative).read_bytes(), (runtime / relative).read_bytes(), str(relative))
+                for launcher in ("mlx-agent", "mlx-agent-mcp"):
+                    self.assertEqual((ROOT / "scripts" / launcher).read_bytes(), (providers / package / "scripts" / launcher).read_bytes())
+            self.assertEqual([], sorted(providers.glob("*/skills/*/src")) + sorted(providers.glob("*/skills/*/scripts")))
+            self.assertEqual([], sorted(providers.glob("agentskills/*/src")) + sorted(providers.glob("agentskills/*/scripts")))
+            self.assertFalse((providers / "opencode" / "src").exists())
+            for provider_id, definition in manifest["providers"].items():
+                for artifact in definition["artifacts"]:
+                    source = artifact["source"]
+                    self.assertTrue(
+                        (ROOT / source).exists() or (output_root / source).exists(),
+                        "{0}: {1}".format(provider_id, source),
+                    )
+
+    def test_check_refuses_a_retained_providers_claude_directory(self):
+        generator = load_generator()
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory)
+            generator.generate(("claude", "agentskills"), output_root)
+            self.assertEqual([], generator._check(("claude", "agentskills"), output_root))
+            retired = output_root / "providers" / "claude"
+            (retired / "__pycache__").mkdir(parents=True)
+            (retired / "__pycache__" / "module.cpython-314.pyc").write_bytes(b"bytecode")
+            self.assertEqual([], generator._check(("claude", "agentskills"), output_root))
+            (retired / "commands").mkdir()
+            (retired / "commands" / "mlx-scout.md").write_text("stale\n", encoding="utf-8")
+            self.assertEqual([Path("providers/claude")], generator._check(("claude", "agentskills"), output_root))
+
+    def test_generation_removes_hash_matched_per_skill_runtime_copies_from_earlier_releases(self):
+        generator = load_generator()
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory)
+            generator.generate(("codex", "agentskills"), output_root)
+            for surface, former in (
+                ("codex", Path("skills/mlx-scout")),
+                ("agentskills", Path("mlx-scout")),
+            ):
+                package = output_root / "providers" / surface
+                inventory_path = package / ".mlx-agent-generated-files.json"
+                inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+                content = (ROOT / "scripts" / "mlx-agent").read_bytes()
+                copy_path = package / former / "scripts" / "mlx-agent"
+                copy_path.parent.mkdir(parents=True)
+                copy_path.write_bytes(content)
+                inventory["files"].append({"path": str(former / "scripts" / "mlx-agent"), "sha256": hashlib.sha256(content).hexdigest()})
+                inventory_path.write_text(json.dumps(inventory), encoding="utf-8")
+                self.assertIn(Path("providers") / surface / former / "scripts" / "mlx-agent", generator._check(("codex", "agentskills"), output_root))
+                generator.generate(("codex", "agentskills"), output_root)
+                self.assertFalse(copy_path.exists(), str(copy_path))
+            self.assertEqual([], generator._check(("codex", "agentskills"), output_root))
+
+            package = output_root / "providers" / "codex"
+            inventory_path = package / ".mlx-agent-generated-files.json"
+            inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+            copy_path = package / "skills" / "mlx-wire" / "scripts" / "mlx-agent"
+            copy_path.parent.mkdir(parents=True)
+            copy_path.write_bytes(b"edited by a user\n")
+            inventory["files"].append({"path": "skills/mlx-wire/scripts/mlx-agent", "sha256": hashlib.sha256(b"original").hexdigest()})
+            inventory_path.write_text(json.dumps(inventory), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "hash does not match"):
+                generator.generate(("codex", "agentskills"), output_root)
+            self.assertEqual(b"edited by a user\n", copy_path.read_bytes())
+
+    def test_plugin_package_skills_resolve_the_single_runtime_two_levels_above_the_skill(self):
+        generator = load_generator()
+        fixture = ROOT / "tests" / "fixtures" / "scout_responses.json"
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory)
+            generator.generate(("codex", "agy", "agentskills", "claude"), output_root)
+            for package in ("codex", "agy"):
+                for capability in generator.CAPABILITIES:
+                    skill = output_root / "providers" / package / "skills" / "mlx-{0}".format(capability) / "SKILL.md"
+                    content = skill.read_text(encoding="utf-8")
+                    self.assertIn("two levels above the directory containing this SKILL.md", content)
+                    self.assertIn("`python3 <plugin-root>/scripts/mlx-agent ", content)
+                    self.assertNotIn("<skill-dir>", content)
+                    plugin_root = skill.parent.parent.parent
+                    self.assertTrue((plugin_root / "scripts" / "mlx-agent").is_file())
+                scout = output_root / "providers" / package / "skills" / "mlx-scout" / "SKILL.md"
+                packs = scout.read_text(encoding="utf-8")
+                for name in ("quantization.md", "model-families.md", "troubleshooting.md"):
+                    self.assertIn("<plugin-root>/src/mlx_agent/resources/references/" + name, packs)
+                    self.assertTrue((scout.parent.parent.parent / "src" / "mlx_agent" / "resources" / "references" / name).is_file())
+                result = subprocess.run(
+                    [sys.executable, str(scout.parent.parent.parent / "scripts" / "mlx-agent"), "discover", "--limit", "1", "--json"],
+                    cwd=str(output_root), env=dict(os.environ, MLX_AGENT_FIXTURE=str(fixture)), text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+            claude_scout = (output_root / "commands" / "mlx-scout.md").read_text(encoding="utf-8")
+            self.assertIn("${CLAUDE_PLUGIN_ROOT}/src/mlx_agent/resources/references/quantization.md", claude_scout)
+            self.assertNotIn("`src/mlx_agent/resources", claude_scout)
 
     def test_manifest_descriptions_are_safe_yaml_scalars(self):
         generator = load_generator()
@@ -453,7 +588,7 @@ class GeneratedAdapterTests(unittest.TestCase):
                 and "resources" not in path.parts
                 and ("commands" in path.parts or "agents" in path.parts or "agentskills" in path.parts)
             ]
-            self.assertEqual(len(prompts), 23)
+            self.assertEqual(len(prompts), 15)
             for prompt in prompts:
                 content = prompt.read_text(encoding="utf-8")
                 self.assertTrue(content.endswith("\n"))

@@ -37,9 +37,9 @@ async function readBounded(stream: ReadableStream<Uint8Array>) {
 export const MLXAgentCommandPlugin = async () => ({
   tool: {
     mlx_agent_command: tool({
-      description: "Run one validated MLX Scout, Adopt, or Wire command without shell interpolation.",
+      description: "Run one validated MLX agent command (scout, adopt, wire, bench, doctor, watch, or fleet) without shell interpolation.",
       args: {
-        capability: tool.schema.enum(["scout", "adopt", "wire"]),
+        capability: tool.schema.enum(["scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"]),
         arguments: tool.schema.string().max(MAX_ARGUMENT_BYTES),
       },
       async execute(args) {

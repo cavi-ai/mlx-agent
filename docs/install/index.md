@@ -1,17 +1,17 @@
 # Install mlx-agent
 
-Choose the host that owns your coding-agent surface: [Claude Code](claude.md), [Codex CLI](codex.md), [Agy](agy.md), or [OpenCode](opencode.md). For any AgentSkills-compatible host, copy one generated `providers/agentskills/mlx-*` directory into that host's skills directory.
+Choose the host that owns your coding-agent surface: [Claude Code](claude.md), [Codex CLI](codex.md), [Agy](agy.md), or [OpenCode](opencode.md). For any AgentSkills-compatible host, use the universal installer: it copies each skill's `SKILL.md` together with the launcher and runtime from the repository root, so every installed skill folder is self-contained.
 
-For a user-scoped portable install, copy all seven generated packages into the host's AgentSkills directory:
+For a user-scoped portable install, install all seven skills into the host's AgentSkills directory:
 
 ```bash
-mkdir -p ~/.agents/skills
-cp -R providers/agentskills/mlx-scout providers/agentskills/mlx-adopt providers/agentskills/mlx-wire providers/agentskills/mlx-bench providers/agentskills/mlx-doctor providers/agentskills/mlx-watch providers/agentskills/mlx-fleet ~/.agents/skills/
+python3 scripts/mlx-agent install agentskills --scope user --dry-run --json
+python3 scripts/mlx-agent install agentskills --scope user --confirm --preview-hash <preview-hash> --json
 ```
 
-For project scope, use `<project>/.agents/skills` instead. Restart the host and verify its available-skills list contains `mlx-scout`, `mlx-adopt`, `mlx-wire`, `mlx-bench`, `mlx-doctor`, `mlx-watch`, and `mlx-fleet`. Update by replacing only those seven directories; uninstall by removing only those seven package directories.
+For project scope, add `--scope project --project /absolute/project/path`; skills go to `<project>/.agents/skills`. Restart the host and verify its available-skills list contains `mlx-scout`, `mlx-adopt`, `mlx-wire`, `mlx-bench`, `mlx-doctor`, `mlx-watch`, and `mlx-fleet`. Update and uninstall with the same preview-then-confirm sequence (`update agentskills`, `uninstall agentskills`).
 
-All provider packages contain the same structured Python core and require Python 3.9 or later. The universal installer stages only receipt-owned artifacts; it never installs a provider CLI, downloads model weights, persists secrets, or edits an unowned configuration file. `MLX_AGENT_CONFIG_ROOT` explicitly relocates MLX-agent receipts. When it is unset, `XDG_STATE_HOME` relocates those receipts; when neither is set they default to `~/.local/state/mlx-agent/installer-receipts`. OpenCode additionally follows `XDG_CONFIG_HOME`; other provider user roots remain anchored to the selected host's home directory. A provider directory that is a symlink needs no variables at all: the installer resolves it once and records the resolved path.
+All provider packages run the same structured Python core and require Python 3.9 or later. A package holds one copy of that runtime: the repository root for Claude Code and OpenCode, `providers/codex` and `providers/agy` for their plugin directories, and one per installed skill for AgentSkills. `update` and `uninstall` also remove files an earlier release installed that the current layout no longer declares, but only receipt-owned files whose content is unchanged. The universal installer stages only receipt-owned artifacts; it never installs a provider CLI, downloads model weights, persists secrets, or edits an unowned configuration file. `MLX_AGENT_CONFIG_ROOT` explicitly relocates MLX-agent receipts. When it is unset, `XDG_STATE_HOME` relocates those receipts; when neither is set they default to `~/.local/state/mlx-agent/installer-receipts`. OpenCode additionally follows `XDG_CONFIG_HOME`; other provider user roots remain anchored to the selected host's home directory. A provider directory that is a symlink needs no variables at all: the installer resolves it once and records the resolved path.
 
 ```bash
 # Run from this repository or an unpacked release.

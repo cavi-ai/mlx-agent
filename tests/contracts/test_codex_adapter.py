@@ -202,7 +202,11 @@ esac
             self.assertEqual("mlx-agent", metadata["name"])
             self.assertEqual(mlx_agent.__version__, metadata["version"])
             self.assertEqual("./skills/", metadata["skills"])
-            self.assertEqual("Sasan Sotoodehfar", metadata["author"]["name"])
+            publisher = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))["publisher"]
+            self.assertEqual(publisher["name"], metadata["author"]["name"])
+            self.assertEqual(publisher["organization_url"], metadata["author"]["url"])
+            self.assertEqual(publisher["name"], metadata["interface"]["developerName"])
+            self.assertNotIn("github.com/sasan1200", json.dumps(metadata))
             self.assertIn("interface", metadata)
             self.assertFalse((plugin_root / "commands").exists())
             self.assertEqual([], generator._check(("codex",), output_root))
@@ -212,7 +216,12 @@ esac
                 self.assertIn('name: "mlx-{0}"'.format(capability), content)
                 self.assertIn("canonical capability ID: mlx-agent.{0}".format(capability), content)
                 self.assertIn("$mlx-agent:mlx-{0}".format(capability), content)
-                self.assertTrue((skill.parent / "scripts" / "mlx-agent").is_file())
+                self.assertEqual(["SKILL.md"], sorted(path.name for path in skill.parent.iterdir()))
+                self.assertIn("<plugin-root>/scripts/mlx-agent", content)
+                self.assertNotIn("<skill-dir>", content)
+            self.assertTrue((plugin_root / "scripts" / "mlx-agent").is_file())
+            self.assertTrue((plugin_root / "scripts" / "mlx-agent-mcp").is_file())
+            self.assertTrue((plugin_root / "src" / "mlx_agent" / "cli.py").is_file())
 
     def test_codex_installer_roots_match_the_official_plugin_marketplace_layout(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -243,7 +252,8 @@ esac
             installer.execute(plan, confirmed=plan.preview["preview_hash"])
             unrelated = root / "unrelated"
             unrelated.mkdir()
-            executable = root / "home" / "plugins" / "mlx-agent" / "skills" / "mlx-scout" / "scripts" / "mlx-agent"
+            executable = root / "home" / "plugins" / "mlx-agent" / "scripts" / "mlx-agent"
+            self.assertFalse((root / "home" / "plugins" / "mlx-agent" / "skills" / "mlx-scout" / "scripts").exists())
             result = subprocess.run(
                 [sys.executable, str(executable), "discover", "--limit", "1", "--json"],
                 cwd=str(unrelated),

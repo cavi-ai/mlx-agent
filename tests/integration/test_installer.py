@@ -358,6 +358,207 @@ class InstallerRoundTripTests(unittest.TestCase):
         self.assertFalse(target.exists())
         self.assertEqual("preserve me\n", fixture.read_text())
 
+    def test_claude_install_is_the_repository_root_and_carries_no_provider_copy(self):
+        plan = self.installer.plan("install", ["claude"], "user", self.project)
+        self.installer.execute(plan, confirmed=plan.preview["preview_hash"])
+        package = self.home / ".claude" / "plugins" / "mlx-agent"
+        installed = self._files(package)
+        self.assertNotIn("providers", {Path(path).parts[0] for path in installed})
+        self.assertEqual(
+            sorted({Path(path).parts[0] for path in installed}),
+            [".claude-plugin", ".mcp.json", "agents", "commands", "scripts", "src"],
+        )
+        for path in installed:
+            self.assertEqual((ROOT / path).read_bytes(), (package / path).read_bytes(), path)
+        self.assertEqual(
+            ["scripts/mlx-adopt.workflow.mjs", "scripts/mlx-agent", "scripts/mlx-agent-mcp"],
+            [path for path in installed if path.startswith("scripts/")],
+        )
+
+    def test_agentskills_install_copies_the_root_runtime_into_every_skill_and_each_runs_alone(self):
+        plan = self.installer.plan("install", ["agentskills"], "user", self.project)
+        self.installer.execute(plan, confirmed=plan.preview["preview_hash"])
+        skills = self.home / ".agents" / "skills"
+        unrelated = self.root / "unrelated"
+        unrelated.mkdir()
+        runtime = sorted(
+            str(path.relative_to(ROOT / "src" / "mlx_agent"))
+            for path in (ROOT / "src" / "mlx_agent").rglob("*")
+            if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
+        )
+        for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
+            skill = skills / "mlx-{0}".format(capability)
+            with self.subTest(skill=skill.name):
+                self.assertEqual(
+                    sorted(["SKILL.md", "scripts/mlx-agent", "scripts/mlx-agent-mcp"] + ["src/mlx_agent/" + path for path in runtime]),
+                    self._files(skill),
+                )
+                skill_text = (skill / "SKILL.md").read_text()
+                self.assertEqual(
+                    (ROOT / "providers" / "agentskills" / skill.name / "SKILL.md").read_text(), skill_text
+                )
+                self.assertIn("<skill-dir>/scripts/mlx-agent", skill_text)
+                result = subprocess.run(
+                    ["python3", str(skill / "scripts" / "mlx-agent"), "discover", "--help"],
+                    cwd=unrelated, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertIn("usage:", result.stdout)
+
+    def test_codex_and_agy_install_one_package_root_runtime_shared_by_every_skill(self):
+        plan = self.installer.plan("install", ["codex", "agy"], "user", self.project)
+        self.installer.execute(plan, confirmed=plan.preview["preview_hash"])
+        unrelated = self.root / "unrelated"
+        unrelated.mkdir()
+        for package in (self.home / "plugins" / "mlx-agent", self.home / ".gemini" / "config" / "plugins" / "mlx-agent"):
+            with self.subTest(package=package.name):
+                installed = self._files(package)
+                self.assertEqual([], [path for path in installed if path.startswith("skills/") and not path.endswith("/SKILL.md")])
+                for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
+                    skill = package / "skills" / "mlx-{0}".format(capability)
+                    self.assertEqual(["SKILL.md"], self._files(skill))
+                    self.assertTrue((skill.parent.parent / "scripts" / "mlx-agent").is_file())
+                result = subprocess.run(
+                    ["python3", str(package / "scripts" / "mlx-agent"), "discover", "--help"],
+                    cwd=unrelated, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+
+    def _layout_installer(self, layout):
+        """Point one fixture provider (and an enclosing sibling) at a per-skill or package-root runtime layout."""
+        package = self.root / "layout-package"
+        for name, text in {
+            "skill-a/SKILL.md": "skill a {0}\n".format(layout),
+            "skill-b/SKILL.md": "skill b {0}\n".format(layout),
+            "runtime/module.py": "VALUE = 1\n",
+            "runtime/launcher": "#!/usr/bin/env python3\n",
+            "outer/SKILL.md": "outer\n",
+        }.items():
+            (package / name).parent.mkdir(parents=True, exist_ok=True)
+            (package / name).write_text(text)
+        if layout == "per-skill":
+            artifacts = [
+                ("skill-a/SKILL.md", "skills/a/SKILL.md"),
+                ("skill-b/SKILL.md", "skills/b/SKILL.md"),
+                ("runtime/module.py", "skills/a/src/mlx_agent/module.py"),
+                ("runtime/module.py", "skills/b/src/mlx_agent/module.py"),
+                ("runtime/launcher", "skills/a/scripts/mlx-agent"),
+                ("runtime/launcher", "skills/b/scripts/mlx-agent"),
+            ]
+        else:
+            artifacts = [
+                ("skill-a/SKILL.md", "skills/a/SKILL.md"),
+                ("skill-b/SKILL.md", "skills/b/SKILL.md"),
+                ("runtime/module.py", "src/mlx_agent/module.py"),
+                ("runtime/launcher", "scripts/mlx-agent"),
+            ]
+
+        def provider(user_root, project_root, artifacts):
+            return {
+                "native": False, "capabilities": ["scout"], "commands": [], "detect_commands": [],
+                "invocation": {"kind": "skill", "prefix": ""}, "minimum_version": None,
+                "last_tested_version": None, "version_probe": None, "install_mode": "portable",
+                "user_root": user_root, "project_root": project_root,
+                "artifacts": [
+                    {"source": "layout-package/" + source, "destination": destination}
+                    for source, destination in artifacts
+                ],
+                "config_paths": [],
+            }
+
+        manifest = json.loads((ROOT / "plugin.json").read_text())
+        manifest["providers"] = {
+            "inner": provider("{config_root}/outer/inner", "{project}/.outer/inner", artifacts),
+            "outer": provider("{config_root}/outer", "{project}/.outer", [("outer/SKILL.md", "skills/outer/SKILL.md")]),
+        }
+        (self.root / "plugin.json").write_text(json.dumps(manifest))
+        return Installer(
+            ProviderRegistry(self.root / "plugin.json", home=self.home, config_root=self.config),
+            project_root=self.project,
+        )
+
+    def _apply(self, installer, action, providers):
+        plan = installer.plan(action, providers, "user", self.project)
+        return plan, installer.execute(plan, confirmed=plan.preview["preview_hash"])
+
+    def _files(self, directory):
+        return sorted(str(path.relative_to(directory)) for path in directory.rglob("*") if path.is_file())
+
+    def test_update_to_a_new_layout_prunes_receipt_owned_files_the_manifest_no_longer_declares(self):
+        old_installer = self._layout_installer("per-skill")
+        self._apply(old_installer, "install", ["inner", "outer"])
+        inner = self.config / "outer" / "inner"
+        self.assertIn("skills/a/src/mlx_agent/module.py", self._files(inner))
+        outer_before = (self.config / "outer" / "skills" / "outer" / "SKILL.md").read_bytes()
+
+        installer = self._layout_installer("package-root")
+        plan, receipt = self._apply(installer, "update", ["inner"])
+        self.assertEqual("applied", receipt.status)
+        self.assertEqual(
+            ["scripts/mlx-agent", "skills/a/SKILL.md", "skills/b/SKILL.md", "src/mlx_agent/module.py"],
+            self._files(inner),
+        )
+        self.assertEqual("skill a package-root\n", (inner / "skills" / "a" / "SKILL.md").read_text())
+        self.assertEqual(outer_before, (self.config / "outer" / "skills" / "outer" / "SKILL.md").read_bytes())
+        for removed in ("skills/a/src/mlx_agent/module.py", "skills/b/scripts/mlx-agent"):
+            self.assertIn("-VALUE = 1" if removed.endswith(".py") else "-#!/usr/bin/env python3", plan.preview["diff"])
+        self.assertTrue(all(item.status == "applied" for item in receipt.receipts))
+
+        doctor = installer.execute(installer.plan("doctor", ["inner"], "user", self.project))
+        self.assertEqual([], [item for item in doctor["problems"] if item["code"] == "artifact_invalid"])
+        again = installer.plan("update", ["inner"], "user", self.project)
+        self.assertTrue(again.noop)
+
+    def test_uninstall_after_a_pruning_update_leaves_nothing_and_spares_the_enclosing_provider(self):
+        self._apply(self._layout_installer("per-skill"), "install", ["inner", "outer"])
+        installer = self._layout_installer("package-root")
+        self._apply(installer, "update", ["inner"])
+        _plan, receipt = self._apply(installer, "uninstall", ["inner"])
+        self.assertEqual("rolled_back", receipt.status)
+        inner = self.config / "outer" / "inner"
+        self.assertEqual([], self._files(inner))
+        self.assertEqual(["scripts", "skills", "src"], sorted(path.name for path in inner.rglob("*")))
+        self.assertEqual(["skills/outer/SKILL.md"], self._files(self.config / "outer"))
+
+    def test_uninstall_removes_a_layout_the_manifest_no_longer_declares_without_an_update(self):
+        self._apply(self._layout_installer("per-skill"), "install", ["inner", "outer"])
+        installer = self._layout_installer("package-root")
+        _plan, receipt = self._apply(installer, "uninstall", ["inner"])
+        self.assertEqual("rolled_back", receipt.status)
+        self.assertEqual([], self._files(self.config / "outer" / "inner"))
+        self.assertEqual(["skills"], sorted(path.name for path in (self.config / "outer" / "inner").rglob("*")))
+        self.assertEqual(["skills/outer/SKILL.md"], self._files(self.config / "outer"))
+
+    def test_update_refuses_to_prune_a_user_modified_stale_file_and_changes_nothing(self):
+        self._apply(self._layout_installer("per-skill"), "install", ["inner"])
+        inner = self.config / "outer" / "inner"
+        stale = inner / "skills" / "b" / "src" / "mlx_agent" / "module.py"
+        stale.write_text("VALUE = 'user edit'\n")
+        before = {path: (inner / path).read_bytes() for path in self._files(inner)}
+        installer = self._layout_installer("package-root")
+        with self.assertRaisesRegex(InstallerConflictError, "user-modified"):
+            installer.plan("update", ["inner"], "user", self.project)
+        self.assertEqual(before, {path: (inner / path).read_bytes() for path in self._files(inner)})
+
+    def test_failed_pruning_update_restores_every_file_it_removed(self):
+        self._apply(self._layout_installer("per-skill"), "install", ["inner"])
+        inner = self.config / "outer" / "inner"
+        before = {path: (inner / path).read_bytes() for path in self._files(inner)}
+        installer = self._layout_installer("package-root")
+        plan = installer.plan("update", ["inner"], "user", self.project)
+        calls = []
+
+        def fail_on_third_change(point):
+            calls.append(point)
+            if point == "after_replace:2":
+                raise OSError("injected failure")
+
+        installer.transaction_factory = lambda **kwargs: Transaction(fault_injector=fail_on_third_change, **kwargs)
+        receipt = installer.execute(plan, confirmed=plan.preview["preview_hash"])
+        self.assertNotEqual("applied", receipt.status)
+        self.assertIn("after_replace:2", calls)
+        self.assertEqual(before, {path: (inner / path).read_bytes() for path in self._files(inner)})
+
     def test_uninstall_refuses_user_modified_artifacts(self):
         plan = self.installer.plan("install", ["opencode"], "user", self.project)
         self.installer.execute(plan, confirmed=plan.preview["preview_hash"])

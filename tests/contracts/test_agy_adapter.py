@@ -47,8 +47,12 @@ class AgyAdapterContractTests(unittest.TestCase):
             for capability in CAPABILITIES:
                 skill = package / "skills" / "mlx-{}".format(capability)
                 self.assertTrue((skill / "SKILL.md").is_file())
-                self.assertTrue((skill / "scripts" / "mlx-agent").is_file())
-                self.assertNotIn(str(ROOT), (skill / "SKILL.md").read_text(encoding="utf-8"))
+                self.assertEqual(["SKILL.md"], sorted(path.name for path in skill.iterdir()))
+                content = (skill / "SKILL.md").read_text(encoding="utf-8")
+                self.assertNotIn(str(ROOT), content)
+                self.assertIn("<plugin-root>/scripts/mlx-agent", content)
+            self.assertTrue((package / "scripts" / "mlx-agent").is_file())
+            self.assertTrue((package / "src" / "mlx_agent" / "cli.py").is_file())
 
     def test_installer_copies_and_removes_agy_plugin_in_both_scopes(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -83,7 +87,7 @@ class AgyAdapterContractTests(unittest.TestCase):
             )
             plan = installer.plan("install", ["agy"], "project", project)
             installer.execute(plan, confirmed=plan.preview["preview_hash"])
-            launcher = project / ".agents" / "plugins" / "mlx-agent" / "skills" / "mlx-scout" / "scripts" / "mlx-agent"
+            launcher = project / ".agents" / "plugins" / "mlx-agent" / "scripts" / "mlx-agent"
             result = subprocess.run(
                 [sys.executable, str(launcher), "discover", "--limit", "1", "--json"],
                 cwd=str(root), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,

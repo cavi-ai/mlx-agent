@@ -68,11 +68,6 @@ class ToolUseGeneratedParityTests(unittest.TestCase):
                         self, root / relative, canonical_guidance
                     )
             targets = {
-                "claude": (
-                    "commands/mlx-scout.md",
-                    "commands/mlx-adopt.md",
-                    "agents/mlx-advisor.md",
-                ),
                 "codex": (
                     "skills/mlx-scout/SKILL.md",
                     "skills/mlx-adopt/SKILL.md",
@@ -124,14 +119,21 @@ class ToolUseGeneratedParityTests(unittest.TestCase):
             root = Path(directory)
             generator.generate(PROVIDERS, root)
             canonical_adoption = (ROOT / "src" / "mlx_agent" / "adoption.py").read_bytes()
-            for provider in PROVIDERS:
+            runtime_packages = ("codex", "agy")
+            for provider in ("opencode", "agentskills"):
+                with self.subTest(provider=provider):
+                    self.assertEqual([], [
+                        path for path in inventory_paths(root / "providers" / provider)
+                        if path.parts[-2:] == ("mlx_agent", "cli.py")
+                    ])
+            for provider in runtime_packages:
                 surface = root / "providers" / provider
                 cli_paths = [
                     path
                     for path in inventory_paths(surface)
                     if path.parts[-2:] == ("mlx_agent", "cli.py")
                 ]
-                self.assertTrue(cli_paths, provider)
+                self.assertEqual([Path("src/mlx_agent/cli.py")], cli_paths, provider)
                 for cli_path in cli_paths:
                     src_index = cli_path.parts.index("src")
                     bundle_root = surface.joinpath(*cli_path.parts[:src_index])

@@ -127,7 +127,7 @@ for expected in (
 # Keep direct launcher execution as a separate self-contained bundle proof; it
 # does not substitute for the Codex session invocation above.
 MLX_AGENT_FIXTURE="$ROOT/tests/fixtures/scout_responses.json" \
-  python3 "$MARKETPLACE_ROOT/plugins/mlx-agent/skills/mlx-scout/scripts/mlx-agent" discover --limit 1 --json >/dev/null
+  python3 "$MARKETPLACE_ROOT/plugins/mlx-agent/scripts/mlx-agent" discover --limit 1 --json >/dev/null
 codex plugin remove mlx-agent --marketplace mlx-agent-smoke
 PLUGIN_INSTALLED=0
 echo 'PASS: Codex plugin installed, exposed $mlx-agent:mlx-scout, and removed in an isolated Codex home'

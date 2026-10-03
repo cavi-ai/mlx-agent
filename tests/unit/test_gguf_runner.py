@@ -49,28 +49,42 @@ class PathsWithoutScriptDirTests(unittest.TestCase):
 
 class GGUFRunnerScriptTests(unittest.TestCase):
     def test_runner_uses_shadow_resistant_gguf_import(self):
-        all_runners, _, _ = self._collect_gguf_runners()
+        all_runners, _ = self._collect_gguf_runners()
         self._assert_shadow_free_execution([all_runners[0]], "root")
 
     def test_provider_adapter_runners_avoid_shadowed_gguf(self):
-        _, provider_runners, skill_runners = self._collect_gguf_runners()
-        self._assert_shadow_free_execution(
-            provider_runners + skill_runners,
-            "provider-copy",
-        )
+        _, provider_runners = self._collect_gguf_runners()
+        packages = {Path(runner).relative_to(Path(__file__).resolve().parents[2]).parts[1] for runner in provider_runners}
+        self.assertLessEqual({"codex", "agy"}, packages)
+        self._assert_shadow_free_execution(provider_runners, "provider-copy")
+
+    def test_no_provider_skill_carries_its_own_runtime_copy(self):
+        repository_root = Path(__file__).resolve().parents[2]
+
+        def runtime_files(pattern):
+            return sorted(
+                str(path.relative_to(repository_root))
+                for directory in repository_root.glob(pattern)
+                for path in directory.rglob("*")
+                if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
+            )
+
+        for pattern in (
+            "providers/codex/skills/*/src", "providers/codex/skills/*/scripts",
+            "providers/agy/skills/*/src", "providers/agy/skills/*/scripts",
+            "providers/opencode/skills/*/src", "providers/opencode/skills/*/scripts",
+            "providers/opencode/src",
+            "providers/agentskills/mlx-*/src", "providers/agentskills/mlx-*/scripts",
+        ):
+            with self.subTest(pattern=pattern):
+                self.assertEqual([], runtime_files(pattern))
+        self.assertEqual([], runtime_files("providers/claude"))
 
     @unittest.skipUnless(os.environ.get("CI"), "adapter discovery ordering is CI-only")
     def test_adapter_runner_discovery_order_is_stable(self):
-        _, provider_runners, skill_runners = self._collect_gguf_runners()
+        _, provider_runners = self._collect_gguf_runners()
         self.assertEqual(provider_runners, sorted(provider_runners, key=str))
-        self.assertEqual(skill_runners, sorted(skill_runners, key=str))
-        if provider_runners and skill_runners:
-            combined = provider_runners + skill_runners
-            split = len(provider_runners)
-            self.assertEqual(combined[:split], sorted(provider_runners, key=str))
-            self.assertEqual(combined[split:], sorted(skill_runners, key=str))
-
-        if not provider_runners and not skill_runners:
+        if not provider_runners:
             self.fail("no gguf runner adapter copies discovered in this checkout")
 
     def _collect_gguf_runners(self):
@@ -82,13 +96,7 @@ class GGUFRunnerScriptTests(unittest.TestCase):
                 "providers/*/src/mlx_agent/gguf_runner.py"
             )
         )
-        skill_runners = sorted(
-            str(path)
-            for path in repository_root.glob(
-                "providers/*/skills/*/src/mlx_agent/gguf_runner.py"
-            )
-        )
-        return [canonical_runner] + provider_runners + skill_runners, provider_runners, skill_runners
+        return [canonical_runner] + provider_runners, provider_runners
 
     def _assert_shadow_free_execution(self, runners, marker_prefix):
         with TemporaryDirectory() as raw:

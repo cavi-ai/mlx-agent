@@ -52,6 +52,15 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual((task["type"], task["source"]), ("text_llm", "gguf_architecture"))
         self.assertEqual(self.classify("x.gguf", gguf_architecture="qwen2vl", local=True)["type"], "text_llm")
 
+    def test_drafters_are_speculative_drafts(self):
+        task = self.classify("dspark-DeepSeek-V4-Flash-0731-Q8_0.gguf", gguf_architecture="dflash", local=True)
+        self.assertEqual(task, {"type": "speculative_draft", "use_cases": ["speculative_decoding"],
+                                "source": "gguf_architecture", "confidence": "confirmed"})
+        self.assertEqual(self.classify("x.gguf", gguf_architecture="eagle3", local=True)["type"], "speculative_draft")
+        converted = self.classify("DeepSeek-V4.1-Flash-DSpark-drafter", pipeline_tag="text-generation",
+                                  model_type="deepseek_v41_dspark", config_keys=("dspark_target_layer_ids", "model_type"))
+        self.assertEqual((converted["type"], converted["source"]), ("speculative_draft", "config"))
+
     def test_gguf_vision_projectors_are_not_models(self):
         task = self.classify("mmproj-Qwen3.8-27B-BF16.gguf", gguf_architecture="clip", local=True)
         self.assertEqual((task["type"], task["source"], task["use_cases"]), ("other", "gguf_architecture", []))

@@ -41,6 +41,12 @@ _QUANT_IN_NAME = re.compile(
 # its general.name, and are never converted on their own.
 _COMPANION_NAMES = ("mmproj", "projector")
 _COMPANION_ARCHITECTURES = ("clip", "mmproj")
+# llama.cpp speculative-decoding drafters: they borrow the target's embeddings
+# and head, share its general.name, and run only beside it.
+DRAFT_ARCHITECTURES = ("dflash", "eagle3")
+_DRAFT_SUFFIXES = (".block_size", ".hyper_connection.count")
+# Drafter families a bundled port converts, keyed by what marks them in the header.
+_DRAFT_PORTS = (("deepseek_v4_dspark", "dflash", "dflash.hyper_connection.count"),)
 _MIN_NAME_MATCH = 6
 _INTERESTING_KEYS = (
     "general.architecture",
@@ -181,7 +187,7 @@ def _skip_value(handle, value_type):
 def _keep(key):
     if key in _INTERESTING_KEYS:
         return True
-    return any(key.endswith(suffix) for suffix in _STRUCTURE_SUFFIXES)
+    return any(key.endswith(suffix) for suffix in _STRUCTURE_SUFFIXES + _DRAFT_SUFFIXES)
 
 
 def read_gguf_header(path):
@@ -282,6 +288,19 @@ def _structure(metadata, tensor_count):
     return hashlib.sha256("|".join(fields).encode("utf-8")).hexdigest()[:16]
 
 
+def _draft(metadata, architecture):
+    """Drafter facts for a speculative-decoding GGUF, else None; ``port`` is set when one converts it."""
+    if str(architecture).lower() not in DRAFT_ARCHITECTURES:
+        return None
+    port = next((name for name, arch, key in _DRAFT_PORTS if arch == str(architecture).lower() and key in metadata), None)
+    block_size = metadata.get("{0}.block_size".format(architecture))
+    return {
+        "port": port,
+        "target": metadata.get("general.name") or metadata.get("general.basename"),
+        "block_size": block_size if isinstance(block_size, int) and not isinstance(block_size, bool) else None,
+    }
+
+
 def describe_gguf(path, signature=True):
     """Build one inventory entry for a GGUF file. Never raises for bad headers."""
     location = Path(path)
@@ -311,6 +330,7 @@ def describe_gguf(path, signature=True):
         "structure": None,
         "signature": None,
         "companion": any(token in stem.lower() for token in _COMPANION_NAMES),
+        "draft": None,
         "readable": True,
         "error": None,
     }
@@ -335,6 +355,10 @@ def describe_gguf(path, signature=True):
         entry["parameters"] = parameters
     if isinstance(name, str) and name:
         entry["model_key"] = _normalize_stem(name)
+    entry["draft"] = _draft(metadata, entry["architecture"])
+    if entry["draft"] is not None:
+        # A drafter carries its target's name; keep it out of the target's duplicate group.
+        entry["model_key"] += "-draft"
     if signature:
         try:
             entry["signature"] = file_signature(location)

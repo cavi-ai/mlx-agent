@@ -94,7 +94,7 @@
     },
     {
       "path": "src/mlx_agent/convert.py",
-      "sha256": "e3114c3235ecb05e0f4e99ea07afdb4a14de6d1e806399139b5c82d08b163c2b"
+      "sha256": "87484f3888706b9b6b22b724440bc61d79b03180fd512adb3c242e4222b5bc9f"
     },
     {
       "path": "src/mlx_agent/decide.py",
@@ -138,11 +138,11 @@
     },
     {
       "path": "src/mlx_agent/gguf.py",
-      "sha256": "a631c5c258800df8e96735221079b7a896ed24ae5ddb737dd22214a75b53a273"
+      "sha256": "2d31ad22c6ec4e15e6d1075a2f7151b4b92ed12578cf845785e06e79dd55ac60"
     },
     {
       "path": "src/mlx_agent/gguf_runner.py",
-      "sha256": "1e77d7388487d126d151dd99a031f785f3926350368a9e11ce1b3bbb302c13b1"
+      "sha256": "c6239da35f94bfda895959ef13a45086347f778e5caddb6216124028143d8093"
     },
     {
       "path": "src/mlx_agent/host.py",
@@ -301,6 +301,14 @@
       "sha256": "86ff0ac1fa9606aa48cc9f1fe42c6b969e51b2c301a77ece7d33187cb6a7e45e"
     },
     {
+      "path": "src/mlx_agent/resources/ports/mlx-lm/deepseek_v4_dspark/__init__.py",
+      "sha256": "2a2d6d4df2283dc98df6ae10f9861bb850307fc9d9cebcca57b46aacb4bda732"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-lm/deepseek_v4_dspark/convert.py",
+      "sha256": "6714bdeccd626ac3c90ae464e7b1c4999419ef9b0cd7e42f0cd6cc6e60f1efd7"
+    },
+    {
       "path": "src/mlx_agent/resources/references/model-families.md",
       "sha256": "666bd3e3fd4b9922488d8232075eb5a3bd9d168bb0c90162c1a459bc44df6b90"
     },
@@ -338,7 +346,7 @@
     },
     {
       "path": "src/mlx_agent/taxonomy.py",
-      "sha256": "d64d63da02e11dada72b8e31c4c72ab9441d9bc307507808db24076ac53f8aa9"
+      "sha256": "57e54dfe2819bb103bf8d086fa961437fc4b0f231af47637e051da69183e2830"
     },
     {
       "path": "src/mlx_agent/transactions.py",

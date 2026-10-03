@@ -155,6 +155,25 @@ class DescribeTests(unittest.TestCase):
         )
         self.assertEqual(entry["model_key"], "qwen3-coder-30b")
 
+    def test_dspark_drafter_names_its_port_and_target(self):
+        entry = describe_gguf(write_gguf(
+            self.root / "dspark-DeepSeek-V4-Flash-0731-Q8_0.gguf", architecture="dflash",
+            name="DeepSeek-V4-Flash-0731", block_count=3, extra=(
+                _kv("dflash.hyper_connection.count", _UINT32, 4), _kv("dflash.block_size", _UINT32, 5),
+            ),
+        ))
+        self.assertEqual(entry["draft"], {"port": "deepseek_v4_dspark", "target": "DeepSeek-V4-Flash-0731", "block_size": 5})
+        self.assertEqual(entry["model_key"], "deepseek-v4-flash-0731-draft")
+
+    def test_other_drafters_have_no_port(self):
+        eagle = describe_gguf(write_gguf(self.root / "eagle3-Llama.gguf", architecture="eagle3", name="Llama 3.1 8B"))
+        self.assertEqual(eagle["draft"], {"port": None, "target": "Llama 3.1 8B", "block_size": None})
+        dflash = describe_gguf(write_gguf(self.root / "glimmer.gguf", architecture="dflash", name="Glimmer"))
+        self.assertIsNone(dflash["draft"]["port"])
+
+    def test_regular_models_are_not_drafters(self):
+        self.assertIsNone(describe_gguf(write_gguf(self.root / "plain.gguf", name="Plain"))["draft"])
+
     def test_companion_projector(self):
         entry = describe_gguf(
             write_gguf(self.root / "mmproj-F32.gguf", architecture="clip", name="Base")
@@ -308,6 +327,12 @@ class DuplicateTests(unittest.TestCase):
     def test_distinct_models_are_not_grouped(self):
         write_gguf(self.root / "zeta-model-Q4_K_M.gguf", name="Zeta Model")
         write_gguf(self.root / "eta-model-Q4_K_M.gguf", name="Eta Model", block_count=48)
+        self.assertEqual(group_duplicates(scan_gguf([self.root])), [])
+
+    def test_a_drafter_is_not_a_duplicate_of_its_target(self):
+        write_gguf(self.root / "DeepSeek-V4-Flash-Q2-0731.gguf", name="DeepSeek-V4-Flash-0731", file_type=10)
+        write_gguf(self.root / "dspark-DeepSeek-V4-Flash-0731-Q8_0.gguf", architecture="dflash",
+                   name="DeepSeek-V4-Flash-0731", file_type=7)
         self.assertEqual(group_duplicates(scan_gguf([self.root])), [])
 
     def test_converted_copy_is_kept(self):

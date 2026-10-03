@@ -1,3 +1,4 @@
+import json
 import unittest
 import os
 import subprocess
@@ -7,6 +8,9 @@ from tempfile import TemporaryDirectory
 
 import sys
 
+from unittest import mock
+
+from mlx_agent import gguf_runner
 from mlx_agent.gguf_runner import _paths_without_script_dir
 
 
@@ -45,6 +49,48 @@ class PathsWithoutScriptDirTests(unittest.TestCase):
             nested.mkdir(parents=True)
             cleaned = _paths_without_script_dir([str(nested)], script_dir, script_dir)
             self.assertEqual([], cleaned)
+
+
+class PortDispatchTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.source = self.root / "dspark.gguf"
+        self.source.write_bytes(b"GGUF" + b"\x00" * 64)
+        self.out = self.root / "dspark-MLX-4bit"
+
+    def run_port(self, convert):
+        port = mock.Mock(convert=convert)
+        with mock.patch.object(gguf_runner, "load_port", return_value=port) as loaded, \
+                mock.patch.object(gguf_runner, "_missing_modules", return_value=[]) as missing:
+            code = gguf_runner.main([
+                "--gguf", str(self.source), "--out", str(self.out), "--q-bits", "4", "--port", "deepseek_v4_dspark",
+            ])
+        loaded.assert_called_once_with("deepseek_v4_dspark")
+        missing.assert_called_once_with(gguf_runner.PORT_REQUIRED_MODULES)
+        return code
+
+    def test_port_writes_into_a_fresh_output_with_provenance(self):
+        def convert(gguf_path, out_dir, q_bits, log):
+            (out_dir / "config.json").write_text("{}", encoding="utf-8")
+
+        self.assertEqual(self.run_port(convert), 0)
+        marker = json.loads((self.out / gguf_runner.PROVENANCE_NAME).read_text(encoding="utf-8"))
+        self.assertEqual((marker["port"], marker["q_bits"], marker["source"]["path"]), ("deepseek_v4_dspark", 4, str(self.source)))
+        self.assertFalse(self.out.with_name(self.out.name + ".hf-intermediate").exists())
+
+    def test_a_failed_port_leaves_no_output(self):
+        def convert(gguf_path, out_dir, q_bits, log):
+            (out_dir / "model-00001.partial.safetensors").write_bytes(b"x")
+            raise ValueError("does not match the DeepSeek-V4 DSpark tensor layout")
+
+        self.assertEqual(self.run_port(convert), 1)
+        self.assertFalse(self.out.exists())
+
+    def test_ports_resolve_inside_the_package(self):
+        location = gguf_runner.PORTS_DIR / gguf_runner.GGUF_PORTS["deepseek_v4_dspark"] / "deepseek_v4_dspark" / "convert.py"
+        self.assertTrue(location.is_file())
 
 
 class GGUFRunnerScriptTests(unittest.TestCase):

@@ -39,6 +39,7 @@ Q_BITS_CHOICES = (4, 8)
 EXECUTABLE = "mlx_lm.convert"
 GGUF_RUNNER = Path(__file__).resolve().with_name("gguf_runner.py")
 GGUF_REQUIRED_MODULES = ("torch", "transformers", "gguf")
+GGUF_PORT_REQUIRED_MODULES = ("gguf", "mlx")
 MAX_LOG_TAIL_BYTES = 64 * 1024
 _UNSAFE_SLUG = re.compile(r"[^A-Za-z0-9._-]+")
 _MODEL_TYPE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
@@ -247,6 +248,14 @@ def plan_gguf_convert(gguf_path, q_bits=4, out=None, runner=None, describe=descr
                 shard["total"]
             ),
         )
+    draft = entry.get("draft")
+    if draft is not None and draft.get("port") is None:
+        raise ConvertError(
+            "unsupported_draft",
+            "{0} is a {1} speculative-decoding drafter for {2}; it runs only beside that model and no port converts it.".format(
+                location.name, entry.get("architecture"), draft.get("target") or "its target model"),
+            "Convert the target model itself; DeepSeek-V4 DSpark is the only drafter family mlx-agent converts.",
+        )
     if out is None:
         out = "{0}-MLX-{1}bit".format(location.stem, q_bits)
     resolved_runner = Path(runner) if runner is not None else GGUF_RUNNER
@@ -275,6 +284,10 @@ def plan_gguf_convert(gguf_path, q_bits=4, out=None, runner=None, describe=descr
     }
     if entry.get("signature"):
         plan["argv"].extend(["--signature", entry["signature"]])
+    if draft is not None:
+        plan["draft"] = dict(draft)
+        plan["port_converter"] = draft["port"]
+        plan["argv"].extend(["--port", draft["port"]])
     return _finalize_plan(plan)
 
 
@@ -366,14 +379,15 @@ def start_convert(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "Install mlx-lm yourself (pip install mlx-lm); convert never installs runtimes.",
         )
     if _source_kind(plan) == "gguf":
-        missing = (module_present or _default_module_present)(GGUF_REQUIRED_MODULES)
+        required = GGUF_PORT_REQUIRED_MODULES if plan.get("port_converter") else GGUF_REQUIRED_MODULES
+        missing = (module_present or _default_module_present)(required)
         if missing:
             raise ConvertError(
                 "runtime_not_installed",
                 "GGUF conversion needs these modules in this interpreter: {0}.".format(
                     ", ".join(missing)
                 ),
-                "Install them yourself (for example: uv pip install torch transformers gguf); convert never installs runtimes.",
+                "Install them yourself (for example: uv pip install {0}); convert never installs runtimes.".format(" ".join(required)),
             )
         if not Path(plan["source"]["path"]).is_file():
             raise ConvertError(

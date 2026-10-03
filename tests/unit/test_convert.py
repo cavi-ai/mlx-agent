@@ -14,7 +14,7 @@ from mlx_agent.convert import (
 
 from jsonschema import Draft202012Validator
 
-from .test_gguf import write_gguf
+from .test_gguf import _UINT32, _kv, write_gguf
 
 RECEIPT_SCHEMA = Draft202012Validator(json.loads(
     (Path(__file__).resolve().parents[2] / "schemas" / "convert-receipt.schema.json").read_text(encoding="utf-8")
@@ -400,6 +400,22 @@ class PlanGGUFConvertTests(unittest.TestCase):
             plan_gguf_convert(source, runner=self.runner)
         self.assertEqual(caught.exception.code, "shard_not_first")
 
+    def test_dspark_drafter_runs_the_port(self):
+        source = write_gguf(self.root / "dspark-DeepSeek-V4-Flash-0731-Q8_0.gguf", architecture="dflash",
+                            name="DeepSeek-V4-Flash-0731", extra=(_kv("dflash.hyper_connection.count", _UINT32, 4),))
+        plan = plan_gguf_convert(source, runner=self.runner)
+        self.assertEqual(plan["argv"][-2:], ["--port", "deepseek_v4_dspark"])
+        self.assertEqual(plan["port_converter"], "deepseek_v4_dspark")
+        self.assertEqual(plan["draft"]["target"], "DeepSeek-V4-Flash-0731")
+        self.assertEqual(plan["out"], "dspark-DeepSeek-V4-Flash-0731-Q8_0-MLX-4bit")
+
+    def test_rejects_drafters_no_port_converts(self):
+        source = write_gguf(self.root / "eagle3-Llama.gguf", architecture="eagle3", name="Llama 3.1 8B")
+        with self.assertRaises(ConvertError) as caught:
+            plan_gguf_convert(source, runner=self.runner)
+        self.assertEqual(caught.exception.code, "unsupported_draft")
+        self.assertIn("Llama 3.1 8B", str(caught.exception))
+
     def test_rejects_bad_q_bits(self):
         source = write_gguf(self.root / "gamma-Q4_K_M.gguf", name="Gamma")
         with self.assertRaises(ConvertError) as caught:
@@ -440,6 +456,19 @@ class StartGGUFConvertTests(unittest.TestCase):
             self._start(self._plan(), module_present=lambda names: ["torch", "gguf"])
         self.assertEqual(caught.exception.code, "runtime_not_installed")
         self.assertIn("torch", str(caught.exception))
+
+    def test_port_conversions_need_gguf_and_mlx_only(self):
+        source = write_gguf(self.root / "dspark.gguf", architecture="dflash", name="DeepSeek-V4-Flash-0731",
+                            extra=(_kv("dflash.hyper_connection.count", _UINT32, 4),))
+        plan = plan_gguf_convert(source, out=str(self.root / "drafter-out"), runner=self.runner)
+        asked = []
+        self._start(plan, module_present=lambda names: asked.append(names) or [])
+        self.assertEqual(asked, [("gguf", "mlx")])
+        self.assertEqual(self.spawned[0][-2:], ["--port", "deepseek_v4_dspark"])
+        with self.assertRaises(ConvertError) as caught:
+            self._start(plan_gguf_convert(source, out=str(self.root / "drafter-two"), runner=self.runner),
+                        module_present=lambda names: ["mlx"], pid_alive=lambda pid: False)
+        self.assertIn("uv pip install gguf mlx", caught.exception.remediation)
 
     def test_deleted_source_is_gated(self):
         plan = self._plan()

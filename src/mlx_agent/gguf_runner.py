@@ -8,14 +8,18 @@ nothing from :mod:`mlx_agent`. Two bounded steps, in order:
 2. quantize those weights into MLX with the ``mlx_lm.convert`` executable.
 
 The intermediate fp16 checkpoint is large and temporary; it is removed unless
-``--keep-intermediate`` is passed. The worker writes a provenance marker into
-the output so a later scan can tell which GGUF produced it.
+``--keep-intermediate`` is passed. ``--port`` instead hands the GGUF to a
+bundled port that writes the MLX weights itself, for architectures
+``transformers`` cannot load (llama.cpp's DSpark drafters). The worker writes a
+provenance marker into the output so a later scan can tell which GGUF produced
+it.
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import shutil
@@ -67,6 +71,10 @@ PROVENANCE_NAME = "mlx-converter.json"
 SIGNATURE_CHUNK_BYTES = 1024 * 1024
 EXECUTABLE = "mlx_lm.convert"
 REQUIRED_MODULES = ("torch", "transformers", "gguf")
+PORT_REQUIRED_MODULES = ("gguf", "mlx")
+PORTS_DIR = Path(__file__).resolve().parent / "resources" / "ports"
+# --port name to its converter under resources/ports/<backend>/<name>/convert.py.
+GGUF_PORTS = {"deepseek_v4_dspark": "mlx-lm"}
 
 
 def _log(message):
@@ -85,11 +93,9 @@ def _signature(path, chunk_bytes=SIGNATURE_CHUNK_BYTES):
     return digest.hexdigest()
 
 
-def _missing_modules():
-    import importlib.util
-
+def _missing_modules(names=REQUIRED_MODULES):
     missing = []
-    for name in REQUIRED_MODULES:
+    for name in names:
         if importlib.util.find_spec(name) is None:
             missing.append(name)
     return missing
@@ -130,7 +136,23 @@ def quantize(work_dir, out_dir, q_bits):
         raise RuntimeError("{0} exited {1}".format(EXECUTABLE, completed.returncode))
 
 
-def write_provenance(out_dir, gguf_path, q_bits, signature):
+def load_port(name):
+    """The bundled port's ``convert`` module, loaded by path (this runner imports nothing from mlx_agent)."""
+    location = PORTS_DIR / GGUF_PORTS[name] / name / "convert.py"
+    spec = importlib.util.spec_from_file_location("mlx_agent_gguf_port_{0}".format(name), location)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def convert_with_port(name, gguf_path, out_dir, q_bits):
+    """Run a bundled port into a fresh ``out_dir``; returns the port's summary."""
+    out_dir.mkdir(parents=True)
+    _log("converting {0} with the {1} port".format(gguf_path.name, name))
+    return load_port(name).convert(gguf_path, out_dir, q_bits, log=_log)
+
+
+def write_provenance(out_dir, gguf_path, q_bits, signature, port=None):
     marker = {
         "schema_version": "1.0",
         "tool": "mlx-agent.gguf",
@@ -144,6 +166,8 @@ def write_provenance(out_dir, gguf_path, q_bits, signature):
             "signature": signature,
         },
     }
+    if port is not None:
+        marker["port"] = port
     target = Path(out_dir) / PROVENANCE_NAME
     target.write_text(
         json.dumps(marker, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -158,6 +182,7 @@ def main(argv=None):
     parser.add_argument("--work-dir", default=None)
     parser.add_argument("--signature", default=None)
     parser.add_argument("--keep-intermediate", action="store_true")
+    parser.add_argument("--port", choices=sorted(GGUF_PORTS), default=None)
     arguments = parser.parse_args(argv)
 
     gguf_path = Path(arguments.gguf).expanduser()
@@ -168,10 +193,25 @@ def main(argv=None):
     if out_dir.exists():
         _log("output already exists: {0}".format(out_dir))
         return 2
-    missing = _missing_modules()
+    missing = _missing_modules(PORT_REQUIRED_MODULES if arguments.port else REQUIRED_MODULES)
     if missing:
         _log("missing required modules: {0}".format(", ".join(missing)))
         return 2
+    if arguments.port:
+        try:
+            convert_with_port(arguments.port, gguf_path, out_dir, arguments.q_bits)
+            write_provenance(
+                out_dir, gguf_path, arguments.q_bits,
+                arguments.signature or _signature(gguf_path), port=arguments.port,
+            )
+        except (OSError, RuntimeError, ValueError, ImportError, KeyError) as error:
+            _log("conversion failed: {0}".format(error))
+            if out_dir.is_dir():
+                shutil.rmtree(out_dir, ignore_errors=True)
+                _log("removed partial output {0}".format(out_dir))
+            return 1
+        _log("converted {0} -> {1}".format(gguf_path.name, out_dir))
+        return 0
 
     work_dir = Path(arguments.work_dir) if arguments.work_dir else out_dir.with_name(
         out_dir.name + ".hf-intermediate"

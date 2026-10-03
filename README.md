@@ -278,6 +278,8 @@ python3 scripts/mlx-agent intake port-plan https://huggingface.co/org/name --end
 
 `convert start --gguf` dequantizes the GGUF to Hugging Face weights with `transformers`, then quantizes those to MLX with `mlx_lm.convert`, under the same preview-confirm-receipt gates. It needs `torch`, `transformers`, and `gguf` importable by the same interpreter and never installs them. The output carries an `mlx-converter.json` provenance marker naming its source GGUF.
 
+llama.cpp speculative-decoding drafters (`dflash`, `eagle3`) borrow their target's embeddings and output head and run only beside it; `convert scan` labels them `speculative_draft` with a `draft` object (`port`, `target`, `block_size`) and keys them apart from their target. A DeepSeek-V4 DSpark drafter (`dflash` with hyper-connections) converts through the bundled `deepseek_v4_dspark` port (`resources/ports/mlx-lm/`, run with `--port`, needing only `gguf` and `mlx`): tensors keep DeepSeek's checkpoint names with `mtp.N` as `stages.N`, the FP8-sourced projections quantize to the requested bits, the MXFP4 routed experts repack to MLX `mxfp4` without rounding, and `config.json` records `dspark_target_layer_ids`, `dspark_block_size`, `dspark_noise_token_id`, `dspark_markov_rank`, the target's name, and the drafter's DeepSeek-V4 parameters under `text_config`. Other drafters are refused at plan time (`unsupported_draft`).
+
 LoRA training (confirmation-gated, dataset-validated):
 
 ```bash

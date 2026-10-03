@@ -9,12 +9,12 @@ from pathlib import Path
 from .backends import (
     BackendError, is_vision_type, load_manifests, load_registries, lookup, lookup_squashed, squash_type,
 )
-from .gguf import MAX_CONFIG_BYTES
+from .gguf import DRAFT_ARCHITECTURES, MAX_CONFIG_BYTES
 from .modality import detect_facets, detect_modalities
 
 TASK_TYPES = (
     "text_llm", "vision_language", "speech_to_text", "text_to_speech",
-    "embedding", "classification", "image_generation", "other",
+    "embedding", "classification", "image_generation", "speculative_draft", "other",
 )
 # Ordered specific-first; the last entry is the type's default use case.
 USE_CASES = {
@@ -25,6 +25,7 @@ USE_CASES = {
     "embedding": ("reranking", "retrieval"),
     "classification": ("moderation", "routing", "classification"),
     "image_generation": ("image_generation",),
+    "speculative_draft": ("speculative_decoding",),
     "other": (),
 }
 PIPELINE_TYPES = {
@@ -63,6 +64,8 @@ _SPECIFIC_TOKENS = (
 )
 # llama.cpp multimodal projectors (mmproj files) are model parts, not models.
 _GGUF_PROJECTOR_ARCHITECTURES = ("clip", "mmproj")
+# A converted DSpark drafter's config.json (mlx-agent's port, mlx-community's sidecars).
+_DRAFT_CONFIG_KEYS = ("dspark_target_layer_ids",)
 _VISION_KEYS = ("vision_config", "vision_tower", "mm_vision_tower", "visual", "vision_encoder")
 _EMBEDDING_NAME = re.compile(r"(?<![a-z0-9])(embed|embedding|embeddings|bge|e5|gte)(?![a-z])")
 _VISION_NAME = re.compile(r"(?<![a-z0-9])(vl|vlm|vision|llava)(?![a-z])")
@@ -131,6 +134,11 @@ def _type_from_name(haystack):
 
 
 def _task_type(haystack, pipeline_tag, model_type, config_keys, gguf_architecture, manifests, registries, local):
+    # A drafter is tagged like its target (text-generation) but cannot run alone.
+    if gguf_architecture and squash_type(gguf_architecture) in DRAFT_ARCHITECTURES:
+        return "speculative_draft", "gguf_architecture", "confirmed"
+    if any(key in config_keys for key in _DRAFT_CONFIG_KEYS):
+        return "speculative_draft", "config", "confirmed"
     if pipeline_tag in PIPELINE_TYPES:
         return PIPELINE_TYPES[pipeline_tag], "pipeline_tag", "confirmed"
     if model_type and manifests:

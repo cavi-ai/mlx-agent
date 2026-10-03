@@ -59,7 +59,8 @@ class DescribeTests(unittest.TestCase):
         plan = self.plan(self.model(), prompt="What? ; rm -rf /\nsecond", max_tokens=64, temperature=0.5, max_pixels=1000000)
         argv = plan["argv"]
         self.assertEqual(argv[:2], [str(self.root / "backends" / "mlx-vlm" / "bin" / "python"), str(DESCRIBE_RUNNER)])
-        self.assertEqual(argv[argv.index("--prompt") + 1], "What? ; rm -rf /\nsecond")
+        self.assertIn("--prompt=What? ; rm -rf /\nsecond", argv)
+        self.assertIn("--prompt=-x", self.plan(self.model(), prompt="-x")["argv"])
         self.assertEqual([argv[argv.index(flag) + 1] for flag in ("--image", "--max-tokens", "--temperature", "--max-pixels")],
                          [self.image, "64", "0.5", "1000000"])
         self.assertNotIn("--video", argv)

@@ -53,11 +53,15 @@ class SpeakTests(unittest.TestCase):
         plan = self.plan(self.model(), text="Hi; rm -rf /\nsecond line", voice="af_heart", speed=1.25, lang_code="en-US")
         argv = plan["argv"]
         self.assertEqual(argv[:2], [str(self.root / "backends" / "mlx-audio" / "bin" / "python"), str(SPEAK_RUNNER)])
-        self.assertEqual(argv[argv.index("--text") + 1], "Hi; rm -rf /\nsecond line")
+        self.assertIn("--text=Hi; rm -rf /\nsecond line", argv)
         self.assertEqual(argv[argv.index("--model-type") + 1], "kokoro")
         self.assertEqual([argv[argv.index(flag) + 1] for flag in ("--out", "--speed", "--voice", "--lang-code")],
                          [self.out, "1.25", "af_heart", "en-US"])
         self.assertEqual((plan["backend"], plan["voice"], plan["speed"], plan["lang_code"]), ("mlx-audio", "af_heart", 1.25, "en-US"))
+
+    def test_plan_passes_text_that_looks_like_a_flag_as_its_own_value(self):
+        self.assertIn("--text=--speed 9", self.plan(self.model(), text="--speed 9")["argv"])
+        self.assertIn("--text=-x", self.plan(self.model(), text="-x")["argv"])
 
     def test_plan_omits_voice_and_language_unless_given(self):
         argv = self.plan(self.model())["argv"]

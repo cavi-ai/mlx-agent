@@ -117,7 +117,7 @@ def plan_describe(model_path, prompt, image=None, video=None, max_tokens=256, te
         )
     used_fps = (DEFAULT_FPS if fps is None else float(fps)) if kind == "video" else None
     argv = [
-        str(backend_python(manifest, root)), str(DESCRIBE_RUNNER), "--model", str(model), "--prompt", prompt,
+        str(backend_python(manifest, root)), str(DESCRIBE_RUNNER), "--model", str(model), "--prompt=" + prompt,
         "--{0}".format(kind), str(media), "--max-tokens", str(max_tokens), "--temperature", repr(float(temperature)),
     ]
     if used_fps is not None:

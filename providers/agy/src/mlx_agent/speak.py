@@ -108,7 +108,7 @@ def plan_speak(model_path, text, out, voice=None, speed=1.0, lang_code=None,
     model_type = hits[0]["module"].rsplit(".", 1)[-1]
     argv = [
         str(backend_python(manifest, root)), str(SPEAK_RUNNER), "--model", str(model), "--model-type", model_type,
-        "--text", text, "--out", str(target), "--speed", repr(float(speed)),
+        "--text=" + text, "--out", str(target), "--speed", repr(float(speed)),
     ]
     if voice is not None:
         argv += ["--voice", voice]

@@ -1,0 +1,39 @@
+{
+  "schema": "backend/1",
+  "id": "mflux",
+  "version": "0.20.0",
+  "builtin": false,
+  "package": "mflux",
+  "convert": "mflux.models.common.cli.save",
+  "lock": "mflux.lock",
+  "ports": {
+    "image_generation": [
+      "qwen_image_21"
+    ]
+  },
+  "port_convert": {
+    "qwen_image_21": "convert"
+  },
+  "port_pipelines": {
+    "QwenImage21Pipeline": "qwen_image_21"
+  },
+  "port_recipes": {
+    "abenzerps/Qwen-Image-2.1-Uncensored-GGUF": {
+      "port": "qwen_image_21",
+      "base": "Qwen/Qwen-Image-2.1",
+      "base_revision": "d26bb61231c349cf6b7896fa83353113880e1ba3",
+      "lora": "qwen-image-2.1-uncensored-lora.safetensors",
+      "lora_scale": 1.0
+    }
+  },
+  "categories": {
+    "image_generation": "mlx_agent_ports"
+  },
+  "remap_files": {},
+  "registry": {
+    "image_generation": {
+      "model_types": [],
+      "remapping": {}
+    }
+  }
+}

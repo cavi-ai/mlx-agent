@@ -150,6 +150,8 @@ class ClassificationTaxonomyTests(unittest.TestCase):
         local = classify("laya-MLX-4bit", model_type="laya", manifests=manifests, registries=registries, local=True)
         self.assertEqual((local["type"], local["source"]), ("classification", "registry"))
         self.assertEqual(use_cases_for("classification", "plain"), ["classification"])
+        image = classify("qwen-image-2.1-uc-MLX-8bit", model_type="qwen_image_21", manifests=manifests, registries=registries, local=True)
+        self.assertEqual((image["type"], image["source"]), ("image_generation", "registry"))
 
 
 if __name__ == "__main__":

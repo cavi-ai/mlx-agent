@@ -1,4 +1,5 @@
 import json
+import json
 import struct
 import unittest
 from pathlib import Path
@@ -197,6 +198,24 @@ class ScanTests(unittest.TestCase):
         write_mlx_output(self.root / "plain-torch-model", quantization=False)
         outputs = scan_mlx_outputs([self.root])
         self.assertEqual([item["name"] for item in outputs], ["converted-model-MLX-4bit"])
+
+    def test_component_layout_outputs_need_weights_in_every_listed_component(self):
+        def write(name, components, weights):
+            directory = self.root / name
+            directory.mkdir()
+            (directory / "config.json").write_text(json.dumps(
+                {"model_type": "qwen_image_21", "components": components, "quantization": {"bits": 8}}), encoding="utf-8")
+            for component in weights:
+                (directory / component).mkdir()
+                (directory / component / "0.safetensors").write_bytes(b"x")
+            (directory / "transformer" / "config.json").write_text("{}", encoding="utf-8") if "transformer" in weights else None
+
+        write("image-MLX-8bit", ["transformer", "text_encoder", "vae"], ["transformer", "text_encoder", "vae"])
+        write("missing-vae-MLX-8bit", ["transformer", "vae"], ["transformer"])
+        write("escape-MLX-8bit", ["../x"], [])
+        outputs = scan_mlx_outputs([self.root])
+        self.assertEqual([(item["name"], item["quantization"]["model_type"]) for item in outputs],
+                         [("image-MLX-8bit", "qwen_image_21")])
 
     def test_mlx_output_provenance_is_read(self):
         write_mlx_output(

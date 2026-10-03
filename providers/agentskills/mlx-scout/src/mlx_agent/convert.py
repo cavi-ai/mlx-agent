@@ -16,6 +16,7 @@ from .backends import (
     load_manifests,
     port_bits,
     port_converter,
+    recipe_for,
     read_install_marker,
     spawn_with_env,
     sync_ports,
@@ -61,19 +62,27 @@ def receipts_root(root=None, kind="convert"):
     return base / ".mlx-agent-receipts" / kind
 
 
-def cached_subfolder(repo, subfolder, hf_cache=None):
-    """``<cache>/models--org--name/snapshots/<refs/main>/<subfolder>`` when that folder is cached, else None."""
+def cached_snapshot(repo, hf_cache=None, revision=None):
+    """``<cache>/models--org--name/snapshots/<revision or refs/main>`` when that snapshot is cached, else None."""
     from .model_doctor import default_hf_cache
 
     entry = (Path(hf_cache) if hf_cache else default_hf_cache()) / "models--{0}".format(repo.replace("/", "--"))
-    try:
-        revision = (entry / "refs" / "main").read_text(encoding="utf-8").strip()
-    except OSError:
+    if revision is None:
+        try:
+            revision = (entry / "refs" / "main").read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+    if not revision or "/" in revision or revision in (".", ".."):
         return None
-    folder = entry / "snapshots" / revision / subfolder
-    if not revision or "/" in revision or not folder.is_dir():
-        return None
-    return folder
+    snapshot = entry / "snapshots" / revision
+    return snapshot if snapshot.is_dir() else None
+
+
+def cached_subfolder(repo, subfolder, hf_cache=None):
+    """``<cached snapshot>/<subfolder>`` when that folder is cached, else None."""
+    snapshot = cached_snapshot(repo, hf_cache)
+    folder = snapshot / subfolder if snapshot is not None else None
+    return folder if folder is not None and folder.is_dir() else None
 
 
 def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backends_root_dir=None, model_type=None,
@@ -147,6 +156,10 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
     plan["backend"] = backend
     plan["backends_root"] = str(python.parent.parent.parent)
     converter = port_converter(model_type, backend, manifests)
+    recipe = recipe_for(repo, manifests) if converter else None
+    if recipe and recipe["backend"] == backend and recipe["port"] == model_type:
+        flags = _recipe_flags(recipe, flags, hf_cache)
+        plan["recipe"] = {key: recipe[key] for key in ("base", "base_revision", "lora", "lora_scale")}
     plan["argv"] = [str(python), "-m", converter or manifest["convert"]] + flags
     ports = sorted(name for names in (manifest.get("ports") or {}).values() for name in names)
     if ports:
@@ -154,6 +167,23 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
     if converter:
         plan["port_converter"] = converter
     return _finalize_plan(plan)
+
+
+def _recipe_flags(recipe, flags, hf_cache):
+    """Converter flags for a recipe: the cached base snapshot and the cached LoRA, both local."""
+    base = cached_snapshot(recipe["base"], hf_cache, revision=recipe["base_revision"])
+    snapshot = cached_snapshot(recipe["repo"], hf_cache)
+    lora = snapshot / recipe["lora"] if snapshot is not None else None
+    if base is None or lora is None or not lora.is_file():
+        raise ConvertError(
+            "recipe_not_cached",
+            "{0} needs {1}@{2} and its {3} in the Hugging Face cache.".format(
+                recipe["repo"], recipe["base"], recipe["base_revision"][:7], recipe["lora"]),
+            "Download it first: mlx-agent intake fetch {0} --model-type {1}.".format(recipe["repo"], recipe["port"]),
+        )
+    flags = list(flags)
+    flags[flags.index("--hf-path") + 1] = str(base)
+    return flags + ["--lora", str(lora), "--lora-scale", repr(float(recipe["lora_scale"]))]
 
 
 def _finalize_plan(plan):

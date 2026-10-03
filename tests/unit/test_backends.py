@@ -190,7 +190,7 @@ class InstallStateTests(unittest.TestCase):
 class ManifestTests(unittest.TestCase):
     def test_declared_manifests_load(self):
         manifests = load_manifests()
-        self.assertEqual(sorted(manifests), ["mlx-audio", "mlx-embeddings", "mlx-lm", "mlx-vlm"])
+        self.assertEqual(sorted(manifests), ["mflux", "mlx-audio", "mlx-embeddings", "mlx-lm", "mlx-vlm"])
         self.assertTrue(manifests["mlx-lm"]["builtin"])
         self.assertEqual(manifests["mlx-audio"]["version"], "0.5.7")
         self.assertEqual(manifests["mlx-vlm"]["version"], "0.7.4")
@@ -345,6 +345,36 @@ class ClassificationPortTests(unittest.TestCase):
             if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", None) == "SOURCE_FILES"
         )
         self.assertEqual(sorted(port_files("laya", "mlx-embeddings", self.manifests)), sorted(sources))
+
+    def test_image_ports_resolve_by_pipeline_class_and_curated_recipe(self):
+        from mlx_agent.backends import port_for_pipeline, recipe_for
+
+        self.assertEqual(port_for_pipeline("QwenImage21Pipeline", self.manifests), "qwen_image_21")
+        self.assertIsNone(port_for_pipeline("FluxPipeline", self.manifests))
+        recipe = recipe_for("ABENZERPS/qwen-image-2.1-uncensored-gguf", self.manifests)
+        self.assertEqual((recipe["backend"], recipe["port"], recipe["lora_scale"]), ("mflux", "qwen_image_21", 1.0))
+        self.assertIsNone(recipe_for("Qwen/Qwen-Image-2.1", self.manifests))
+        registries = load_registries(self.manifests, root=Path(self.directory.name), find_spec=lambda name: None)
+        hits = lookup("qwen_image_21", self.manifests, registries)
+        self.assertEqual([(hit["backend"], hit["category"], hit["module"]) for hit in hits],
+                         [("mflux", "image_generation", "mflux.mlx_agent_ports.qwen_image_21")])
+        self.assertEqual(choose_backend(hits, "image_generation"), "mflux")
+        manifest = self.manifests["mflux"]
+        recipe = manifest["port_recipes"]["abenzerps/Qwen-Image-2.1-Uncensored-GGUF"]
+        directory = Path(self.directory.name) / "mflux"
+        directory.mkdir()
+        bad = [
+            {"port_pipelines": {"QwenImage21Pipeline": "other"}}, {"port_pipelines": {"lowercase": "qwen_image_21"}},
+            {"port_recipes": {"x/y": dict(recipe, base_revision="main")}}, {"port_recipes": {"x/y": dict(recipe, lora="../l.safetensors")}},
+            {"port_recipes": {"x/y": dict(recipe, lora_scale=0)}}, {"port_recipes": {"x/y": dict(recipe, port="other")}},
+            {"port_recipes": {"x/y": dict(recipe, extra=1)}}, {"port_recipes": {"bad id": recipe}},
+        ]
+        for fields in bad:
+            with self.subTest(fields=fields):
+                (directory / "mflux.json").write_text(json.dumps(dict(manifest, **fields)), encoding="utf-8")
+                with self.assertRaises(BackendError) as caught:
+                    load_manifests(directory)
+                self.assertEqual(caught.exception.code, "manifest_invalid")
 
     def test_port_converter_signature_and_group_size_are_validated(self):
         bad = [

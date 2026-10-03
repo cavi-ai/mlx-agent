@@ -101,6 +101,8 @@ def _type_from_hits(hits, config_keys, haystack, vision_module=False, allow_visi
         return "text_to_speech"
     if "classification" in categories:
         return "classification"
+    if "image_generation" in categories:
+        return "image_generation"
     if allow_vision and "vision_language" in categories and (
         any(key in config_keys for key in _VISION_KEYS)
         or (vision_module and "text_llm" not in categories)

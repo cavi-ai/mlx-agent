@@ -67,6 +67,7 @@ from .models import DISCOVERY_ROLES, render_md, wire
 from .port_analysis import PortAnalysisError, analyze as port_analyze
 from .transcribe import TranscribeError, plan_transcribe, run_transcribe
 from .decide import DecideError, plan_decide, run_decide
+from .generate import GenerateError, plan_generate, run_generate
 from .port_plan import draft_port_plan
 from .project_blueprint import (
     build_brief,
@@ -1618,6 +1619,19 @@ def _add_convert_arguments(parser):
     decide.add_argument("--request", required=True, help='JSON file: {"state": ..., "questions": {...}}')
     decide.add_argument("--timeout", type=int, default=300, help="seconds before the backend run is stopped")
     decide.add_argument("--json", action="store_true")
+    generate = actions.add_parser(
+        "generate",
+        help="render one prompt with a converted image-generation model to a new PNG (verification canary)",
+    )
+    generate.add_argument("--path", required=True, help="converted image model directory")
+    generate.add_argument("--prompt", required=True)
+    generate.add_argument("--out", required=True, help="new absolute .png path")
+    generate.add_argument("--width", type=int, default=1024)
+    generate.add_argument("--height", type=int, default=1024)
+    generate.add_argument("--steps", type=int, default=40)
+    generate.add_argument("--seed", type=int, default=42)
+    generate.add_argument("--timeout", type=int, default=1800, help="seconds before the backend run is stopped")
+    generate.add_argument("--json", action="store_true")
 
 
 def _run_convert(arguments):
@@ -1644,6 +1658,13 @@ def _run_convert(arguments):
             return _emit_serve_result(
                 ResultEnvelope.ok(operation, result), arguments.json, human=json.dumps(result["answers"], indent=2),
             )
+        if arguments.convert_command == "generate":
+            if not 1 <= arguments.timeout <= 7200:
+                raise ValueError("--timeout must be 1..7200 seconds")
+            plan = plan_generate(arguments.path, arguments.prompt, arguments.out, width=arguments.width,
+                                 height=arguments.height, steps=arguments.steps, seed=arguments.seed)
+            result = run_generate(plan, timeout=arguments.timeout)
+            return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
         if arguments.convert_command == "scan":
             report = _convert_scan(arguments)
             return _emit_serve_result(
@@ -1692,7 +1713,7 @@ def _run_convert(arguments):
                 receipt["repo"], receipt["out"], receipt["pid"], receipt["log_path"]
             ),
         )
-    except (ConvertError, GGUFError, TranscribeError, DecideError) as error:
+    except (ConvertError, GGUFError, TranscribeError, DecideError, GenerateError) as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         result = ResultEnvelope.fail(

@@ -9,7 +9,7 @@ import math
 
 from .backends import (
     choose_backend, component_matches, load_manifests, load_registries, lookup, port_bits, port_files,
-    port_for_files, quantize_rule, snapshot_files,
+    port_for_files, port_for_pipeline, quantize_rule, recipe_for, snapshot_files,
 )
 from .huggingface import HuggingFaceClient, HuggingFaceHTTPError
 from .intake_fetch import FETCH_IGNORE_PATTERNS
@@ -187,9 +187,31 @@ def _empty_payload(text, source):
         "verdict": "unknown", "reasons": [], "backend": None, "backend_installed": False,
         "model_type": None, "components": [], "task": None, "custom_code": False, "gated": False,
         "library_name": None, "pipeline_tag": None, "transformers_version": None, "bytes": 0,
-        "download_bytes": 0, "estimated_output_bytes": None, "q_bits": list(ESTIMATE_BITS),
+        "download_bytes": 0, "estimated_output_bytes": None, "q_bits": list(ESTIMATE_BITS), "recipe": None,
         "files": {"safetensors": 0, "gguf": [], "python": []}, "warnings": [],
     }
+
+
+def fetch_pipeline_class(client, repo, revision, warnings, prefix=""):
+    """``_class_name`` of a diffusers ``model_index.json``, or None."""
+    try:
+        value = json.loads(client.fetch_raw_text(repo, revision, prefix + "model_index.json"))
+    except TRANSPORT_ERRORS as error:
+        warnings.append("model_index.json unreadable: {0}".format(error))
+        return None
+    return _text(value.get("_class_name")) if isinstance(value, dict) else None
+
+
+def recipe_download_bytes(client, recipe, files, warnings):
+    """The base snapshot (less ignored formats) plus the recipe's LoRA: what fetch downloads for a recipe."""
+    lora = files["sizes"].get(recipe["lora"], 0)
+    try:
+        info = client.fetch_model_info(recipe["base"], revision=recipe["base_revision"])
+    except (HuggingFaceHTTPError,) + TRANSPORT_ERRORS as error:
+        warnings.append("{0} size unavailable: {1}".format(recipe["base"], error))
+        return lora
+    base = summarize_files(info if isinstance(info, dict) else {})
+    return lora + download_bytes(base, None, {})
 
 
 def download_bytes(files, model_type, manifests):
@@ -265,15 +287,30 @@ def resolve(text, revision=None, client=None, manifests=None, registries=None):
     config = {}
     if "config.json" in files["names"] and not payload["gated"]:
         config = fetch_config(client, source["repo"], source["revision"], payload["warnings"], prefix)
+    recipe = None if subfolder or payload["gated"] else recipe_for(source["repo"], manifests)
+    if recipe is not None and recipe["lora"] not in files["names"]:
+        payload["warnings"].append("{0} no longer ships {1}; its recipe does not apply".format(source["repo"], recipe["lora"]))
+        recipe = None
+    pipeline = None
+    if recipe is None and "model_index.json" in files["names"] and not payload["gated"]:
+        pipeline = port_for_pipeline(
+            fetch_pipeline_class(client, source["repo"], source["revision"], payload["warnings"], prefix), manifests,
+        )
     payload["model_type"] = (
-        _text(config.get("model_type")) or _text(api_config.get("model_type"))
+        (recipe["port"] if recipe else None) or pipeline
+        or _text(config.get("model_type")) or _text(api_config.get("model_type"))
         or (None if payload["gated"] else port_for_files(files["names"], manifests))
     )
+    if recipe is not None:
+        payload["recipe"] = {key: recipe[key] for key in ("base", "base_revision", "lora", "lora_scale")}
     payload["transformers_version"] = _text(config.get("transformers_version"))
     payload["custom_code"] = (
         "custom_code" in tags or bool(config.get("auto_map")) or bool(api_config.get("auto_map"))
     )
-    payload["download_bytes"] = download_bytes(files, payload["model_type"], manifests)
+    payload["download_bytes"] = (
+        recipe_download_bytes(client, recipe, files, payload["warnings"]) if recipe
+        else download_bytes(files, payload["model_type"], manifests)
+    )
     payload["components"] = components(payload["model_type"], config, manifests, registries)
     payload["task"] = classify(
         source["repo"], tags=tags, pipeline_tag=payload["pipeline_tag"],
@@ -287,6 +324,9 @@ def resolve(text, revision=None, client=None, manifests=None, registries=None):
     )
     if verdict in ("convertible", "convertible_after_install"):
         payload["q_bits"] = port_bits(payload["model_type"], backend, manifests) or list(ESTIMATE_BITS)
+    # A recipe's weights come from its base repository and a pipeline's from component folders,
+    # whose quantization the header estimate does not model: no estimate rather than a wrong one.
+    if verdict in ("convertible", "convertible_after_install") and not recipe and not pipeline:
         payload["estimated_output_bytes"] = estimate_output_bytes(
             client, source["repo"], source["revision"], files,
             quantize_rule(payload["model_type"], backend, manifests), payload["warnings"],

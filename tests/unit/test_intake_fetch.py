@@ -70,6 +70,16 @@ class FetchTests(unittest.TestCase):
         self.assertEqual(argv[argv.index("--allow") + 1], "chat/*")
         self.assertNotEqual(generic["preview_hash"], plan_fetch("org/name", python="/venv/bin/python")["preview_hash"])
 
+    def test_a_recipe_downloads_its_base_snapshot_and_its_lora(self):
+        plan = plan_fetch("abenzerps/Qwen-Image-2.1-Uncensored-GGUF", python="/venv/bin/python", model_type="qwen_image_21")
+        argv = plan["argv"]
+        self.assertEqual(plan["allow_patterns"], ["qwen-image-2.1-uncensored-lora.safetensors"])
+        self.assertEqual(plan["base"], {"repo": "Qwen/Qwen-Image-2.1", "revision": "d26bb61231c349cf6b7896fa83353113880e1ba3"})
+        self.assertEqual(argv[argv.index("--base-repo") + 1], "Qwen/Qwen-Image-2.1")
+        self.assertEqual([argv[i + 1] for i, value in enumerate(argv) if value == "--base-ignore"], list(FETCH_IGNORE_PATTERNS))
+        self.assertNotIn("--ignore", argv)
+        self.assertIsNone(plan_fetch("abenzerps/Qwen-Image-2.1-Uncensored-GGUF", python="/venv/bin/python")["base"])
+
     def test_start_and_status_lifecycle(self):
         plan = plan_fetch("org/name", python="/venv/bin/python")
         self.assertEqual(start_fetch(plan)["status"], "preview")
@@ -137,6 +147,13 @@ class FetchTests(unittest.TestCase):
         fetch_runner.main(["--repo", "org/name", "--revision", "main", "--allow", "model.safetensors",
                            "--allow", "encoder/config.json", "--marker", str(marker)], download=download)
         self.assertEqual(seen["allow_patterns"], ["model.safetensors", "encoder/config.json"])
+        calls = []
+        fetch_runner.main(["--repo", "org/lora", "--revision", "main", "--allow", "x.safetensors", "--base-repo", "org/base",
+                           "--base-revision", "abc", "--base-ignore", "*.h5", "--marker", str(marker)],
+                          download=lambda **kwargs: calls.append(kwargs) or "/hf/" + kwargs["repo_id"])
+        self.assertEqual(calls, [{"repo_id": "org/base", "revision": "abc", "ignore_patterns": ["*.h5"]},
+                                 {"repo_id": "org/lora", "revision": "main", "allow_patterns": ["x.safetensors"]}])
+        self.assertEqual(json.loads(marker.read_text(encoding="utf-8"))["path"], "/hf/org/lora")
 
 
 if __name__ == "__main__":

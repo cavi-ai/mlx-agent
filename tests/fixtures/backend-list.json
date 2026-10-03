@@ -3,6 +3,21 @@
     {
       "builtin": false,
       "categories": [
+        "image_generation"
+      ],
+      "completed_at": null,
+      "id": "mflux",
+      "log_path": null,
+      "model_types": 1,
+      "registry_source": "snapshot",
+      "started_at": null,
+      "state": "absent",
+      "target": "/backends/mflux",
+      "version": "0.20.0"
+    },
+    {
+      "builtin": false,
+      "categories": [
         "speech_to_text",
         "text_to_speech"
       ],

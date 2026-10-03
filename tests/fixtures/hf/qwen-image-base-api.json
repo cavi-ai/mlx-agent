@@ -1,0 +1,137 @@
+{
+ "config": {
+  "diffusers": {
+   "_class_name": "QwenImage21Pipeline"
+  }
+ },
+ "gated": false,
+ "id": "Qwen/Qwen-Image-2.1",
+ "library_name": "diffusers",
+ "pipeline_tag": "text-to-image",
+ "siblings": [
+  {
+   "rfilename": ".gitattributes",
+   "size": 1630
+  },
+  {
+   "rfilename": "LICENSE",
+   "size": 7831
+  },
+  {
+   "rfilename": "README.md",
+   "size": 5707
+  },
+  {
+   "rfilename": "assets/qr.png",
+   "size": 3332800
+  },
+  {
+   "rfilename": "model_index.json",
+   "size": 447
+  },
+  {
+   "rfilename": "processor/added_tokens.json",
+   "size": 707
+  },
+  {
+   "rfilename": "processor/chat_template.jinja",
+   "size": 5292
+  },
+  {
+   "rfilename": "processor/merges.txt",
+   "size": 1671853
+  },
+  {
+   "rfilename": "processor/preprocessor_config.json",
+   "size": 782
+  },
+  {
+   "rfilename": "processor/special_tokens_map.json",
+   "size": 613
+  },
+  {
+   "rfilename": "processor/tokenizer.json",
+   "size": 11422654
+  },
+  {
+   "rfilename": "processor/tokenizer_config.json",
+   "size": 5445
+  },
+  {
+   "rfilename": "processor/video_preprocessor_config.json",
+   "size": 817
+  },
+  {
+   "rfilename": "processor/vocab.json",
+   "size": 2776833
+  },
+  {
+   "rfilename": "scheduler/scheduler_config.json",
+   "size": 485
+  },
+  {
+   "rfilename": "text_encoder/config.json",
+   "size": 1517
+  },
+  {
+   "rfilename": "text_encoder/generation_config.json",
+   "size": 213
+  },
+  {
+   "rfilename": "text_encoder/model-00001-of-00004.safetensors",
+   "size": 4998056552
+  },
+  {
+   "rfilename": "text_encoder/model-00002-of-00004.safetensors",
+   "size": 4915962464
+  },
+  {
+   "rfilename": "text_encoder/model-00003-of-00004.safetensors",
+   "size": 4915962496
+  },
+  {
+   "rfilename": "text_encoder/model-00004-of-00004.safetensors",
+   "size": 2704357976
+  },
+  {
+   "rfilename": "text_encoder/model.safetensors.index.json",
+   "size": 67795
+  },
+  {
+   "rfilename": "transformer/config.json",
+   "size": 370
+  },
+  {
+   "rfilename": "transformer/diffusion_pytorch_model-00001-of-00002.safetensors",
+   "size": 9968332504
+  },
+  {
+   "rfilename": "transformer/diffusion_pytorch_model-00002-of-00002.safetensors",
+   "size": 4261951904
+  },
+  {
+   "rfilename": "transformer/diffusion_pytorch_model.safetensors.index.json",
+   "size": 30283
+  },
+  {
+   "rfilename": "vae/config.json",
+   "size": 2079
+  },
+  {
+   "rfilename": "vae/diffusion_pytorch_model.safetensors",
+   "size": 1350989512
+  }
+ ],
+ "tags": [
+  "diffusers",
+  "safetensors",
+  "qwen",
+  "image-generation",
+  "image-editing",
+  "rgba",
+  "text-to-image",
+  "license:other",
+  "diffusers:QwenImage21Pipeline",
+  "region:us"
+ ]
+}

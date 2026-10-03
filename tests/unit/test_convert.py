@@ -117,6 +117,36 @@ class BackendConvertTests(unittest.TestCase):
         folder.mkdir(parents=True)
         return folder
 
+    def test_a_recipe_converts_from_the_cached_base_and_lora(self):
+        base = self.root / "hub" / "models--Qwen--Qwen-Image-2.1" / "snapshots" / "d26bb61231c349cf6b7896fa83353113880e1ba3"
+        base.mkdir(parents=True)
+        with self.assertRaises(ConvertError) as caught:
+            plan_convert("abenzerps/Qwen-Image-2.1-Uncensored-GGUF", q_bits=8, backend="mflux", model_type="qwen_image_21",
+                         hf_cache=str(self.root / "hub"), backends_root_dir=self.root)
+        self.assertEqual(caught.exception.code, "recipe_not_cached")
+        lora = self.cache("abenzerps/Qwen-Image-2.1-Uncensored-GGUF", ".")
+        (lora / "qwen-image-2.1-uncensored-lora.safetensors").write_bytes(b"x")
+        plan = plan_convert("abenzerps/Qwen-Image-2.1-Uncensored-GGUF", q_bits=8, backend="mflux", model_type="qwen_image_21",
+                            out=str(self.root / "out"), hf_cache=str(self.root / "hub"), backends_root_dir=self.root)
+        argv = plan["argv"]
+        self.assertEqual(argv[1:3], ["-m", "mflux.mlx_agent_ports.qwen_image_21.convert"])
+        self.assertEqual(argv[argv.index("--hf-path") + 1], str(base))
+        self.assertEqual(Path(argv[argv.index("--lora") + 1]).resolve(), (lora / "qwen-image-2.1-uncensored-lora.safetensors").resolve())
+        self.assertEqual((argv[-2], argv[-1]), ("--lora-scale", "1.0"))
+        self.assertEqual(plan["recipe"]["base"], "Qwen/Qwen-Image-2.1")
+        venv = self.root / "mflux"
+        (venv / "lib" / "python3.12" / "site-packages" / "mflux").mkdir(parents=True)
+        (venv / "bin").mkdir()
+        (venv / "bin" / "python").write_text("", encoding="utf-8")
+        (venv / ".mlx-agent-backend.json").write_text(json.dumps({"id": "mflux", "version": "0.20.0"}), encoding="utf-8")
+        outcome = start_convert(plan, receipts_dir=str(self.root), confirm=True, preview_hash=plan["preview_hash"],
+                                spawn=lambda argv, log: 99, model_present=lambda repo: True)
+        RECEIPT_SCHEMA.validate(outcome["receipt"])
+        self.assertTrue((venv / "lib" / "python3.12" / "site-packages" / "mflux" / "mlx_agent_ports" / "qwen_image_21" / "convert.py").is_file())
+        pipeline = plan_convert("Qwen/Qwen-Image-2.1", q_bits=4, backend="mflux", model_type="qwen_image_21", backends_root_dir=self.root)
+        self.assertEqual(pipeline["argv"][pipeline["argv"].index("--hf-path") + 1], "Qwen/Qwen-Image-2.1")
+        self.assertNotIn("recipe", pipeline)
+
     def test_a_subfolder_receipt_matches_the_receipt_schema(self):
         self.cache("org/name", "chat")
         plan = plan_convert("org/name", subfolder="chat", out=str(self.root / "out"), hf_cache=str(self.root / "hub"))

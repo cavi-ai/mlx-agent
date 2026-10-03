@@ -1,0 +1,101 @@
+{
+ "config": {},
+ "gated": false,
+ "id": "abenzerps/Qwen-Image-2.1-Uncensored-GGUF",
+ "library_name": "gguf",
+ "pipeline_tag": "text-to-image",
+ "siblings": [
+  {
+   "rfilename": ".gitattributes",
+   "size": 2353
+  },
+  {
+   "rfilename": "README.md",
+   "size": 7856
+  },
+  {
+   "rfilename": "SHA256SUMS",
+   "size": 1774
+  },
+  {
+   "rfilename": "assets/Qwen-Image-2.1-Benchmark.png",
+   "size": 269621
+  },
+  {
+   "rfilename": "qwen-image-2.1-UC-BF16.gguf",
+   "size": 14230272800
+  },
+  {
+   "rfilename": "qwen-image-2.1-UC-MLX-4bit.safetensors",
+   "size": 4002363741
+  },
+  {
+   "rfilename": "qwen-image-2.1-UC-MLX-6bit.safetensors",
+   "size": 5781141974
+  },
+  {
+   "rfilename": "qwen-image-2.1-UC-MLX-8bit.safetensors",
+   "size": 7559920348
+  },
+  {
+   "rfilename": "qwen-image-2.1-UC-NVFP4.safetensors",
+   "size": 4197574696
+  },
+  {
+   "rfilename": "qwen-image-2.1-UC-Q4_0.gguf",
+   "size": 4151573280
+  },
+  {
+   "rfilename": "qwen-image-2.1-UC-Q4_K_M.gguf",
+   "size": 4604558112
+  },
+  {
+   "rfilename": "qwen-image-2.1-UC-Q5_K_M.gguf",
+   "size": 5221284640
+  },
+  {
+   "rfilename": "qwen-image-2.1-UC-Q6_K.gguf",
+   "size": 5876556576
+  },
+  {
+   "rfilename": "qwen-image-2.1-UC-Q8_0.gguf",
+   "size": 7591557920
+  },
+  {
+   "rfilename": "qwen-image-2.1-UC-fp8.safetensors",
+   "size": 7116818183
+  },
+  {
+   "rfilename": "qwen-image-2.1-UC-int8_convrot.safetensors",
+   "size": 7256796840
+  },
+  {
+   "rfilename": "qwen-image-2.1-uncensored-lora.safetensors",
+   "size": 33586704
+  },
+  {
+   "rfilename": "text_encoders/qwen3vl_8b_bf16.safetensors",
+   "size": 17534334616
+  },
+  {
+   "rfilename": "text_encoders/qwen3vl_8b_int8_convrot.safetensors",
+   "size": 9350798360
+  },
+  {
+   "rfilename": "vae/qwen_image_2.1_vae_bf16.safetensors",
+   "size": 675509688
+  }
+ ],
+ "tags": [
+  "gguf",
+  "qwen",
+  "image-generation",
+  "comfyui",
+  "comfyui-gguf",
+  "text-to-image",
+  "base_model:Qwen/Qwen-Image-2.1",
+  "base_model:quantized:Qwen/Qwen-Image-2.1",
+  "license:other",
+  "region:us"
+ ]
+}

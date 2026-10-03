@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema", "source", "verdict", "reasons", "backend", "backend_installed", "model_type",
                "components", "task", "custom_code", "gated", "library_name", "pipeline_tag",
-               "transformers_version", "bytes", "download_bytes", "estimated_output_bytes", "q_bits", "files", "warnings"],
+               "transformers_version", "bytes", "download_bytes", "estimated_output_bytes", "q_bits", "recipe", "files", "warnings"],
   "properties": {
     "schema": {"const": "intake/1"},
     "source": {"$ref": "#/$defs/source"},
@@ -25,6 +25,13 @@
     "bytes": {"type": "integer", "minimum": 0},
     "download_bytes": {"type": "integer", "minimum": 0},
     "q_bits": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": [4, 8]}},
+    "recipe": {"oneOf": [{"type": "null"}, {
+      "type": "object", "additionalProperties": false, "required": ["base", "base_revision", "lora", "lora_scale"],
+      "properties": {
+        "base": {"type": "string"}, "base_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "lora": {"type": "string"}, "lora_scale": {"type": "number"}
+      }
+    }]},
     "estimated_output_bytes": {"oneOf": [{"type": "null"}, {"type": "object", "properties": {"4": {"type": "integer", "minimum": 0}, "8": {"type": "integer", "minimum": 0}}, "required": ["4", "8"], "additionalProperties": false}]},
     "files": {
       "type": "object", "additionalProperties": false,
@@ -58,7 +65,7 @@
       "required": ["backend", "category", "match", "module"],
       "properties": {
         "backend": {"type": "string"},
-        "category": {"enum": ["text_llm", "vision_language", "speech_to_text", "text_to_speech", "classification"]},
+        "category": {"enum": ["text_llm", "vision_language", "speech_to_text", "text_to_speech", "classification", "image_generation"]},
         "match": {"enum": ["exact", "remap", "stripped", "squashed"]},
         "module": {"type": "string"}
       }

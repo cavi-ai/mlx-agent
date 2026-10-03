@@ -74,6 +74,32 @@ def golden_laya(text="convaiinnovations/laya", config=None):
     return client, resolve(text, client=client, manifests=manifests, registries=registries)
 
 
+class ReposClient(FakeClient):
+    """Model info per repository (a recipe reads its base repository's listing too)."""
+
+    def __init__(self, infos, **kwargs):
+        super().__init__(**kwargs)
+        self.infos = infos
+        self.info_requests = []
+
+    def fetch_model_info(self, repo, revision="main", timeout=8):
+        self.info_requests.append((repo, revision))
+        if repo not in self.infos:
+            raise HuggingFaceHTTPError(404, "missing")
+        return self.infos[repo]
+
+
+def qwen_image(repo):
+    uc = json.loads((FIXTURES / "hf" / "qwen-image-uc-api.json").read_text(encoding="utf-8"))
+    base = json.loads((FIXTURES / "hf" / "qwen-image-base-api.json").read_text(encoding="utf-8"))
+    index = (FIXTURES / "hf" / "qwen-image-model-index.json").read_text(encoding="utf-8")
+    client = ReposClient({"abenzerps/Qwen-Image-2.1-Uncensored-GGUF": uc, "Qwen/Qwen-Image-2.1": base},
+                         files={"model_index.json": index})
+    manifests = load_manifests()
+    registries = load_registries(manifests, root=Path("/nonexistent"), find_spec=lambda name: None)
+    return client, resolve(repo, client=client, manifests=manifests, registries=registries)
+
+
 def repo_info(model_type=None, tags=(), pipeline_tag=None, library_name="transformers", files=("config.json", "model.safetensors"), gated=False, sizes=True):
     siblings = []
     for name in files:
@@ -169,6 +195,26 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual((payload["model_type"], payload["verdict"], payload["q_bits"]), ("qwen2", "convertible", [4, 8]))
         self.assertEqual(client.raw_requests, ["chat/config.json"])
         self.assertEqual((payload["bytes"], payload["download_bytes"]), (3000, 2000))
+
+    def test_a_recipe_repo_converts_from_its_pinned_base_and_lora(self):
+        client, payload = qwen_image("abenzerps/Qwen-Image-2.1-Uncensored-GGUF")
+        self.validator.validate(payload)
+        self.assertEqual((payload["verdict"], payload["backend"], payload["model_type"]),
+                         ("convertible_after_install", "mflux", "qwen_image_21"))
+        self.assertEqual(payload["task"]["type"], "image_generation")
+        self.assertEqual(payload["recipe"], {"base": "Qwen/Qwen-Image-2.1", "base_revision": "d26bb61231c349cf6b7896fa83353113880e1ba3",
+                                             "lora": "qwen-image-2.1-uncensored-lora.safetensors", "lora_scale": 1.0})
+        self.assertEqual(client.info_requests[-1], ("Qwen/Qwen-Image-2.1", "d26bb61231c349cf6b7896fa83353113880e1ba3"))
+        self.assertEqual(payload["download_bytes"], 33134949561 + 33586704)
+        self.assertIsNone(payload["estimated_output_bytes"])
+        self.assertEqual(client.header_requests, [])
+
+    def test_a_diffusers_pipeline_repo_converts_through_its_port(self):
+        client, payload = qwen_image("Qwen/Qwen-Image-2.1")
+        self.validator.validate(payload)
+        self.assertEqual((payload["verdict"], payload["model_type"], payload["recipe"]), ("convertible_after_install", "qwen_image_21", None))
+        self.assertEqual(client.raw_requests, ["model_index.json"])
+        self.assertIsNone(payload["estimated_output_bytes"])
 
     def test_laya_golden_fixture_matches(self):
         expected = json.loads((FIXTURES / "intake-resolve-laya.json").read_text(encoding="utf-8"))

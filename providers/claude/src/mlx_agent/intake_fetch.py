@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .backends import backend_environment, load_manifests, snapshot_files, spawn_with_env
+from .backends import backend_environment, load_manifests, recipe_for, snapshot_files, spawn_with_env
 from .convert import _default_module_present, _write_receipt, receipts_root
 from .intake_source import parse_hf_source, validate_file, validate_revision
 from .serve import _pid_alive
@@ -54,11 +54,21 @@ def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, py
     argv = [python, str(FETCH_RUNNER), "--repo", source["repo"], "--revision", source["revision"]]
     ignore_patterns, allow_patterns = [], []
     prefix = source["subfolder"] + "/" if source.get("subfolder") else ""
-    ported = None
+    ported = recipe = None
     if not source["file"] and model_type:
-        ported = snapshot_files(model_type, load_manifests() if manifests is None else manifests)
+        manifests = load_manifests() if manifests is None else manifests
+        ported = snapshot_files(model_type, manifests)
+        recipe = None if prefix else recipe_for(source["repo"], manifests)
+        recipe = recipe if recipe and recipe["port"] == model_type else None
     if source["file"]:
         argv += ["--file", source["file"]]
+    elif recipe:
+        # The recipe's model is its pinned base snapshot plus the LoRA this repository ships.
+        allow_patterns = [recipe["lora"]]
+        ignore_patterns = list(FETCH_IGNORE_PATTERNS)
+        argv += ["--allow", recipe["lora"], "--base-repo", recipe["base"], "--base-revision", recipe["base_revision"]]
+        for pattern in ignore_patterns:
+            argv += ["--base-ignore", pattern]
     else:
         if ported:
             allow_patterns = [prefix + name for name in ported]
@@ -80,6 +90,7 @@ def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, py
     plan = {
         "repo": source["repo"], "revision": source["revision"], "file": source["file"],
         "subfolder": source.get("subfolder"),
+        "base": {"repo": recipe["base"], "revision": recipe["base_revision"]} if recipe else None,
         "cache_dir": str(hf_cache) if hf_cache else None,
         "local_dir": str(local) if local is not None else None,
         "ignore_patterns": ignore_patterns,

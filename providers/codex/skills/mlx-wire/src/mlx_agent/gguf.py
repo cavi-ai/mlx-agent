@@ -422,6 +422,20 @@ def _mlx_config(directory):
     }
 
 
+def _component_weights(directory):
+    """A converter that saves per-component folders (mflux) lists them in config.json ``components``."""
+    try:
+        value = json.loads((Path(directory) / "config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    names = value.get("components") if isinstance(value, dict) else None
+    if not isinstance(names, list) or not names or not all(
+        isinstance(name, str) and name and "/" not in name and name not in (".", "..") for name in names
+    ):
+        return False
+    return all(any(Path(directory, name).glob("*.safetensors")) for name in names)
+
+
 def scan_mlx_outputs(roots, limit=MAX_SCAN_FILES):
     """Inventory MLX model directories beneath the configured roots."""
     outputs = []
@@ -437,9 +451,9 @@ def scan_mlx_outputs(roots, limit=MAX_SCAN_FILES):
             )
             if "config.json" not in filenames:
                 continue
-            if not any(name.endswith(".safetensors") for name in filenames):
-                continue
             directory = Path(dirpath)
+            if not any(name.endswith(".safetensors") for name in filenames) and not _component_weights(directory):
+                continue
             provenance = read_provenance(directory)
             marker = _mlx_config(directory)
             if provenance is None and marker is None:

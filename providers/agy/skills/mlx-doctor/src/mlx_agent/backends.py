@@ -19,7 +19,7 @@ PORTS_DIR = Path(__file__).resolve().parent / "resources" / "ports"
 MANIFEST_SCHEMA = "backend/1"
 INSTALL_MARKER = ".mlx-agent-backend.json"
 PORT_MARKER = ".mlx-agent-port.json"
-CATEGORIES = ("text_llm", "vision_language", "speech_to_text", "text_to_speech", "classification")
+CATEGORIES = ("text_llm", "vision_language", "speech_to_text", "text_to_speech", "classification", "image_generation")
 MAX_PROBE_FILES = 4000
 MAX_PROBE_FILE_BYTES = 1024 * 1024
 TYPE_PREFERENCE = {
@@ -28,11 +28,15 @@ TYPE_PREFERENCE = {
     "vision_language": ("mlx-vlm", "mlx-lm"),
     "text_llm": ("mlx-lm", "mlx-vlm"),
     "classification": ("mlx-embeddings",),
+    "image_generation": ("mflux",),
 }
 DEFAULT_PREFERENCE = ("mlx-lm", "mlx-vlm", "mlx-audio")
 _ID = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
 _PORT = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _PORT_FILE = re.compile(r"[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*")
+_PIPELINE = re.compile(r"[A-Z][A-Za-z0-9]{0,95}")
+_REPO_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}")
+_COMMIT = re.compile(r"[0-9a-f]{40}")
 _STRIP_SUFFIXES = ("_encoder", "_decoder", "_text", "_vision", "_audio", "_model")
 _VISION_FILE = re.compile(r"(vision|visual|image|siglip|clip)", re.IGNORECASE)
 _ENV_ALLOWLIST = (
@@ -123,6 +127,14 @@ def _validate_manifest(value, path):
         isinstance(module, str) and _PORT.fullmatch(module) for module in converters.values()
     ):
         raise _invalid(path, "port_convert maps declared ports to a module inside the port")
+    pipelines = value.get("port_pipelines", {})
+    if not isinstance(pipelines, dict) or not all(
+        isinstance(name, str) and _PIPELINE.fullmatch(name) and port in ported for name, port in pipelines.items()
+    ):
+        raise _invalid(path, "port_pipelines map diffusers pipeline classes to declared ports")
+    recipes = value.get("port_recipes", {})
+    if not isinstance(recipes, dict) or not all(_valid_recipe(repo, recipe, ported) for repo, recipe in recipes.items()):
+        raise _invalid(path, "port_recipes map repositories to a declared port, a pinned base repository, and a LoRA file")
     signatures = value.get("port_signatures", {})
     if not isinstance(signatures, dict) or not set(signatures) <= ported or not all(
         isinstance(files, list) and files and all(
@@ -131,6 +143,44 @@ def _validate_manifest(value, path):
         for files in signatures.values()
     ):
         raise _invalid(path, "port_signatures map declared ports to the relative files that identify them")
+
+
+def _valid_recipe(repo, recipe, ported):
+    if not isinstance(repo, str) or not _REPO_ID.fullmatch(repo) or not isinstance(recipe, dict):
+        return False
+    if set(recipe) != {"port", "base", "base_revision", "lora", "lora_scale"} or recipe["port"] not in ported:
+        return False
+    scale = recipe["lora_scale"]
+    return (
+        isinstance(recipe["base"], str) and bool(_REPO_ID.fullmatch(recipe["base"]))
+        and isinstance(recipe["base_revision"], str) and bool(_COMMIT.fullmatch(recipe["base_revision"]))
+        and isinstance(recipe["lora"], str) and bool(_PORT_FILE.fullmatch(recipe["lora"])) and ".." not in recipe["lora"].split("/")
+        and recipe["lora"].endswith(".safetensors")
+        and isinstance(scale, (int, float)) and not isinstance(scale, bool) and 0 < scale <= 4
+    )
+
+
+def port_for_pipeline(class_name, manifests):
+    """The port that converts a diffusers pipeline class (``model_index.json`` ``_class_name``), or None."""
+    for backend_id in sorted(manifests):
+        port = (manifests[backend_id].get("port_pipelines") or {}).get(class_name)
+        if port:
+            return port
+    return None
+
+
+def recipe_for(repo, manifests):
+    """A curated recipe for a repository whose model is a base checkpoint plus its own LoRA, or None.
+
+    Each recipe was checked against the repository's merged weights; the result
+    carries the backend and port with the recipe fields.
+    """
+    wanted = (repo or "").casefold()
+    for backend_id in sorted(manifests):
+        for name, recipe in (manifests[backend_id].get("port_recipes") or {}).items():
+            if name.casefold() == wanted:
+                return dict(recipe, backend=backend_id, repo=name)
+    return None
 
 
 def quantize_rule(model_type, backend_id, manifests):

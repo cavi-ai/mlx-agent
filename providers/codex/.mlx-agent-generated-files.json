@@ -158,7 +158,7 @@
     },
     {
       "path": "src/mlx_agent/intake.py",
-      "sha256": "8efffd0afb840bf995752b04830f22f0a039e16ffcf8b35a3a1a3fc9ab241c05"
+      "sha256": "bf7c601b495169bd2e81a0a75aef654464e218edd7b774c7212ee349fdd6fe95"
     },
     {
       "path": "src/mlx_agent/intake_fetch.py",

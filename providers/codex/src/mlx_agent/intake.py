@@ -104,6 +104,9 @@ def estimate_output_bytes(client, repo, revision, files, rule, warnings, support
     shards = sorted(name for name in files["names"] if name.endswith(".safetensors") and "/" not in name)
     if not shards or len(shards) > ESTIMATE_MAX_SHARDS:
         return None
+    if any(name.endswith(".pth") for name in files["names"]):
+        # PyTorch pickles (a Wan checkpoint's text encoder and VAE) hold weights the headers do not describe.
+        return None
     totals = {bits: 0 for bits in ESTIMATE_BITS}
     for shard in shards:
         try:

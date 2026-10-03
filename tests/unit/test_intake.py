@@ -228,6 +228,8 @@ class ResolveTests(unittest.TestCase):
                          ("video_generation", ["video_generation"], "pipeline_tag"))
         self.assertEqual((payload["q_bits"], payload["download_bytes"], payload["recipe"]), ([4, 8], 17573837064, None))
         self.assertEqual(client.raw_requests, ["config.json"])
+        self.assertIsNone(payload["estimated_output_bytes"])
+        self.assertEqual(client.header_requests, [])
 
     def test_a_diffusers_pipeline_repo_converts_through_its_port(self):
         client, payload = qwen_image("Qwen/Qwen-Image-2.1")

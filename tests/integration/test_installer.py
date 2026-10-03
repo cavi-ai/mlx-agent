@@ -502,10 +502,6 @@ class InstallerRoundTripTests(unittest.TestCase):
         self.assertEqual(outer_before, (self.config / "outer" / "skills" / "outer" / "SKILL.md").read_bytes())
         for removed in ("skills/a/src/mlx_agent/module.py", "skills/b/scripts/mlx-agent"):
             self.assertIn("-VALUE = 1" if removed.endswith(".py") else "-#!/usr/bin/env python3", plan.preview["diff"])
-        self.assertEqual(
-            ["scripts", "skills", "skills/a", "skills/b", "src", "src/mlx_agent"],
-            sorted(str(path.relative_to(inner)) for path in inner.rglob("*") if path.is_dir()),
-        )
         self.assertTrue(all(item.status == "applied" for item in receipt.receipts))
 
         doctor = installer.execute(installer.plan("doctor", ["inner"], "user", self.project))

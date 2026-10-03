@@ -146,7 +146,7 @@
     },
     {
       "path": "src/mlx_agent/installer.py",
-      "sha256": "c5a35e7cf4e7f3ed845b0a089a1788ed63c1d77833a839b3881f8e2987c72674"
+      "sha256": "0dd9b15853d33245cc19b17bc58a92ffcefefb5c2478573ab55a79c543607a32"
     },
     {
       "path": "src/mlx_agent/intake.py",

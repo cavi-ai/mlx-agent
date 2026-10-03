@@ -162,32 +162,6 @@ def _read_optional_target(path):
         raise
 
 
-def _remove_empty_parents(provider_root, destinations):
-    """Remove emptied directories above each destination, never a top-level directory of the provider root."""
-    for destination in sorted(destinations):
-        try:
-            relative = destination.relative_to(provider_root)
-        except ValueError:
-            # Some providers own companion artifacts (for example,
-            # provider command files) beneath a host-wide directory
-            # rather than their package directory.  Removing empty
-            # parents there could remove host-owned structure.
-            continue
-        stop = provider_root / relative.parts[0]
-        current = destination.parent
-        while current != stop:
-            try:
-                _parent, descriptor = _walk_directory(current.parent)
-                try:
-                    os.rmdir(current.name, dir_fd=descriptor)
-                    os.fsync(descriptor)
-                finally:
-                    os.close(descriptor)
-            except (FileNotFoundError, OSError, ValueError):
-                break
-            current = current.parent
-
-
 def _adapter_for_artifact(artifact):
     return _adapter_for_parts(artifact.source.parts)
 
@@ -283,7 +257,6 @@ class Installer:
                 if receipt.status != "applied":
                     raise InstallerConflictError("provider transaction did not apply: {0}".format(receipt.status))
                 successful.append(receipt)
-            self._prune_emptied_dirs(plan)
             self._batch_update(batch_path, "complete", successful)
             return InstallerReceipt("applied", all_receipts, successful[-1].receipt_path, [target for item in successful for target in item.targets], str(batch_path))
         except LegacyLockError as error:
@@ -453,15 +426,28 @@ class Installer:
                 for artifact in definition.artifacts if definition.applies_to(plan.scope, artifact)
             }
             destinations.update(Path(name) for receipt in plan.rollback_receipts for name in receipt.targets)
-            _remove_empty_parents(provider_root, destinations)
-
-    def _prune_emptied_dirs(self, plan):
-        """After an update removed stale files, drop the directories it emptied."""
-        definitions = self.registry.definitions()
-        for item in plan.transactions:
-            removed = {Path(change["path"]) for change in item.changes if change.get("remove")}
-            if removed:
-                _remove_empty_parents(definitions[item.provider_id].destination(plan.scope, plan.project_root), removed)
+            for destination in sorted(destinations):
+                try:
+                    relative = destination.relative_to(provider_root)
+                except ValueError:
+                    # Some providers own companion artifacts (for example,
+                    # provider command files) beneath a host-wide directory
+                    # rather than their package directory.  Removing empty
+                    # parents there could remove host-owned structure.
+                    continue
+                stop = provider_root / relative.parts[0]
+                current = destination.parent
+                while current != stop:
+                    try:
+                        _parent, descriptor = _walk_directory(current.parent)
+                        try:
+                            os.rmdir(current.name, dir_fd=descriptor)
+                            os.fsync(descriptor)
+                        finally:
+                            os.close(descriptor)
+                    except (FileNotFoundError, OSError, ValueError):
+                        break
+                    current = current.parent
 
     def _doctor(self, plan):
         problems, checked, provider_states = [], [], []

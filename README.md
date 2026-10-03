@@ -89,7 +89,7 @@ python3 scripts/mlx-agent install agentskills --scope user --dry-run --json
 python3 scripts/mlx-agent install agentskills --scope user --confirm --preview-hash <preview-hash> --json
 ```
 
-For project scope, add `--scope project --project /absolute/project/path`; skills go to `<project>/.agents/skills/`. Restart the host and confirm that `mlx-scout`, `mlx-adopt`, `mlx-wire`, `mlx-bench`, `mlx-doctor`, `mlx-watch`, and `mlx-fleet` appear in its skills list.
+For project scope, add `--scope project --project /absolute/project/path`; skills go to `<project>/.agents/skills/`. Restart the host and confirm that `mlx-scout`, `mlx-adopt`, `mlx-wire`, `mlx-bench`, `mlx-doctor`, `mlx-watch`, and `mlx-fleet` appear in its skills list. A skill folder copied by hand from an earlier release is not receipt-owned, so the installer refuses to overwrite it; move existing `mlx-*` folders out of the skills directory before the first `install agentskills`.
 
 ### Universal installer and lifecycle
 

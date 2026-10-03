@@ -23,6 +23,8 @@ agy plugin validate "$ROOT/providers/agy"
 agy plugin install "$ROOT/providers/agy"
 AGY_PLUGINS="$(agy plugin list 2>&1)"
 printf '%s\n' "$AGY_PLUGINS" | grep -F "mlx-agent" >/dev/null
+MLX_AGENT_FIXTURE="$ROOT/tests/fixtures/scout_responses.json" \
+  python3 "$HOME/.gemini/config/plugins/mlx-agent/scripts/mlx-agent" discover --limit 1 --json >/dev/null
 
 PROJECT="$SMOKE_ROOT/project"
 mkdir -p "$PROJECT"

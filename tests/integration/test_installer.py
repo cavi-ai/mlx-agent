@@ -502,6 +502,10 @@ class InstallerRoundTripTests(unittest.TestCase):
         self.assertEqual(outer_before, (self.config / "outer" / "skills" / "outer" / "SKILL.md").read_bytes())
         for removed in ("skills/a/src/mlx_agent/module.py", "skills/b/scripts/mlx-agent"):
             self.assertIn("-VALUE = 1" if removed.endswith(".py") else "-#!/usr/bin/env python3", plan.preview["diff"])
+        self.assertEqual(
+            ["scripts", "skills", "skills/a", "skills/b", "src", "src/mlx_agent"],
+            sorted(str(path.relative_to(inner)) for path in inner.rglob("*") if path.is_dir()),
+        )
         self.assertTrue(all(item.status == "applied" for item in receipt.receipts))
 
         doctor = installer.execute(installer.plan("doctor", ["inner"], "user", self.project))
@@ -519,6 +523,36 @@ class InstallerRoundTripTests(unittest.TestCase):
         self.assertEqual([], self._files(inner))
         self.assertEqual(["scripts", "skills", "src"], sorted(path.name for path in inner.rglob("*")))
         self.assertEqual(["skills/outer/SKILL.md"], self._files(self.config / "outer"))
+
+    def test_uninstall_compensation_after_every_rollback_skips_pruned_paths_already_absent(self):
+        self._apply(self._layout_installer("per-skill"), "install", ["inner"])
+        installer = self._layout_installer("package-root")
+        self._apply(installer, "update", ["inner"])
+        inner = self.config / "outer" / "inner"
+        before = {path: (inner / path).read_bytes() for path in self._files(inner)}
+        plan = installer.plan("uninstall", ["inner"], "user", self.project)
+        record = installer._batch_update
+
+        def fail_to_record_completion(path, status, receipts, **kwargs):
+            if status == "complete":
+                raise OSError("injected journal failure after every rollback completed")
+            return record(path, status, receipts, **kwargs)
+
+        installer._batch_update = fail_to_record_completion
+        receipt = installer.execute(plan, confirmed=plan.preview["preview_hash"])
+        self.assertEqual("rolled_back", receipt.status)
+        self.assertEqual(before, {path: (inner / path).read_bytes() for path in self._files(inner)})
+
+    def test_uninstall_refuses_a_file_recreated_at_a_pruned_path(self):
+        self._apply(self._layout_installer("per-skill"), "install", ["inner"])
+        installer = self._layout_installer("package-root")
+        self._apply(installer, "update", ["inner"])
+        recreated = self.config / "outer" / "inner" / "skills" / "b" / "src" / "mlx_agent" / "module.py"
+        recreated.parent.mkdir(parents=True, exist_ok=True)
+        recreated.write_text("VALUE = 'user file'\n")
+        with self.assertRaisesRegex(InstallerConflictError, "recreated at a pruned path"):
+            installer.plan("uninstall", ["inner"], "user", self.project)
+        self.assertEqual("VALUE = 'user file'\n", recreated.read_text())
 
     def test_uninstall_removes_a_layout_the_manifest_no_longer_declares_without_an_update(self):
         self._apply(self._layout_installer("per-skill"), "install", ["inner", "outer"])
@@ -548,15 +582,18 @@ class InstallerRoundTripTests(unittest.TestCase):
         plan = installer.plan("update", ["inner"], "user", self.project)
         calls = []
 
-        def fail_on_third_change(point):
+        # Changes 0-3 write the new layout; 4-7 remove the old one. Fail after two removals.
+        self.assertEqual([False] * 4 + [True] * 4, [bool(change.get("remove")) for change in plan.transactions[0].changes])
+
+        def fail_after_second_removal(point):
             calls.append(point)
-            if point == "after_replace:2":
+            if point == "after_replace:5":
                 raise OSError("injected failure")
 
-        installer.transaction_factory = lambda **kwargs: Transaction(fault_injector=fail_on_third_change, **kwargs)
+        installer.transaction_factory = lambda **kwargs: Transaction(fault_injector=fail_after_second_removal, **kwargs)
         receipt = installer.execute(plan, confirmed=plan.preview["preview_hash"])
         self.assertNotEqual("applied", receipt.status)
-        self.assertIn("after_replace:2", calls)
+        self.assertIn("after_replace:5", calls)
         self.assertEqual(before, {path: (inner / path).read_bytes() for path in self._files(inner)})
 
     def test_uninstall_refuses_user_modified_artifacts(self):

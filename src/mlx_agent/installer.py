@@ -162,6 +162,32 @@ def _read_optional_target(path):
         raise
 
 
+def _remove_empty_parents(provider_root, destinations):
+    """Remove emptied directories above each destination, never a top-level directory of the provider root."""
+    for destination in sorted(destinations):
+        try:
+            relative = destination.relative_to(provider_root)
+        except ValueError:
+            # Some providers own companion artifacts (for example,
+            # provider command files) beneath a host-wide directory
+            # rather than their package directory.  Removing empty
+            # parents there could remove host-owned structure.
+            continue
+        stop = provider_root / relative.parts[0]
+        current = destination.parent
+        while current != stop:
+            try:
+                _parent, descriptor = _walk_directory(current.parent)
+                try:
+                    os.rmdir(current.name, dir_fd=descriptor)
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+            except (FileNotFoundError, OSError, ValueError):
+                break
+            current = current.parent
+
+
 def _adapter_for_artifact(artifact):
     return _adapter_for_parts(artifact.source.parts)
 
@@ -257,6 +283,7 @@ class Installer:
                 if receipt.status != "applied":
                     raise InstallerConflictError("provider transaction did not apply: {0}".format(receipt.status))
                 successful.append(receipt)
+            self._prune_emptied_dirs(plan)
             self._batch_update(batch_path, "complete", successful)
             return InstallerReceipt("applied", all_receipts, successful[-1].receipt_path, [target for item in successful for target in item.targets], str(batch_path))
         except LegacyLockError as error:
@@ -366,6 +393,8 @@ class Installer:
                 if latest.after_modes[target_name] is None:
                     # Pruned by an update: absent by receipt. Rolling back the
                     # chain restores it, so compensation must remove it again.
+                    if _read_optional_target(target) is not None:
+                        raise InstallerConflictError("refusing to uninstall over a file recreated at a pruned path: {0}".format(target))
                     restore_changes.setdefault(provider_id, []).append({
                         "path": target_name, "remove": True, "adapter": _adapter_for_target(target),
                     })
@@ -424,28 +453,15 @@ class Installer:
                 for artifact in definition.artifacts if definition.applies_to(plan.scope, artifact)
             }
             destinations.update(Path(name) for receipt in plan.rollback_receipts for name in receipt.targets)
-            for destination in sorted(destinations):
-                try:
-                    relative = destination.relative_to(provider_root)
-                except ValueError:
-                    # Some providers own companion artifacts (for example,
-                    # provider command files) beneath a host-wide directory
-                    # rather than their package directory.  Removing empty
-                    # parents there could remove host-owned structure.
-                    continue
-                stop = provider_root / relative.parts[0]
-                current = destination.parent
-                while current != stop:
-                    try:
-                        _parent, descriptor = _walk_directory(current.parent)
-                        try:
-                            os.rmdir(current.name, dir_fd=descriptor)
-                            os.fsync(descriptor)
-                        finally:
-                            os.close(descriptor)
-                    except (FileNotFoundError, OSError, ValueError):
-                        break
-                    current = current.parent
+            _remove_empty_parents(provider_root, destinations)
+
+    def _prune_emptied_dirs(self, plan):
+        """After an update removed stale files, drop the directories it emptied."""
+        definitions = self.registry.definitions()
+        for item in plan.transactions:
+            removed = {Path(change["path"]) for change in item.changes if change.get("remove")}
+            if removed:
+                _remove_empty_parents(definitions[item.provider_id].destination(plan.scope, plan.project_root), removed)
 
     def _doctor(self, plan):
         problems, checked, provider_states = [], [], []
@@ -725,7 +741,11 @@ class Installer:
         try:
             affected = {target for receipt in completed for target in receipt.targets}
             for _provider_id, provider_changes in changes:
-                provider_changes = [change for change in provider_changes if change["path"] in affected]
+                # A pruned path the completed rollbacks left absent is already in its pre-uninstall state.
+                provider_changes = [
+                    change for change in provider_changes
+                    if change["path"] in affected and not (change.get("remove") and not expected[change["path"]]["exists"])
+                ]
                 if not provider_changes:
                     continue
                 expected_current = {change["path"]: expected[change["path"]] for change in provider_changes}

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `convert speak`: synthesize one text with a converted text-to-speech model to a new WAV (voice, speed, language), returning audio length, synthesis time, real-time factor, and peak memory (read-only).
+- Add `convert describe`: answer one question about an image or a video with a converted vision-language model through its backend, returning token counts, throughput, and timing (read-only).
 - Committed provider packages hold one runtime per installed package instead of one per skill: tracked files under `providers/` drop from 1871 to about 200. `providers/claude/` is removed (Claude Code and the installer's `claude` provider use the repository-root plugin files); `providers/codex` and `providers/agy` carry one runtime at the package root, which their skills resolve as `<plugin-root>/scripts/mlx-agent`; `providers/opencode` and `providers/agentskills` carry none.
 - `install agentskills` copies the root launcher and runtime into each installed skill, and `install opencode` copies root `src/mlx_agent`; the `cp -R providers/agentskills/...` route is removed from the docs.
 - `update` and `uninstall` remove receipt-owned files that the current manifest no longer declares (the per-skill runtime copies of earlier releases), refusing any whose content changed. Transaction changes accept `remove`, receipted with a backup and restored by rollback.

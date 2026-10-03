@@ -68,6 +68,8 @@ from .port_analysis import PortAnalysisError, analyze as port_analyze
 from .transcribe import TranscribeError, plan_transcribe, run_transcribe
 from .decide import DecideError, plan_decide, run_decide
 from .generate import GenerateError, plan_generate, run_generate
+from .speak import SpeakError, plan_speak, run_speak
+from .describe import DescribeError, plan_describe, run_describe
 from .port_plan import draft_port_plan
 from .project_blueprint import (
     build_brief,
@@ -1632,6 +1634,32 @@ def _add_convert_arguments(parser):
     generate.add_argument("--seed", type=int, default=42)
     generate.add_argument("--timeout", type=int, default=1800, help="seconds before the backend run is stopped")
     generate.add_argument("--json", action="store_true")
+    speak = actions.add_parser(
+        "speak",
+        help="synthesize one text with a converted text-to-speech model to a new WAV (read-only verification canary)",
+    )
+    speak.add_argument("--path", required=True, help="converted text-to-speech model directory")
+    speak.add_argument("--text", required=True, help="text to speak (1..2000 characters)")
+    speak.add_argument("--out", required=True, help="new absolute .wav path")
+    speak.add_argument("--voice", default=None, help="voice name the model lists, such as af_heart")
+    speak.add_argument("--speed", type=float, default=1.0, help="speech speed multiplier (0.5..2.0)")
+    speak.add_argument("--lang-code", default=None, help="language code passed to models that take one")
+    speak.add_argument("--timeout", type=int, default=600, help="seconds before the backend run is stopped")
+    speak.add_argument("--json", action="store_true")
+    describe = actions.add_parser(
+        "describe",
+        help="answer one question about an image or a video with a converted vision-language model (read-only verification canary)",
+    )
+    describe.add_argument("--path", required=True, help="converted vision-language model directory")
+    describe.add_argument("--prompt", required=True, help="question about the media (1..4000 characters)")
+    describe.add_argument("--image", default=None, help="image file (png, jpg, jpeg, webp)")
+    describe.add_argument("--video", default=None, help="video file (mp4, mov, m4v)")
+    describe.add_argument("--max-tokens", type=int, default=256, help="answer length limit (1..4096)")
+    describe.add_argument("--temperature", type=float, default=0.0)
+    describe.add_argument("--fps", type=float, default=None, help="frames per second sampled from --video (0.1..8, default 1.0)")
+    describe.add_argument("--max-pixels", type=int, default=None, help="shrink the media to at most this many pixels")
+    describe.add_argument("--timeout", type=int, default=900, help="seconds before the backend run is stopped")
+    describe.add_argument("--json", action="store_true")
 
 
 def _run_convert(arguments):
@@ -1665,6 +1693,21 @@ def _run_convert(arguments):
                                  height=arguments.height, steps=arguments.steps, seed=arguments.seed)
             result = run_generate(plan, timeout=arguments.timeout)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
+        if arguments.convert_command == "speak":
+            if not 1 <= arguments.timeout <= 7200:
+                raise ValueError("--timeout must be 1..7200 seconds")
+            plan = plan_speak(arguments.path, arguments.text, arguments.out, voice=arguments.voice,
+                              speed=arguments.speed, lang_code=arguments.lang_code)
+            result = run_speak(plan, timeout=arguments.timeout)
+            return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
+        if arguments.convert_command == "describe":
+            if not 1 <= arguments.timeout <= 7200:
+                raise ValueError("--timeout must be 1..7200 seconds")
+            plan = plan_describe(arguments.path, arguments.prompt, image=arguments.image, video=arguments.video,
+                                 max_tokens=arguments.max_tokens, temperature=arguments.temperature,
+                                 fps=arguments.fps, max_pixels=arguments.max_pixels)
+            result = run_describe(plan, timeout=arguments.timeout)
+            return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["text"])
         if arguments.convert_command == "scan":
             report = _convert_scan(arguments)
             return _emit_serve_result(
@@ -1713,7 +1756,7 @@ def _run_convert(arguments):
                 receipt["repo"], receipt["out"], receipt["pid"], receipt["log_path"]
             ),
         )
-    except (ConvertError, GGUFError, TranscribeError, DecideError, GenerateError) as error:
+    except (ConvertError, GGUFError, TranscribeError, DecideError, GenerateError, SpeakError, DescribeError) as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         result = ResultEnvelope.fail(

@@ -1,0 +1,111 @@
+{
+ "config": {
+  "model_type": "t2v"
+ },
+ "gated": false,
+ "id": "Wan-AI/Wan2.1-T2V-1.3B",
+ "library_name": "diffusers",
+ "pipeline_tag": "text-to-video",
+ "siblings": [
+  {
+   "rfilename": ".gitattributes",
+   "size": 2232
+  },
+  {
+   "rfilename": "LICENSE.txt",
+   "size": 11357
+  },
+  {
+   "rfilename": "README.md",
+   "size": 16913
+  },
+  {
+   "rfilename": "Wan2.1_VAE.pth",
+   "size": 507609880
+  },
+  {
+   "rfilename": "assets/.DS_Store",
+   "size": 6148
+  },
+  {
+   "rfilename": "assets/comp_effic.png",
+   "size": 1793594
+  },
+  {
+   "rfilename": "assets/data_for_diff_stage.jpg",
+   "size": 528268
+  },
+  {
+   "rfilename": "assets/i2v_res.png",
+   "size": 891681
+  },
+  {
+   "rfilename": "assets/logo.png",
+   "size": 56322
+  },
+  {
+   "rfilename": "assets/t2v_res.jpg",
+   "size": 301030
+  },
+  {
+   "rfilename": "assets/vben_1.3b_vs_sota.png",
+   "size": 515765
+  },
+  {
+   "rfilename": "assets/vben_vs_sota.png",
+   "size": 1552119
+  },
+  {
+   "rfilename": "assets/video_dit_arch.jpg",
+   "size": 643369
+  },
+  {
+   "rfilename": "assets/video_vae_res.jpg",
+   "size": 212586
+  },
+  {
+   "rfilename": "config.json",
+   "size": 249
+  },
+  {
+   "rfilename": "diffusion_pytorch_model.safetensors",
+   "size": 5676070424
+  },
+  {
+   "rfilename": "examples/i2v_input.JPG",
+   "size": 250628
+  },
+  {
+   "rfilename": "google/umt5-xxl/special_tokens_map.json",
+   "size": 6623
+  },
+  {
+   "rfilename": "google/umt5-xxl/spiece.model",
+   "size": 4548313
+  },
+  {
+   "rfilename": "google/umt5-xxl/tokenizer.json",
+   "size": 16837417
+  },
+  {
+   "rfilename": "google/umt5-xxl/tokenizer_config.json",
+   "size": 61728
+  },
+  {
+   "rfilename": "models_t5_umt5-xxl-enc-bf16.pth",
+   "size": 11361920418
+  }
+ ],
+ "tags": [
+  "diffusers",
+  "safetensors",
+  "t2v",
+  "video",
+  "video-generation",
+  "text-to-video",
+  "en",
+  "zh",
+  "license:apache-2.0",
+  "region:us"
+ ]
+}

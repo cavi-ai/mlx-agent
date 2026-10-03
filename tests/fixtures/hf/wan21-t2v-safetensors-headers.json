@@ -1,0 +1,8629 @@
+{
+ "diffusion_pytorch_model.safetensors": {
+  "__metadata__": {
+   "format": "pt"
+  },
+  "blocks.0.cross_attn.k.bias": {
+   "data_offsets": [
+    0,
+    6144
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.0.cross_attn.k.weight": {
+   "data_offsets": [
+    6144,
+    9443328
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.0.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    9443328,
+    9449472
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.0.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    9449472,
+    9455616
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.0.cross_attn.o.bias": {
+   "data_offsets": [
+    9455616,
+    9461760
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.0.cross_attn.o.weight": {
+   "data_offsets": [
+    9461760,
+    18898944
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.0.cross_attn.q.bias": {
+   "data_offsets": [
+    18898944,
+    18905088
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.0.cross_attn.q.weight": {
+   "data_offsets": [
+    18905088,
+    28342272
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.0.cross_attn.v.bias": {
+   "data_offsets": [
+    28342272,
+    28348416
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.0.cross_attn.v.weight": {
+   "data_offsets": [
+    28348416,
+    37785600
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.0.ffn.0.bias": {
+   "data_offsets": [
+    37785600,
+    37821440
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.0.ffn.0.weight": {
+   "data_offsets": [
+    37821440,
+    92871680
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.0.ffn.2.bias": {
+   "data_offsets": [
+    92871680,
+    92877824
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.0.ffn.2.weight": {
+   "data_offsets": [
+    92877824,
+    147928064
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.0.modulation": {
+   "data_offsets": [
+    147928064,
+    147964928
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.0.norm3.bias": {
+   "data_offsets": [
+    147964928,
+    147971072
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.0.norm3.weight": {
+   "data_offsets": [
+    147971072,
+    147977216
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.0.self_attn.k.bias": {
+   "data_offsets": [
+    147977216,
+    147983360
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.0.self_attn.k.weight": {
+   "data_offsets": [
+    147983360,
+    157420544
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.0.self_attn.norm_k.weight": {
+   "data_offsets": [
+    157420544,
+    157426688
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.0.self_attn.norm_q.weight": {
+   "data_offsets": [
+    157426688,
+    157432832
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.0.self_attn.o.bias": {
+   "data_offsets": [
+    157432832,
+    157438976
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.0.self_attn.o.weight": {
+   "data_offsets": [
+    157438976,
+    166876160
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.0.self_attn.q.bias": {
+   "data_offsets": [
+    166876160,
+    166882304
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.0.self_attn.q.weight": {
+   "data_offsets": [
+    166882304,
+    176319488
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.0.self_attn.v.bias": {
+   "data_offsets": [
+    176319488,
+    176325632
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.0.self_attn.v.weight": {
+   "data_offsets": [
+    176325632,
+    185762816
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.1.cross_attn.k.bias": {
+   "data_offsets": [
+    185762816,
+    185768960
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.1.cross_attn.k.weight": {
+   "data_offsets": [
+    185768960,
+    195206144
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.1.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    195206144,
+    195212288
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.1.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    195212288,
+    195218432
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.1.cross_attn.o.bias": {
+   "data_offsets": [
+    195218432,
+    195224576
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.1.cross_attn.o.weight": {
+   "data_offsets": [
+    195224576,
+    204661760
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.1.cross_attn.q.bias": {
+   "data_offsets": [
+    204661760,
+    204667904
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.1.cross_attn.q.weight": {
+   "data_offsets": [
+    204667904,
+    214105088
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.1.cross_attn.v.bias": {
+   "data_offsets": [
+    214105088,
+    214111232
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.1.cross_attn.v.weight": {
+   "data_offsets": [
+    214111232,
+    223548416
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.1.ffn.0.bias": {
+   "data_offsets": [
+    223548416,
+    223584256
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.1.ffn.0.weight": {
+   "data_offsets": [
+    223584256,
+    278634496
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.1.ffn.2.bias": {
+   "data_offsets": [
+    278634496,
+    278640640
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.1.ffn.2.weight": {
+   "data_offsets": [
+    278640640,
+    333690880
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.1.modulation": {
+   "data_offsets": [
+    333690880,
+    333727744
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.1.norm3.bias": {
+   "data_offsets": [
+    333727744,
+    333733888
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.1.norm3.weight": {
+   "data_offsets": [
+    333733888,
+    333740032
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.1.self_attn.k.bias": {
+   "data_offsets": [
+    333740032,
+    333746176
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.1.self_attn.k.weight": {
+   "data_offsets": [
+    333746176,
+    343183360
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.1.self_attn.norm_k.weight": {
+   "data_offsets": [
+    343183360,
+    343189504
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.1.self_attn.norm_q.weight": {
+   "data_offsets": [
+    343189504,
+    343195648
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.1.self_attn.o.bias": {
+   "data_offsets": [
+    343195648,
+    343201792
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.1.self_attn.o.weight": {
+   "data_offsets": [
+    343201792,
+    352638976
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.1.self_attn.q.bias": {
+   "data_offsets": [
+    352638976,
+    352645120
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.1.self_attn.q.weight": {
+   "data_offsets": [
+    352645120,
+    362082304
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.1.self_attn.v.bias": {
+   "data_offsets": [
+    362082304,
+    362088448
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.1.self_attn.v.weight": {
+   "data_offsets": [
+    362088448,
+    371525632
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.10.cross_attn.k.bias": {
+   "data_offsets": [
+    371525632,
+    371531776
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.10.cross_attn.k.weight": {
+   "data_offsets": [
+    371531776,
+    380968960
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.10.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    380968960,
+    380975104
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.10.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    380975104,
+    380981248
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.10.cross_attn.o.bias": {
+   "data_offsets": [
+    380981248,
+    380987392
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.10.cross_attn.o.weight": {
+   "data_offsets": [
+    380987392,
+    390424576
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.10.cross_attn.q.bias": {
+   "data_offsets": [
+    390424576,
+    390430720
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.10.cross_attn.q.weight": {
+   "data_offsets": [
+    390430720,
+    399867904
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.10.cross_attn.v.bias": {
+   "data_offsets": [
+    399867904,
+    399874048
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.10.cross_attn.v.weight": {
+   "data_offsets": [
+    399874048,
+    409311232
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.10.ffn.0.bias": {
+   "data_offsets": [
+    409311232,
+    409347072
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.10.ffn.0.weight": {
+   "data_offsets": [
+    409347072,
+    464397312
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.10.ffn.2.bias": {
+   "data_offsets": [
+    464397312,
+    464403456
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.10.ffn.2.weight": {
+   "data_offsets": [
+    464403456,
+    519453696
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.10.modulation": {
+   "data_offsets": [
+    519453696,
+    519490560
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.10.norm3.bias": {
+   "data_offsets": [
+    519490560,
+    519496704
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.10.norm3.weight": {
+   "data_offsets": [
+    519496704,
+    519502848
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.10.self_attn.k.bias": {
+   "data_offsets": [
+    519502848,
+    519508992
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.10.self_attn.k.weight": {
+   "data_offsets": [
+    519508992,
+    528946176
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.10.self_attn.norm_k.weight": {
+   "data_offsets": [
+    528946176,
+    528952320
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.10.self_attn.norm_q.weight": {
+   "data_offsets": [
+    528952320,
+    528958464
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.10.self_attn.o.bias": {
+   "data_offsets": [
+    528958464,
+    528964608
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.10.self_attn.o.weight": {
+   "data_offsets": [
+    528964608,
+    538401792
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.10.self_attn.q.bias": {
+   "data_offsets": [
+    538401792,
+    538407936
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.10.self_attn.q.weight": {
+   "data_offsets": [
+    538407936,
+    547845120
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.10.self_attn.v.bias": {
+   "data_offsets": [
+    547845120,
+    547851264
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.10.self_attn.v.weight": {
+   "data_offsets": [
+    547851264,
+    557288448
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.11.cross_attn.k.bias": {
+   "data_offsets": [
+    557288448,
+    557294592
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.11.cross_attn.k.weight": {
+   "data_offsets": [
+    557294592,
+    566731776
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.11.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    566731776,
+    566737920
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.11.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    566737920,
+    566744064
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.11.cross_attn.o.bias": {
+   "data_offsets": [
+    566744064,
+    566750208
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.11.cross_attn.o.weight": {
+   "data_offsets": [
+    566750208,
+    576187392
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.11.cross_attn.q.bias": {
+   "data_offsets": [
+    576187392,
+    576193536
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.11.cross_attn.q.weight": {
+   "data_offsets": [
+    576193536,
+    585630720
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.11.cross_attn.v.bias": {
+   "data_offsets": [
+    585630720,
+    585636864
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.11.cross_attn.v.weight": {
+   "data_offsets": [
+    585636864,
+    595074048
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.11.ffn.0.bias": {
+   "data_offsets": [
+    595074048,
+    595109888
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.11.ffn.0.weight": {
+   "data_offsets": [
+    595109888,
+    650160128
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.11.ffn.2.bias": {
+   "data_offsets": [
+    650160128,
+    650166272
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.11.ffn.2.weight": {
+   "data_offsets": [
+    650166272,
+    705216512
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.11.modulation": {
+   "data_offsets": [
+    705216512,
+    705253376
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.11.norm3.bias": {
+   "data_offsets": [
+    705253376,
+    705259520
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.11.norm3.weight": {
+   "data_offsets": [
+    705259520,
+    705265664
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.11.self_attn.k.bias": {
+   "data_offsets": [
+    705265664,
+    705271808
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.11.self_attn.k.weight": {
+   "data_offsets": [
+    705271808,
+    714708992
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.11.self_attn.norm_k.weight": {
+   "data_offsets": [
+    714708992,
+    714715136
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.11.self_attn.norm_q.weight": {
+   "data_offsets": [
+    714715136,
+    714721280
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.11.self_attn.o.bias": {
+   "data_offsets": [
+    714721280,
+    714727424
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.11.self_attn.o.weight": {
+   "data_offsets": [
+    714727424,
+    724164608
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.11.self_attn.q.bias": {
+   "data_offsets": [
+    724164608,
+    724170752
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.11.self_attn.q.weight": {
+   "data_offsets": [
+    724170752,
+    733607936
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.11.self_attn.v.bias": {
+   "data_offsets": [
+    733607936,
+    733614080
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.11.self_attn.v.weight": {
+   "data_offsets": [
+    733614080,
+    743051264
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.12.cross_attn.k.bias": {
+   "data_offsets": [
+    743051264,
+    743057408
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.12.cross_attn.k.weight": {
+   "data_offsets": [
+    743057408,
+    752494592
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.12.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    752494592,
+    752500736
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.12.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    752500736,
+    752506880
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.12.cross_attn.o.bias": {
+   "data_offsets": [
+    752506880,
+    752513024
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.12.cross_attn.o.weight": {
+   "data_offsets": [
+    752513024,
+    761950208
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.12.cross_attn.q.bias": {
+   "data_offsets": [
+    761950208,
+    761956352
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.12.cross_attn.q.weight": {
+   "data_offsets": [
+    761956352,
+    771393536
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.12.cross_attn.v.bias": {
+   "data_offsets": [
+    771393536,
+    771399680
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.12.cross_attn.v.weight": {
+   "data_offsets": [
+    771399680,
+    780836864
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.12.ffn.0.bias": {
+   "data_offsets": [
+    780836864,
+    780872704
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.12.ffn.0.weight": {
+   "data_offsets": [
+    780872704,
+    835922944
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.12.ffn.2.bias": {
+   "data_offsets": [
+    835922944,
+    835929088
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.12.ffn.2.weight": {
+   "data_offsets": [
+    835929088,
+    890979328
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.12.modulation": {
+   "data_offsets": [
+    890979328,
+    891016192
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.12.norm3.bias": {
+   "data_offsets": [
+    891016192,
+    891022336
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.12.norm3.weight": {
+   "data_offsets": [
+    891022336,
+    891028480
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.12.self_attn.k.bias": {
+   "data_offsets": [
+    891028480,
+    891034624
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.12.self_attn.k.weight": {
+   "data_offsets": [
+    891034624,
+    900471808
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.12.self_attn.norm_k.weight": {
+   "data_offsets": [
+    900471808,
+    900477952
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.12.self_attn.norm_q.weight": {
+   "data_offsets": [
+    900477952,
+    900484096
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.12.self_attn.o.bias": {
+   "data_offsets": [
+    900484096,
+    900490240
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.12.self_attn.o.weight": {
+   "data_offsets": [
+    900490240,
+    909927424
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.12.self_attn.q.bias": {
+   "data_offsets": [
+    909927424,
+    909933568
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.12.self_attn.q.weight": {
+   "data_offsets": [
+    909933568,
+    919370752
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.12.self_attn.v.bias": {
+   "data_offsets": [
+    919370752,
+    919376896
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.12.self_attn.v.weight": {
+   "data_offsets": [
+    919376896,
+    928814080
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.13.cross_attn.k.bias": {
+   "data_offsets": [
+    928814080,
+    928820224
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.13.cross_attn.k.weight": {
+   "data_offsets": [
+    928820224,
+    938257408
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.13.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    938257408,
+    938263552
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.13.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    938263552,
+    938269696
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.13.cross_attn.o.bias": {
+   "data_offsets": [
+    938269696,
+    938275840
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.13.cross_attn.o.weight": {
+   "data_offsets": [
+    938275840,
+    947713024
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.13.cross_attn.q.bias": {
+   "data_offsets": [
+    947713024,
+    947719168
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.13.cross_attn.q.weight": {
+   "data_offsets": [
+    947719168,
+    957156352
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.13.cross_attn.v.bias": {
+   "data_offsets": [
+    957156352,
+    957162496
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.13.cross_attn.v.weight": {
+   "data_offsets": [
+    957162496,
+    966599680
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.13.ffn.0.bias": {
+   "data_offsets": [
+    966599680,
+    966635520
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.13.ffn.0.weight": {
+   "data_offsets": [
+    966635520,
+    1021685760
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.13.ffn.2.bias": {
+   "data_offsets": [
+    1021685760,
+    1021691904
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.13.ffn.2.weight": {
+   "data_offsets": [
+    1021691904,
+    1076742144
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.13.modulation": {
+   "data_offsets": [
+    1076742144,
+    1076779008
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.13.norm3.bias": {
+   "data_offsets": [
+    1076779008,
+    1076785152
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.13.norm3.weight": {
+   "data_offsets": [
+    1076785152,
+    1076791296
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.13.self_attn.k.bias": {
+   "data_offsets": [
+    1076791296,
+    1076797440
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.13.self_attn.k.weight": {
+   "data_offsets": [
+    1076797440,
+    1086234624
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.13.self_attn.norm_k.weight": {
+   "data_offsets": [
+    1086234624,
+    1086240768
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.13.self_attn.norm_q.weight": {
+   "data_offsets": [
+    1086240768,
+    1086246912
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.13.self_attn.o.bias": {
+   "data_offsets": [
+    1086246912,
+    1086253056
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.13.self_attn.o.weight": {
+   "data_offsets": [
+    1086253056,
+    1095690240
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.13.self_attn.q.bias": {
+   "data_offsets": [
+    1095690240,
+    1095696384
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.13.self_attn.q.weight": {
+   "data_offsets": [
+    1095696384,
+    1105133568
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.13.self_attn.v.bias": {
+   "data_offsets": [
+    1105133568,
+    1105139712
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.13.self_attn.v.weight": {
+   "data_offsets": [
+    1105139712,
+    1114576896
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.14.cross_attn.k.bias": {
+   "data_offsets": [
+    1114576896,
+    1114583040
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.14.cross_attn.k.weight": {
+   "data_offsets": [
+    1114583040,
+    1124020224
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.14.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    1124020224,
+    1124026368
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.14.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    1124026368,
+    1124032512
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.14.cross_attn.o.bias": {
+   "data_offsets": [
+    1124032512,
+    1124038656
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.14.cross_attn.o.weight": {
+   "data_offsets": [
+    1124038656,
+    1133475840
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.14.cross_attn.q.bias": {
+   "data_offsets": [
+    1133475840,
+    1133481984
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.14.cross_attn.q.weight": {
+   "data_offsets": [
+    1133481984,
+    1142919168
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.14.cross_attn.v.bias": {
+   "data_offsets": [
+    1142919168,
+    1142925312
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.14.cross_attn.v.weight": {
+   "data_offsets": [
+    1142925312,
+    1152362496
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.14.ffn.0.bias": {
+   "data_offsets": [
+    1152362496,
+    1152398336
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.14.ffn.0.weight": {
+   "data_offsets": [
+    1152398336,
+    1207448576
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.14.ffn.2.bias": {
+   "data_offsets": [
+    1207448576,
+    1207454720
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.14.ffn.2.weight": {
+   "data_offsets": [
+    1207454720,
+    1262504960
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.14.modulation": {
+   "data_offsets": [
+    1262504960,
+    1262541824
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.14.norm3.bias": {
+   "data_offsets": [
+    1262541824,
+    1262547968
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.14.norm3.weight": {
+   "data_offsets": [
+    1262547968,
+    1262554112
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.14.self_attn.k.bias": {
+   "data_offsets": [
+    1262554112,
+    1262560256
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.14.self_attn.k.weight": {
+   "data_offsets": [
+    1262560256,
+    1271997440
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.14.self_attn.norm_k.weight": {
+   "data_offsets": [
+    1271997440,
+    1272003584
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.14.self_attn.norm_q.weight": {
+   "data_offsets": [
+    1272003584,
+    1272009728
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.14.self_attn.o.bias": {
+   "data_offsets": [
+    1272009728,
+    1272015872
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.14.self_attn.o.weight": {
+   "data_offsets": [
+    1272015872,
+    1281453056
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.14.self_attn.q.bias": {
+   "data_offsets": [
+    1281453056,
+    1281459200
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.14.self_attn.q.weight": {
+   "data_offsets": [
+    1281459200,
+    1290896384
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.14.self_attn.v.bias": {
+   "data_offsets": [
+    1290896384,
+    1290902528
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.14.self_attn.v.weight": {
+   "data_offsets": [
+    1290902528,
+    1300339712
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.15.cross_attn.k.bias": {
+   "data_offsets": [
+    1300339712,
+    1300345856
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.15.cross_attn.k.weight": {
+   "data_offsets": [
+    1300345856,
+    1309783040
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.15.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    1309783040,
+    1309789184
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.15.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    1309789184,
+    1309795328
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.15.cross_attn.o.bias": {
+   "data_offsets": [
+    1309795328,
+    1309801472
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.15.cross_attn.o.weight": {
+   "data_offsets": [
+    1309801472,
+    1319238656
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.15.cross_attn.q.bias": {
+   "data_offsets": [
+    1319238656,
+    1319244800
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.15.cross_attn.q.weight": {
+   "data_offsets": [
+    1319244800,
+    1328681984
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.15.cross_attn.v.bias": {
+   "data_offsets": [
+    1328681984,
+    1328688128
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.15.cross_attn.v.weight": {
+   "data_offsets": [
+    1328688128,
+    1338125312
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.15.ffn.0.bias": {
+   "data_offsets": [
+    1338125312,
+    1338161152
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.15.ffn.0.weight": {
+   "data_offsets": [
+    1338161152,
+    1393211392
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.15.ffn.2.bias": {
+   "data_offsets": [
+    1393211392,
+    1393217536
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.15.ffn.2.weight": {
+   "data_offsets": [
+    1393217536,
+    1448267776
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.15.modulation": {
+   "data_offsets": [
+    1448267776,
+    1448304640
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.15.norm3.bias": {
+   "data_offsets": [
+    1448304640,
+    1448310784
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.15.norm3.weight": {
+   "data_offsets": [
+    1448310784,
+    1448316928
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.15.self_attn.k.bias": {
+   "data_offsets": [
+    1448316928,
+    1448323072
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.15.self_attn.k.weight": {
+   "data_offsets": [
+    1448323072,
+    1457760256
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.15.self_attn.norm_k.weight": {
+   "data_offsets": [
+    1457760256,
+    1457766400
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.15.self_attn.norm_q.weight": {
+   "data_offsets": [
+    1457766400,
+    1457772544
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.15.self_attn.o.bias": {
+   "data_offsets": [
+    1457772544,
+    1457778688
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.15.self_attn.o.weight": {
+   "data_offsets": [
+    1457778688,
+    1467215872
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.15.self_attn.q.bias": {
+   "data_offsets": [
+    1467215872,
+    1467222016
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.15.self_attn.q.weight": {
+   "data_offsets": [
+    1467222016,
+    1476659200
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.15.self_attn.v.bias": {
+   "data_offsets": [
+    1476659200,
+    1476665344
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.15.self_attn.v.weight": {
+   "data_offsets": [
+    1476665344,
+    1486102528
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.16.cross_attn.k.bias": {
+   "data_offsets": [
+    1486102528,
+    1486108672
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.16.cross_attn.k.weight": {
+   "data_offsets": [
+    1486108672,
+    1495545856
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.16.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    1495545856,
+    1495552000
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.16.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    1495552000,
+    1495558144
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.16.cross_attn.o.bias": {
+   "data_offsets": [
+    1495558144,
+    1495564288
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.16.cross_attn.o.weight": {
+   "data_offsets": [
+    1495564288,
+    1505001472
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.16.cross_attn.q.bias": {
+   "data_offsets": [
+    1505001472,
+    1505007616
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.16.cross_attn.q.weight": {
+   "data_offsets": [
+    1505007616,
+    1514444800
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.16.cross_attn.v.bias": {
+   "data_offsets": [
+    1514444800,
+    1514450944
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.16.cross_attn.v.weight": {
+   "data_offsets": [
+    1514450944,
+    1523888128
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.16.ffn.0.bias": {
+   "data_offsets": [
+    1523888128,
+    1523923968
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.16.ffn.0.weight": {
+   "data_offsets": [
+    1523923968,
+    1578974208
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.16.ffn.2.bias": {
+   "data_offsets": [
+    1578974208,
+    1578980352
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.16.ffn.2.weight": {
+   "data_offsets": [
+    1578980352,
+    1634030592
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.16.modulation": {
+   "data_offsets": [
+    1634030592,
+    1634067456
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.16.norm3.bias": {
+   "data_offsets": [
+    1634067456,
+    1634073600
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.16.norm3.weight": {
+   "data_offsets": [
+    1634073600,
+    1634079744
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.16.self_attn.k.bias": {
+   "data_offsets": [
+    1634079744,
+    1634085888
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.16.self_attn.k.weight": {
+   "data_offsets": [
+    1634085888,
+    1643523072
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.16.self_attn.norm_k.weight": {
+   "data_offsets": [
+    1643523072,
+    1643529216
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.16.self_attn.norm_q.weight": {
+   "data_offsets": [
+    1643529216,
+    1643535360
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.16.self_attn.o.bias": {
+   "data_offsets": [
+    1643535360,
+    1643541504
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.16.self_attn.o.weight": {
+   "data_offsets": [
+    1643541504,
+    1652978688
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.16.self_attn.q.bias": {
+   "data_offsets": [
+    1652978688,
+    1652984832
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.16.self_attn.q.weight": {
+   "data_offsets": [
+    1652984832,
+    1662422016
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.16.self_attn.v.bias": {
+   "data_offsets": [
+    1662422016,
+    1662428160
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.16.self_attn.v.weight": {
+   "data_offsets": [
+    1662428160,
+    1671865344
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.17.cross_attn.k.bias": {
+   "data_offsets": [
+    1671865344,
+    1671871488
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.17.cross_attn.k.weight": {
+   "data_offsets": [
+    1671871488,
+    1681308672
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.17.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    1681308672,
+    1681314816
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.17.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    1681314816,
+    1681320960
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.17.cross_attn.o.bias": {
+   "data_offsets": [
+    1681320960,
+    1681327104
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.17.cross_attn.o.weight": {
+   "data_offsets": [
+    1681327104,
+    1690764288
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.17.cross_attn.q.bias": {
+   "data_offsets": [
+    1690764288,
+    1690770432
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.17.cross_attn.q.weight": {
+   "data_offsets": [
+    1690770432,
+    1700207616
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.17.cross_attn.v.bias": {
+   "data_offsets": [
+    1700207616,
+    1700213760
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.17.cross_attn.v.weight": {
+   "data_offsets": [
+    1700213760,
+    1709650944
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.17.ffn.0.bias": {
+   "data_offsets": [
+    1709650944,
+    1709686784
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.17.ffn.0.weight": {
+   "data_offsets": [
+    1709686784,
+    1764737024
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.17.ffn.2.bias": {
+   "data_offsets": [
+    1764737024,
+    1764743168
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.17.ffn.2.weight": {
+   "data_offsets": [
+    1764743168,
+    1819793408
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.17.modulation": {
+   "data_offsets": [
+    1819793408,
+    1819830272
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.17.norm3.bias": {
+   "data_offsets": [
+    1819830272,
+    1819836416
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.17.norm3.weight": {
+   "data_offsets": [
+    1819836416,
+    1819842560
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.17.self_attn.k.bias": {
+   "data_offsets": [
+    1819842560,
+    1819848704
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.17.self_attn.k.weight": {
+   "data_offsets": [
+    1819848704,
+    1829285888
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.17.self_attn.norm_k.weight": {
+   "data_offsets": [
+    1829285888,
+    1829292032
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.17.self_attn.norm_q.weight": {
+   "data_offsets": [
+    1829292032,
+    1829298176
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.17.self_attn.o.bias": {
+   "data_offsets": [
+    1829298176,
+    1829304320
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.17.self_attn.o.weight": {
+   "data_offsets": [
+    1829304320,
+    1838741504
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.17.self_attn.q.bias": {
+   "data_offsets": [
+    1838741504,
+    1838747648
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.17.self_attn.q.weight": {
+   "data_offsets": [
+    1838747648,
+    1848184832
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.17.self_attn.v.bias": {
+   "data_offsets": [
+    1848184832,
+    1848190976
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.17.self_attn.v.weight": {
+   "data_offsets": [
+    1848190976,
+    1857628160
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.18.cross_attn.k.bias": {
+   "data_offsets": [
+    1857628160,
+    1857634304
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.18.cross_attn.k.weight": {
+   "data_offsets": [
+    1857634304,
+    1867071488
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.18.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    1867071488,
+    1867077632
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.18.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    1867077632,
+    1867083776
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.18.cross_attn.o.bias": {
+   "data_offsets": [
+    1867083776,
+    1867089920
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.18.cross_attn.o.weight": {
+   "data_offsets": [
+    1867089920,
+    1876527104
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.18.cross_attn.q.bias": {
+   "data_offsets": [
+    1876527104,
+    1876533248
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.18.cross_attn.q.weight": {
+   "data_offsets": [
+    1876533248,
+    1885970432
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.18.cross_attn.v.bias": {
+   "data_offsets": [
+    1885970432,
+    1885976576
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.18.cross_attn.v.weight": {
+   "data_offsets": [
+    1885976576,
+    1895413760
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.18.ffn.0.bias": {
+   "data_offsets": [
+    1895413760,
+    1895449600
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.18.ffn.0.weight": {
+   "data_offsets": [
+    1895449600,
+    1950499840
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.18.ffn.2.bias": {
+   "data_offsets": [
+    1950499840,
+    1950505984
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.18.ffn.2.weight": {
+   "data_offsets": [
+    1950505984,
+    2005556224
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.18.modulation": {
+   "data_offsets": [
+    2005556224,
+    2005593088
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.18.norm3.bias": {
+   "data_offsets": [
+    2005593088,
+    2005599232
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.18.norm3.weight": {
+   "data_offsets": [
+    2005599232,
+    2005605376
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.18.self_attn.k.bias": {
+   "data_offsets": [
+    2005605376,
+    2005611520
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.18.self_attn.k.weight": {
+   "data_offsets": [
+    2005611520,
+    2015048704
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.18.self_attn.norm_k.weight": {
+   "data_offsets": [
+    2015048704,
+    2015054848
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.18.self_attn.norm_q.weight": {
+   "data_offsets": [
+    2015054848,
+    2015060992
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.18.self_attn.o.bias": {
+   "data_offsets": [
+    2015060992,
+    2015067136
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.18.self_attn.o.weight": {
+   "data_offsets": [
+    2015067136,
+    2024504320
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.18.self_attn.q.bias": {
+   "data_offsets": [
+    2024504320,
+    2024510464
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.18.self_attn.q.weight": {
+   "data_offsets": [
+    2024510464,
+    2033947648
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.18.self_attn.v.bias": {
+   "data_offsets": [
+    2033947648,
+    2033953792
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.18.self_attn.v.weight": {
+   "data_offsets": [
+    2033953792,
+    2043390976
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.19.cross_attn.k.bias": {
+   "data_offsets": [
+    2043390976,
+    2043397120
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.19.cross_attn.k.weight": {
+   "data_offsets": [
+    2043397120,
+    2052834304
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.19.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    2052834304,
+    2052840448
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.19.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    2052840448,
+    2052846592
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.19.cross_attn.o.bias": {
+   "data_offsets": [
+    2052846592,
+    2052852736
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.19.cross_attn.o.weight": {
+   "data_offsets": [
+    2052852736,
+    2062289920
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.19.cross_attn.q.bias": {
+   "data_offsets": [
+    2062289920,
+    2062296064
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.19.cross_attn.q.weight": {
+   "data_offsets": [
+    2062296064,
+    2071733248
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.19.cross_attn.v.bias": {
+   "data_offsets": [
+    2071733248,
+    2071739392
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.19.cross_attn.v.weight": {
+   "data_offsets": [
+    2071739392,
+    2081176576
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.19.ffn.0.bias": {
+   "data_offsets": [
+    2081176576,
+    2081212416
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.19.ffn.0.weight": {
+   "data_offsets": [
+    2081212416,
+    2136262656
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.19.ffn.2.bias": {
+   "data_offsets": [
+    2136262656,
+    2136268800
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.19.ffn.2.weight": {
+   "data_offsets": [
+    2136268800,
+    2191319040
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.19.modulation": {
+   "data_offsets": [
+    2191319040,
+    2191355904
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.19.norm3.bias": {
+   "data_offsets": [
+    2191355904,
+    2191362048
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.19.norm3.weight": {
+   "data_offsets": [
+    2191362048,
+    2191368192
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.19.self_attn.k.bias": {
+   "data_offsets": [
+    2191368192,
+    2191374336
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.19.self_attn.k.weight": {
+   "data_offsets": [
+    2191374336,
+    2200811520
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.19.self_attn.norm_k.weight": {
+   "data_offsets": [
+    2200811520,
+    2200817664
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.19.self_attn.norm_q.weight": {
+   "data_offsets": [
+    2200817664,
+    2200823808
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.19.self_attn.o.bias": {
+   "data_offsets": [
+    2200823808,
+    2200829952
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.19.self_attn.o.weight": {
+   "data_offsets": [
+    2200829952,
+    2210267136
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.19.self_attn.q.bias": {
+   "data_offsets": [
+    2210267136,
+    2210273280
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.19.self_attn.q.weight": {
+   "data_offsets": [
+    2210273280,
+    2219710464
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.19.self_attn.v.bias": {
+   "data_offsets": [
+    2219710464,
+    2219716608
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.19.self_attn.v.weight": {
+   "data_offsets": [
+    2219716608,
+    2229153792
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.2.cross_attn.k.bias": {
+   "data_offsets": [
+    2229153792,
+    2229159936
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.2.cross_attn.k.weight": {
+   "data_offsets": [
+    2229159936,
+    2238597120
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.2.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    2238597120,
+    2238603264
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.2.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    2238603264,
+    2238609408
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.2.cross_attn.o.bias": {
+   "data_offsets": [
+    2238609408,
+    2238615552
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.2.cross_attn.o.weight": {
+   "data_offsets": [
+    2238615552,
+    2248052736
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.2.cross_attn.q.bias": {
+   "data_offsets": [
+    2248052736,
+    2248058880
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.2.cross_attn.q.weight": {
+   "data_offsets": [
+    2248058880,
+    2257496064
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.2.cross_attn.v.bias": {
+   "data_offsets": [
+    2257496064,
+    2257502208
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.2.cross_attn.v.weight": {
+   "data_offsets": [
+    2257502208,
+    2266939392
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.2.ffn.0.bias": {
+   "data_offsets": [
+    2266939392,
+    2266975232
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.2.ffn.0.weight": {
+   "data_offsets": [
+    2266975232,
+    2322025472
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.2.ffn.2.bias": {
+   "data_offsets": [
+    2322025472,
+    2322031616
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.2.ffn.2.weight": {
+   "data_offsets": [
+    2322031616,
+    2377081856
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.2.modulation": {
+   "data_offsets": [
+    2377081856,
+    2377118720
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.2.norm3.bias": {
+   "data_offsets": [
+    2377118720,
+    2377124864
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.2.norm3.weight": {
+   "data_offsets": [
+    2377124864,
+    2377131008
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.2.self_attn.k.bias": {
+   "data_offsets": [
+    2377131008,
+    2377137152
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.2.self_attn.k.weight": {
+   "data_offsets": [
+    2377137152,
+    2386574336
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.2.self_attn.norm_k.weight": {
+   "data_offsets": [
+    2386574336,
+    2386580480
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.2.self_attn.norm_q.weight": {
+   "data_offsets": [
+    2386580480,
+    2386586624
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.2.self_attn.o.bias": {
+   "data_offsets": [
+    2386586624,
+    2386592768
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.2.self_attn.o.weight": {
+   "data_offsets": [
+    2386592768,
+    2396029952
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.2.self_attn.q.bias": {
+   "data_offsets": [
+    2396029952,
+    2396036096
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.2.self_attn.q.weight": {
+   "data_offsets": [
+    2396036096,
+    2405473280
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.2.self_attn.v.bias": {
+   "data_offsets": [
+    2405473280,
+    2405479424
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.2.self_attn.v.weight": {
+   "data_offsets": [
+    2405479424,
+    2414916608
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.20.cross_attn.k.bias": {
+   "data_offsets": [
+    2414916608,
+    2414922752
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.20.cross_attn.k.weight": {
+   "data_offsets": [
+    2414922752,
+    2424359936
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.20.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    2424359936,
+    2424366080
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.20.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    2424366080,
+    2424372224
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.20.cross_attn.o.bias": {
+   "data_offsets": [
+    2424372224,
+    2424378368
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.20.cross_attn.o.weight": {
+   "data_offsets": [
+    2424378368,
+    2433815552
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.20.cross_attn.q.bias": {
+   "data_offsets": [
+    2433815552,
+    2433821696
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.20.cross_attn.q.weight": {
+   "data_offsets": [
+    2433821696,
+    2443258880
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.20.cross_attn.v.bias": {
+   "data_offsets": [
+    2443258880,
+    2443265024
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.20.cross_attn.v.weight": {
+   "data_offsets": [
+    2443265024,
+    2452702208
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.20.ffn.0.bias": {
+   "data_offsets": [
+    2452702208,
+    2452738048
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.20.ffn.0.weight": {
+   "data_offsets": [
+    2452738048,
+    2507788288
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.20.ffn.2.bias": {
+   "data_offsets": [
+    2507788288,
+    2507794432
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.20.ffn.2.weight": {
+   "data_offsets": [
+    2507794432,
+    2562844672
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.20.modulation": {
+   "data_offsets": [
+    2562844672,
+    2562881536
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.20.norm3.bias": {
+   "data_offsets": [
+    2562881536,
+    2562887680
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.20.norm3.weight": {
+   "data_offsets": [
+    2562887680,
+    2562893824
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.20.self_attn.k.bias": {
+   "data_offsets": [
+    2562893824,
+    2562899968
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.20.self_attn.k.weight": {
+   "data_offsets": [
+    2562899968,
+    2572337152
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.20.self_attn.norm_k.weight": {
+   "data_offsets": [
+    2572337152,
+    2572343296
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.20.self_attn.norm_q.weight": {
+   "data_offsets": [
+    2572343296,
+    2572349440
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.20.self_attn.o.bias": {
+   "data_offsets": [
+    2572349440,
+    2572355584
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.20.self_attn.o.weight": {
+   "data_offsets": [
+    2572355584,
+    2581792768
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.20.self_attn.q.bias": {
+   "data_offsets": [
+    2581792768,
+    2581798912
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.20.self_attn.q.weight": {
+   "data_offsets": [
+    2581798912,
+    2591236096
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.20.self_attn.v.bias": {
+   "data_offsets": [
+    2591236096,
+    2591242240
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.20.self_attn.v.weight": {
+   "data_offsets": [
+    2591242240,
+    2600679424
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.21.cross_attn.k.bias": {
+   "data_offsets": [
+    2600679424,
+    2600685568
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.21.cross_attn.k.weight": {
+   "data_offsets": [
+    2600685568,
+    2610122752
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.21.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    2610122752,
+    2610128896
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.21.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    2610128896,
+    2610135040
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.21.cross_attn.o.bias": {
+   "data_offsets": [
+    2610135040,
+    2610141184
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.21.cross_attn.o.weight": {
+   "data_offsets": [
+    2610141184,
+    2619578368
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.21.cross_attn.q.bias": {
+   "data_offsets": [
+    2619578368,
+    2619584512
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.21.cross_attn.q.weight": {
+   "data_offsets": [
+    2619584512,
+    2629021696
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.21.cross_attn.v.bias": {
+   "data_offsets": [
+    2629021696,
+    2629027840
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.21.cross_attn.v.weight": {
+   "data_offsets": [
+    2629027840,
+    2638465024
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.21.ffn.0.bias": {
+   "data_offsets": [
+    2638465024,
+    2638500864
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.21.ffn.0.weight": {
+   "data_offsets": [
+    2638500864,
+    2693551104
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.21.ffn.2.bias": {
+   "data_offsets": [
+    2693551104,
+    2693557248
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.21.ffn.2.weight": {
+   "data_offsets": [
+    2693557248,
+    2748607488
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.21.modulation": {
+   "data_offsets": [
+    2748607488,
+    2748644352
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.21.norm3.bias": {
+   "data_offsets": [
+    2748644352,
+    2748650496
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.21.norm3.weight": {
+   "data_offsets": [
+    2748650496,
+    2748656640
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.21.self_attn.k.bias": {
+   "data_offsets": [
+    2748656640,
+    2748662784
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.21.self_attn.k.weight": {
+   "data_offsets": [
+    2748662784,
+    2758099968
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.21.self_attn.norm_k.weight": {
+   "data_offsets": [
+    2758099968,
+    2758106112
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.21.self_attn.norm_q.weight": {
+   "data_offsets": [
+    2758106112,
+    2758112256
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.21.self_attn.o.bias": {
+   "data_offsets": [
+    2758112256,
+    2758118400
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.21.self_attn.o.weight": {
+   "data_offsets": [
+    2758118400,
+    2767555584
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.21.self_attn.q.bias": {
+   "data_offsets": [
+    2767555584,
+    2767561728
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.21.self_attn.q.weight": {
+   "data_offsets": [
+    2767561728,
+    2776998912
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.21.self_attn.v.bias": {
+   "data_offsets": [
+    2776998912,
+    2777005056
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.21.self_attn.v.weight": {
+   "data_offsets": [
+    2777005056,
+    2786442240
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.22.cross_attn.k.bias": {
+   "data_offsets": [
+    2786442240,
+    2786448384
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.22.cross_attn.k.weight": {
+   "data_offsets": [
+    2786448384,
+    2795885568
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.22.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    2795885568,
+    2795891712
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.22.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    2795891712,
+    2795897856
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.22.cross_attn.o.bias": {
+   "data_offsets": [
+    2795897856,
+    2795904000
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.22.cross_attn.o.weight": {
+   "data_offsets": [
+    2795904000,
+    2805341184
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.22.cross_attn.q.bias": {
+   "data_offsets": [
+    2805341184,
+    2805347328
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.22.cross_attn.q.weight": {
+   "data_offsets": [
+    2805347328,
+    2814784512
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.22.cross_attn.v.bias": {
+   "data_offsets": [
+    2814784512,
+    2814790656
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.22.cross_attn.v.weight": {
+   "data_offsets": [
+    2814790656,
+    2824227840
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.22.ffn.0.bias": {
+   "data_offsets": [
+    2824227840,
+    2824263680
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.22.ffn.0.weight": {
+   "data_offsets": [
+    2824263680,
+    2879313920
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.22.ffn.2.bias": {
+   "data_offsets": [
+    2879313920,
+    2879320064
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.22.ffn.2.weight": {
+   "data_offsets": [
+    2879320064,
+    2934370304
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.22.modulation": {
+   "data_offsets": [
+    2934370304,
+    2934407168
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.22.norm3.bias": {
+   "data_offsets": [
+    2934407168,
+    2934413312
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.22.norm3.weight": {
+   "data_offsets": [
+    2934413312,
+    2934419456
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.22.self_attn.k.bias": {
+   "data_offsets": [
+    2934419456,
+    2934425600
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.22.self_attn.k.weight": {
+   "data_offsets": [
+    2934425600,
+    2943862784
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.22.self_attn.norm_k.weight": {
+   "data_offsets": [
+    2943862784,
+    2943868928
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.22.self_attn.norm_q.weight": {
+   "data_offsets": [
+    2943868928,
+    2943875072
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.22.self_attn.o.bias": {
+   "data_offsets": [
+    2943875072,
+    2943881216
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.22.self_attn.o.weight": {
+   "data_offsets": [
+    2943881216,
+    2953318400
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.22.self_attn.q.bias": {
+   "data_offsets": [
+    2953318400,
+    2953324544
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.22.self_attn.q.weight": {
+   "data_offsets": [
+    2953324544,
+    2962761728
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.22.self_attn.v.bias": {
+   "data_offsets": [
+    2962761728,
+    2962767872
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.22.self_attn.v.weight": {
+   "data_offsets": [
+    2962767872,
+    2972205056
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.23.cross_attn.k.bias": {
+   "data_offsets": [
+    2972205056,
+    2972211200
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.23.cross_attn.k.weight": {
+   "data_offsets": [
+    2972211200,
+    2981648384
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.23.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    2981648384,
+    2981654528
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.23.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    2981654528,
+    2981660672
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.23.cross_attn.o.bias": {
+   "data_offsets": [
+    2981660672,
+    2981666816
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.23.cross_attn.o.weight": {
+   "data_offsets": [
+    2981666816,
+    2991104000
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.23.cross_attn.q.bias": {
+   "data_offsets": [
+    2991104000,
+    2991110144
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.23.cross_attn.q.weight": {
+   "data_offsets": [
+    2991110144,
+    3000547328
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.23.cross_attn.v.bias": {
+   "data_offsets": [
+    3000547328,
+    3000553472
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.23.cross_attn.v.weight": {
+   "data_offsets": [
+    3000553472,
+    3009990656
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.23.ffn.0.bias": {
+   "data_offsets": [
+    3009990656,
+    3010026496
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.23.ffn.0.weight": {
+   "data_offsets": [
+    3010026496,
+    3065076736
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.23.ffn.2.bias": {
+   "data_offsets": [
+    3065076736,
+    3065082880
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.23.ffn.2.weight": {
+   "data_offsets": [
+    3065082880,
+    3120133120
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.23.modulation": {
+   "data_offsets": [
+    3120133120,
+    3120169984
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.23.norm3.bias": {
+   "data_offsets": [
+    3120169984,
+    3120176128
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.23.norm3.weight": {
+   "data_offsets": [
+    3120176128,
+    3120182272
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.23.self_attn.k.bias": {
+   "data_offsets": [
+    3120182272,
+    3120188416
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.23.self_attn.k.weight": {
+   "data_offsets": [
+    3120188416,
+    3129625600
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.23.self_attn.norm_k.weight": {
+   "data_offsets": [
+    3129625600,
+    3129631744
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.23.self_attn.norm_q.weight": {
+   "data_offsets": [
+    3129631744,
+    3129637888
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.23.self_attn.o.bias": {
+   "data_offsets": [
+    3129637888,
+    3129644032
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.23.self_attn.o.weight": {
+   "data_offsets": [
+    3129644032,
+    3139081216
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.23.self_attn.q.bias": {
+   "data_offsets": [
+    3139081216,
+    3139087360
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.23.self_attn.q.weight": {
+   "data_offsets": [
+    3139087360,
+    3148524544
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.23.self_attn.v.bias": {
+   "data_offsets": [
+    3148524544,
+    3148530688
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.23.self_attn.v.weight": {
+   "data_offsets": [
+    3148530688,
+    3157967872
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.24.cross_attn.k.bias": {
+   "data_offsets": [
+    3157967872,
+    3157974016
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.24.cross_attn.k.weight": {
+   "data_offsets": [
+    3157974016,
+    3167411200
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.24.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    3167411200,
+    3167417344
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.24.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    3167417344,
+    3167423488
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.24.cross_attn.o.bias": {
+   "data_offsets": [
+    3167423488,
+    3167429632
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.24.cross_attn.o.weight": {
+   "data_offsets": [
+    3167429632,
+    3176866816
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.24.cross_attn.q.bias": {
+   "data_offsets": [
+    3176866816,
+    3176872960
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.24.cross_attn.q.weight": {
+   "data_offsets": [
+    3176872960,
+    3186310144
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.24.cross_attn.v.bias": {
+   "data_offsets": [
+    3186310144,
+    3186316288
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.24.cross_attn.v.weight": {
+   "data_offsets": [
+    3186316288,
+    3195753472
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.24.ffn.0.bias": {
+   "data_offsets": [
+    3195753472,
+    3195789312
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.24.ffn.0.weight": {
+   "data_offsets": [
+    3195789312,
+    3250839552
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.24.ffn.2.bias": {
+   "data_offsets": [
+    3250839552,
+    3250845696
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.24.ffn.2.weight": {
+   "data_offsets": [
+    3250845696,
+    3305895936
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.24.modulation": {
+   "data_offsets": [
+    3305895936,
+    3305932800
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.24.norm3.bias": {
+   "data_offsets": [
+    3305932800,
+    3305938944
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.24.norm3.weight": {
+   "data_offsets": [
+    3305938944,
+    3305945088
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.24.self_attn.k.bias": {
+   "data_offsets": [
+    3305945088,
+    3305951232
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.24.self_attn.k.weight": {
+   "data_offsets": [
+    3305951232,
+    3315388416
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.24.self_attn.norm_k.weight": {
+   "data_offsets": [
+    3315388416,
+    3315394560
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.24.self_attn.norm_q.weight": {
+   "data_offsets": [
+    3315394560,
+    3315400704
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.24.self_attn.o.bias": {
+   "data_offsets": [
+    3315400704,
+    3315406848
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.24.self_attn.o.weight": {
+   "data_offsets": [
+    3315406848,
+    3324844032
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.24.self_attn.q.bias": {
+   "data_offsets": [
+    3324844032,
+    3324850176
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.24.self_attn.q.weight": {
+   "data_offsets": [
+    3324850176,
+    3334287360
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.24.self_attn.v.bias": {
+   "data_offsets": [
+    3334287360,
+    3334293504
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.24.self_attn.v.weight": {
+   "data_offsets": [
+    3334293504,
+    3343730688
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.25.cross_attn.k.bias": {
+   "data_offsets": [
+    3343730688,
+    3343736832
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.25.cross_attn.k.weight": {
+   "data_offsets": [
+    3343736832,
+    3353174016
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.25.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    3353174016,
+    3353180160
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.25.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    3353180160,
+    3353186304
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.25.cross_attn.o.bias": {
+   "data_offsets": [
+    3353186304,
+    3353192448
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.25.cross_attn.o.weight": {
+   "data_offsets": [
+    3353192448,
+    3362629632
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.25.cross_attn.q.bias": {
+   "data_offsets": [
+    3362629632,
+    3362635776
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.25.cross_attn.q.weight": {
+   "data_offsets": [
+    3362635776,
+    3372072960
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.25.cross_attn.v.bias": {
+   "data_offsets": [
+    3372072960,
+    3372079104
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.25.cross_attn.v.weight": {
+   "data_offsets": [
+    3372079104,
+    3381516288
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.25.ffn.0.bias": {
+   "data_offsets": [
+    3381516288,
+    3381552128
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.25.ffn.0.weight": {
+   "data_offsets": [
+    3381552128,
+    3436602368
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.25.ffn.2.bias": {
+   "data_offsets": [
+    3436602368,
+    3436608512
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.25.ffn.2.weight": {
+   "data_offsets": [
+    3436608512,
+    3491658752
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.25.modulation": {
+   "data_offsets": [
+    3491658752,
+    3491695616
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.25.norm3.bias": {
+   "data_offsets": [
+    3491695616,
+    3491701760
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.25.norm3.weight": {
+   "data_offsets": [
+    3491701760,
+    3491707904
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.25.self_attn.k.bias": {
+   "data_offsets": [
+    3491707904,
+    3491714048
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.25.self_attn.k.weight": {
+   "data_offsets": [
+    3491714048,
+    3501151232
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.25.self_attn.norm_k.weight": {
+   "data_offsets": [
+    3501151232,
+    3501157376
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.25.self_attn.norm_q.weight": {
+   "data_offsets": [
+    3501157376,
+    3501163520
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.25.self_attn.o.bias": {
+   "data_offsets": [
+    3501163520,
+    3501169664
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.25.self_attn.o.weight": {
+   "data_offsets": [
+    3501169664,
+    3510606848
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.25.self_attn.q.bias": {
+   "data_offsets": [
+    3510606848,
+    3510612992
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.25.self_attn.q.weight": {
+   "data_offsets": [
+    3510612992,
+    3520050176
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.25.self_attn.v.bias": {
+   "data_offsets": [
+    3520050176,
+    3520056320
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.25.self_attn.v.weight": {
+   "data_offsets": [
+    3520056320,
+    3529493504
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.26.cross_attn.k.bias": {
+   "data_offsets": [
+    3529493504,
+    3529499648
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.26.cross_attn.k.weight": {
+   "data_offsets": [
+    3529499648,
+    3538936832
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.26.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    3538936832,
+    3538942976
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.26.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    3538942976,
+    3538949120
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.26.cross_attn.o.bias": {
+   "data_offsets": [
+    3538949120,
+    3538955264
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.26.cross_attn.o.weight": {
+   "data_offsets": [
+    3538955264,
+    3548392448
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.26.cross_attn.q.bias": {
+   "data_offsets": [
+    3548392448,
+    3548398592
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.26.cross_attn.q.weight": {
+   "data_offsets": [
+    3548398592,
+    3557835776
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.26.cross_attn.v.bias": {
+   "data_offsets": [
+    3557835776,
+    3557841920
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.26.cross_attn.v.weight": {
+   "data_offsets": [
+    3557841920,
+    3567279104
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.26.ffn.0.bias": {
+   "data_offsets": [
+    3567279104,
+    3567314944
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.26.ffn.0.weight": {
+   "data_offsets": [
+    3567314944,
+    3622365184
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.26.ffn.2.bias": {
+   "data_offsets": [
+    3622365184,
+    3622371328
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.26.ffn.2.weight": {
+   "data_offsets": [
+    3622371328,
+    3677421568
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.26.modulation": {
+   "data_offsets": [
+    3677421568,
+    3677458432
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.26.norm3.bias": {
+   "data_offsets": [
+    3677458432,
+    3677464576
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.26.norm3.weight": {
+   "data_offsets": [
+    3677464576,
+    3677470720
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.26.self_attn.k.bias": {
+   "data_offsets": [
+    3677470720,
+    3677476864
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.26.self_attn.k.weight": {
+   "data_offsets": [
+    3677476864,
+    3686914048
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.26.self_attn.norm_k.weight": {
+   "data_offsets": [
+    3686914048,
+    3686920192
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.26.self_attn.norm_q.weight": {
+   "data_offsets": [
+    3686920192,
+    3686926336
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.26.self_attn.o.bias": {
+   "data_offsets": [
+    3686926336,
+    3686932480
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.26.self_attn.o.weight": {
+   "data_offsets": [
+    3686932480,
+    3696369664
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.26.self_attn.q.bias": {
+   "data_offsets": [
+    3696369664,
+    3696375808
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.26.self_attn.q.weight": {
+   "data_offsets": [
+    3696375808,
+    3705812992
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.26.self_attn.v.bias": {
+   "data_offsets": [
+    3705812992,
+    3705819136
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.26.self_attn.v.weight": {
+   "data_offsets": [
+    3705819136,
+    3715256320
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.27.cross_attn.k.bias": {
+   "data_offsets": [
+    3715256320,
+    3715262464
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.27.cross_attn.k.weight": {
+   "data_offsets": [
+    3715262464,
+    3724699648
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.27.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    3724699648,
+    3724705792
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.27.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    3724705792,
+    3724711936
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.27.cross_attn.o.bias": {
+   "data_offsets": [
+    3724711936,
+    3724718080
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.27.cross_attn.o.weight": {
+   "data_offsets": [
+    3724718080,
+    3734155264
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.27.cross_attn.q.bias": {
+   "data_offsets": [
+    3734155264,
+    3734161408
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.27.cross_attn.q.weight": {
+   "data_offsets": [
+    3734161408,
+    3743598592
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.27.cross_attn.v.bias": {
+   "data_offsets": [
+    3743598592,
+    3743604736
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.27.cross_attn.v.weight": {
+   "data_offsets": [
+    3743604736,
+    3753041920
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.27.ffn.0.bias": {
+   "data_offsets": [
+    3753041920,
+    3753077760
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.27.ffn.0.weight": {
+   "data_offsets": [
+    3753077760,
+    3808128000
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.27.ffn.2.bias": {
+   "data_offsets": [
+    3808128000,
+    3808134144
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.27.ffn.2.weight": {
+   "data_offsets": [
+    3808134144,
+    3863184384
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.27.modulation": {
+   "data_offsets": [
+    3863184384,
+    3863221248
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.27.norm3.bias": {
+   "data_offsets": [
+    3863221248,
+    3863227392
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.27.norm3.weight": {
+   "data_offsets": [
+    3863227392,
+    3863233536
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.27.self_attn.k.bias": {
+   "data_offsets": [
+    3863233536,
+    3863239680
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.27.self_attn.k.weight": {
+   "data_offsets": [
+    3863239680,
+    3872676864
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.27.self_attn.norm_k.weight": {
+   "data_offsets": [
+    3872676864,
+    3872683008
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.27.self_attn.norm_q.weight": {
+   "data_offsets": [
+    3872683008,
+    3872689152
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.27.self_attn.o.bias": {
+   "data_offsets": [
+    3872689152,
+    3872695296
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.27.self_attn.o.weight": {
+   "data_offsets": [
+    3872695296,
+    3882132480
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.27.self_attn.q.bias": {
+   "data_offsets": [
+    3882132480,
+    3882138624
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.27.self_attn.q.weight": {
+   "data_offsets": [
+    3882138624,
+    3891575808
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.27.self_attn.v.bias": {
+   "data_offsets": [
+    3891575808,
+    3891581952
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.27.self_attn.v.weight": {
+   "data_offsets": [
+    3891581952,
+    3901019136
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.28.cross_attn.k.bias": {
+   "data_offsets": [
+    3901019136,
+    3901025280
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.28.cross_attn.k.weight": {
+   "data_offsets": [
+    3901025280,
+    3910462464
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.28.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    3910462464,
+    3910468608
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.28.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    3910468608,
+    3910474752
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.28.cross_attn.o.bias": {
+   "data_offsets": [
+    3910474752,
+    3910480896
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.28.cross_attn.o.weight": {
+   "data_offsets": [
+    3910480896,
+    3919918080
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.28.cross_attn.q.bias": {
+   "data_offsets": [
+    3919918080,
+    3919924224
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.28.cross_attn.q.weight": {
+   "data_offsets": [
+    3919924224,
+    3929361408
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.28.cross_attn.v.bias": {
+   "data_offsets": [
+    3929361408,
+    3929367552
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.28.cross_attn.v.weight": {
+   "data_offsets": [
+    3929367552,
+    3938804736
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.28.ffn.0.bias": {
+   "data_offsets": [
+    3938804736,
+    3938840576
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.28.ffn.0.weight": {
+   "data_offsets": [
+    3938840576,
+    3993890816
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.28.ffn.2.bias": {
+   "data_offsets": [
+    3993890816,
+    3993896960
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.28.ffn.2.weight": {
+   "data_offsets": [
+    3993896960,
+    4048947200
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.28.modulation": {
+   "data_offsets": [
+    4048947200,
+    4048984064
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.28.norm3.bias": {
+   "data_offsets": [
+    4048984064,
+    4048990208
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.28.norm3.weight": {
+   "data_offsets": [
+    4048990208,
+    4048996352
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.28.self_attn.k.bias": {
+   "data_offsets": [
+    4048996352,
+    4049002496
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.28.self_attn.k.weight": {
+   "data_offsets": [
+    4049002496,
+    4058439680
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.28.self_attn.norm_k.weight": {
+   "data_offsets": [
+    4058439680,
+    4058445824
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.28.self_attn.norm_q.weight": {
+   "data_offsets": [
+    4058445824,
+    4058451968
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.28.self_attn.o.bias": {
+   "data_offsets": [
+    4058451968,
+    4058458112
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.28.self_attn.o.weight": {
+   "data_offsets": [
+    4058458112,
+    4067895296
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.28.self_attn.q.bias": {
+   "data_offsets": [
+    4067895296,
+    4067901440
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.28.self_attn.q.weight": {
+   "data_offsets": [
+    4067901440,
+    4077338624
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.28.self_attn.v.bias": {
+   "data_offsets": [
+    4077338624,
+    4077344768
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.28.self_attn.v.weight": {
+   "data_offsets": [
+    4077344768,
+    4086781952
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.29.cross_attn.k.bias": {
+   "data_offsets": [
+    4086781952,
+    4086788096
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.29.cross_attn.k.weight": {
+   "data_offsets": [
+    4086788096,
+    4096225280
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.29.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    4096225280,
+    4096231424
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.29.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    4096231424,
+    4096237568
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.29.cross_attn.o.bias": {
+   "data_offsets": [
+    4096237568,
+    4096243712
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.29.cross_attn.o.weight": {
+   "data_offsets": [
+    4096243712,
+    4105680896
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.29.cross_attn.q.bias": {
+   "data_offsets": [
+    4105680896,
+    4105687040
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.29.cross_attn.q.weight": {
+   "data_offsets": [
+    4105687040,
+    4115124224
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.29.cross_attn.v.bias": {
+   "data_offsets": [
+    4115124224,
+    4115130368
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.29.cross_attn.v.weight": {
+   "data_offsets": [
+    4115130368,
+    4124567552
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.29.ffn.0.bias": {
+   "data_offsets": [
+    4124567552,
+    4124603392
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.29.ffn.0.weight": {
+   "data_offsets": [
+    4124603392,
+    4179653632
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.29.ffn.2.bias": {
+   "data_offsets": [
+    4179653632,
+    4179659776
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.29.ffn.2.weight": {
+   "data_offsets": [
+    4179659776,
+    4234710016
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.29.modulation": {
+   "data_offsets": [
+    4234710016,
+    4234746880
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.29.norm3.bias": {
+   "data_offsets": [
+    4234746880,
+    4234753024
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.29.norm3.weight": {
+   "data_offsets": [
+    4234753024,
+    4234759168
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.29.self_attn.k.bias": {
+   "data_offsets": [
+    4234759168,
+    4234765312
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.29.self_attn.k.weight": {
+   "data_offsets": [
+    4234765312,
+    4244202496
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.29.self_attn.norm_k.weight": {
+   "data_offsets": [
+    4244202496,
+    4244208640
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.29.self_attn.norm_q.weight": {
+   "data_offsets": [
+    4244208640,
+    4244214784
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.29.self_attn.o.bias": {
+   "data_offsets": [
+    4244214784,
+    4244220928
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.29.self_attn.o.weight": {
+   "data_offsets": [
+    4244220928,
+    4253658112
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.29.self_attn.q.bias": {
+   "data_offsets": [
+    4253658112,
+    4253664256
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.29.self_attn.q.weight": {
+   "data_offsets": [
+    4253664256,
+    4263101440
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.29.self_attn.v.bias": {
+   "data_offsets": [
+    4263101440,
+    4263107584
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.29.self_attn.v.weight": {
+   "data_offsets": [
+    4263107584,
+    4272544768
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.3.cross_attn.k.bias": {
+   "data_offsets": [
+    4272544768,
+    4272550912
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.3.cross_attn.k.weight": {
+   "data_offsets": [
+    4272550912,
+    4281988096
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.3.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    4281988096,
+    4281994240
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.3.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    4281994240,
+    4282000384
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.3.cross_attn.o.bias": {
+   "data_offsets": [
+    4282000384,
+    4282006528
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.3.cross_attn.o.weight": {
+   "data_offsets": [
+    4282006528,
+    4291443712
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.3.cross_attn.q.bias": {
+   "data_offsets": [
+    4291443712,
+    4291449856
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.3.cross_attn.q.weight": {
+   "data_offsets": [
+    4291449856,
+    4300887040
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.3.cross_attn.v.bias": {
+   "data_offsets": [
+    4300887040,
+    4300893184
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.3.cross_attn.v.weight": {
+   "data_offsets": [
+    4300893184,
+    4310330368
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.3.ffn.0.bias": {
+   "data_offsets": [
+    4310330368,
+    4310366208
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.3.ffn.0.weight": {
+   "data_offsets": [
+    4310366208,
+    4365416448
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.3.ffn.2.bias": {
+   "data_offsets": [
+    4365416448,
+    4365422592
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.3.ffn.2.weight": {
+   "data_offsets": [
+    4365422592,
+    4420472832
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.3.modulation": {
+   "data_offsets": [
+    4420472832,
+    4420509696
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.3.norm3.bias": {
+   "data_offsets": [
+    4420509696,
+    4420515840
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.3.norm3.weight": {
+   "data_offsets": [
+    4420515840,
+    4420521984
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.3.self_attn.k.bias": {
+   "data_offsets": [
+    4420521984,
+    4420528128
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.3.self_attn.k.weight": {
+   "data_offsets": [
+    4420528128,
+    4429965312
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.3.self_attn.norm_k.weight": {
+   "data_offsets": [
+    4429965312,
+    4429971456
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.3.self_attn.norm_q.weight": {
+   "data_offsets": [
+    4429971456,
+    4429977600
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.3.self_attn.o.bias": {
+   "data_offsets": [
+    4429977600,
+    4429983744
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.3.self_attn.o.weight": {
+   "data_offsets": [
+    4429983744,
+    4439420928
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.3.self_attn.q.bias": {
+   "data_offsets": [
+    4439420928,
+    4439427072
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.3.self_attn.q.weight": {
+   "data_offsets": [
+    4439427072,
+    4448864256
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.3.self_attn.v.bias": {
+   "data_offsets": [
+    4448864256,
+    4448870400
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.3.self_attn.v.weight": {
+   "data_offsets": [
+    4448870400,
+    4458307584
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.4.cross_attn.k.bias": {
+   "data_offsets": [
+    4458307584,
+    4458313728
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.4.cross_attn.k.weight": {
+   "data_offsets": [
+    4458313728,
+    4467750912
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.4.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    4467750912,
+    4467757056
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.4.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    4467757056,
+    4467763200
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.4.cross_attn.o.bias": {
+   "data_offsets": [
+    4467763200,
+    4467769344
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.4.cross_attn.o.weight": {
+   "data_offsets": [
+    4467769344,
+    4477206528
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.4.cross_attn.q.bias": {
+   "data_offsets": [
+    4477206528,
+    4477212672
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.4.cross_attn.q.weight": {
+   "data_offsets": [
+    4477212672,
+    4486649856
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.4.cross_attn.v.bias": {
+   "data_offsets": [
+    4486649856,
+    4486656000
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.4.cross_attn.v.weight": {
+   "data_offsets": [
+    4486656000,
+    4496093184
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.4.ffn.0.bias": {
+   "data_offsets": [
+    4496093184,
+    4496129024
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.4.ffn.0.weight": {
+   "data_offsets": [
+    4496129024,
+    4551179264
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.4.ffn.2.bias": {
+   "data_offsets": [
+    4551179264,
+    4551185408
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.4.ffn.2.weight": {
+   "data_offsets": [
+    4551185408,
+    4606235648
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.4.modulation": {
+   "data_offsets": [
+    4606235648,
+    4606272512
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.4.norm3.bias": {
+   "data_offsets": [
+    4606272512,
+    4606278656
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.4.norm3.weight": {
+   "data_offsets": [
+    4606278656,
+    4606284800
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.4.self_attn.k.bias": {
+   "data_offsets": [
+    4606284800,
+    4606290944
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.4.self_attn.k.weight": {
+   "data_offsets": [
+    4606290944,
+    4615728128
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.4.self_attn.norm_k.weight": {
+   "data_offsets": [
+    4615728128,
+    4615734272
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.4.self_attn.norm_q.weight": {
+   "data_offsets": [
+    4615734272,
+    4615740416
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.4.self_attn.o.bias": {
+   "data_offsets": [
+    4615740416,
+    4615746560
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.4.self_attn.o.weight": {
+   "data_offsets": [
+    4615746560,
+    4625183744
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.4.self_attn.q.bias": {
+   "data_offsets": [
+    4625183744,
+    4625189888
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.4.self_attn.q.weight": {
+   "data_offsets": [
+    4625189888,
+    4634627072
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.4.self_attn.v.bias": {
+   "data_offsets": [
+    4634627072,
+    4634633216
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.4.self_attn.v.weight": {
+   "data_offsets": [
+    4634633216,
+    4644070400
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.5.cross_attn.k.bias": {
+   "data_offsets": [
+    4644070400,
+    4644076544
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.5.cross_attn.k.weight": {
+   "data_offsets": [
+    4644076544,
+    4653513728
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.5.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    4653513728,
+    4653519872
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.5.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    4653519872,
+    4653526016
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.5.cross_attn.o.bias": {
+   "data_offsets": [
+    4653526016,
+    4653532160
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.5.cross_attn.o.weight": {
+   "data_offsets": [
+    4653532160,
+    4662969344
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.5.cross_attn.q.bias": {
+   "data_offsets": [
+    4662969344,
+    4662975488
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.5.cross_attn.q.weight": {
+   "data_offsets": [
+    4662975488,
+    4672412672
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.5.cross_attn.v.bias": {
+   "data_offsets": [
+    4672412672,
+    4672418816
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.5.cross_attn.v.weight": {
+   "data_offsets": [
+    4672418816,
+    4681856000
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.5.ffn.0.bias": {
+   "data_offsets": [
+    4681856000,
+    4681891840
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.5.ffn.0.weight": {
+   "data_offsets": [
+    4681891840,
+    4736942080
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.5.ffn.2.bias": {
+   "data_offsets": [
+    4736942080,
+    4736948224
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.5.ffn.2.weight": {
+   "data_offsets": [
+    4736948224,
+    4791998464
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.5.modulation": {
+   "data_offsets": [
+    4791998464,
+    4792035328
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.5.norm3.bias": {
+   "data_offsets": [
+    4792035328,
+    4792041472
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.5.norm3.weight": {
+   "data_offsets": [
+    4792041472,
+    4792047616
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.5.self_attn.k.bias": {
+   "data_offsets": [
+    4792047616,
+    4792053760
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.5.self_attn.k.weight": {
+   "data_offsets": [
+    4792053760,
+    4801490944
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.5.self_attn.norm_k.weight": {
+   "data_offsets": [
+    4801490944,
+    4801497088
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.5.self_attn.norm_q.weight": {
+   "data_offsets": [
+    4801497088,
+    4801503232
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.5.self_attn.o.bias": {
+   "data_offsets": [
+    4801503232,
+    4801509376
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.5.self_attn.o.weight": {
+   "data_offsets": [
+    4801509376,
+    4810946560
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.5.self_attn.q.bias": {
+   "data_offsets": [
+    4810946560,
+    4810952704
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.5.self_attn.q.weight": {
+   "data_offsets": [
+    4810952704,
+    4820389888
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.5.self_attn.v.bias": {
+   "data_offsets": [
+    4820389888,
+    4820396032
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.5.self_attn.v.weight": {
+   "data_offsets": [
+    4820396032,
+    4829833216
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.6.cross_attn.k.bias": {
+   "data_offsets": [
+    4829833216,
+    4829839360
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.6.cross_attn.k.weight": {
+   "data_offsets": [
+    4829839360,
+    4839276544
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.6.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    4839276544,
+    4839282688
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.6.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    4839282688,
+    4839288832
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.6.cross_attn.o.bias": {
+   "data_offsets": [
+    4839288832,
+    4839294976
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.6.cross_attn.o.weight": {
+   "data_offsets": [
+    4839294976,
+    4848732160
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.6.cross_attn.q.bias": {
+   "data_offsets": [
+    4848732160,
+    4848738304
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.6.cross_attn.q.weight": {
+   "data_offsets": [
+    4848738304,
+    4858175488
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.6.cross_attn.v.bias": {
+   "data_offsets": [
+    4858175488,
+    4858181632
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.6.cross_attn.v.weight": {
+   "data_offsets": [
+    4858181632,
+    4867618816
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.6.ffn.0.bias": {
+   "data_offsets": [
+    4867618816,
+    4867654656
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.6.ffn.0.weight": {
+   "data_offsets": [
+    4867654656,
+    4922704896
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.6.ffn.2.bias": {
+   "data_offsets": [
+    4922704896,
+    4922711040
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.6.ffn.2.weight": {
+   "data_offsets": [
+    4922711040,
+    4977761280
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.6.modulation": {
+   "data_offsets": [
+    4977761280,
+    4977798144
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.6.norm3.bias": {
+   "data_offsets": [
+    4977798144,
+    4977804288
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.6.norm3.weight": {
+   "data_offsets": [
+    4977804288,
+    4977810432
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.6.self_attn.k.bias": {
+   "data_offsets": [
+    4977810432,
+    4977816576
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.6.self_attn.k.weight": {
+   "data_offsets": [
+    4977816576,
+    4987253760
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.6.self_attn.norm_k.weight": {
+   "data_offsets": [
+    4987253760,
+    4987259904
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.6.self_attn.norm_q.weight": {
+   "data_offsets": [
+    4987259904,
+    4987266048
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.6.self_attn.o.bias": {
+   "data_offsets": [
+    4987266048,
+    4987272192
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.6.self_attn.o.weight": {
+   "data_offsets": [
+    4987272192,
+    4996709376
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.6.self_attn.q.bias": {
+   "data_offsets": [
+    4996709376,
+    4996715520
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.6.self_attn.q.weight": {
+   "data_offsets": [
+    4996715520,
+    5006152704
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.6.self_attn.v.bias": {
+   "data_offsets": [
+    5006152704,
+    5006158848
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.6.self_attn.v.weight": {
+   "data_offsets": [
+    5006158848,
+    5015596032
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.7.cross_attn.k.bias": {
+   "data_offsets": [
+    5015596032,
+    5015602176
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.7.cross_attn.k.weight": {
+   "data_offsets": [
+    5015602176,
+    5025039360
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.7.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    5025039360,
+    5025045504
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.7.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    5025045504,
+    5025051648
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.7.cross_attn.o.bias": {
+   "data_offsets": [
+    5025051648,
+    5025057792
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.7.cross_attn.o.weight": {
+   "data_offsets": [
+    5025057792,
+    5034494976
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.7.cross_attn.q.bias": {
+   "data_offsets": [
+    5034494976,
+    5034501120
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.7.cross_attn.q.weight": {
+   "data_offsets": [
+    5034501120,
+    5043938304
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.7.cross_attn.v.bias": {
+   "data_offsets": [
+    5043938304,
+    5043944448
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.7.cross_attn.v.weight": {
+   "data_offsets": [
+    5043944448,
+    5053381632
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.7.ffn.0.bias": {
+   "data_offsets": [
+    5053381632,
+    5053417472
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.7.ffn.0.weight": {
+   "data_offsets": [
+    5053417472,
+    5108467712
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.7.ffn.2.bias": {
+   "data_offsets": [
+    5108467712,
+    5108473856
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.7.ffn.2.weight": {
+   "data_offsets": [
+    5108473856,
+    5163524096
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.7.modulation": {
+   "data_offsets": [
+    5163524096,
+    5163560960
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.7.norm3.bias": {
+   "data_offsets": [
+    5163560960,
+    5163567104
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.7.norm3.weight": {
+   "data_offsets": [
+    5163567104,
+    5163573248
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.7.self_attn.k.bias": {
+   "data_offsets": [
+    5163573248,
+    5163579392
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.7.self_attn.k.weight": {
+   "data_offsets": [
+    5163579392,
+    5173016576
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.7.self_attn.norm_k.weight": {
+   "data_offsets": [
+    5173016576,
+    5173022720
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.7.self_attn.norm_q.weight": {
+   "data_offsets": [
+    5173022720,
+    5173028864
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.7.self_attn.o.bias": {
+   "data_offsets": [
+    5173028864,
+    5173035008
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.7.self_attn.o.weight": {
+   "data_offsets": [
+    5173035008,
+    5182472192
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.7.self_attn.q.bias": {
+   "data_offsets": [
+    5182472192,
+    5182478336
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.7.self_attn.q.weight": {
+   "data_offsets": [
+    5182478336,
+    5191915520
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.7.self_attn.v.bias": {
+   "data_offsets": [
+    5191915520,
+    5191921664
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.7.self_attn.v.weight": {
+   "data_offsets": [
+    5191921664,
+    5201358848
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.8.cross_attn.k.bias": {
+   "data_offsets": [
+    5201358848,
+    5201364992
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.8.cross_attn.k.weight": {
+   "data_offsets": [
+    5201364992,
+    5210802176
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.8.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    5210802176,
+    5210808320
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.8.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    5210808320,
+    5210814464
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.8.cross_attn.o.bias": {
+   "data_offsets": [
+    5210814464,
+    5210820608
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.8.cross_attn.o.weight": {
+   "data_offsets": [
+    5210820608,
+    5220257792
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.8.cross_attn.q.bias": {
+   "data_offsets": [
+    5220257792,
+    5220263936
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.8.cross_attn.q.weight": {
+   "data_offsets": [
+    5220263936,
+    5229701120
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.8.cross_attn.v.bias": {
+   "data_offsets": [
+    5229701120,
+    5229707264
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.8.cross_attn.v.weight": {
+   "data_offsets": [
+    5229707264,
+    5239144448
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.8.ffn.0.bias": {
+   "data_offsets": [
+    5239144448,
+    5239180288
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.8.ffn.0.weight": {
+   "data_offsets": [
+    5239180288,
+    5294230528
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.8.ffn.2.bias": {
+   "data_offsets": [
+    5294230528,
+    5294236672
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.8.ffn.2.weight": {
+   "data_offsets": [
+    5294236672,
+    5349286912
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.8.modulation": {
+   "data_offsets": [
+    5349286912,
+    5349323776
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.8.norm3.bias": {
+   "data_offsets": [
+    5349323776,
+    5349329920
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.8.norm3.weight": {
+   "data_offsets": [
+    5349329920,
+    5349336064
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.8.self_attn.k.bias": {
+   "data_offsets": [
+    5349336064,
+    5349342208
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.8.self_attn.k.weight": {
+   "data_offsets": [
+    5349342208,
+    5358779392
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.8.self_attn.norm_k.weight": {
+   "data_offsets": [
+    5358779392,
+    5358785536
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.8.self_attn.norm_q.weight": {
+   "data_offsets": [
+    5358785536,
+    5358791680
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.8.self_attn.o.bias": {
+   "data_offsets": [
+    5358791680,
+    5358797824
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.8.self_attn.o.weight": {
+   "data_offsets": [
+    5358797824,
+    5368235008
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.8.self_attn.q.bias": {
+   "data_offsets": [
+    5368235008,
+    5368241152
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.8.self_attn.q.weight": {
+   "data_offsets": [
+    5368241152,
+    5377678336
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.8.self_attn.v.bias": {
+   "data_offsets": [
+    5377678336,
+    5377684480
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.8.self_attn.v.weight": {
+   "data_offsets": [
+    5377684480,
+    5387121664
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.9.cross_attn.k.bias": {
+   "data_offsets": [
+    5387121664,
+    5387127808
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.9.cross_attn.k.weight": {
+   "data_offsets": [
+    5387127808,
+    5396564992
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.9.cross_attn.norm_k.weight": {
+   "data_offsets": [
+    5396564992,
+    5396571136
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.9.cross_attn.norm_q.weight": {
+   "data_offsets": [
+    5396571136,
+    5396577280
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.9.cross_attn.o.bias": {
+   "data_offsets": [
+    5396577280,
+    5396583424
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.9.cross_attn.o.weight": {
+   "data_offsets": [
+    5396583424,
+    5406020608
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.9.cross_attn.q.bias": {
+   "data_offsets": [
+    5406020608,
+    5406026752
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.9.cross_attn.q.weight": {
+   "data_offsets": [
+    5406026752,
+    5415463936
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.9.cross_attn.v.bias": {
+   "data_offsets": [
+    5415463936,
+    5415470080
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.9.cross_attn.v.weight": {
+   "data_offsets": [
+    5415470080,
+    5424907264
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.9.ffn.0.bias": {
+   "data_offsets": [
+    5424907264,
+    5424943104
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960
+   ]
+  },
+  "blocks.9.ffn.0.weight": {
+   "data_offsets": [
+    5424943104,
+    5479993344
+   ],
+   "dtype": "F32",
+   "shape": [
+    8960,
+    1536
+   ]
+  },
+  "blocks.9.ffn.2.bias": {
+   "data_offsets": [
+    5479993344,
+    5479999488
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.9.ffn.2.weight": {
+   "data_offsets": [
+    5479999488,
+    5535049728
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    8960
+   ]
+  },
+  "blocks.9.modulation": {
+   "data_offsets": [
+    5535049728,
+    5535086592
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    6,
+    1536
+   ]
+  },
+  "blocks.9.norm3.bias": {
+   "data_offsets": [
+    5535086592,
+    5535092736
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.9.norm3.weight": {
+   "data_offsets": [
+    5535092736,
+    5535098880
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.9.self_attn.k.bias": {
+   "data_offsets": [
+    5535098880,
+    5535105024
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.9.self_attn.k.weight": {
+   "data_offsets": [
+    5535105024,
+    5544542208
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.9.self_attn.norm_k.weight": {
+   "data_offsets": [
+    5544542208,
+    5544548352
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.9.self_attn.norm_q.weight": {
+   "data_offsets": [
+    5544548352,
+    5544554496
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.9.self_attn.o.bias": {
+   "data_offsets": [
+    5544554496,
+    5544560640
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.9.self_attn.o.weight": {
+   "data_offsets": [
+    5544560640,
+    5553997824
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.9.self_attn.q.bias": {
+   "data_offsets": [
+    5553997824,
+    5554003968
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.9.self_attn.q.weight": {
+   "data_offsets": [
+    5554003968,
+    5563441152
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "blocks.9.self_attn.v.bias": {
+   "data_offsets": [
+    5563441152,
+    5563447296
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "blocks.9.self_attn.v.weight": {
+   "data_offsets": [
+    5563447296,
+    5572884480
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "head.head.bias": {
+   "data_offsets": [
+    5572884480,
+    5572884736
+   ],
+   "dtype": "F32",
+   "shape": [
+    64
+   ]
+  },
+  "head.head.weight": {
+   "data_offsets": [
+    5572884736,
+    5573277952
+   ],
+   "dtype": "F32",
+   "shape": [
+    64,
+    1536
+   ]
+  },
+  "head.modulation": {
+   "data_offsets": [
+    5573277952,
+    5573290240
+   ],
+   "dtype": "F32",
+   "shape": [
+    1,
+    2,
+    1536
+   ]
+  },
+  "patch_embedding.bias": {
+   "data_offsets": [
+    5573290240,
+    5573296384
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "patch_embedding.weight": {
+   "data_offsets": [
+    5573296384,
+    5573689600
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    16,
+    1,
+    2,
+    2
+   ]
+  },
+  "text_embedding.0.bias": {
+   "data_offsets": [
+    5573689600,
+    5573695744
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "text_embedding.0.weight": {
+   "data_offsets": [
+    5573695744,
+    5598861568
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    4096
+   ]
+  },
+  "text_embedding.2.bias": {
+   "data_offsets": [
+    5598861568,
+    5598867712
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "text_embedding.2.weight": {
+   "data_offsets": [
+    5598867712,
+    5608304896
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "time_embedding.0.bias": {
+   "data_offsets": [
+    5608304896,
+    5608311040
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "time_embedding.0.weight": {
+   "data_offsets": [
+    5608311040,
+    5609883904
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    256
+   ]
+  },
+  "time_embedding.2.bias": {
+   "data_offsets": [
+    5609883904,
+    5609890048
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536
+   ]
+  },
+  "time_embedding.2.weight": {
+   "data_offsets": [
+    5609890048,
+    5619327232
+   ],
+   "dtype": "F32",
+   "shape": [
+    1536,
+    1536
+   ]
+  },
+  "time_projection.1.bias": {
+   "data_offsets": [
+    5619327232,
+    5619364096
+   ],
+   "dtype": "F32",
+   "shape": [
+    9216
+   ]
+  },
+  "time_projection.1.weight": {
+   "data_offsets": [
+    5619364096,
+    5675987200
+   ],
+   "dtype": "F32",
+   "shape": [
+    9216,
+    1536
+   ]
+  }
+ }
+}

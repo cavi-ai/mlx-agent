@@ -147,6 +147,16 @@ class BackendConvertTests(unittest.TestCase):
         self.assertEqual(pipeline["argv"][pipeline["argv"].index("--hf-path") + 1], "Qwen/Qwen-Image-2.1")
         self.assertNotIn("recipe", pipeline)
 
+    def test_a_wan_checkpoint_converts_with_the_mlx_video_port_converter(self):
+        plan = plan_convert("Wan-AI/Wan2.1-T2V-1.3B", q_bits=4, backend="mlx-video", model_type="t2v",
+                            out=str(self.root / "wan"), backends_root_dir=self.root)
+        argv = plan["argv"]
+        self.assertEqual(argv[1:3], ["-m", "mlx_video.mlx_agent_ports.t2v.convert"])
+        self.assertEqual(argv[argv.index("--hf-path") + 1], "Wan-AI/Wan2.1-T2V-1.3B")
+        self.assertEqual((argv[argv.index("--q-bits") + 1], "--quantize" in argv), ("4", True))
+        self.assertEqual((plan["backend"], plan["ports"], plan["port_converter"]), ("mlx-video", ["t2v"], "mlx_video.mlx_agent_ports.t2v.convert"))
+        self.assertNotIn("recipe", plan)
+
     def test_a_subfolder_receipt_matches_the_receipt_schema(self):
         self.cache("org/name", "chat")
         plan = plan_convert("org/name", subfolder="chat", out=str(self.root / "out"), hf_cache=str(self.root / "hub"))

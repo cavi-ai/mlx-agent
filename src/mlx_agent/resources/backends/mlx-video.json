@@ -1,0 +1,27 @@
+{
+  "schema": "backend/1",
+  "id": "mlx-video",
+  "version": "0.1.37",
+  "builtin": false,
+  "package": "mlx_video",
+  "convert": "mlx_video.convert_wan",
+  "lock": "mlx-video.lock",
+  "ports": {
+    "video_generation": [
+      "t2v"
+    ]
+  },
+  "port_convert": {
+    "t2v": "convert"
+  },
+  "categories": {
+    "video_generation": "mlx_agent_ports"
+  },
+  "remap_files": {},
+  "registry": {
+    "video_generation": {
+      "model_types": [],
+      "remapping": {}
+    }
+  }
+}

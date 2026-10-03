@@ -190,7 +190,7 @@ class InstallStateTests(unittest.TestCase):
 class ManifestTests(unittest.TestCase):
     def test_declared_manifests_load(self):
         manifests = load_manifests()
-        self.assertEqual(sorted(manifests), ["mflux", "mlx-audio", "mlx-embeddings", "mlx-lm", "mlx-vlm"])
+        self.assertEqual(sorted(manifests), ["mflux", "mlx-audio", "mlx-embeddings", "mlx-lm", "mlx-video", "mlx-vlm"])
         self.assertTrue(manifests["mlx-lm"]["builtin"])
         self.assertEqual(manifests["mlx-audio"]["version"], "0.5.7")
         self.assertEqual(manifests["mlx-vlm"]["version"], "0.7.4")
@@ -359,6 +359,12 @@ class ClassificationPortTests(unittest.TestCase):
         self.assertEqual([(hit["backend"], hit["category"], hit["module"]) for hit in hits],
                          [("mflux", "image_generation", "mflux.mlx_agent_ports.qwen_image_21")])
         self.assertEqual(choose_backend(hits, "image_generation"), "mflux")
+        video = lookup("t2v", self.manifests, registries)
+        self.assertEqual([(hit["backend"], hit["category"], hit["module"]) for hit in video],
+                         [("mlx-video", "video_generation", "mlx_video.mlx_agent_ports.t2v")])
+        self.assertEqual(choose_backend(video, "video_generation"), "mlx-video")
+        self.assertEqual(port_converter("t2v", "mlx-video", self.manifests), "mlx_video.mlx_agent_ports.t2v.convert")
+        self.assertIsNone(choose_backend(video, "text_llm"))
         manifest = self.manifests["mflux"]
         recipe = manifest["port_recipes"]["abenzerps/Qwen-Image-2.1-Uncensored-GGUF"]
         directory = Path(self.directory.name) / "mflux"

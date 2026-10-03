@@ -62,7 +62,7 @@
     },
     {
       "path": "src/mlx_agent/backends.py",
-      "sha256": "41da17cc10c8873e00ff6cd45ecdcbd3c08ac72cc91c2334c8439207e02cb2fe"
+      "sha256": "a765fc73c0582beeccaee98fa04bf89ac8909db2f2df8f7fa3be565adc5edeac"
     },
     {
       "path": "src/mlx_agent/bench.py",
@@ -74,7 +74,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "782a5eb94bc2eb61c6f8a543b6b3dbcf187b15de47f98f5979206b88356c4f24"
+      "sha256": "c9368db8fa72581a0b296705ace6e93caac91300592a2fddceb98886ba14752b"
     },
     {
       "path": "src/mlx_agent/command_args.py",
@@ -249,6 +249,14 @@
       "sha256": "e8ace86623bbe66c61fad90ade9d3c6c35428e2982f3f9da777c3e24dafd5035"
     },
     {
+      "path": "src/mlx_agent/resources/backends/mlx-video.json",
+      "sha256": "fae5abb6119a447618c661ae7706158608e87afcff7b6fefe758100943868b5d"
+    },
+    {
+      "path": "src/mlx_agent/resources/backends/mlx-video.lock",
+      "sha256": "8945ea621db7e37f73d6f4680fddd34951764df979d812fde866380ab1e74cd3"
+    },
+    {
       "path": "src/mlx_agent/resources/backends/mlx-vlm.json",
       "sha256": "fa6e7c92b7c9e511be84dc23431de1e1d8e503bb27bc8cc3f4cd8c3693ef744a"
     },
@@ -309,6 +317,18 @@
       "sha256": "6714bdeccd626ac3c90ae464e7b1c4999419ef9b0cd7e42f0cd6cc6e60f1efd7"
     },
     {
+      "path": "src/mlx_agent/resources/ports/mlx-video/t2v/__init__.py",
+      "sha256": "58ce139e1e91920dd8956e402f332ca5d608c3c8bf399eb63f3541285b2f4696"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-video/t2v/convert.py",
+      "sha256": "ef9b42bd3746a3fc2576e0a9bf0189e60772c1527b5b5bd41b2e665571a9410c"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-video/t2v/t2v.py",
+      "sha256": "795091373646294e6df319a0cb6da96981a21b66d022c2acf12ff3c032d3357b"
+    },
+    {
       "path": "src/mlx_agent/resources/references/model-families.md",
       "sha256": "666bd3e3fd4b9922488d8232075eb5a3bd9d168bb0c90162c1a459bc44df6b90"
     },
@@ -346,7 +366,7 @@
     },
     {
       "path": "src/mlx_agent/taxonomy.py",
-      "sha256": "57e54dfe2819bb103bf8d086fa961437fc4b0f231af47637e051da69183e2830"
+      "sha256": "4efce1e6fc930b16de5a27d39371cdbd0cb4c963caa4cdf6f0ee48c2cf6e73cb"
     },
     {
       "path": "src/mlx_agent/transactions.py",
@@ -363,6 +383,14 @@
     {
       "path": "src/mlx_agent/verification.py",
       "sha256": "c66c471871c23c6b732c4d0adc683a3039f46cd0b8188067fb1be53b4c1f4b17"
+    },
+    {
+      "path": "src/mlx_agent/video.py",
+      "sha256": "de98c8fdab9b1d7d0f951c0c6a49f8094fdfe31578873d9d627664b4a1790d5a"
+    },
+    {
+      "path": "src/mlx_agent/video_runner.py",
+      "sha256": "c6fd058716522f68b55718e6280787bd5dfc664ada430077dfa3d54e466cbb8d"
     },
     {
       "path": "src/mlx_agent/watch.py",

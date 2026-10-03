@@ -14,6 +14,13 @@ from mlx_agent.video import VIDEO_RUNNER, VideoError, plan_video, run_video
 from .backend_fixtures import synthetic_manifests, synthetic_registries
 
 
+FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
+
+
+def result_fixture(name):
+    return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+
+
 class Completed:
     def __init__(self, returncode=0, stdout="", stderr=""):
         self.returncode, self.stdout, self.stderr = returncode, stdout, stderr
@@ -126,7 +133,7 @@ class VideoTests(unittest.TestCase):
                                runner=lambda argv, **kw: seen.append(kw) or Completed(stdout="Diffusion 1/4\n" + line + "\n"))
             self.assertEqual(sync.call_args.args[0]["id"], "mlx-video")
             self.assertEqual((result["schema"], result["path"], result["pixel_std"], result["seconds_per_frame"]), ("video/1", self.out, 55.2, 2.5))
-            self.assertEqual(set(result) - {"schema", "backend", "model"}, set(RESULT))
+            self.assertEqual(set(result), set(result_fixture("convert-video.json")))
             self.assertEqual(seen[0]["stdin"], subprocess.DEVNULL)
             with self.assertRaises(VideoError) as caught:
                 run_video(plan, manifests=self.manifests, root=self.root / "backends",

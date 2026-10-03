@@ -1,0 +1,15 @@
+{
+  "schema": "speak/1",
+  "backend": "mlx-audio",
+  "model": "/tmp/models/Soprano-80M-bf16",
+  "voice": null,
+  "speed": 1.0,
+  "lang_code": null,
+  "path": "/tmp/mlx-agent/fox.wav",
+  "sample_rate": 32000,
+  "audio_seconds": 2.624,
+  "seconds": 1.848,
+  "load_seconds": 2.238,
+  "real_time_factor": 0.7041,
+  "peak_memory_gb": 0.24
+}

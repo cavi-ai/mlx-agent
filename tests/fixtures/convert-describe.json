@@ -1,0 +1,17 @@
+{
+  "schema": "describe/1",
+  "backend": "mlx-vlm",
+  "model": "/tmp/models/Qwen2.5-VL-3B-Instruct-4bit",
+  "text": "The image shows a red circle.",
+  "prompt_tokens": 55,
+  "generation_tokens": 8,
+  "prompt_tps": 46.694,
+  "generation_tps": 222.039,
+  "peak_memory_gb": 3.244,
+  "seconds": 1.253,
+  "load_seconds": 0.485,
+  "input": {
+    "kind": "image",
+    "path": "/tmp/mlx-agent/red-circle.png"
+  }
+}

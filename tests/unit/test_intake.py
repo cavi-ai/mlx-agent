@@ -258,6 +258,23 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual(payload["estimated_output_bytes"], {str(bits): quantized[bits] + kept + 2000 for bits in (4, 8)})
         self.assertEqual(client.header_requests, ["model.safetensors"])
 
+    def test_estimate_survives_a_nested_pth_checkpoint_beside_root_safetensors_shards(self):
+        header = {
+            "__metadata__": {"format": "pt"},
+            "layer.weight": {"dtype": "BF16", "shape": [128, 64], "data_offsets": [0, 0]},
+        }
+        shards = ("model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors")
+        info = repo_info(
+            pipeline_tag="text-generation", model_type="llama",
+            files=("config.json", "tokenizer.json", "model.safetensors.index.json", *shards, "original/consolidated.00.pth"),
+        )
+        client = FakeClient(info=info, files={"config.json": json.dumps({"model_type": "llama"})},
+                            headers={shard: header for shard in shards})
+        payload = self.run_resolve(client, installed=("mlx-lm",))
+        quantized = {4: 8192 // 2 + 128 * 2 * 2, 8: 8192 + 128 * 2 * 2}
+        self.assertEqual(payload["estimated_output_bytes"], {str(bits): quantized[bits] * 2 + 2000 for bits in (4, 8)})
+        self.assertEqual(client.header_requests, list(shards))
+
     def test_estimate_is_null_when_a_header_is_unreadable_or_the_verdict_is_not_a_conversion(self):
         client = FakeClient(info=repo_info(pipeline_tag="text-generation"), files={"config.json": json.dumps({"model_type": "qwen2"})})
         payload = self.run_resolve(client, installed=("mlx-lm",))

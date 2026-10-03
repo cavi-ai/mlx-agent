@@ -14,6 +14,13 @@ from mlx_agent.describe import DESCRIBE_RUNNER, DescribeError, plan_describe, ru
 from .backend_fixtures import synthetic_manifests, synthetic_registries
 
 
+FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
+
+
+def result_fixture(name):
+    return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+
+
 class Completed:
     def __init__(self, returncode=0, stdout="", stderr=""):
         self.returncode, self.stdout, self.stderr = returncode, stdout, stderr
@@ -144,11 +151,7 @@ class DescribeTests(unittest.TestCase):
             self.assertEqual(sync.call_args.args[0]["id"], "mlx-vlm")
             self.assertEqual(seen[0][0], plan["argv"])
             self.assertEqual((seen[0][1]["stdin"], seen[0][1]["timeout"]), (subprocess.DEVNULL, 900))
-            self.assertEqual(
-                sorted(result),
-                sorted(["schema", "backend", "model", "text", "prompt_tokens", "generation_tokens", "prompt_tps",
-                        "generation_tps", "peak_memory_gb", "seconds", "load_seconds", "input"]),
-            )
+            self.assertEqual(set(result), set(result_fixture("convert-describe.json")))
             self.assertEqual((result["schema"], result["text"], result["generation_tokens"]), ("describe/1", "A red circle on white.", 8))
             self.assertEqual(result["input"], {"kind": "image", "path": self.image})
 

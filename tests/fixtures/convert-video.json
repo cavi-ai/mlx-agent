@@ -1,0 +1,18 @@
+{
+  "schema": "video/1",
+  "backend": "mlx-video",
+  "model": "/tmp/models/wan21-t2v-1.3b-MLX-4bit",
+  "path": "/tmp/mlx-agent/red-ball-416.mp4",
+  "width": 416,
+  "height": 240,
+  "frames": 20,
+  "fps": 16,
+  "duration_seconds": 1.25,
+  "steps": 30,
+  "seed": 42,
+  "seconds": 27.021,
+  "load_seconds": 1.372,
+  "seconds_per_frame": 1.351,
+  "peak_memory_gb": 25.596,
+  "pixel_std": 54.353
+}

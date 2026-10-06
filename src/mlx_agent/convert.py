@@ -87,7 +87,7 @@ def cached_subfolder(repo, subfolder, hf_cache=None):
 
 
 def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backends_root_dir=None, model_type=None,
-                 subfolder=None, hf_cache=None):
+                 subfolder=None, hf_cache=None, source_path=None):
     """Render the exact conversion plan; side-effect free (a subfolder is looked up in the cache).
 
     ``model_type`` (from intake) selects a port's own converter when the port
@@ -115,8 +115,12 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
     name = repo.split("/", 1)[1] + ("-" + subfolder.replace("/", "-") if subfolder else "")
     if out is None:
         out = "{0}-MLX-{1}bit".format(name, q_bits)
-    hf_path = repo
-    if subfolder:
+    local_source = Path(source_path).expanduser().absolute() if source_path is not None else cached_snapshot(repo, hf_cache)
+    if source_path is not None and not local_source.is_dir():
+        raise ConvertError("source_not_found", "The downloaded source directory is missing.",
+                           "Download or select the source again before previewing.")
+    hf_path = str(local_source) if local_source is not None else repo
+    if subfolder and source_path is None:
         folder = cached_subfolder(repo, subfolder, hf_cache)
         if folder is None:
             raise ConvertError(
@@ -132,6 +136,18 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
         "q_bits": q_bits,
         "out": str(out),
     }
+    if hf_path != repo:
+        source = Path(hf_path)
+        # Bind the reviewed plan to the local source, including config contents
+        # and weight identities. Snapshot links may point to cache-owned blobs.
+        entries = []
+        for item in sorted(source.rglob("*")):
+            if item.is_file():
+                stat = item.stat()
+                content = hashlib.sha256(item.read_bytes()).hexdigest() if item.name.endswith(".json") and stat.st_size <= 1024 * 1024 else ""
+                entries.append([str(item.relative_to(source)), stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, content])
+        plan["source"]["path"] = str(source)
+        plan["source"]["fingerprint"] = hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest()
     if backend in (None, "mlx-lm"):
         plan["argv"] = [EXECUTABLE] + flags
         return _finalize_plan(plan)
@@ -395,6 +411,9 @@ def start_convert(plan, receipts_dir=None, confirm=False, preview_hash=None,
                 "The source GGUF is no longer at {0}.".format(plan["source"]["path"]),
                 "Re-run convert scan and preview a fresh plan.",
             )
+    elif plan.get("source", {}).get("path") is not None:
+        if not Path(plan["source"]["path"]).is_dir():
+            raise ConvertError("source_not_found", "The reviewed local source is no longer present.", "Preview the conversion again.")
     elif model_present is not None and not model_present(plan["repo"]):
         raise ConvertError(
             "model_not_local",
@@ -426,8 +445,10 @@ def start_convert(plan, receipts_dir=None, confirm=False, preview_hash=None,
     root.mkdir(parents=True, exist_ok=True)
     slug = _slug(plan)
     log_path = root / "{0}.log".format(slug)
-    if spawn is None and backend:
+    if spawn is None:
         environment = backend_environment()
+        environment["HF_HUB_OFFLINE"] = "1"
+        environment["TRANSFORMERS_OFFLINE"] = "1"
 
         def spawn(argv, log_path):
             return spawn_with_env(argv, log_path, environment)

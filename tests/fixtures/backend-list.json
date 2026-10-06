@@ -64,6 +64,21 @@
     {
       "builtin": false,
       "categories": [
+        "video_generation"
+      ],
+      "completed_at": null,
+      "id": "mlx-video",
+      "log_path": null,
+      "model_types": 1,
+      "registry_source": "snapshot",
+      "started_at": null,
+      "state": "absent",
+      "target": "/backends/mlx-video",
+      "version": "0.1.37"
+    },
+    {
+      "builtin": false,
+      "categories": [
         "vision_language"
       ],
       "completed_at": null,

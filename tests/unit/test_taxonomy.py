@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 
 from mlx_agent import cli
 from mlx_agent.backends import load_manifests, load_registries
-from mlx_agent.taxonomy import annotate_inventory, classify, read_config_type, use_cases_for
+from mlx_agent.taxonomy import TASK_TYPES, annotate_inventory, classify, read_config_type, use_cases_for
 
 from .backend_fixtures import synthetic_manifests, synthetic_registries
 from .test_gguf import write_gguf
@@ -161,6 +161,11 @@ class ClassificationTaxonomyTests(unittest.TestCase):
         self.assertEqual(use_cases_for("classification", "plain"), ["classification"])
         image = classify("qwen-image-2.1-uc-MLX-8bit", model_type="qwen_image_21", manifests=manifests, registries=registries, local=True)
         self.assertEqual((image["type"], image["source"]), ("image_generation", "registry"))
+        video = classify("Wan2.1-T2V-1.3B-MLX-4bit", model_type="t2v", manifests=manifests, registries=registries, local=True)
+        self.assertEqual((video["type"], video["use_cases"], video["source"]), ("video_generation", ["video_generation"], "registry"))
+        tagged = classify("Wan-AI/Wan2.1-T2V-1.3B", pipeline_tag="text-to-video")
+        self.assertEqual((tagged["type"], tagged["source"], tagged["confidence"]), ("video_generation", "pipeline_tag", "confirmed"))
+        self.assertIn("video_generation", TASK_TYPES)
 
 
 if __name__ == "__main__":

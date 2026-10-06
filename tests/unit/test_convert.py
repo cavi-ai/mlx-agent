@@ -22,6 +22,30 @@ RECEIPT_SCHEMA = Draft202012Validator(json.loads(
 
 
 class PlanConvertTests(unittest.TestCase):
+    def test_cached_source_is_passed_as_local_path(self):
+        with TemporaryDirectory() as directory:
+            cache = Path(directory)
+            entry = cache / "models--pub--model"
+            snapshot = entry / "snapshots" / "abc"
+            snapshot.mkdir(parents=True)
+            (entry / "refs").mkdir()
+            (entry / "refs" / "main").write_text("abc")
+            (snapshot / "config.json").write_text('{"model_type":"qwen2"}')
+            plan = plan_convert("pub/model", hf_cache=cache)
+            self.assertEqual(plan["argv"][2], str(snapshot))
+            self.assertEqual(plan["source"]["path"], str(snapshot))
+
+    def test_explicit_download_directory_is_reused_and_changes_invalidate_preview(self):
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "download"
+            source.mkdir()
+            (source / "config.json").write_text('{"model_type":"qwen2"}')
+            first = plan_convert("pub/model", source_path=str(source))
+            self.assertEqual(first["argv"][2], str(source))
+            (source / "config.json").write_text('{"model_type":"qwen3"}')
+            second = plan_convert("pub/model", source_path=str(source))
+            self.assertNotEqual(first["preview_hash"], second["preview_hash"])
+
     def test_default_plan(self):
         plan = plan_convert("pub/model")
         self.assertEqual(plan["q_bits"], 4)
@@ -147,6 +171,16 @@ class BackendConvertTests(unittest.TestCase):
         self.assertEqual(pipeline["argv"][pipeline["argv"].index("--hf-path") + 1], "Qwen/Qwen-Image-2.1")
         self.assertNotIn("recipe", pipeline)
 
+    def test_a_wan_checkpoint_converts_with_the_mlx_video_port_converter(self):
+        plan = plan_convert("Wan-AI/Wan2.1-T2V-1.3B", hf_cache=self.root / "empty-cache", q_bits=4, backend="mlx-video", model_type="t2v",
+                            out=str(self.root / "wan"), backends_root_dir=self.root)
+        argv = plan["argv"]
+        self.assertEqual(argv[1:3], ["-m", "mlx_video.mlx_agent_ports.t2v.convert"])
+        self.assertEqual(argv[argv.index("--hf-path") + 1], "Wan-AI/Wan2.1-T2V-1.3B")
+        self.assertEqual((argv[argv.index("--q-bits") + 1], "--quantize" in argv), ("4", True))
+        self.assertEqual((plan["backend"], plan["ports"], plan["port_converter"]), ("mlx-video", ["t2v"], "mlx_video.mlx_agent_ports.t2v.convert"))
+        self.assertNotIn("recipe", plan)
+
     def test_a_subfolder_receipt_matches_the_receipt_schema(self):
         self.cache("org/name", "chat")
         plan = plan_convert("org/name", subfolder="chat", out=str(self.root / "out"), hf_cache=str(self.root / "hub"))
@@ -161,7 +195,8 @@ class BackendConvertTests(unittest.TestCase):
                             subfolder="multilingual", hf_cache=str(self.root / "hub"), backends_root_dir=self.root)
         self.assertEqual(plan["argv"][plan["argv"].index("--hf-path") + 1], str(folder))
         self.assertEqual((plan["out"], plan["slug"]), ("laya-multilingual-MLX-8bit", "laya-multilingual-8bit"))
-        self.assertEqual(plan["source"], {"kind": "hf-cache", "repo": "convaiinnovations/laya", "subfolder": "multilingual"})
+        self.assertEqual({key: plan["source"][key] for key in ("kind", "repo", "subfolder")}, {"kind": "hf-cache", "repo": "convaiinnovations/laya", "subfolder": "multilingual"})
+        self.assertEqual(plan["source"]["path"], str(folder))
         chat = self.cache("org/name", "a/chat")
         builtin = plan_convert("org/name", subfolder="a/chat", hf_cache=str(self.root / "hub"))
         self.assertEqual(builtin["argv"][builtin["argv"].index("--hf-path") + 1], str(chat))

@@ -70,6 +70,7 @@ from .decide import DecideError, plan_decide, run_decide
 from .generate import GenerateError, plan_generate, run_generate
 from .speak import SpeakError, plan_speak, run_speak
 from .describe import DescribeError, plan_describe, run_describe
+from .video import VideoError, plan_video, run_video
 from .port_plan import draft_port_plan
 from .project_blueprint import (
     build_brief,
@@ -1580,6 +1581,7 @@ def _add_convert_arguments(parser):
     start.add_argument("--preview-hash", help="hash returned by the separately reviewed convert preview")
     start.add_argument("--receipts-dir", default=None)
     start.add_argument("--hf-cache", default=None)
+    start.add_argument("--source-path", default=None, help="exact downloaded checkpoint directory for --repo; no second download")
     start.add_argument("--json", action="store_true")
     status = actions.add_parser("status", help="cross-check convert receipts against live processes")
     status.add_argument("--receipts-dir", default=None)
@@ -1660,6 +1662,21 @@ def _add_convert_arguments(parser):
     describe.add_argument("--max-pixels", type=int, default=None, help="shrink the media to at most this many pixels")
     describe.add_argument("--timeout", type=int, default=900, help="seconds before the backend run is stopped")
     describe.add_argument("--json", action="store_true")
+    video = actions.add_parser(
+        "video",
+        help="render one prompt with a converted text-to-video model to a new MP4 (verification canary)",
+    )
+    video.add_argument("--path", required=True, help="converted text-to-video model directory")
+    video.add_argument("--prompt", required=True, help="scene description (1..2000 characters)")
+    video.add_argument("--out", required=True, help="new absolute .mp4 path")
+    video.add_argument("--width", type=int, default=832, help="frame width, a multiple of the model's alignment (16 for Wan2.1)")
+    video.add_argument("--height", type=int, default=480, help="frame height, a multiple of the model's alignment (16 for Wan2.1)")
+    video.add_argument("--frames", type=int, default=81, help="frames requested, 4n+1 (5..241); the MP4 can hold a few more (Wan2.1 decodes 4 frames per latent step)")
+    video.add_argument("--fps", type=int, default=None, help="playback rate written to the MP4 (default: the model's, 16 for Wan2.1)")
+    video.add_argument("--steps", type=int, default=None, help="denoising steps (default: the model's, 50 for Wan2.1)")
+    video.add_argument("--seed", type=int, default=42)
+    video.add_argument("--timeout", type=int, default=3600, help="seconds before the backend run is stopped")
+    video.add_argument("--json", action="store_true")
 
 
 def _run_convert(arguments):
@@ -1708,6 +1725,14 @@ def _run_convert(arguments):
                                  fps=arguments.fps, max_pixels=arguments.max_pixels)
             result = run_describe(plan, timeout=arguments.timeout)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["text"])
+        if arguments.convert_command == "video":
+            if not 1 <= arguments.timeout <= 14400:
+                raise ValueError("--timeout must be 1..14400 seconds")
+            plan = plan_video(arguments.path, arguments.prompt, arguments.out, width=arguments.width,
+                              height=arguments.height, frames=arguments.frames, fps=arguments.fps,
+                              steps=arguments.steps, seed=arguments.seed)
+            result = run_video(plan, timeout=arguments.timeout)
+            return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
         if arguments.convert_command == "scan":
             report = _convert_scan(arguments)
             return _emit_serve_result(
@@ -1715,6 +1740,8 @@ def _run_convert(arguments):
                 human=_convert_scan_human(report, arguments.pending_only),
             )
         if arguments.gguf:
+            if arguments.source_path is not None:
+                raise ConvertError("invalid_arguments", "--source-path is only valid with --repo.", "Pass the GGUF source through --gguf.")
             if arguments.backend not in (None, "mlx-lm"):
                 raise ConvertError(
                     "invalid_arguments",
@@ -1727,7 +1754,8 @@ def _run_convert(arguments):
         else:
             plan = plan_convert(arguments.repo, q_bits=arguments.q_bits, out=arguments.out,
                                 backend=arguments.backend, model_type=arguments.model_type,
-                                subfolder=arguments.subfolder, hf_cache=arguments.hf_cache)
+                                subfolder=arguments.subfolder, hf_cache=arguments.hf_cache,
+                                source_path=arguments.source_path)
         if not arguments.confirm:
             result = ResultEnvelope.ok(
                 operation, {"plan": plan, "requires_confirmation": True}
@@ -1756,7 +1784,7 @@ def _run_convert(arguments):
                 receipt["repo"], receipt["out"], receipt["pid"], receipt["log_path"]
             ),
         )
-    except (ConvertError, GGUFError, TranscribeError, DecideError, GenerateError, SpeakError, DescribeError) as error:
+    except (ConvertError, GGUFError, TranscribeError, DecideError, GenerateError, SpeakError, DescribeError, VideoError) as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         result = ResultEnvelope.fail(

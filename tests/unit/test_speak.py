@@ -14,6 +14,13 @@ from mlx_agent.speak import SPEAK_RUNNER, SpeakError, plan_speak, run_speak
 from .backend_fixtures import synthetic_manifests, synthetic_registries
 
 
+FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
+
+
+def result_fixture(name):
+    return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+
+
 class Completed:
     def __init__(self, returncode=0, stdout="", stderr=""):
         self.returncode, self.stdout, self.stderr = returncode, stdout, stderr
@@ -134,11 +141,7 @@ class SpeakTests(unittest.TestCase):
             self.assertEqual(seen[0][0], plan["argv"])
             self.assertEqual(seen[0][1]["stdin"], subprocess.DEVNULL)
             self.assertEqual(seen[0][1]["timeout"], 600)
-            self.assertEqual(
-                sorted(result),
-                sorted(["schema", "backend", "model", "voice", "speed", "lang_code", "path", "sample_rate", "audio_seconds",
-                        "seconds", "load_seconds", "real_time_factor", "peak_memory_gb"]),
-            )
+            self.assertEqual(set(result), set(result_fixture("convert-speak.json")))
             self.assertEqual((result["schema"], result["path"], result["sample_rate"], result["real_time_factor"]), ("speak/1", self.out, 24000, 0.2))
             self.assertEqual((result["voice"], result["backend"]), ("af_heart", "mlx-audio"))
 

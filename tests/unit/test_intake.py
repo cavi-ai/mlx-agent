@@ -100,6 +100,16 @@ def qwen_image(repo):
     return client, resolve(repo, client=client, manifests=manifests, registries=registries)
 
 
+def wan_t2v(repo="Wan-AI/Wan2.1-T2V-1.3B"):
+    info = json.loads((FIXTURES / "hf" / "wan21-t2v-api.json").read_text(encoding="utf-8"))
+    config = (FIXTURES / "hf" / "wan21-t2v-config.json").read_text(encoding="utf-8")
+    headers = json.loads((FIXTURES / "hf" / "wan21-t2v-safetensors-headers.json").read_text(encoding="utf-8"))
+    client = FakeClient(info=info, files={"config.json": config}, headers=headers)
+    manifests = load_manifests()
+    registries = load_registries(manifests, root=Path("/nonexistent"), find_spec=lambda name: None)
+    return client, resolve(repo, client=client, manifests=manifests, registries=registries)
+
+
 def repo_info(model_type=None, tags=(), pipeline_tag=None, library_name="transformers", files=("config.json", "model.safetensors"), gated=False, sizes=True):
     siblings = []
     for name in files:
@@ -209,6 +219,18 @@ class ResolveTests(unittest.TestCase):
         self.assertIsNone(payload["estimated_output_bytes"])
         self.assertEqual(client.header_requests, [])
 
+    def test_a_wan_text_to_video_repo_converts_through_the_mlx_video_port(self):
+        client, payload = wan_t2v()
+        self.validator.validate(payload)
+        self.assertEqual((payload["verdict"], payload["backend"], payload["model_type"], payload["reasons"]),
+                         ("convertible_after_install", "mlx-video", "t2v", []))
+        self.assertEqual((payload["task"]["type"], payload["task"]["use_cases"], payload["task"]["source"]),
+                         ("video_generation", ["video_generation"], "pipeline_tag"))
+        self.assertEqual((payload["q_bits"], payload["download_bytes"], payload["recipe"]), ([4, 8], 17573837064, None))
+        self.assertEqual(client.raw_requests, ["config.json"])
+        self.assertIsNone(payload["estimated_output_bytes"])
+        self.assertEqual(client.header_requests, [])
+
     def test_a_diffusers_pipeline_repo_converts_through_its_port(self):
         client, payload = qwen_image("Qwen/Qwen-Image-2.1")
         self.validator.validate(payload)
@@ -235,6 +257,23 @@ class ResolveTests(unittest.TestCase):
         quantized = {4: 8192 // 2 + 128 * 2 * 2, 8: 8192 + 128 * 2 * 2}
         self.assertEqual(payload["estimated_output_bytes"], {str(bits): quantized[bits] + kept + 2000 for bits in (4, 8)})
         self.assertEqual(client.header_requests, ["model.safetensors"])
+
+    def test_estimate_survives_a_nested_pth_checkpoint_beside_root_safetensors_shards(self):
+        header = {
+            "__metadata__": {"format": "pt"},
+            "layer.weight": {"dtype": "BF16", "shape": [128, 64], "data_offsets": [0, 0]},
+        }
+        shards = ("model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors")
+        info = repo_info(
+            pipeline_tag="text-generation", model_type="llama",
+            files=("config.json", "tokenizer.json", "model.safetensors.index.json", *shards, "original/consolidated.00.pth"),
+        )
+        client = FakeClient(info=info, files={"config.json": json.dumps({"model_type": "llama"})},
+                            headers={shard: header for shard in shards})
+        payload = self.run_resolve(client, installed=("mlx-lm",))
+        quantized = {4: 8192 // 2 + 128 * 2 * 2, 8: 8192 + 128 * 2 * 2}
+        self.assertEqual(payload["estimated_output_bytes"], {str(bits): quantized[bits] * 2 + 2000 for bits in (4, 8)})
+        self.assertEqual(client.header_requests, list(shards))
 
     def test_estimate_is_null_when_a_header_is_unreadable_or_the_verdict_is_not_a_conversion(self):
         client = FakeClient(info=repo_info(pipeline_tag="text-generation"), files={"config.json": json.dumps({"model_type": "qwen2"})})

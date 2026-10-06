@@ -1581,6 +1581,7 @@ def _add_convert_arguments(parser):
     start.add_argument("--preview-hash", help="hash returned by the separately reviewed convert preview")
     start.add_argument("--receipts-dir", default=None)
     start.add_argument("--hf-cache", default=None)
+    start.add_argument("--source-path", default=None, help="exact downloaded checkpoint directory for --repo; no second download")
     start.add_argument("--json", action="store_true")
     status = actions.add_parser("status", help="cross-check convert receipts against live processes")
     status.add_argument("--receipts-dir", default=None)
@@ -1739,6 +1740,8 @@ def _run_convert(arguments):
                 human=_convert_scan_human(report, arguments.pending_only),
             )
         if arguments.gguf:
+            if arguments.source_path is not None:
+                raise ConvertError("invalid_arguments", "--source-path is only valid with --repo.", "Pass the GGUF source through --gguf.")
             if arguments.backend not in (None, "mlx-lm"):
                 raise ConvertError(
                     "invalid_arguments",
@@ -1751,7 +1754,8 @@ def _run_convert(arguments):
         else:
             plan = plan_convert(arguments.repo, q_bits=arguments.q_bits, out=arguments.out,
                                 backend=arguments.backend, model_type=arguments.model_type,
-                                subfolder=arguments.subfolder, hf_cache=arguments.hf_cache)
+                                subfolder=arguments.subfolder, hf_cache=arguments.hf_cache,
+                                source_path=arguments.source_path)
         if not arguments.confirm:
             result = ResultEnvelope.ok(
                 operation, {"plan": plan, "requires_confirmation": True}

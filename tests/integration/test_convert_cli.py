@@ -32,6 +32,17 @@ class ConvertCliTests(unittest.TestCase):
         self.assertTrue(payload["data"]["requires_confirmation"])
         self.assertEqual(payload["data"]["plan"]["q_bits"], 4)
 
+    def test_downloaded_directory_is_handed_to_converter_without_repo_resolution(self):
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "source"
+            source.mkdir()
+            (source / "config.json").write_text('{"model_type":"qwen2"}')
+            code, output = self._run(["convert", "start", "--repo", "pub/model", "--source-path", str(source), "--json"])
+            self.assertEqual(code, 2)
+            plan = json.loads(output)["data"]["plan"]
+            self.assertEqual(plan["argv"][2], str(source))
+            self.assertEqual(plan["source"]["path"], str(source))
+
     def test_confirm_without_hash_is_rejected(self):
         with TemporaryDirectory() as directory:
             code, output = self._run([

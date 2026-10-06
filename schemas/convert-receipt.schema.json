@@ -23,6 +23,7 @@
         "name": { "type": "string", "minLength": 1 },
         "bytes": { "type": "integer", "minimum": 0 },
         "signature": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "architecture": { "type": ["string", "null"] },
         "quantization": { "type": ["string", "null"] },
         "model_key": { "type": ["string", "null"] }

@@ -2,7 +2,7 @@
   "files": [
     {
       "path": "plugin.json",
-      "sha256": "c1dfb2f0a72084ed7bcd0b278d949d2bcbfb79a7dfcd50a29be8b9f33790ba56"
+      "sha256": "437192dc7a2ee04afc29a831ac4448e6b01b59a923738e5ca3c924f4ceeddf25"
     },
     {
       "path": "scripts/mlx-agent",
@@ -42,7 +42,7 @@
     },
     {
       "path": "src/mlx_agent/__init__.py",
-      "sha256": "1297bf460e56f23a5a3f00be92a9d761dc51ea2cba9a7ff4c675a8d91f2c2ed6"
+      "sha256": "060c11cf72551b3ec85d44b0dd4afb09bc73efa76739424b06fb831dc94c5f1c"
     },
     {
       "path": "src/mlx_agent/__main__.py",

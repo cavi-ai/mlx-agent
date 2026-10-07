@@ -1,6 +1,6 @@
 # Version and support
 
-Current release: **0.5.2** (tag `v0.5.2`).
+Current release: **0.6.0** (tag `v0.6.0`).
 
 ## Compatibility
 
@@ -19,7 +19,7 @@ Python 3.9+; macOS on Apple Silicon for host inspection and MLX execution.
 - Issues and PRs: the `cavi-ai/mlx-agent` repository on GitHub.
 - The core is a dependency-free Python package; adapters are generated deterministically from `plugin.json` and verified byte-for-byte in CI.
 
-## What is stable in 0.5.x
+## What is stable in 0.6.x
 
 - The seven provider capabilities (`mlx-scout`, `mlx-adopt`, `mlx-wire`, `mlx-bench`, `mlx-doctor`, `mlx-watch`, `mlx-fleet`) and their argument grammars.
 - The confirmation-gated transaction contract (preview hash, receipts, rollback).

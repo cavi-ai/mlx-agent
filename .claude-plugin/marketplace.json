@@ -10,7 +10,7 @@
     {
       "name": "mlx-agent",
       "description": "Structured local MLX discovery, adoption, and wiring for Apple Silicon.",
-      "version": "0.5.2",
+      "version": "0.6.0",
       "author": {
         "name": "Sasan Sotoodehfar",
         "organization": "CAVI AI",

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0 - 2026-10-07
+
 - Add `convert speak`: synthesize one text with a converted text-to-speech model to a new WAV (voice, speed, language), returning audio length, synthesis time, real-time factor, and peak memory (read-only).
 - Add `convert describe`: answer one question about an image or a video with a converted vision-language model through its backend, returning token counts, throughput, and timing (read-only).
 - Add `convert video`: render one prompt with a converted text-to-video model to a new MP4 (size, frames, fps, steps, seed), returning frame count, duration, generation and load time, seconds per frame, peak memory, and pixel spread (read-only).

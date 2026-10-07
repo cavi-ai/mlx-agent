@@ -14,7 +14,7 @@ Restart Claude Code, then run `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-ben
 ## Codex CLI
 
 ```bash
-codex plugin marketplace add cavi-ai/mlx-agent --ref v0.5.2
+codex plugin marketplace add cavi-ai/mlx-agent --ref v0.6.0
 codex plugin add mlx-agent@mlx-agent
 ```
 
@@ -23,7 +23,7 @@ Restart Codex, then invoke `$mlx-agent:mlx-scout` and the other skills. Codex do
 ## Agy
 
 ```bash
-git clone --depth 1 --branch v0.5.2 https://github.com/cavi-ai/mlx-agent.git
+git clone --depth 1 --branch v0.6.0 https://github.com/cavi-ai/mlx-agent.git
 agy plugin validate ./mlx-agent/providers/agy
 agy plugin install ./mlx-agent/providers/agy
 ```
@@ -33,7 +33,7 @@ Restart Agy, use `/skills` to confirm the package, then ask it to use `mlx-scout
 ## OpenCode
 
 ```bash
-git clone --depth 1 --branch v0.5.2 https://github.com/cavi-ai/mlx-agent.git
+git clone --depth 1 --branch v0.6.0 https://github.com/cavi-ai/mlx-agent.git
 cd mlx-agent
 python3 scripts/mlx-agent install opencode --scope user --dry-run --json
 python3 scripts/mlx-agent install opencode --scope user --confirm --preview-hash <preview-hash> --json

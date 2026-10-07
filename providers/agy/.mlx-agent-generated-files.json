@@ -174,7 +174,7 @@
     },
     {
       "path": "src/mlx_agent/jit_serve.py",
-      "sha256": "4e714eb8150c300b217fe4755c9735a7c4a7c67f2c585d35e4ec1cf6df937615"
+      "sha256": "9e09af3396a0f71c346003b143888c0c50d421757e5fd862c34a0dcc4a74256b"
     },
     {
       "path": "src/mlx_agent/lora.py",

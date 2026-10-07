@@ -19,6 +19,7 @@ import threading
 import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import TCPServer
 from pathlib import Path
 
 if not __package__:
@@ -231,6 +232,12 @@ class GatewayServer(ThreadingHTTPServer):
         self.config = config
         self.slots = threading.BoundedSemaphore(MAX_REQUESTS + 4)
         super().__init__(address, GatewayHandler)
+
+    def server_bind(self):
+        # HTTPServer normally performs reverse DNS here. This gateway binds
+        # a numeric loopback address and must start without network discovery.
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
 
     def process_request(self, request, client_address):
         if not self.slots.acquire(blocking=False):

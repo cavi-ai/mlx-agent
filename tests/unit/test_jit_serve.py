@@ -5,6 +5,7 @@ import sys
 import subprocess
 import threading
 import unittest
+from unittest import mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -15,6 +16,7 @@ from mlx_agent.serve import load_recipes, plan_start, start_serve, stop_serve, u
 WORKER = '''
 import argparse, json, os, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import TCPServer
 p = argparse.ArgumentParser()
 p.add_argument('--model'); p.add_argument('--port', type=int); p.add_argument('--trace')
 p.add_argument('--host', default='127.0.0.1')
@@ -33,7 +35,11 @@ class Handler(BaseHTTPRequestHandler):
             except BrokenPipeError: pass
         else:
             self.wfile.write(json.dumps({'model': body['model'], 'offline': os.environ.get('HF_HUB_OFFLINE')}).encode())
-ThreadingHTTPServer(('127.0.0.1', a.port), Handler).serve_forever()
+class Server(ThreadingHTTPServer):
+    def server_bind(self):
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+Server(('127.0.0.1', a.port), Handler).serve_forever()
 '''
 
 
@@ -75,6 +81,13 @@ class JITServingTests(unittest.TestCase):
 
     def unload(self):
         return self.request('POST', '/_mlx/unload', {}, {'Authorization': 'Bearer test-control-token'})
+
+    def test_gateway_does_not_resolve_loopback_hostname(self):
+        with mock.patch('socket.getfqdn', side_effect=AssertionError('Loopback startup must not query DNS')):
+            server = make_server(self.config, port=0)
+        self.addCleanup(server.server_close)
+        self.assertEqual(server.server_name, '127.0.0.1')
+        self.assertEqual(server.server_port, server.socket.getsockname()[1])
 
     def test_endpoint_reachable_without_weights_then_reload_same_local_files(self):
         self.assertEqual(self.request('GET', '/v1/models')[0], 200)

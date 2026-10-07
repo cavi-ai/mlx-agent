@@ -15,6 +15,8 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
+import secrets
 import time
 import urllib.error
 import urllib.request
@@ -77,7 +79,7 @@ def receipts_root(root=None):
 
 
 def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
-               adapter_path=None, path=None):
+               adapter_path=None, path=None, jit=False, receipts_dir=None, hf_cache=None):
     """Render the exact start plan; pure and side-effect free."""
     has_repo = isinstance(repo, str) and bool(repo.strip())
     has_path = isinstance(path, str) and bool(path.strip())
@@ -157,6 +159,26 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         "readiness": recipe["readiness"].format(port=selected_port),
         "bind": "127.0.0.1",
     }
+    if jit:
+        from .convert import cached_snapshot
+        from .jit_serve import model_fingerprint
+        local = Path(local_path) if local_path else cached_snapshot(repo.strip(), hf_cache)
+        if local is None or not local.is_dir():
+            raise ServeError("model_not_local", "JIT requires existing local model files.",
+                             "Select an existing local model directory; serving never downloads weights.")
+        local = local.resolve()
+        worker = list(argv)
+        worker[worker.index("--model") + 1] = str(local)
+        worker[worker.index("--port") + 1] = "{worker_port}"
+        # Both supported runtimes expose --host. The VLM default binds all
+        # interfaces, so explicitly fence the private worker to loopback.
+        worker.extend(["--host", "127.0.0.1"])
+        root = receipts_root(receipts_dir).absolute()
+        plan.update(jit=True, local_path=str(local), fingerprint=model_fingerprint(local),
+                    worker_argv=worker, control_config=str(root / "{}.jit-config.json".format(selected_port)))
+        plan["argv"] = [sys.executable, str(Path(__file__).with_name("jit_serve.py").resolve()),
+                        "--model", model_value, "--port", str(selected_port),
+                        "--config", plan["control_config"]]
     plan["preview_hash"] = _preview_hash(plan)
     return plan
 
@@ -268,6 +290,14 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "The {0} executable is not installed.".format(plan["argv"][0]),
             "Install it yourself ({0}); serve never installs runtimes.".format(recipe_hint),
         )
+    if plan.get("jit"):
+        from .jit_serve import model_fingerprint
+        if which(plan["worker_argv"][0]) is None:
+            raise ServeError("runtime_not_installed", "The model worker executable is not installed.",
+                             load_recipes()[plan["runtime"]]["install_hint"])
+        if model_fingerprint(plan["local_path"]) != plan["fingerprint"]:
+            raise ServeError("preview_stale", "Local model files changed after preview.",
+                             "Review a fresh JIT serve plan.")
     if plan["repo"] is not None and model_present is not None and not model_present(plan["repo"]):
         raise ServeError(
             "model_not_local",
@@ -306,7 +336,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
     receipt_path = root / "{0}.json".format(plan["port"])
     if receipt_path.exists():
         existing = _read_receipt(receipt_path)
-        if existing is not None and pid_alive(existing.get("pid", -1)):
+        if existing is not None and (pid_alive(existing.get("pid", -1)) or _owned_jit_worker(existing, root)):
             raise ServeError(
                 "port_in_use",
                 "A serve receipt for port {0} is still live.".format(plan["port"]),
@@ -315,6 +345,15 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
 
     root.mkdir(parents=True, exist_ok=True)
     log_path = root / "{0}.log".format(plan["port"])
+    if plan.get("jit"):
+        config_path = Path(plan["control_config"])
+        if config_path.parent != root.absolute() or config_path.is_symlink():
+            raise ServeError("invalid_arguments", "Unsafe JIT configuration path.", "Review a fresh serve plan.")
+        config = {key: plan[key] for key in ("local_path", "fingerprint", "worker_argv", "max_tokens")}
+        config.update(model=plan["repo"] or plan["path"], control_token=secrets.token_hex(32),
+                      state_path=str(root.absolute() / "{}.jit-state.json".format(plan["port"])),
+                      log_path=str(root.absolute() / "{}.worker.log".format(plan["port"])))
+        _atomic_in_directory(root, config_path.name, json.dumps(config).encode(), 0o600)
     pid = spawn(plan["argv"], str(log_path))
     if not readiness(plan["readiness"], readiness_deadline):
         _terminate_pid(pid)
@@ -338,6 +377,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         "started_at": now(),
         "preview_hash": plan["preview_hash"],
     }
+    if plan.get("jit"):
+        receipt["jit"] = True
     content = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     _atomic_in_directory(root, receipt_path.name, content, 0o600)
     return {"status": "started", "receipt": receipt}
@@ -383,6 +424,15 @@ def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_comma
             "log_path": receipt.get("log_path"),
             "started_at": receipt.get("started_at"),
         })
+        if receipt.get("jit"):
+            entries[-1]["jit"] = True
+            if alive and entries[-1]["argv_match"]:
+                try:
+                    entries[-1].update(_jit_control(receipt, root, "status"))
+                except ServeError:
+                    entries[-1]["model_state"] = "unknown"
+            else:
+                entries[-1]["model_state"] = "unknown"
     return entries
 
 
@@ -393,9 +443,17 @@ def _argv_matches(receipt, command, require_port=True):
     if not argv:
         return False
     executable = Path(str(argv[0])).name
+    # macOS framework Python reports its bundle binary in ps, not the
+    # interpreter alias used to launch it. Bind a script recipe to its
+    # absolute entry point instead of accepting any Python process.
+    if len(argv) > 1 and str(argv[1]).endswith(".py") and Path(str(argv[1])).is_absolute():
+        executable = str(argv[1])
     model = receipt.get("repo") or receipt.get("path")
     if not model or executable not in command or str(model) not in command:
         return False
+    if receipt.get("jit"):
+        if "--config" not in argv or str(argv[argv.index("--config") + 1]) not in command:
+            return False
     if require_port:
         return "--port {0}".format(receipt.get("port")) in command
     return True
@@ -407,6 +465,79 @@ def _terminate_pid(pid, sig=signal.SIGTERM):
     except OSError:
         return False
     return True
+
+
+def _jit_config(receipt, root):
+    path = root / "{}.jit-config.json".format(receipt["port"])
+    if path.is_symlink():
+        raise ServeError("invalid_receipt", "JIT configuration is a symbolic link.", "Inspect the owned receipt directory.")
+    try:
+        config = json.loads(path.read_text())
+        if not isinstance(config, dict) or not isinstance(config.get("control_token"), str) or len(config["control_token"]) < 16:
+            raise ValueError("Invalid control token.")
+        return config
+    except (OSError, ValueError) as error:
+        raise ServeError("invalid_receipt", "JIT control configuration is unavailable.",
+                         "Stop and review a fresh endpoint.") from error
+
+
+def _jit_control(receipt, root, action):
+    config = _jit_config(receipt, root)
+    request = urllib.request.Request("http://127.0.0.1:{}/_mlx/{}".format(receipt["port"], action),
+        data=b"{}" if action == "unload" else None,
+        headers={"Authorization": "Bearer " + config["control_token"], "Content-Type": "application/json"})
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=10 if action == "unload" else 2) as response:
+            state = json.load(response)
+            if not isinstance(state, dict) or state.get("model_state") not in ("loaded", "unloaded", "loading", "unloading", "failed"):
+                raise ValueError("Invalid model residency status.")
+            return state
+    except urllib.error.HTTPError as error:
+        try:
+            detail = json.load(error)["error"]
+        except (ValueError, KeyError, TypeError):
+            detail = {"code": "control_failed", "message": "JIT control request failed."}
+        raise ServeError(detail["code"], detail["message"], "Finish active requests, refresh status and retry.") from error
+    except (OSError, ValueError) as error:
+        raise ServeError("control_unavailable", "JIT control status is unavailable.",
+                         "Refresh endpoint status before retrying.") from error
+
+
+def _owned_jit_worker(receipt, root):
+    if not receipt.get("jit"):
+        return None
+    path = root / "{}.jit-state.json".format(receipt["port"])
+    if path.is_symlink():
+        return None
+    try:
+        state = json.loads(path.read_text())
+        pid, argv = state["worker_pid"], state["worker_argv"]
+        if not isinstance(pid, int) or pid <= 0 or state["gateway_pid"] != receipt["pid"]:
+            return None
+        config = _jit_config(receipt, root)
+        expected = {"repo": None, "path": config["local_path"], "argv": argv,
+                    "port": int(argv[argv.index("--port") + 1])}
+        if _pid_alive(pid) and os.getpgid(pid) == receipt["pid"] and _argv_matches(expected, _pid_command(pid)):
+            return pid
+    except (OSError, ValueError, TypeError, KeyError, ServeError):
+        pass
+    return None
+
+
+def unload_serve(port, receipts_dir=None, expected_pid=None):
+    root = receipts_root(receipts_dir)
+    receipt = _read_receipt(root / "{}.json".format(port))
+    if not receipt or not receipt.get("jit"):
+        raise ServeError("jit_required", "This endpoint does not support model unload.",
+                         "Enable Load on request for this endpoint first.")
+    if expected_pid is not None and receipt["pid"] != expected_pid:
+        raise ServeError("pid_argv_mismatch", "Endpoint identity changed.", "Refresh serving status before unloading.")
+    if not _pid_alive(receipt["pid"]) or not _argv_matches(receipt, _pid_command(receipt["pid"])):
+        raise ServeError("pid_argv_mismatch", "Endpoint process no longer matches its receipt.",
+                         "Refresh serving status before unloading.")
+    state = _jit_control(receipt, root, "unload")
+    return dict(state, status="unloaded", port=port, pid=receipt["pid"])
 
 
 def stop_serve(port, receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_command,
@@ -422,16 +553,21 @@ def stop_serve(port, receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_c
             "serve stop only stops processes that serve started; stop foreign processes yourself.",
         )
     pid = receipt["pid"]
+    orphan = _owned_jit_worker(receipt, root) if not pid_alive(pid) else None
+    if orphan:
+        pid = orphan
     if not pid_alive(pid):
         receipt_path.unlink()
         return {"status": "already_stopped", "port": port, "pid": pid}
     command = pid_command(pid)
-    if not _argv_matches(receipt, command):
+    if not orphan and not _argv_matches(receipt, command):
         raise ServeError(
             "pid_argv_mismatch",
             "The live pid {0} does not match the serve receipt; refusing to signal it.".format(pid),
             "Inspect the process yourself; the receipt is retained at {0}.".format(receipt_path),
         )
+    if receipt.get("jit") and terminate is _terminate_pid and os.getpgid(pid) == receipt["pid"]:
+        terminate = lambda _pid, sig: os.killpg(receipt["pid"], sig)
     terminate(pid, signal.SIGTERM)
     deadline = clock() + STOP_DEADLINE_SECONDS
     while clock() < deadline:

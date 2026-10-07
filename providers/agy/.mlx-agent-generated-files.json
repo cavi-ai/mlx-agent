@@ -74,7 +74,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "eb505daf9e767a9d72dd3136cb3b8c5da04adbfcbb5f62f94f2ec412b378fcf2"
+      "sha256": "b1f075d754ff83f5a949d6253a35411f67beca1fdb98b28de517503b25570a5b"
     },
     {
       "path": "src/mlx_agent/command_args.py",
@@ -171,6 +171,10 @@
     {
       "path": "src/mlx_agent/interview.py",
       "sha256": "4a1ae8a71c5eb5168207ace02f6ae1ea94d0d4f7d230fb27915435775e9d23a5"
+    },
+    {
+      "path": "src/mlx_agent/jit_serve.py",
+      "sha256": "9e09af3396a0f71c346003b143888c0c50d421757e5fd862c34a0dcc4a74256b"
     },
     {
       "path": "src/mlx_agent/lora.py",
@@ -354,7 +358,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "cc8c82bb9e8af92d55b9c2662892da501229e83b86eb4333901efd18ba6d5a04"
+      "sha256": "6391164842fea774b662f17b35cedc24eef88649885941c2191447a519f51f57"
     },
     {
       "path": "src/mlx_agent/speak.py",

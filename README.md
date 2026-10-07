@@ -203,6 +203,19 @@ python3 scripts/mlx-agent serve status
 python3 scripts/mlx-agent serve stop --port 8080
 ```
 
+Load on request keeps the endpoint reachable without retaining a model worker:
+
+```bash
+python3 scripts/mlx-agent serve start --path /absolute/local/model --runtime mlx_lm --port 8080 --jit
+# Review the plan and confirm the same arguments with its hash:
+python3 scripts/mlx-agent serve start --path /absolute/local/model --runtime mlx_lm --port 8080 --jit --confirm --preview-hash <hash>
+python3 scripts/mlx-agent serve status --json
+python3 scripts/mlx-agent serve unload --port 8080 --expected-pid <gateway-pid> --json
+python3 scripts/mlx-agent serve stop --port 8080
+```
+
+`/v1/models` remains available while unloaded. Chat/completion requests start one owned worker using the confirmed local files with Hugging Face offline settings; concurrent cold requests share that load. Unload releases the worker and leaves the gateway reachable; active requests, including streams, block it. Changed model files require a fresh serve plan. Status reports gateway liveness and `model_state` separately. Stop terminates the owned gateway/worker process group. JIT does not support direct `--launchd`; supervise the gateway through the native app or your existing process manager. The gateway serves its selected model only and refuses request-time adapter/draft model overrides.
+
 Fleet routing (one-shot per-role router config, transaction-backed like wire):
 
 ```bash

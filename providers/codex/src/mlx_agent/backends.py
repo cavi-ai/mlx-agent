@@ -20,12 +20,13 @@ MANIFEST_SCHEMA = "backend/1"
 INSTALL_MARKER = ".mlx-agent-backend.json"
 PORT_MARKER = ".mlx-agent-port.json"
 CATEGORIES = ("text_llm", "vision_language", "speech_to_text", "text_to_speech", "classification", "image_generation",
-              "video_generation")
+              "video_generation", "music_generation")
 MAX_PROBE_FILES = 4000
 MAX_PROBE_FILE_BYTES = 1024 * 1024
 TYPE_PREFERENCE = {
     "speech_to_text": ("mlx-audio",),
     "text_to_speech": ("mlx-audio",),
+    "music_generation": ("mlx-audio",),
     "vision_language": ("mlx-vlm", "mlx-lm"),
     "text_llm": ("mlx-lm", "mlx-vlm"),
     "classification": ("mlx-embeddings",),

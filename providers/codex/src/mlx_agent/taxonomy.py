@@ -14,7 +14,7 @@ from .modality import detect_facets, detect_modalities
 
 TASK_TYPES = (
     "text_llm", "vision_language", "speech_to_text", "text_to_speech",
-    "embedding", "classification", "image_generation", "video_generation", "speculative_draft", "other",
+    "embedding", "classification", "image_generation", "video_generation", "music_generation", "speculative_draft", "other",
 )
 # Ordered specific-first; the last entry is the type's default use case.
 USE_CASES = {
@@ -26,6 +26,7 @@ USE_CASES = {
     "classification": ("moderation", "routing", "classification"),
     "image_generation": ("image_generation",),
     "video_generation": ("video_generation",),
+    "music_generation": ("music_generation",),
     "speculative_draft": ("speculative_decoding",),
     "other": (),
 }
@@ -97,6 +98,8 @@ def use_cases_for(task_type, haystack):
 def _type_from_hits(hits, config_keys, haystack, vision_module=False, allow_vision=True):
     preferred = [hit for hit in hits if hit["match"] != "remap"] or hits
     categories = {hit["category"] for hit in preferred}
+    if "music_generation" in categories:
+        return "music_generation"
     if "text_llm" in categories and categories & {"speech_to_text", "text_to_speech"}:
         named = _type_from_name(haystack)
         return named if named in ("speech_to_text", "text_to_speech") else "text_llm"
@@ -143,6 +146,10 @@ def _task_type(haystack, pipeline_tag, model_type, config_keys, gguf_architectur
         return "speculative_draft", "gguf_architecture", "confirmed"
     if any(key in config_keys for key in _DRAFT_CONFIG_KEYS):
         return "speculative_draft", "config", "confirmed"
+    # The text-to-audio tag also labels speech; a known music architecture
+    # is the stronger discriminator.
+    if model_type and manifests and any(hit["category"] == "music_generation" for hit in lookup(model_type, manifests, registries)):
+        return "music_generation", "registry", "confirmed"
     if pipeline_tag in PIPELINE_TYPES:
         return PIPELINE_TYPES[pipeline_tag], "pipeline_tag", "confirmed"
     if model_type and manifests:

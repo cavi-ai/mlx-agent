@@ -62,7 +62,7 @@
     },
     {
       "path": "src/mlx_agent/backends.py",
-      "sha256": "a765fc73c0582beeccaee98fa04bf89ac8909db2f2df8f7fa3be565adc5edeac"
+      "sha256": "9b160eba4d20041ab7d71bdd173b871de2a9e91838499f1dece3f60e5f956b22"
     },
     {
       "path": "src/mlx_agent/bench.py",
@@ -74,7 +74,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "b7348de1a21a2e884f7041a936daa58cc9be62df1a475f3ada1ddf38e9ad3b4f"
+      "sha256": "f8be0622b2b05b936ee1be6858a890092289d1e5d53898d9b6b669f36c7d641f"
     },
     {
       "path": "src/mlx_agent/command_args.py",
@@ -197,6 +197,14 @@
       "sha256": "50ea93a89ae703321bad496e1475334603f3ef298c392580d91e839949137941"
     },
     {
+      "path": "src/mlx_agent/music.py",
+      "sha256": "3c540cbe90b0d66b9b1fc25f58ca2d269fbf913b8c703400db18e7ed4e331f6d"
+    },
+    {
+      "path": "src/mlx_agent/music_runner.py",
+      "sha256": "1740d67be7c7d62266c5356059e9a140f39cf648c41abf7f138a14a622d506cc"
+    },
+    {
       "path": "src/mlx_agent/port_analysis.py",
       "sha256": "072a5e64323130ec3f28dc23a1f7cc73ccdf7cba00c6bfe27b18fc12ff11fd4d"
     },
@@ -234,7 +242,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-audio.json",
-      "sha256": "59ee5e71a7eb6273642bfed756e1ab0844619d1bab6e19d688a5143e75591ca4"
+      "sha256": "a1834ce1adeea76beb9389236bbea32f06279f62f2dbf8442047beadcadb2a7a"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-audio.lock",
@@ -370,7 +378,7 @@
     },
     {
       "path": "src/mlx_agent/taxonomy.py",
-      "sha256": "4efce1e6fc930b16de5a27d39371cdbd0cb4c963caa4cdf6f0ee48c2cf6e73cb"
+      "sha256": "02054c484b5c16899612d4a43e1ab3a9b9ee6137f423fc4567e9fc2adc951cb3"
     },
     {
       "path": "src/mlx_agent/transactions.py",

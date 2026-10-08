@@ -65,7 +65,7 @@
       "required": ["backend", "category", "match", "module"],
       "properties": {
         "backend": {"type": "string"},
-        "category": {"enum": ["text_llm", "vision_language", "speech_to_text", "text_to_speech", "classification", "image_generation", "video_generation"]},
+        "category": {"enum": ["text_llm", "vision_language", "speech_to_text", "text_to_speech", "classification", "image_generation", "video_generation", "music_generation"]},
         "match": {"enum": ["exact", "remap", "stripped", "squashed"]},
         "module": {"type": "string"}
       }
@@ -84,7 +84,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["type", "use_cases", "source", "confidence"],
       "properties": {
-        "type": {"enum": ["text_llm", "vision_language", "speech_to_text", "text_to_speech", "embedding", "classification", "image_generation", "video_generation", "speculative_draft", "other"]},
+        "type": {"enum": ["text_llm", "vision_language", "speech_to_text", "text_to_speech", "embedding", "classification", "image_generation", "video_generation", "music_generation", "speculative_draft", "other"]},
         "use_cases": {"type": "array", "items": {"type": "string"}},
         "source": {"enum": ["pipeline_tag", "registry", "gguf_architecture", "config", "name", "default"]},
         "confidence": {"enum": ["confirmed", "likely"]}

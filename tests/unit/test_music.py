@@ -1,0 +1,84 @@
+import io
+import json
+import subprocess
+import unittest
+from contextlib import redirect_stdout
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest import mock
+
+from mlx_agent import cli
+from mlx_agent.backends import INSTALL_MARKER, load_manifests
+from mlx_agent.music import MusicError, plan_music, run_music
+from mlx_agent.taxonomy import classify
+
+
+class MusicTests(unittest.TestCase):
+    def setUp(self):
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.manifests = load_manifests()
+        self.registries = {key: {"registry": value["registry"], "source": "snapshot", "installed": key == "mlx-audio"}
+                           for key, value in self.manifests.items()}
+        self.model = self.root / "model"
+        self.model.mkdir()
+        (self.model / "config.json").write_text(json.dumps({"model_type": "minimax_music3"}))
+        backend = self.root / "mlx-audio"
+        (backend / "bin").mkdir(parents=True)
+        (backend / "bin/python").touch()
+        (backend / INSTALL_MARKER).write_text(json.dumps({"id": "mlx-audio", "version": self.manifests["mlx-audio"]["version"]}))
+        self.out = self.root / "music.wav"
+
+    def plan(self, **kwargs):
+        return plan_music(kwargs.pop("model_path", str(self.model)), kwargs.pop("caption", "-warm piano"),
+                          kwargs.pop("lyrics", "[instrumental]"), kwargs.pop("out", str(self.out)),
+                          manifests=self.manifests, registries=self.registries, root=self.root, **kwargs)
+
+    def test_music_architecture_is_not_mislabelled_as_speech(self):
+        task = classify("music", model_type="minimax_music3", pipeline_tag="text-to-audio",
+                        manifests=self.manifests, registries=self.registries)
+        self.assertEqual(task["type"], "music_generation")
+        self.assertEqual(classify("speech", model_type="kokoro", pipeline_tag="text-to-audio",
+                                 manifests=self.manifests, registries=self.registries)["type"], "text_to_speech")
+
+    def test_local_plan_and_offline_run_preserve_parameters(self):
+        plan = self.plan(duration=5, steps=12, seed=7, lyrics="[verse]\nA new day")
+        self.assertIn("--caption=-warm piano", plan["argv"])
+        self.assertIn("--lyrics=[verse]\nA new day", plan["argv"])
+        def runner(argv, **kwargs):
+            self.assertEqual(kwargs["env"]["HF_HUB_OFFLINE"], "1")
+            self.assertEqual(kwargs["env"]["TRANSFORMERS_OFFLINE"], "1")
+            self.out.write_bytes(b"audio")
+            return subprocess.CompletedProcess(argv, 0, json.dumps({"path": str(self.out), "seconds": 2, "audio_seconds": 5, "real_time_factor": .4}), "")
+        result = run_music(plan, runner=runner)
+        self.assertEqual((result["duration"], result["steps"], result["seed"], result["real_time_factor"]), (5, 12, 7, .4))
+
+    def test_refuses_invalid_parameters_existing_outputs_and_non_music(self):
+        for args in ({"duration": float("nan")}, {"duration": 0}, {"duration": 361}, {"steps": 31}, {"seed": -1}, {"lyrics": ""}, {"caption": "bad\x00"}, {"out": "relative.wav"}):
+            with self.subTest(args=args), self.assertRaises(MusicError):
+                self.plan(**args)
+        self.out.touch()
+        with self.assertRaises(MusicError):
+            self.plan()
+        self.out.unlink()
+        (self.model / "config.json").write_text('{"model_type":"kokoro"}')
+        with self.assertRaises(MusicError) as caught:
+            self.plan()
+        self.assertEqual(caught.exception.code, "not_music_model")
+
+    def test_no_file_wrong_file_failure_and_timeout_are_not_success(self):
+        plan = self.plan()
+        for result in (subprocess.CompletedProcess([], 0, json.dumps({"path": str(self.out)}), ""),
+                       subprocess.CompletedProcess([], 0, '{"path":"/wrong.wav"}', ""),
+                       subprocess.CompletedProcess([], 1, "", "failed")):
+            with self.assertRaises(MusicError):
+                run_music(plan, runner=lambda *a, **k: result)
+        with self.assertRaises(MusicError):
+            run_music(plan, runner=mock.Mock(side_effect=subprocess.TimeoutExpired([], 1)))
+
+    def test_cli_routes_music_arguments(self):
+        output = io.StringIO()
+        with mock.patch("mlx_agent.cli.plan_music", return_value={}) as plan, mock.patch("mlx_agent.cli.run_music", return_value={"path": str(self.out)}), redirect_stdout(output):
+            self.assertEqual(cli.main(["convert", "music", "--path", str(self.model), "--caption=-warm piano", "--out", str(self.out), "--json"]), 0)
+        self.assertEqual(plan.call_args.args[1:3], ("-warm piano", "[instrumental]"))

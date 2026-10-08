@@ -10,7 +10,9 @@ import hashlib
 import hmac
 import http.client
 import json
+import math
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -28,6 +30,39 @@ from mlx_agent.transactions import _atomic_in_directory
 
 MAX_BODY = 16 * 1024 * 1024
 MAX_REQUESTS = 32
+
+
+def validate_memory_policy(policy=None):
+    defaults = {"idle_timeout_seconds": 0, "keep_loaded": False, "minimum_headroom_gb": None}
+    if policy is None:
+        return defaults
+    if not isinstance(policy, dict) or set(policy) - set(defaults):
+        raise ValueError("Unknown memory policy fields.")
+    result = dict(defaults, **policy)
+    idle, keep, reserve = (result[key] for key in defaults)
+    if type(idle) is not int or not 0 <= idle <= 86400:
+        raise ValueError("Idle timeout must be an integer between 0 and 86400 seconds.")
+    if type(keep) is not bool:
+        raise ValueError("Keep loaded must be a boolean.")
+    if reserve is not None and (type(reserve) not in (int, float) or not math.isfinite(reserve) or not 0 <= reserve <= 1024):
+        raise ValueError("Headroom reserve must be a finite value between 0 and 1024 GB.")
+    return result
+
+
+def available_memory_bytes():
+    """Fresh OS headroom, or unknown. Runs on the worker-loading thread."""
+    try:
+        if sys.platform == "darwin":
+            output = subprocess.run(["/usr/bin/vm_stat"], capture_output=True, text=True, timeout=2, check=True).stdout
+            page_size = int(re.search(r"page size of (\d+) bytes", output)[1])
+            pages = [int(re.search(r"^Pages {}:\s+(\d+)".format(name), output, re.M)[1])
+                     for name in ("free", "inactive")]
+            return sum(pages) * page_size
+        if sys.platform.startswith("linux"):
+            return int(re.search(r"^MemAvailable:\s+(\d+) kB", Path("/proc/meminfo").read_text(), re.M)[1]) * 1024
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        pass
+    return None
 
 
 class GatewayError(RuntimeError):
@@ -66,6 +101,13 @@ class ModelWorker:
         self.last_error = None
         self.closed = False
         self.log = None
+        self.memory_policy = validate_memory_policy(config.get("memory_policy"))
+        self.memory_check = None
+        self.load_blocked_reason = None
+        self.last_unload_reason = None
+        self.last_activity = None
+        self.clock = time.monotonic
+        self.memory_probe = available_memory_bytes
 
     def _persist(self):
         state_path = self.config.get("state_path")
@@ -88,7 +130,48 @@ class ModelWorker:
             self._refresh()
             return {"model_state": self.model_state, "active_requests": self.active_requests,
                     "worker_pid": self.process.pid if self.process and self.process.poll() is None else None,
-                    "last_error": self.last_error}
+                    "last_error": self.last_error, "memory_policy": dict(self.memory_policy),
+                    "memory_check": self.memory_check, "load_blocked_reason": self.load_blocked_reason,
+                    "last_unload_reason": self.last_unload_reason}
+
+    def configure(self, changes):
+        with self.condition:
+            try:
+                policy = validate_memory_policy(dict(self.memory_policy, **changes))
+            except (ValueError, TypeError) as error:
+                raise GatewayError(400, "invalid_policy", str(error)) from error
+            config = dict(self.config, memory_policy=policy)
+            if config.get("config_path"):
+                path = Path(config["config_path"])
+                try:
+                    if path.is_symlink():
+                        raise OSError("Refusing a symbolic-link JIT configuration.")
+                    _atomic_in_directory(path.parent, path.name, json.dumps(config).encode(), 0o600)
+                except OSError as error:
+                    raise GatewayError(503, "policy_not_saved", str(error)) from error
+            self.config.update(config)
+            self.memory_policy = policy
+            return self.status()
+
+    def _check_memory(self):
+        with self.condition:
+            reserve = self.memory_policy["minimum_headroom_gb"]
+            self.load_blocked_reason = None
+        if reserve is None:
+            return
+        weights = sum(item.stat().st_size for item in Path(self.config["local_path"]).rglob("*")
+                      if item.is_file() and item.suffix in (".safetensors", ".npz", ".bin", ".gguf"))
+        available = self.memory_probe()
+        required = math.ceil(weights * 1.10 + 1.5e9 + reserve * 1e9) if weights else None
+        with self.condition:
+            self.memory_check = {"available_bytes": available, "required_available_bytes": required,
+                                 "captured_at": time.time(), "estimated": True}
+            if type(available) is not int or available < 0 or required is None:
+                self.load_blocked_reason = "Memory headroom or model weight size is unavailable."
+                raise GatewayError(503, "memory_unknown", self.load_blocked_reason)
+            if available < required:
+                self.load_blocked_reason = "Insufficient memory headroom for estimated weights, runtime allowance and reserve."
+                raise GatewayError(503, "insufficient_headroom", self.load_blocked_reason)
 
     def acquire(self):
         with self.condition:
@@ -122,6 +205,7 @@ class ModelWorker:
         try:
             if model_fingerprint(self.config["local_path"]) != self.config["fingerprint"]:
                 raise GatewayError(503, "model_changed", "Model files changed. Stop and review a fresh serve plan.")
+            self._check_memory()
             with socket.socket() as reservation:
                 reservation.bind(("127.0.0.1", 0))
                 port = reservation.getsockname()[1]
@@ -174,6 +258,8 @@ class ModelWorker:
     def release(self):
         with self.condition:
             self.active_requests -= 1
+            if self.active_requests == 0:
+                self.last_activity = self.clock()
             self.condition.notify_all()
 
     def _stop_worker(self):
@@ -192,6 +278,18 @@ class ModelWorker:
                 self.log.close()
             self.log = None
 
+    def unload_if_idle(self):
+        with self.condition:
+            self._refresh()
+            policy = self.memory_policy
+            if (self.closed or self.model_state != "loaded" or self.active_requests or policy["keep_loaded"]
+                    or not policy["idle_timeout_seconds"] or self.last_activity is None
+                    or self.clock() - self.last_activity < policy["idle_timeout_seconds"]):
+                return False
+            self.model_state = "unloading"
+        self._finish_unload("idle")
+        return True
+
     def unload(self):
         with self.condition:
             if self.closed:
@@ -199,11 +297,17 @@ class ModelWorker:
             if self.active_requests or self.model_state == "unloading":
                 raise GatewayError(409, "model_busy", "Finish active requests before unloading.")
             self.model_state = "unloading"
+        self._finish_unload("manual")
+        return self.status()
+
+    def _finish_unload(self, reason):
         try:
             self._stop_worker()
             with self.condition:
                 self.model_state = "unloaded"
                 self.last_error = None
+                self.load_blocked_reason = None
+                self.last_unload_reason = reason
                 self._persist()
                 self.condition.notify_all()
         except BaseException:
@@ -211,7 +315,6 @@ class ModelWorker:
                 self.model_state = "failed"
                 self.condition.notify_all()
             raise
-        return self.status()
 
     def close(self):
         with self.condition:
@@ -238,6 +341,25 @@ class GatewayServer(ThreadingHTTPServer):
         # a numeric loopback address and must start without network discovery.
         TCPServer.server_bind(self)
         self.server_name, self.server_port = self.server_address[:2]
+
+    def serve_forever(self, poll_interval=0.5):
+        stopped = threading.Event()
+
+        def reclaim_idle():
+            while not stopped.wait(0.5):
+                try:
+                    self.controller.unload_if_idle()
+                except OSError:
+                    # Persist/stop failures remain visible in controller state.
+                    pass
+
+        timer = threading.Thread(target=reclaim_idle, daemon=True)
+        timer.start()
+        try:
+            super().serve_forever(poll_interval)
+        finally:
+            stopped.set()
+            timer.join(timeout=7)
 
     def process_request(self, request, client_address):
         if not self.slots.acquire(blocking=False):
@@ -311,7 +433,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
         leased = False
         response_started = False
         try:
-            self._guard(control=self.path == "/_mlx/unload")
+            self._guard(control=self.path in ("/_mlx/unload", "/_mlx/policy"))
             if self.headers.get("Transfer-Encoding"):
                 raise GatewayError(400, "invalid_body", "Use a bounded Content-Length request.")
             try:
@@ -328,6 +450,9 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 raise GatewayError(400, "invalid_body", "Expected a JSON object.")
             if self.path == "/_mlx/unload":
                 self._json(200, self.server.controller.unload())
+                return
+            if self.path == "/_mlx/policy":
+                self._json(200, self.server.controller.configure(body))
                 return
             if self.path not in ("/v1/chat/completions", "/v1/completions"):
                 raise GatewayError(404, "not_found", "Unknown inference endpoint.")

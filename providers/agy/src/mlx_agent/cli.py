@@ -91,6 +91,7 @@ from .serve import (
     status_serve,
     stop_serve,
     unload_serve,
+    configure_serve_memory,
     wired_port_claim,
 )
 from .taxonomy import annotate_inventory
@@ -911,6 +912,7 @@ def _add_serve_arguments(parser):
     start.add_argument("--max-tokens", type=int, default=MAX_TOKENS_DEFAULT)
     start.add_argument("--adapter-path", default=None, help="LoRA adapter directory (mlx_lm only)")
     start.add_argument("--jit", action="store_true", help="keep endpoint reachable; load local weights on inference requests")
+    _add_memory_arguments(start)
     start.add_argument("--launchd", action="store_true", help="install a launchd agent plist instead of spawning now")
     start.add_argument("--launchd-dir", default=None, help="launchd target directory (defaults to ~/Library/LaunchAgents)")
     start.add_argument("--confirm", action="store_true", help="authorize this reviewed server launch")
@@ -927,9 +929,26 @@ def _add_serve_arguments(parser):
     unload.add_argument("--expected-pid", type=int, default=None)
     unload.add_argument("--receipts-dir", default=None)
     unload.add_argument("--json", action="store_true")
+    policy = actions.add_parser("policy", help="configure owned JIT memory management without restarting")
+    policy.add_argument("--port", type=int, required=True)
+    policy.add_argument("--expected-pid", type=int, required=True)
+    policy.add_argument("--receipts-dir", default=None)
+    policy.add_argument("--json", action="store_true")
+    _add_memory_arguments(policy)
     status = actions.add_parser("status", help="cross-check serve receipts against live processes")
     status.add_argument("--receipts-dir", default=None)
     status.add_argument("--json", action="store_true")
+
+
+def _add_memory_arguments(parser):
+    parser.add_argument("--idle-timeout", type=int, default=None, help="unload after this many idle seconds (0 disables)")
+    parser.add_argument("--keep-loaded", action="store_true", help="prevent automatic idle unload after use")
+    parser.add_argument("--min-headroom-gb", type=float, default=None, help="reserve GB beyond estimated weights and runtime allowance")
+
+
+def _memory_arguments(arguments):
+    return {"idle_timeout_seconds": arguments.idle_timeout or 0, "keep_loaded": arguments.keep_loaded,
+            "minimum_headroom_gb": arguments.min_headroom_gb}
 
 
 def _run_serve(arguments):
@@ -953,6 +972,10 @@ def _run_serve(arguments):
             outcome = unload_serve(arguments.port, arguments.receipts_dir, arguments.expected_pid)
             return _emit_serve_result(ResultEnvelope.ok(operation, outcome), arguments.json,
                 human="Model unloaded; endpoint remains reachable on port {}.".format(arguments.port))
+        if arguments.serve_command == "policy":
+            outcome = configure_serve_memory(arguments.port, _memory_arguments(arguments), arguments.receipts_dir, arguments.expected_pid)
+            return _emit_serve_result(ResultEnvelope.ok(operation, outcome), arguments.json,
+                                      human="JIT memory policy saved and applied on port {}.".format(arguments.port))
         recipes = load_recipes()
         plan = plan_start(
             arguments.repo,
@@ -965,6 +988,7 @@ def _run_serve(arguments):
             jit=arguments.jit,
             receipts_dir=arguments.receipts_dir,
             hf_cache=arguments.hf_cache,
+            memory_policy=_memory_arguments(arguments) if (arguments.idle_timeout is not None or arguments.keep_loaded or arguments.min_headroom_gb is not None) else None,
         )
         if arguments.launchd:
             if arguments.jit:

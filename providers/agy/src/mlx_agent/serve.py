@@ -79,8 +79,16 @@ def receipts_root(root=None):
 
 
 def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
-               adapter_path=None, path=None, jit=False, receipts_dir=None, hf_cache=None):
+               adapter_path=None, path=None, jit=False, receipts_dir=None, hf_cache=None, memory_policy=None):
     """Render the exact start plan; pure and side-effect free."""
+    if memory_policy is not None:
+        from .jit_serve import validate_memory_policy
+        try:
+            memory_policy = validate_memory_policy(memory_policy)
+        except ValueError as error:
+            raise ServeError("invalid_arguments", str(error), "Correct the memory policy.") from error
+        if not jit:
+            raise ServeError("jit_required", "Memory policy requires a JIT endpoint.", "Use --jit.")
     has_repo = isinstance(repo, str) and bool(repo.strip())
     has_path = isinstance(path, str) and bool(path.strip())
     if has_repo == has_path:
@@ -179,6 +187,8 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         plan["argv"] = [sys.executable, str(Path(__file__).with_name("jit_serve.py").resolve()),
                         "--model", model_value, "--port", str(selected_port),
                         "--config", plan["control_config"]]
+        if memory_policy is not None:
+            plan["memory_policy"] = memory_policy
     plan["preview_hash"] = _preview_hash(plan)
     return plan
 
@@ -351,6 +361,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             raise ServeError("invalid_arguments", "Unsafe JIT configuration path.", "Review a fresh serve plan.")
         config = {key: plan[key] for key in ("local_path", "fingerprint", "worker_argv", "max_tokens")}
         config.update(model=plan["repo"] or plan["path"], control_token=secrets.token_hex(32),
+                      memory_policy=plan.get("memory_policy"), config_path=str(config_path),
                       state_path=str(root.absolute() / "{}.jit-state.json".format(plan["port"])),
                       log_path=str(root.absolute() / "{}.worker.log".format(plan["port"])))
         _atomic_in_directory(root, config_path.name, json.dumps(config).encode(), 0o600)
@@ -481,10 +492,10 @@ def _jit_config(receipt, root):
                          "Stop and review a fresh endpoint.") from error
 
 
-def _jit_control(receipt, root, action):
+def _jit_control(receipt, root, action, policy=None):
     config = _jit_config(receipt, root)
     request = urllib.request.Request("http://127.0.0.1:{}/_mlx/{}".format(receipt["port"], action),
-        data=b"{}" if action == "unload" else None,
+        data=json.dumps(policy or {}).encode() if action in ("unload", "policy") else None,
         headers={"Authorization": "Bearer " + config["control_token"], "Content-Type": "application/json"})
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
@@ -526,6 +537,19 @@ def _owned_jit_worker(receipt, root):
 
 
 def unload_serve(port, receipts_dir=None, expected_pid=None):
+    return _configure_owned_jit(port, receipts_dir, expected_pid, "unload")
+
+
+def configure_serve_memory(port, policy, receipts_dir=None, expected_pid=None):
+    from .jit_serve import validate_memory_policy
+    try:
+        policy = validate_memory_policy(policy)
+    except ValueError as error:
+        raise ServeError("invalid_arguments", str(error), "Correct the memory policy.") from error
+    return _configure_owned_jit(port, receipts_dir, expected_pid, "policy", policy)
+
+
+def _configure_owned_jit(port, receipts_dir, expected_pid, action, policy=None):
     root = receipts_root(receipts_dir)
     receipt = _read_receipt(root / "{}.json".format(port))
     if not receipt or not receipt.get("jit"):
@@ -536,8 +560,8 @@ def unload_serve(port, receipts_dir=None, expected_pid=None):
     if not _pid_alive(receipt["pid"]) or not _argv_matches(receipt, _pid_command(receipt["pid"])):
         raise ServeError("pid_argv_mismatch", "Endpoint process no longer matches its receipt.",
                          "Refresh serving status before unloading.")
-    state = _jit_control(receipt, root, "unload")
-    return dict(state, status="unloaded", port=port, pid=receipt["pid"])
+    state = _jit_control(receipt, root, action, policy)
+    return dict(state, status="unloaded" if action == "unload" else "configured", port=port, pid=receipt["pid"])
 
 
 def stop_serve(port, receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_command,

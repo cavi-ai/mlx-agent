@@ -216,6 +216,21 @@ python3 scripts/mlx-agent serve stop --port 8080
 
 `/v1/models` remains available while unloaded. Chat/completion requests start one owned worker using the confirmed local files with Hugging Face offline settings; concurrent cold requests share that load. Unload releases the worker and leaves the gateway reachable; active requests, including streams, block it. Changed model files require a fresh serve plan. Status reports gateway liveness and `model_state` separately. Stop terminates the owned gateway/worker process group. JIT does not support direct `--launchd`; supervise the gateway through the native app or your existing process manager. The gateway serves its selected model only and refuses request-time adapter/draft model overrides.
 
+Optional memory management is part of the confirmed JIT plan:
+
+```bash
+python3 scripts/mlx-agent serve start --path /absolute/local/model --runtime mlx_lm --jit --idle-timeout 600 --min-headroom-gb 2
+# Confirm with these same arguments and the returned preview hash.
+# Change the complete policy on a receipt-owned live gateway without restarting:
+python3 scripts/mlx-agent serve policy --port 8080 --expected-pid <gateway-pid> --idle-timeout 600 --min-headroom-gb 2 --json
+# Keep weights after use (manual unload remains available):
+python3 scripts/mlx-agent serve policy --port 8080 --expected-pid <gateway-pid> --idle-timeout 600 --keep-loaded --min-headroom-gb 2 --json
+```
+
+Idle time begins when the last request or stream finishes. `--idle-timeout 0` disables automatic unload; `--keep-loaded` prevents it after use and does not preload weights. A policy command replaces the whole policy: omitting `--keep-loaded` enables idle unload, and omitting `--min-headroom-gb` disables the admission check. These settings persist atomically in the private gateway configuration. Start without policy flags preserves the previous manual-only behavior. Policy flags require JIT.
+
+Before a guarded cold load, fresh OS headroom must cover estimated local weight bytes × 1.10, a 1.5 GB runtime allowance, and the requested reserve (decimal GB). Unknown headroom or weight size fails closed with `memory_unknown`; insufficient space returns `insufficient_headroom`. Both are HTTP 503 responses and leave the endpoint reachable for a later retry. Status includes the policy, dated estimated `memory_check`, and `load_blocked_reason`. The check is not a cross-endpoint reservation: other applications, concurrent cold loads and later context growth can change memory usage.
+
 Fleet routing (one-shot per-role router config, transaction-backed like wire):
 
 ```bash

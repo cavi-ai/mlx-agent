@@ -2,8 +2,38 @@
 
 import argparse
 import json
+from pathlib import Path
 import time
+from types import MethodType
 import wave
+
+
+def tokenizer_directory(model_path):
+    """Resolve the real tokenizer in raw and exported MiniMax checkpoint layouts."""
+    root = Path(model_path)
+    for directory in (root / "tokenizer", root):
+        if (directory / "tokenizer.json").is_file():
+            return directory
+    raise ValueError("MiniMax Music 3 requires its real local tokenizer.json; synthetic tokens are refused")
+
+
+def configure_tokenizer(model, model_path):
+    """Use the pinned backend's official encoder, including root-level exports.
+
+    mlx-audio 0.5.7 only checks a nested tokenizer directory, then silently
+    uses tiny-model test tokens. Bind the real encoder to this loaded instance
+    without changing the installed backend or the source checkpoint.
+    """
+    if model.model_type != "minimax_music3":
+        return
+    directory = tokenizer_directory(model_path)
+    from mlx_audio.music.models.minimax_music3.minimax_music3 import _encode_official_text_pair
+    from mlx_audio.music.models.minimax_music3.prompt import assemble_prompt
+
+    def text_ids(instance, caption, lyrics):
+        return _encode_official_text_pair(assemble_prompt(caption, lyrics), instance.config, directory)
+
+    model._text_ids = MethodType(text_ids, model)
 
 
 def main(argv=None):
@@ -20,6 +50,7 @@ def main(argv=None):
 
     started = time.perf_counter()
     model = load(args.model)
+    configure_tokenizer(model, args.model)
     load_seconds = time.perf_counter() - started
     mx.reset_peak_memory()
     started = time.perf_counter()

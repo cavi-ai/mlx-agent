@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .backends import backend_environment, backend_python, is_installed, load_manifests, load_registries, lookup
 from .wiring import redact_secrets
+from .music_runner import tokenizer_directory
 
 MUSIC_RUNNER = Path(__file__).with_name("music_runner.py")
 
@@ -41,6 +42,11 @@ def plan_music(model_path, caption, lyrics, out, duration=15.0, steps=30, seed=4
     hits = [hit for hit in lookup(config.get("model_type", ""), manifests, registries) if hit["category"] == "music_generation"]
     if not hits:
         raise MusicError("not_music_model", "No music backend implements this model type.", "Use a supported converted music generation model.")
+    if config.get("model_type") == "minimax_music3":
+        try:
+            tokenizer_directory(model)
+        except ValueError as error:
+            raise MusicError("model_unreadable", str(error), "Restore the checkpoint's tokenizer files before generating music.") from error
     manifest = manifests[sorted(hits, key=lambda hit: hit["backend"])[0]["backend"]]
     if not is_installed(manifest, root):
         raise MusicError("backend_not_installed", "The audio backend is not installed.", "Install mlx-audio first.")

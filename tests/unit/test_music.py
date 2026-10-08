@@ -1,6 +1,8 @@
 import io
 import json
 import subprocess
+import sys
+from types import SimpleNamespace
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -11,6 +13,7 @@ from mlx_agent import cli
 from mlx_agent.backends import INSTALL_MARKER, load_manifests
 from mlx_agent.music import MusicError, plan_music, run_music
 from mlx_agent.music_requantize_runner import copy_supporting_files
+from mlx_agent import music_runner
 from mlx_agent.taxonomy import classify
 
 
@@ -25,6 +28,7 @@ class MusicTests(unittest.TestCase):
         self.model = self.root / "model"
         self.model.mkdir()
         (self.model / "config.json").write_text(json.dumps({"model_type": "minimax_music3"}))
+        (self.model / "tokenizer.json").write_text("{}")
         backend = self.root / "mlx-audio"
         (backend / "bin").mkdir(parents=True)
         (backend / "bin/python").touch()
@@ -42,6 +46,37 @@ class MusicTests(unittest.TestCase):
         self.assertEqual(task["type"], "music_generation")
         self.assertEqual(classify("speech", model_type="kokoro", pipeline_tag="text-to-audio",
                                  manifests=self.manifests, registries=self.registries)["type"], "text_to_speech")
+
+    def test_real_tokenizer_is_required_and_root_or_nested_layouts_are_supported(self):
+        resolver = music_runner.tokenizer_directory
+        self.assertEqual(resolver(self.model), self.model)
+        nested = self.model / "tokenizer"
+        nested.mkdir()
+        (nested / "tokenizer.json").write_text("{}")
+        self.assertEqual(resolver(self.model), nested)
+        (nested / "tokenizer.json").unlink()
+        (self.model / "tokenizer.json").unlink()
+        with self.assertRaises(ValueError):
+            resolver(self.model)
+        with self.assertRaises(MusicError):
+            self.plan()
+
+    def test_caption_and_lyrics_use_real_encoder_without_synthetic_fallback(self):
+        model = SimpleNamespace(model_type="minimax_music3", config=object(),
+                                _text_ids=lambda *args: "synthetic")
+        def encode(text, config, directory):
+            self.assertEqual(directory, self.model)
+            self.assertIs(config, model.config)
+            return text
+        modules = {
+            "mlx_audio.music.models.minimax_music3.minimax_music3": SimpleNamespace(_encode_official_text_pair=encode),
+            "mlx_audio.music.models.minimax_music3.prompt": SimpleNamespace(assemble_prompt=lambda caption, lyrics: caption + "|" + lyrics),
+        }
+        with mock.patch.dict(sys.modules, modules):
+            music_runner.configure_tokenizer(model, self.model)
+            self.assertEqual(model._text_ids("jazz piano", "[instrumental]"), "jazz piano|[instrumental]")
+            self.assertNotEqual(model._text_ids("jazz piano", "[instrumental]"),
+                                model._text_ids("metal guitar", "[instrumental]"))
 
     def test_requantization_preserves_assets_without_copying_old_weights_or_config(self):
         for name in ("tokenizer.json", "scheduler_config.json", "chat_template.jinja",

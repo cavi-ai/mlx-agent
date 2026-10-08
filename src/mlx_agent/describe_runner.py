@@ -15,6 +15,26 @@ def _fit(image, max_pixels):
     return image.resize((max(1, int(width * scale)), max(1, int(height * scale))))
 
 
+def _answer(result, processor):
+    """The generated text decoded by the tokenizer with its special tokens skipped.
+
+    mlx-vlm's streamed text drops only `all_special_ids`, so other special added tokens leak into it
+    (moondream3 opens every answer with `<|md_reserved_4|>`). A stop token ends the ids but never
+    reaches the text, and the processor's own output cleanup still applies.
+    """
+    token_ids = list(getattr(result, "token_ids", None) or [])
+    if getattr(result, "finish_reason", None) == "stop":
+        token_ids = token_ids[:-1]
+    if not token_ids:
+        return str(result.text).strip()
+    tokenizer = getattr(processor, "tokenizer", processor)
+    text = tokenizer.decode(token_ids, skip_special_tokens=True)
+    clean_output = getattr(processor, "clean_output", None)
+    if callable(clean_output):
+        text = clean_output(text)
+    return str(text).strip()
+
+
 def _refuse(error, model_type, detail):
     print(json.dumps({"error": error, "model_type": model_type, "detail": detail}), flush=True)
     return 3
@@ -89,7 +109,7 @@ def main(argv=None):
     seconds = time.time() - started
 
     print(json.dumps({
-        "text": str(result.text).strip(),
+        "text": _answer(result, processor),
         "prompt_tokens": int(result.prompt_tokens),
         "generation_tokens": int(result.generation_tokens),
         "prompt_tps": round(float(result.prompt_tps), 3),

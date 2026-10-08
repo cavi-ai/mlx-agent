@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix: `convert describe` decodes the answer with the tokenizer's special tokens skipped; moondream3 answers no longer start with `<|md_reserved_4|>`.
+
 ## 0.6.0 - 2026-10-07
 
 - Add `convert speak`: synthesize one text with a converted text-to-speech model to a new WAV (voice, speed, language), returning audio length, synthesis time, real-time factor, and peak memory (read-only).

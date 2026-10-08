@@ -110,7 +110,7 @@
     },
     {
       "path": "src/mlx_agent/describe_runner.py",
-      "sha256": "b955027c89e086533a9927089f91182b8f9617a5bbfa8b1b08675d19df0a0984"
+      "sha256": "6fdb2965a722ef0355f7e80f14eb44b1fa85d8e5ccde69524e626beeaf124828"
     },
     {
       "path": "src/mlx_agent/discovery.py",

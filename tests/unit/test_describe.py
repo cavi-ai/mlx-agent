@@ -1,13 +1,15 @@
 import io
 import json
 import subprocess
+import sys
+import types
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
 
-from mlx_agent import cli
+from mlx_agent import cli, describe_runner
 from mlx_agent.backends import INSTALL_MARKER
 from mlx_agent.describe import DESCRIBE_RUNNER, DescribeError, plan_describe, run_describe
 
@@ -236,6 +238,56 @@ class DescribeTests(unittest.TestCase):
         self.assertEqual((code, payload["error"]["code"]), (2, "invalid_arguments"))
         code, payload = invoke("--image", self.image, "--timeout", "0")
         self.assertEqual((code, payload["error"]["code"]), (2, "convert_failed"))
+
+
+class FakeTokenizer:
+    """moondream3's shape: `<|md_reserved_4|>` is a special added token that `all_special_ids` leaves out."""
+
+    pieces = {0: "<|endoftext|>", 5: "<|md_reserved_4|>", 10: "A circle is in this image,", 11: " and it is red.", 12: "<stop>"}
+    special = {0, 5}
+
+    def decode(self, ids, skip_special_tokens=False):
+        return "".join(self.pieces[i] for i in ids if not (skip_special_tokens and i in self.special))
+
+
+class DescribeRunnerTests(unittest.TestCase):
+    def answer(self, processor, **fields):
+        result = dict(text="<|md_reserved_4|>A circle is in this image, and it is red.", token_ids=[5, 10, 11, 0],
+                      finish_reason="stop", prompt_tokens=740, generation_tokens=4, prompt_tps=500.0,
+                      generation_tps=40.0, peak_memory=4.2)
+        result.update(fields)
+        core = types.ModuleType("mlx.core")
+        core.reset_peak_memory = lambda: None
+        package = types.ModuleType("mlx")
+        package.core = core
+        vlm = types.ModuleType("mlx_vlm")
+        model = types.SimpleNamespace(config=types.SimpleNamespace(model_type="moondream3"))
+        vlm.load = lambda path: (model, processor)
+        vlm.apply_chat_template = lambda processor, config, prompt, **kwargs: prompt
+        vlm.generate = lambda model, processor, prompt, **kwargs: types.SimpleNamespace(**result)
+        prompt_utils = types.ModuleType("mlx_vlm.prompt_utils")
+        prompt_utils.MODEL_CONFIG = {"moondream3": {}}
+        modules = {"mlx": package, "mlx.core": core, "mlx_vlm": vlm, "mlx_vlm.prompt_utils": prompt_utils}
+        buffer = io.StringIO()
+        with mock.patch.dict(sys.modules, modules), redirect_stdout(buffer):
+            code = describe_runner.main(["--model", "/m", "--prompt", "What?", "--image", "/i.png",
+                                         "--max-tokens", "16", "--temperature", "0"])
+        self.assertEqual(code, 0)
+        return json.loads(buffer.getvalue())["text"]
+
+    def test_answer_is_decoded_without_special_added_tokens(self):
+        processor = types.SimpleNamespace(tokenizer=FakeTokenizer())
+        self.assertEqual(self.answer(processor), "A circle is in this image, and it is red.")
+
+    def test_stop_token_is_dropped_and_a_length_capped_answer_keeps_its_last_token(self):
+        processor = types.SimpleNamespace(tokenizer=FakeTokenizer())
+        self.assertEqual(self.answer(processor, token_ids=[10, 12]), "A circle is in this image,")
+        cleaned = types.SimpleNamespace(tokenizer=FakeTokenizer(), clean_output=lambda text: text.replace(" and it is", ""))
+        self.assertEqual(self.answer(cleaned, token_ids=[5, 10, 11], finish_reason="length"), "A circle is in this image, red.")
+
+    def test_streamed_text_is_kept_when_no_ids_come_back(self):
+        processor = types.SimpleNamespace(tokenizer=FakeTokenizer())
+        self.assertEqual(self.answer(processor, text=" Streamed answer. ", token_ids=None), "Streamed answer.")
 
 
 if __name__ == "__main__":

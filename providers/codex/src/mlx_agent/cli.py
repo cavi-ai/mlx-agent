@@ -69,6 +69,7 @@ from .transcribe import TranscribeError, plan_transcribe, run_transcribe
 from .decide import DecideError, plan_decide, run_decide
 from .generate import GenerateError, plan_generate, run_generate
 from .speak import SpeakError, plan_speak, run_speak
+from .music import MusicError, plan_music, run_music
 from .describe import DescribeError, plan_describe, run_describe
 from .video import VideoError, plan_video, run_video
 from .port_plan import draft_port_plan
@@ -1677,6 +1678,16 @@ def _add_convert_arguments(parser):
     generate.add_argument("--seed", type=int, default=42)
     generate.add_argument("--timeout", type=int, default=1800, help="seconds before the backend run is stopped")
     generate.add_argument("--json", action="store_true")
+    music = actions.add_parser("music", help="generate music from an existing local music model")
+    music.add_argument("--path", required=True)
+    music.add_argument("--caption", required=True)
+    music.add_argument("--lyrics", default="[instrumental]")
+    music.add_argument("--out", required=True)
+    music.add_argument("--duration", type=float, default=15.0)
+    music.add_argument("--steps", type=int, default=30)
+    music.add_argument("--seed", type=int, default=42)
+    music.add_argument("--timeout", type=int, default=3600)
+    music.add_argument("--json", action="store_true")
     speak = actions.add_parser(
         "speak",
         help="synthesize one text with a converted text-to-speech model to a new WAV (read-only verification canary)",
@@ -1750,6 +1761,13 @@ def _run_convert(arguments):
             plan = plan_generate(arguments.path, arguments.prompt, arguments.out, width=arguments.width,
                                  height=arguments.height, steps=arguments.steps, seed=arguments.seed)
             result = run_generate(plan, timeout=arguments.timeout)
+            return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
+        if arguments.convert_command == "music":
+            if not 1 <= arguments.timeout <= 14400:
+                raise ValueError("--timeout must be 1..14400 seconds")
+            plan = plan_music(arguments.path, arguments.caption, arguments.lyrics, arguments.out,
+                              duration=arguments.duration, steps=arguments.steps, seed=arguments.seed)
+            result = run_music(plan, timeout=arguments.timeout)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
         if arguments.convert_command == "speak":
             if not 1 <= arguments.timeout <= 7200:
@@ -1825,7 +1843,7 @@ def _run_convert(arguments):
                 receipt["repo"], receipt["out"], receipt["pid"], receipt["log_path"]
             ),
         )
-    except (ConvertError, GGUFError, TranscribeError, DecideError, GenerateError, SpeakError, DescribeError, VideoError) as error:
+    except (ConvertError, GGUFError, TranscribeError, DecideError, GenerateError, SpeakError, MusicError, DescribeError, VideoError) as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         result = ResultEnvelope.fail(

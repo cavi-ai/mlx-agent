@@ -23,9 +23,11 @@
   },
   "categories": {
     "speech_to_text": "stt/models",
-    "text_to_speech": "tts/models"
+    "text_to_speech": "tts/models",
+    "music_generation": "music/models"
   },
   "remap_files": {
+    "music_generation": ["music/utils.py"],
     "speech_to_text": [
       "stt/utils.py"
     ],
@@ -34,6 +36,10 @@
     ]
   },
   "registry": {
+    "music_generation": {
+      "model_types": ["minimax_music3"],
+      "remapping": {"minimax_music3": "minimax_music3"}
+    },
     "speech_to_text": {
       "model_types": [
         "canary",

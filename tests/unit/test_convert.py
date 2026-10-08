@@ -81,6 +81,25 @@ class BackendConvertTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
 
+    def test_exported_music_uses_local_requantization_but_raw_and_speech_keep_backend_converter(self):
+        source = self.root / "source"
+        source.mkdir()
+        for model_type, quantization, dedicated in (
+                ("minimax_music3", {"bits": 8, "group_size": 64}, True),
+                ("minimax_music3", None, False), ("kokoro", {"bits": 8}, False)):
+            with self.subTest(model_type=model_type, quantization=quantization):
+                config = {"model_type": model_type}
+                if quantization:
+                    config["quantization"] = quantization
+                (source / "config.json").write_text(json.dumps(config))
+                plan = plan_convert("pub/model", backend="mlx-audio", source_path=str(source),
+                                    backends_root_dir=self.root)
+                if dedicated:
+                    self.assertTrue(plan["argv"][1].endswith("music_requantize_runner.py"))
+                else:
+                    self.assertEqual(plan["argv"][1:3], ["-m", "mlx_audio.convert"])
+                self.assertEqual(plan["argv"][plan["argv"].index("--hf-path") + 1], str(source))
+
     def test_backend_plan_uses_the_backend_venv(self):
         plan = plan_convert("openai/whisper-tiny", backend="mlx-audio", backends_root_dir=self.root)
         self.assertEqual(plan["backend"], "mlx-audio")

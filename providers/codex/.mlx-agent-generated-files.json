@@ -62,7 +62,7 @@
     },
     {
       "path": "src/mlx_agent/backends.py",
-      "sha256": "a765fc73c0582beeccaee98fa04bf89ac8909db2f2df8f7fa3be565adc5edeac"
+      "sha256": "9b160eba4d20041ab7d71bdd173b871de2a9e91838499f1dece3f60e5f956b22"
     },
     {
       "path": "src/mlx_agent/bench.py",
@@ -74,7 +74,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "b7348de1a21a2e884f7041a936daa58cc9be62df1a475f3ada1ddf38e9ad3b4f"
+      "sha256": "f8be0622b2b05b936ee1be6858a890092289d1e5d53898d9b6b669f36c7d641f"
     },
     {
       "path": "src/mlx_agent/command_args.py",
@@ -94,7 +94,7 @@
     },
     {
       "path": "src/mlx_agent/convert.py",
-      "sha256": "0cd7653a8c3a0fd63527c760623726b2cae607f6f9b293ed52c2b4ba572467c7"
+      "sha256": "912328ba9b575b35cce57aae405772172d80c190ca8a96a8d5a57e3bb74e608b"
     },
     {
       "path": "src/mlx_agent/decide.py",
@@ -197,6 +197,18 @@
       "sha256": "50ea93a89ae703321bad496e1475334603f3ef298c392580d91e839949137941"
     },
     {
+      "path": "src/mlx_agent/music.py",
+      "sha256": "1780e88ea681ce4f5d34f256a926110d22f389eeabe31b4c0fa39672613edd60"
+    },
+    {
+      "path": "src/mlx_agent/music_requantize_runner.py",
+      "sha256": "691639ca22fb4fbad323e31bcc18417a00902ff6537a7ec78fd770a02808c470"
+    },
+    {
+      "path": "src/mlx_agent/music_runner.py",
+      "sha256": "fcab09114394a90f790971c838205b91922d7a60c527b88ee0265d50bc13d044"
+    },
+    {
       "path": "src/mlx_agent/port_analysis.py",
       "sha256": "072a5e64323130ec3f28dc23a1f7cc73ccdf7cba00c6bfe27b18fc12ff11fd4d"
     },
@@ -234,7 +246,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-audio.json",
-      "sha256": "59ee5e71a7eb6273642bfed756e1ab0844619d1bab6e19d688a5143e75591ca4"
+      "sha256": "a1834ce1adeea76beb9389236bbea32f06279f62f2dbf8442047beadcadb2a7a"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-audio.lock",
@@ -370,7 +382,7 @@
     },
     {
       "path": "src/mlx_agent/taxonomy.py",
-      "sha256": "4efce1e6fc930b16de5a27d39371cdbd0cb4c963caa4cdf6f0ee48c2cf6e73cb"
+      "sha256": "02054c484b5c16899612d4a43e1ab3a9b9ee6137f423fc4567e9fc2adc951cb3"
     },
     {
       "path": "src/mlx_agent/transactions.py",

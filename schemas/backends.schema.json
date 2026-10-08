@@ -17,7 +17,7 @@
         "version": {"type": "string"},
         "builtin": {"type": "boolean"},
         "state": {"enum": ["installed", "installing", "failed", "absent"]},
-        "categories": {"type": "array", "items": {"enum": ["text_llm", "vision_language", "speech_to_text", "text_to_speech", "classification", "image_generation", "video_generation"]}},
+        "categories": {"type": "array", "items": {"enum": ["text_llm", "vision_language", "speech_to_text", "text_to_speech", "classification", "image_generation", "video_generation", "music_generation"]}},
         "model_types": {"type": "integer", "minimum": 0},
         "registry_source": {"enum": ["installed", "snapshot"]},
         "target": {"type": ["string", "null"]},

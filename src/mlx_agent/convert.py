@@ -38,6 +38,7 @@ CONVERT_RECEIPT_KIND = "convert"
 Q_BITS_CHOICES = (4, 8)
 EXECUTABLE = "mlx_lm.convert"
 GGUF_RUNNER = Path(__file__).resolve().with_name("gguf_runner.py")
+MUSIC_REQUANTIZE_RUNNER = Path(__file__).resolve().with_name("music_requantize_runner.py")
 GGUF_REQUIRED_MODULES = ("torch", "transformers", "gguf")
 GGUF_PORT_REQUIRED_MODULES = ("gguf", "mlx")
 MAX_LOG_TAIL_BYTES = 64 * 1024
@@ -177,13 +178,26 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
     if recipe and recipe["backend"] == backend and recipe["port"] == model_type:
         flags = _recipe_flags(recipe, flags, hf_cache)
         plan["recipe"] = {key: recipe[key] for key in ("base", "base_revision", "lora", "lora_scale")}
-    plan["argv"] = [str(python), "-m", converter or manifest["convert"]] + flags
+    if backend == "mlx-audio" and _is_quantized_music_source(hf_path):
+        plan["argv"] = [str(python), str(MUSIC_REQUANTIZE_RUNNER)] + flags
+    else:
+        plan["argv"] = [str(python), "-m", converter or manifest["convert"]] + flags
     ports = sorted(name for names in (manifest.get("ports") or {}).values() for name in names)
     if ports:
         plan["ports"] = ports
     if converter:
         plan["port_converter"] = converter
     return _finalize_plan(plan)
+
+
+def _is_quantized_music_source(path):
+    """Exported MLX music weights need the music loader, not the raw converter."""
+    try:
+        config = json.loads((Path(path) / "config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return (isinstance(config, dict) and config.get("model_type") == "minimax_music3"
+            and isinstance(config.get("quantization"), dict) and bool(config["quantization"]))
 
 
 def _recipe_flags(recipe, flags, hf_cache):

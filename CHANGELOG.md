@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Fix: `convert describe` decodes the answer with the tokenizer's special tokens skipped; moondream3 answers no longer start with `<|md_reserved_4|>`.
+- Fix: `convert transcribe` with Whisper vocabularies before large-v3 ends at the end of speech. mlx-audio resolved their missing `<|nospeech|>` to `<|endoftext|>` and suppressed it, so every transcript ran to the token limit with invented text; the runner uses `<|nocaptions|>` instead.
 
 ## 0.6.0 - 2026-10-07
 

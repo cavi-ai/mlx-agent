@@ -382,7 +382,7 @@
     },
     {
       "path": "src/mlx_agent/transcribe_runner.py",
-      "sha256": "e88a2eeff17fc641f3cd69e195b92c3222675d72ef8282659afbcb4c02427b79"
+      "sha256": "525fc0163fca327f5968830b538e56f84664d29424a84f9ee179c5f2b30d17fd"
     },
     {
       "path": "src/mlx_agent/verification.py",

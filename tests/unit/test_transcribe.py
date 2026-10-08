@@ -1,9 +1,15 @@
+import io
 import json
 import subprocess
+import sys
+import types
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
+from mlx_agent import transcribe_runner
 from mlx_agent.backends import INSTALL_MARKER
 from mlx_agent.transcribe import TRANSCRIBE_RUNNER, TranscribeError, plan_transcribe, run_transcribe
 
@@ -92,6 +98,86 @@ class TranscribeTests(unittest.TestCase):
         with self.assertRaises(TranscribeError) as caught:
             run_transcribe(plan, manifests=self.manifests, root=self.root / "backends", runner=slow, timeout=5)
         self.assertEqual(caught.exception.code, "transcribe_timeout")
+
+
+PRE_V3_VOCABULARY = {"<|endoftext|>": 50257, "<|nocaptions|>": 50362}
+V3_VOCABULARY = {"<|endoftext|>": 50257, "<|nospeech|>": 50363}
+
+
+class FakeHFTokenizer:
+    def __init__(self, vocabulary):
+        self.vocabulary = vocabulary
+
+    def get_vocab(self):
+        return dict(self.vocabulary)
+
+    def convert_tokens_to_ids(self, token):
+        return self.vocabulary.get(token, self.vocabulary["<|endoftext|>"])
+
+
+class FakeWhisperTokenizer:
+    """mlx-audio's wrapper: `no_speech` looks up `<|nospeech|>`, falling back to the unknown token, `<|endoftext|>`."""
+
+    def __init__(self, hf_tokenizer):
+        self.hf_tokenizer = hf_tokenizer
+
+    @property
+    def eot(self):
+        return self.hf_tokenizer.convert_tokens_to_ids("<|endoftext|>")
+
+    @property
+    def no_speech(self):
+        return self.hf_tokenizer.convert_tokens_to_ids("<|nospeech|>")
+
+
+class FakeWhisper:
+    """Decodes like mlx-audio: the no-speech token is suppressed, so a suppressed end token never stops the text."""
+
+    def __init__(self, vocabulary):
+        self.hf_tokenizer = FakeHFTokenizer(vocabulary)
+        self.no_speech_seen = None
+
+    def get_tokenizer(self, language=None, task="transcribe"):
+        return FakeWhisperTokenizer(self.hf_tokenizer)
+
+    def generate(self, audio, language=None):
+        tokenizer = self.get_tokenizer(language=language, task="transcribe")
+        self.no_speech_seen = tokenizer.no_speech
+        tail = " . . . . . ." if tokenizer.no_speech == tokenizer.eot else ""
+        return types.SimpleNamespace(text=" The quick brown fox jumps over the lazy dog." + tail)
+
+
+class FakeParakeet:
+    def generate(self, audio):
+        return types.SimpleNamespace(text="The quick brown fox jumps over the lazy dog.")
+
+
+class TranscribeRunnerTests(unittest.TestCase):
+    def transcribe(self, model):
+        utils = types.ModuleType("mlx_audio.stt.utils")
+        utils.load_model = lambda path: model
+        utils.load_audio = lambda path: types.SimpleNamespace(shape=(45000,))
+        modules = {"mlx_audio": types.ModuleType("mlx_audio"), "mlx_audio.stt": types.ModuleType("mlx_audio.stt"),
+                   "mlx_audio.stt.utils": utils}
+        buffer = io.StringIO()
+        with mock.patch.dict(sys.modules, modules), redirect_stdout(buffer):
+            code = transcribe_runner.main(["--model", "/m", "--audio", "/clip.wav", "--language", "en"])
+        self.assertEqual(code, 0)
+        return json.loads(buffer.getvalue())
+
+    def test_a_pre_v3_whisper_vocabulary_suppresses_no_captions_instead_of_the_end_token(self):
+        model = FakeWhisper(PRE_V3_VOCABULARY)
+        result = self.transcribe(model)
+        self.assertEqual(result["text"], "The quick brown fox jumps over the lazy dog.")
+        self.assertEqual(model.no_speech_seen, 50362)
+        self.assertEqual(result["audio_seconds"], 2.812)
+
+    def test_a_vocabulary_with_no_speech_and_a_model_without_a_tokenizer_are_left_alone(self):
+        model = FakeWhisper(V3_VOCABULARY)
+        self.assertEqual(self.transcribe(model)["text"], "The quick brown fox jumps over the lazy dog.")
+        self.assertEqual(model.no_speech_seen, 50363)
+        self.assertNotIn("get_tokenizer", vars(model))
+        self.assertEqual(self.transcribe(FakeParakeet())["text"], "The quick brown fox jumps over the lazy dog.")
 
 
 if __name__ == "__main__":

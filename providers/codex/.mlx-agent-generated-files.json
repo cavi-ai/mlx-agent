@@ -94,7 +94,7 @@
     },
     {
       "path": "src/mlx_agent/convert.py",
-      "sha256": "0cd7653a8c3a0fd63527c760623726b2cae607f6f9b293ed52c2b4ba572467c7"
+      "sha256": "912328ba9b575b35cce57aae405772172d80c190ca8a96a8d5a57e3bb74e608b"
     },
     {
       "path": "src/mlx_agent/decide.py",
@@ -199,6 +199,10 @@
     {
       "path": "src/mlx_agent/music.py",
       "sha256": "3c540cbe90b0d66b9b1fc25f58ca2d269fbf913b8c703400db18e7ed4e331f6d"
+    },
+    {
+      "path": "src/mlx_agent/music_requantize_runner.py",
+      "sha256": "691639ca22fb4fbad323e31bcc18417a00902ff6537a7ec78fd770a02808c470"
     },
     {
       "path": "src/mlx_agent/music_runner.py",

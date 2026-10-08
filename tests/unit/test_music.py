@@ -10,6 +10,7 @@ from unittest import mock
 from mlx_agent import cli
 from mlx_agent.backends import INSTALL_MARKER, load_manifests
 from mlx_agent.music import MusicError, plan_music, run_music
+from mlx_agent.music_requantize_runner import copy_supporting_files
 from mlx_agent.taxonomy import classify
 
 
@@ -41,6 +42,22 @@ class MusicTests(unittest.TestCase):
         self.assertEqual(task["type"], "music_generation")
         self.assertEqual(classify("speech", model_type="kokoro", pipeline_tag="text-to-audio",
                                  manifests=self.manifests, registries=self.registries)["type"], "text_to_speech")
+
+    def test_requantization_preserves_assets_without_copying_old_weights_or_config(self):
+        for name in ("tokenizer.json", "scheduler_config.json", "chat_template.jinja",
+                     "model.safetensors.index.json", "model.safetensors", "custom.py"):
+            (self.model / name).write_text("source")
+        (self.model / "tokenizer").mkdir()
+        (self.model / "tokenizer/config.json").write_text("tokenizer")
+        (self.model / "tokenizer/weights.safetensors").write_text("weights")
+        destination = self.root / "converted"
+        destination.mkdir()
+        (destination / "config.json").write_text("new quantization")
+        copy_supporting_files(self.model, destination)
+        self.assertEqual((destination / "config.json").read_text(), "new quantization")
+        self.assertEqual(sorted(str(p.relative_to(destination)) for p in destination.rglob("*") if p.is_file()),
+                         ["chat_template.jinja", "config.json", "scheduler_config.json", "tokenizer.json",
+                          "tokenizer/config.json"])
 
     def test_local_plan_and_offline_run_preserve_parameters(self):
         plan = self.plan(duration=5, steps=12, seed=7, lyrics="[verse]\nA new day")

@@ -314,6 +314,16 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual((gated["verdict"], gated["reasons"]), ("blocked", ["gated"]))
         self.assertEqual(gated_client.raw_requests, [])
 
+    def test_already_mlx_keeps_its_required_backend_and_install_state(self):
+        client = FakeClient(info=repo_info(library_name="mlx", tags=["mlx"]),
+                            files={"config.json": json.dumps({"model_type": "glm4_moe_lite"})})
+        for installed in ((), ("mlx-vlm",)):
+            payload = self.run_resolve(client, installed=installed)
+            self.assertEqual(payload["verdict"], "already_mlx")
+            self.assertEqual(payload["backend"], "mlx-vlm")
+            self.assertEqual(payload["backend_installed"], bool(installed))
+            self.assertIsNone(payload["estimated_output_bytes"])
+
     def test_hub_failures(self):
         missing = self.run_resolve(FakeClient(info_error=HuggingFaceHTTPError(401, "HTTP 401")))
         self.assertEqual((missing["verdict"], missing["reasons"]), ("blocked", ["not_found_or_private"]))

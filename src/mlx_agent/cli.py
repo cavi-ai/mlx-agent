@@ -87,6 +87,7 @@ from .serve import (
     default_model_present,
     load_recipes,
     plan_start,
+    resolve_serve_runtime,
     receipts_root,
     start_serve,
     status_serve,
@@ -908,7 +909,7 @@ def _add_serve_arguments(parser):
     )
     start.add_argument("--repo", default=None, help="publisher/model present in the local Hugging Face cache")
     start.add_argument("--path", default=None, help="local model directory to serve instead of a cache repo id")
-    start.add_argument("--runtime", required=True, choices=["mlx_lm", "mlx-vlm"])
+    start.add_argument("--runtime", required=True, choices=["auto", "mlx_lm", "mlx-vlm"])
     start.add_argument("--port", type=int, default=None, help="loopback port (defaults per runtime recipe)")
     start.add_argument("--max-tokens", type=int, default=MAX_TOKENS_DEFAULT)
     start.add_argument("--adapter-path", default=None, help="LoRA adapter directory (mlx_lm only)")
@@ -978,9 +979,11 @@ def _run_serve(arguments):
             return _emit_serve_result(ResultEnvelope.ok(operation, outcome), arguments.json,
                                       human="JIT memory policy saved and applied on port {}.".format(arguments.port))
         recipes = load_recipes()
+        runtime, executable = resolve_serve_runtime(
+            arguments.repo, arguments.path, arguments.runtime, recipes, hf_cache=arguments.hf_cache)
         plan = plan_start(
             arguments.repo,
-            arguments.runtime,
+            runtime,
             recipes,
             port=arguments.port,
             max_tokens=arguments.max_tokens,
@@ -989,6 +992,7 @@ def _run_serve(arguments):
             jit=arguments.jit,
             receipts_dir=arguments.receipts_dir,
             hf_cache=arguments.hf_cache,
+            runtime_executable=executable,
             memory_policy=_memory_arguments(arguments) if (arguments.idle_timeout is not None or arguments.keep_loaded or arguments.min_headroom_gb is not None) else None,
         )
         if arguments.launchd:

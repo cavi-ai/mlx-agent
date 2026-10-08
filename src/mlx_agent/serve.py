@@ -78,8 +78,57 @@ def receipts_root(root=None):
     return base / ".mlx-agent-receipts" / "serve"
 
 
+def resolve_serve_runtime(repo, path, runtime, recipes, hf_cache=None,
+                          manifests=None, registries=None, backend_root=None):
+    """Select a declared local loader and its isolated executable; never fetch or import model code."""
+    from .backends import backend_target, choose_backend, load_manifests, load_registries, lookup
+    from .convert import cached_snapshot
+
+    manifests = load_manifests() if manifests is None else manifests
+    registries = load_registries(manifests, root=backend_root) if registries is None else registries
+    local = Path(path).expanduser() if path else cached_snapshot(repo, hf_cache) if repo else None
+    config = {}
+    try:
+        location = local / "config.json"
+        if location.stat().st_size > 1024 * 1024:
+            raise ValueError("config too large")
+        config = json.loads(location.read_text(encoding="utf-8"))
+        if not isinstance(config, dict):
+            raise ValueError("config must be an object")
+    except (AttributeError, OSError, ValueError, TypeError):
+        config = {}
+        if runtime == "auto":
+            raise ServeError("model_config_unavailable", "Automatic runtime selection needs a readable local config.json.",
+                             "Select a downloaded local model or explicitly review its serving runtime.") from None
+    hits = lookup(config.get("model_type"), manifests, registries) if config.get("model_type") else []
+    if runtime == "auto":
+        backend = choose_backend(hits, "text_llm", "vision_config" in config)
+        if backend not in ("mlx-lm", "mlx-vlm"):
+            raise ServeError("unsupported_runtime", "No declared serving backend implements this model architecture.",
+                             "Install a backend with a vetted model adapter; remote runtime code is never executed.")
+        runtime = "mlx_lm" if backend == "mlx-lm" else backend
+    else:
+        backend = "mlx-lm" if runtime == "mlx_lm" else runtime
+        if config.get("model_type") and not any(hit["backend"] == backend for hit in hits):
+            raise ServeError("unsupported_runtime", "The selected runtime does not implement this model architecture.",
+                             "Review a fresh serve plan with --runtime auto.")
+    recipe = recipes.get(runtime)
+    if recipe is None:
+        raise ServeError("unsupported_runtime", "No serving recipe exists for this runtime.", "Choose a declared serving runtime.")
+    manifest = manifests[backend]
+    if not manifest["builtin"] and not registries.get(backend, {}).get("installed"):
+        raise ServeError("runtime_not_installed", "The declared {0} backend is not installed.".format(backend),
+                         "Preview and confirm backend install {0}, then review serving again.".format(backend))
+    # Optional backends are deliberately outside PATH. Bind the exact reviewed
+    # executable into both eager and JIT plans instead of changing global PATH.
+    executable = recipe["executable"] if manifest["builtin"] else str(
+        backend_target(manifest, backend_root) / "bin" / recipe["executable"])
+    return runtime, executable
+
+
 def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
-               adapter_path=None, path=None, jit=False, receipts_dir=None, hf_cache=None, memory_policy=None):
+               adapter_path=None, path=None, jit=False, receipts_dir=None, hf_cache=None, memory_policy=None,
+               runtime_executable=None):
     """Render the exact start plan; pure and side-effect free."""
     if memory_policy is not None:
         from .jit_serve import validate_memory_policy
@@ -146,7 +195,7 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         )
     model_value = repo.strip() if has_repo else local_path
     values = {
-        "executable": recipe["executable"],
+        "executable": runtime_executable or recipe["executable"],
         "repo": model_value,
         "port": str(selected_port),
         "max_tokens": str(max_tokens),
@@ -180,7 +229,8 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         worker[worker.index("--port") + 1] = "{worker_port}"
         # Both supported runtimes expose --host. The VLM default binds all
         # interfaces, so explicitly fence the private worker to loopback.
-        worker.extend(["--host", "127.0.0.1"])
+        if "--host" not in worker:
+            worker.extend(["--host", "127.0.0.1"])
         root = receipts_root(receipts_dir).absolute()
         plan.update(jit=True, local_path=str(local), fingerprint=model_fingerprint(local),
                     worker_argv=worker, control_config=str(root / "{}.jit-config.json".format(selected_port)))
@@ -216,6 +266,7 @@ def _default_spawn(argv, log_path):
         stdout=handle,
         stderr=subprocess.STDOUT,
         start_new_session=True,
+        env={**os.environ, "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"},
     )
     return process.pid
 

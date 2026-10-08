@@ -232,7 +232,9 @@ def _verdict(payload, tags, files, config, manifests, registries):
     if payload["gated"]:
         return "blocked", ["gated"], None
     if payload["library_name"] == "mlx" or "mlx" in tags:
-        return "already_mlx", [], None
+        hits = lookup(payload["model_type"], manifests, registries) if payload["model_type"] else []
+        backend = choose_backend(hits, payload["task"]["type"], "vision_config" in config)
+        return "already_mlx", [], backend
     if files["summary"]["gguf"] and not files["summary"]["safetensors"]:
         return "gguf", [], None
     if not payload["model_type"]:

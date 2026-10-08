@@ -2,10 +2,13 @@
 
 ## Unreleased
 
+## 0.6.0 - 2026-10-08
+
+- Add `serve start --jit`: the loopback endpoint stays reachable while its local model is unloaded; chat and completion requests load one owned worker from the confirmed local files, concurrent requests share the load, and active streams block unload.
+- Add `serve unload` (receipt-fenced, `--expected-pid`) to release JIT weights while the endpoint stays reachable, and separate residency in `serve status`.
+- Add JIT memory policy: `--idle-timeout`, `--keep-loaded`, and `--min-headroom-gb` on `serve start` and `serve policy`; `serve policy` updates a running endpoint without a restart; cold loads check fresh OS headroom against estimated weights, runtime allowance, and reserve, and unknown measurements block loading.
 - Fix: `convert describe` decodes the answer with the tokenizer's special tokens skipped; moondream3 answers no longer start with `<|md_reserved_4|>`.
 - Fix: `convert transcribe` with Whisper vocabularies before large-v3 ends at the end of speech. mlx-audio resolved their missing `<|nospeech|>` to `<|endoftext|>` and suppressed it, so every transcript ran to the token limit with invented text; the runner uses `<|nocaptions|>` instead.
-
-## 0.6.0 - 2026-10-07
 
 - Add `convert speak`: synthesize one text with a converted text-to-speech model to a new WAV (voice, speed, language), returning audio length, synthesis time, real-time factor, and peak memory (read-only).
 - Add `convert describe`: answer one question about an image or a video with a converted vision-language model through its backend, returning token counts, throughput, and timing (read-only).

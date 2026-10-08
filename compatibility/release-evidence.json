@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "plugin_version": "0.6.0",
-  "evidence_id": "v0.6.0-rc-2026-10-07",
+  "evidence_id": "v0.6.0-rc-2026-10-08",
   "allowed_evidence_statuses": ["supported", "not-run", "blocked", "static", "fixture"],
   "providers": {
     "claude": {"id": "rc-2026-07-17-claude", "status": "fixture", "date": "2026-07-17", "environment": "macOS 26.5.2 arm64, disposable HOME", "cli_version": "2.1.198", "scopes_tested": ["user"], "native_discovery": "skills listed; slash-command session not run", "fixture_bundle": "passed", "uninstall": "passed"},
@@ -13,7 +13,7 @@
   "commands": [
     {"id": "inspect-host", "command": "PYTHONPATH=src python3 scripts/mlx-agent inspect-host --json", "exit_status": 0, "result": "bounded local inventory"},
     {"id": "discover-live", "command": "PYTHONPATH=src python3 scripts/mlx-agent discover --limit 1 --state-dir <temporary-dir> --json", "exit_status": 0, "result": "ok"},
-    {"id": "unit-suite", "command": "PYTHONPATH=src python3 -m unittest discover -s tests", "exit_status": 0, "result": "passed: 1026 tests, 30 skipped (Python 3.12, requirements-dev.txt)"},
+    {"id": "unit-suite", "command": "PYTHONPATH=src python3 -m unittest discover -s tests", "exit_status": 0, "result": "passed: 1048 tests, 30 skipped (Python 3.12, requirements-dev.txt)"},
     {"id": "contracts", "command": "PYTHONPATH=src python3 scripts/validate_contracts.py", "exit_status": 0, "result": "passed"},
     {"id": "schemas", "command": "PYTHONPATH=src python3 scripts/validate_json_schemas.py", "exit_status": 0, "result": "passed"},
     {"id": "adapters", "command": "PYTHONPATH=src python3 scripts/generate_adapters.py --check", "exit_status": 0, "result": "passed"},

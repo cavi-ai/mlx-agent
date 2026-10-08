@@ -11,7 +11,7 @@
     },
     "mlx-vlm": {
       "executable": "mlx_vlm.server",
-      "argv": ["{executable}", "--model", "{repo}", "--port", "{port}"],
+      "argv": ["{executable}", "--model", "{repo}", "--port", "{port}", "--host", "127.0.0.1"],
       "adapter_argv": null,
       "default_port": 8083,
       "readiness": "http://127.0.0.1:{port}/v1/models",

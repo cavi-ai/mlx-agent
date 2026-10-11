@@ -10,3 +10,8 @@ docs/superpowers/
 .code-review-graph/
 docs/design/
 data/
+
+# Local Python environments and validation evidence
+.venv/
+.run/
+.run-*.log

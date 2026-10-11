@@ -380,3 +380,8 @@ Issues and PRs welcome. The core is a dependency-free Python package, and `skill
 ## License
 
 [MIT](LICENSE) © Sasan Sotoodehfar
+
+
+### Controlled experiments
+
+`mlx-agent lab` exposes the shared optional experiment engine used by MLX Workbench's SwiftUI application. It retains controlled comparisons, blind reviews, study progression, jobs, and artifacts in one workspace. Text LoRA runs retain verified adapters and can produce linked base-versus-adapter evaluations. See [experiments and training](docs/laboratory.md) for runtime installation, compatibility commands, adoption, and evidence requirements.

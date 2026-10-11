@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import signal
+import stat
+import struct
+import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -24,7 +30,8 @@ BATCH_MIN, BATCH_MAX, BATCH_DEFAULT = 1, 64, 4
 LR_MIN, LR_MAX, LR_DEFAULT = 1e-6, 1e-2, 1e-5
 LAYERS_MIN, LAYERS_MAX, LAYERS_DEFAULT = -1, 128, 16
 MAX_DATASET_LINES = 10000
-DATASET_SAMPLE_LINES = 50
+MAX_DATASET_BYTES = 64 * 1024 * 1024
+MAX_RECORD_BYTES = 1024 * 1024
 
 
 class LoraError(RuntimeError):
@@ -54,14 +61,30 @@ def validate_dataset(data_dir):
     valid = root / "valid.jsonl"
     if valid.is_file():
         summary["valid_lines"] = _validate_jsonl(valid)
+    summary["sha256"] = {}
+    for name in ("train.jsonl", "valid.jsonl"):
+        path = root / name
+        if path.exists():
+            summary["sha256"][name] = _dataset_digest(path)
     return summary
+
+
+def _dataset_digest(path):
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_DATASET_BYTES:
+        raise LoraError("dataset_invalid", "Dataset files must be bounded regular files.", "Use a local dataset without links.")
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _validate_jsonl(path):
     count = 0
+    _dataset_digest(path)
     try:
         with open(path, "r", encoding="utf-8") as handle:
-            for line in handle:
+            for line in iter(lambda: handle.readline(MAX_RECORD_BYTES + 1), ""):
                 count += 1
                 if count > MAX_DATASET_LINES:
                     raise LoraError(
@@ -69,11 +92,11 @@ def _validate_jsonl(path):
                         "{0} exceeds {1} lines.".format(path.name, MAX_DATASET_LINES),
                         "Split the dataset; lora validates bounded datasets only.",
                     )
-                if count > DATASET_SAMPLE_LINES:
-                    continue
+                if len(line.encode("utf-8")) > MAX_RECORD_BYTES:
+                    raise LoraError("dataset_invalid", "Dataset record exceeds its limit.", "Split oversized examples.")
                 stripped = line.strip()
                 if not stripped:
-                    continue
+                    raise LoraError("dataset_invalid", "Dataset contains an empty record.", "Remove blank lines.")
                 try:
                     record = json.loads(stripped)
                 except json.JSONDecodeError:
@@ -171,10 +194,15 @@ def plan_lora(repo, data, iters=ITERS_DEFAULT, batch_size=BATCH_DEFAULT,
         )
     _validate_hyperparameters(iters, batch_size, learning_rate, num_layers)
     dataset = validate_dataset(data)
+    from .convert import cached_snapshot
+    from .jit_serve import model_fingerprint
+    snapshot = cached_snapshot(repo)
+    base = {"path": str(snapshot), "revision": snapshot.name, "fingerprint": model_fingerprint(snapshot)} if snapshot else None
     if out is None:
         out = "{0}-lora".format(repo.split("/", 1)[1])
     plan = {
         "repo": repo,
+        "base_identity": base,
         "data": str(data),
         "iters": iters,
         "batch_size": batch_size,
@@ -213,6 +241,7 @@ def start_lora(plan, receipts_dir=None, confirm=False, preview_hash=None,
     from .serve import _default_spawn, _default_which
 
     which = which or _default_which
+    native_spawn = spawn is None
     spawn = spawn or _default_spawn
     pid_alive = pid_alive or _pid_alive
     root = receipts_root(receipts_dir, LORA_RECEIPT_KIND)
@@ -261,16 +290,47 @@ def start_lora(plan, receipts_dir=None, confirm=False, preview_hash=None,
             )
 
     root.mkdir(parents=True, exist_ok=True)
-    log_path = root / "{0}-lora.log".format(plan["repo"].split("/", 1)[1])
-    pid = spawn(plan["argv"], str(log_path))
+    run_id = uuid.uuid4().hex
+    name = "{0}-{1}-lora".format(plan["repo"].split("/", 1)[1], run_id)
+    log_path = root / (name + ".log")
+    result_path = root / (name + ".result")
+    if validate_dataset(plan["data"]) != plan["dataset"]:
+        raise LoraError("preview_stale", "Dataset changed after preview.", "Review a fresh training plan.")
+    if plan.get("base_identity"):
+        from .jit_serve import model_fingerprint
+        if model_fingerprint(plan["base_identity"]["path"]) != plan["base_identity"]["fingerprint"]:
+            raise LoraError("preview_stale", "Base model changed after preview.", "Review a fresh training plan.")
+    dataset_root = root / (name + ".dataset")
+    dataset_root.mkdir(mode=0o700)
+    for filename, digest in plan["dataset"]["sha256"].items():
+        source = Path(plan["data"]) / filename
+        payload = source.read_bytes()
+        if hashlib.sha256(payload).hexdigest() != digest:
+            raise LoraError("preview_stale", "Dataset changed during snapshot.", "Review a fresh training plan.")
+        target = dataset_root / filename
+        target.write_bytes(payload)
+        target.chmod(0o600)
+    argv = list(plan["argv"])
+    argv[argv.index("--data") + 1] = str(dataset_root)
+    if plan.get("base_identity"):
+        argv[argv.index("--model") + 1] = plan["base_identity"]["path"]
+    training_argv = list(argv)
+    if native_spawn:
+        argv = [sys.executable, str(Path(__file__).with_name("training_runner.py")), "--result", str(result_path), "--", *argv]
+    pid = spawn(argv, str(log_path))
     receipt = {
         "schema_version": LORA_RECEIPT_SCHEMA_VERSION,
         "kind": LORA_RECEIPT_KIND,
+        "run_id": run_id,
+        "dataset": plan["dataset"],
+        "dataset_snapshot": str(dataset_root),
+        "base_identity": plan.get("base_identity"),
+        "result_path": str(result_path),
         "repo": plan["repo"],
         "data": plan["data"],
         "iters": plan["iters"],
         "out": plan["out"],
-        "argv": list(plan["argv"]),
+        "argv": training_argv,
         "pid": pid,
         "log_path": str(log_path),
         "started_at": now(),
@@ -278,7 +338,7 @@ def start_lora(plan, receipts_dir=None, confirm=False, preview_hash=None,
         "completed_at": None,
         "exit_status": None,
     }
-    _write_receipt(root, receipt, _receipt_filename(plan))
+    _write_receipt(root, receipt, name + ".json")
     return {"status": "started", "receipt": receipt}
 
 
@@ -304,19 +364,36 @@ def status_lora(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_comman
             "completed_at": receipt.get("completed_at"),
         }
         if receipt.get("completed_at"):
+            entry["adapter_identity"] = receipt.get("adapter_identity")
             entry["state"] = receipt.get("exit_status") or "done"
             entries.append(entry)
             continue
         if pid_alive(receipt["pid"]):
             command = pid_command(receipt["pid"])
             entry["state"] = "running" if _argv_matches(
-                {"argv": receipt["argv"], "port": None, "repo": receipt["repo"]},
+                {"argv": receipt["argv"], "port": None, "repo": None, "path": receipt.get("base_identity", {}).get("path") if receipt.get("base_identity") else receipt["repo"]},
                 command,
                 require_port=False,
             ) else "unknown"
             entries.append(entry)
             continue
-        exit_status = "done" if Path(receipt["out"]).exists() else "failed"
+        result = None
+        if receipt.get("result_path"):
+            try:
+                candidate = Path(receipt["result_path"])
+                if not candidate.is_symlink() and candidate.stat().st_size <= 4096:
+                    result = json.loads(candidate.read_text())
+            except (OSError, ValueError):
+                pass
+        if not isinstance(result, dict) or type(result.get("exit_code")) is not int:
+            entry["state"] = "unknown"
+            entries.append(entry)
+            continue
+        adapter = adapter_identity(receipt["out"]) if result["exit_code"] == 0 else None
+        exit_status = "done" if result["exit_code"] == 0 and adapter else "failed"
+        receipt["adapter_identity"] = adapter
+        receipt["process_exit_code"] = result["exit_code"]
+        entry["adapter_identity"] = adapter
         receipt["completed_at"] = now()
         receipt["exit_status"] = exit_status
         _write_receipt(root, receipt, path.name)
@@ -324,3 +401,63 @@ def status_lora(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_comman
         entry["completed_at"] = receipt["completed_at"]
         entries.append(entry)
     return entries
+
+
+def adapter_identity(output):
+    """Verify adapter tensor structure and return immutable content identities."""
+    root = Path(output)
+    tensor = root / "adapters.safetensors"
+    config = root / "adapter_config.json"
+    try:
+        if root.is_symlink() or tensor.is_symlink() or config.is_symlink():
+            return None
+        if not tensor.is_file() or not config.is_file() or config.stat().st_size > 1024 * 1024:
+            return None
+        json.loads(config.read_text())
+        size = tensor.stat().st_size
+        with tensor.open("rb") as stream:
+            prefix = stream.read(8)
+            if len(prefix) != 8:
+                return None
+            length = struct.unpack("<Q", prefix)[0]
+            if length > 16 * 1024 * 1024 or length + 8 >= size:
+                return None
+            header = json.loads(stream.read(length))
+        entries = [value for key, value in header.items() if key != "__metadata__"]
+        if not entries:
+            return None
+        for value in entries:
+            offsets = value["data_offsets"]
+            if len(offsets) != 2 or any(type(x) is not int for x in offsets):
+                return None
+            if not 0 <= offsets[0] < offsets[1] <= size - 8 - length:
+                return None
+        identities = {}
+        for path in (tensor, config):
+            digest = hashlib.sha256()
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            identities[path.name] = {"sha256": digest.hexdigest(), "bytes": path.stat().st_size}
+        return identities
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return None
+
+
+def stop_lora(pid, receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_command, terminate=os.killpg):
+    root = receipts_root(receipts_dir, LORA_RECEIPT_KIND)
+    for path in sorted(root.glob("*.json")) if root.is_dir() else []:
+        receipt = _read_receipt(path, LORA_RECEIPT_KIND)
+        if receipt is None or receipt["pid"] != pid or receipt.get("completed_at"):
+            continue
+        if not pid_alive(pid):
+            raise LoraError("job_not_running", "Training is no longer running.", "Refresh training status.")
+        if not _argv_matches({"argv": receipt["argv"], "port": None, "repo": None, "path": receipt.get("base_identity", {}).get("path") if receipt.get("base_identity") else receipt["repo"]},
+                             pid_command(pid), require_port=False) or os.getpgid(pid) != pid:
+            raise LoraError("process_mismatch", "The training process identity changed.", "Inspect the retained receipt before stopping it.")
+        terminate(pid, signal.SIGTERM)
+        receipt["completed_at"] = _utc_now()
+        receipt["exit_status"] = "cancelled"
+        _write_receipt(root, receipt, path.name)
+        return {"status": "cancelled", "receipt": str(path)}
+    raise LoraError("receipt_not_found", "No active training receipt matches this PID.", "Refresh training status.")

@@ -1,0 +1,40 @@
+{
+  "adapter_id": "diffusers.animegen-t2v.wan2.2-a14b.mps.v1",
+  "protocol_version": "animegen-feasibility.v2",
+  "sources": {
+    "animegen": {"id": "aidealab/AnimeGen-T2V", "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "checksum": "sha256:1111111111111111111111111111111111111111111111111111111111111111"},
+    "wan-base": {"id": "Wan-AI/Wan2.2-T2V-A14B-Diffusers", "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "checksum": "sha256:1111111111111111111111111111111111111111111111111111111111111111"},
+    "lightning-high": {"id": "lightx2v/Wan2.2-Lightning", "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "checksum": "sha256:1111111111111111111111111111111111111111111111111111111111111111"},
+    "lightning-low": {"id": "lightx2v/Wan2.2-Lightning", "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "checksum": "sha256:1111111111111111111111111111111111111111111111111111111111111111"}
+  },
+  "runtime_versions": {"replace-entire-mapping-from-runtime-identity": "required"},
+  "hardware_fingerprint": "replace-with-local-hardware-fingerprint",
+  "os_fingerprint": "replace-with-local-os-fingerprint",
+  "memory_strategy": "model_cpu_offload",
+  "manifest_profiles": {
+    "minimum": {
+      "model_id": "aidealab/AnimeGen-T2V", "model_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "model_checksum": "1111111111111111111111111111111111111111111111111111111111111111",
+      "adapter_id": "diffusers.animegen-t2v.wan2.2-a14b.mps.v1", "adapter_version": "1", "runtime_versions": {"replace-entire-mapping-from-runtime-identity": "required"},
+      "source_checksums": {"animegen": "1111111111111111111111111111111111111111111111111111111111111111", "wan-base": "1111111111111111111111111111111111111111111111111111111111111111", "lightning-high": "1111111111111111111111111111111111111111111111111111111111111111", "lightning-low": "1111111111111111111111111111111111111111111111111111111111111111"},
+      "prompt": "anime character walking", "seed": 7, "width": 128, "height": 80, "num_frames": 17, "fps": 8, "inference_steps": 4, "guidance_scale": 1.0,
+      "scheduler": "flow-match-euler-shift-3", "dtype": "bfloat16", "quantization": "bf16", "backend": "mps", "device": "mps", "memory_strategy": "model_cpu_offload",
+      "hardware_fingerprint": "replace-with-local-hardware-fingerprint", "os_fingerprint": "replace-with-local-os-fingerprint",
+      "loras": [
+        {"model_id": "lightx2v/Wan2.2-Lightning", "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "checksum": "1111111111111111111111111111111111111111111111111111111111111111", "weight": 2.0},
+        {"model_id": "lightx2v/Wan2.2-Lightning", "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "checksum": "1111111111111111111111111111111111111111111111111111111111111111", "weight": 1.0}
+      ]
+    },
+    "standard": {
+      "model_id": "aidealab/AnimeGen-T2V", "model_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "model_checksum": "1111111111111111111111111111111111111111111111111111111111111111",
+      "adapter_id": "diffusers.animegen-t2v.wan2.2-a14b.mps.v1", "adapter_version": "1", "runtime_versions": {"replace-entire-mapping-from-runtime-identity": "required"},
+      "source_checksums": {"animegen": "1111111111111111111111111111111111111111111111111111111111111111", "wan-base": "1111111111111111111111111111111111111111111111111111111111111111", "lightning-high": "1111111111111111111111111111111111111111111111111111111111111111", "lightning-low": "1111111111111111111111111111111111111111111111111111111111111111"},
+      "prompt": "anime character walking", "seed": 7, "width": 512, "height": 288, "num_frames": 17, "fps": 8, "inference_steps": 4, "guidance_scale": 1.0,
+      "scheduler": "flow-match-euler-shift-3", "dtype": "bfloat16", "quantization": "bf16", "backend": "mps", "device": "mps", "memory_strategy": "model_cpu_offload",
+      "hardware_fingerprint": "replace-with-local-hardware-fingerprint", "os_fingerprint": "replace-with-local-os-fingerprint",
+      "loras": [
+        {"model_id": "lightx2v/Wan2.2-Lightning", "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "checksum": "1111111111111111111111111111111111111111111111111111111111111111", "weight": 2.0},
+        {"model_id": "lightx2v/Wan2.2-Lightning", "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "checksum": "1111111111111111111111111111111111111111111111111111111111111111", "weight": 1.0}
+      ]
+    }
+  }
+}

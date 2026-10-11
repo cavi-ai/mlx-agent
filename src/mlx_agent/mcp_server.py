@@ -47,13 +47,13 @@ class _BoundedWriter(io.TextIOBase):
 def _tool_definition():
     return {
         "name": TOOL_NAME,
-        "description": "Run one allowlisted Scout, Adopt, or Wire action without a shell.",
+        "description": "Run one validated model lifecycle or experiment action without a shell.",
         "inputSchema": {
             "type": "object",
             "additionalProperties": False,
             "required": ["capability", "arguments"],
             "properties": {
-                "capability": {"enum": ["scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"]},
+                "capability": {"enum": ["scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "lab"]},
                 "arguments": {"type": "string", "maxLength": MAX_ARGUMENT_BYTES},
             },
         },

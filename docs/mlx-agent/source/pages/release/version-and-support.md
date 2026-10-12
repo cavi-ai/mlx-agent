@@ -1,6 +1,8 @@
 # Version and support
 
-Current release: **0.6.0** (tag `v0.6.0`).
+Package version in this checkout: **0.6.0** (release tag `v0.6.0`).
+Source documentation can include changes made after a published release. Use
+the artifact attached to a specific release when you need that version's docs.
 
 ## Compatibility
 
@@ -12,7 +14,8 @@ Current release: **0.6.0** (tag `v0.6.0`).
 | OpenCode | 1.17.7 | 1.18.9 |
 | AgentSkills hosts | — | — |
 
-Python 3.9+; macOS on Apple Silicon for host inspection and MLX execution.
+Python 3.9+ for the core; macOS on Apple Silicon for host inspection and MLX
+execution. Optional backend dependency installation requires Python 3.12.
 
 ## Support
 
@@ -25,7 +28,10 @@ Python 3.9+; macOS on Apple Silicon for host inspection and MLX execution.
 - The confirmation-gated transaction contract (preview hash, receipts, rollback).
 - Receipt and state schemas (versioned, with migrations).
 
-CLI-only lifecycle commands (`serve`, `convert`, `lora`, `fuse`) follow the same contract but may gain flags in minor releases.
+CLI-only commands can gain flags in minor releases. Download and lifecycle starts
+use preview hashes; direct inference and JIT policy operations use different
+interfaces. Use the [CLI reference](../reference/cli.md) and command help for the
+current contract.
 
 ## Release pipeline
 

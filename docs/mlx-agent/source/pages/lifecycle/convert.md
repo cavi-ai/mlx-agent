@@ -10,10 +10,10 @@ python3 scripts/mlx-agent convert status
 
 ## Gates
 
-- Source model in the Hugging Face cache (never downloads).
-- `mlx_lm.convert` already installed (never installs).
+- Source checkpoint already local: cached repository, explicit source path, or GGUF file. Conversion does not download it.
+- Selected converter backend already installed (the default is `mlx_lm.convert`).
 - Fresh output path (never overwrites).
-- One job at a time per receipts root — conversions are GPU-bound.
+- Conversion receipt checks and a shared compute lease prevent conflicting heavy jobs.
 
 The preview renders the exact `mlx_lm.convert` argv before anything runs. `convert status` cross-checks the receipt against the live process and records the exit once (`done` when the output directory exists, `failed` otherwise).
 
@@ -40,10 +40,30 @@ python3 scripts/mlx-agent convert start --gguf ~/models/model-Q4_K_M.gguf --q-bi
 
 A directory counts as an MLX output only when its `config.json` carries a `quantization` block or this tool left an `mlx-converter.json` marker, so ordinary PyTorch checkpoints in the cache are never mistaken for conversions.
 
-Duplicates come in two strengths. `exact` groups are the same bytes, or the same header structure at the same quantization: everything outside `keep` is redundant and counts toward `reclaimable_bytes`. `variant` groups are the same model at different quantization levels — reported for visibility, never recommended for removal. Identity uses size plus the first and last mebibyte rather than a full digest, because hashing eighty gigabytes to answer a dedupe question is not worth the I/O. `scan` only reports; deleting stays with you.
+Duplicate groups use two labels. `exact` groups match a sampled content signature
+or the same header structure and quantization; members outside `keep` count
+toward `reclaimable_bytes`. This classification is not a full-file byte comparison.
+The content signature uses size plus the first and last mebibyte, so different
+interior bytes can share it. `variant` groups have different quantizations and
+are informational, with no removal recommendation. Review identity and any
+conversion provenance before deleting a copy. Scan only reports.
 
 Conversion runs two steps in one job: `transformers` dequantizes the GGUF back to Hugging Face weights, then `mlx_lm.convert` quantizes those to MLX. The intermediate checkpoint is full precision and removed afterwards, so budget roughly twice the source model's fp16 size in free disk while the job runs. It needs `torch`, `transformers`, and `gguf` importable by the same interpreter; missing pieces are named and never installed for you.
 
 Quality is capped by the source: a Q4 GGUF converted to MLX 4bit has been quantized twice. Convert the original fp16 weights when you have them.
 
-The output carries `mlx-converter.json` recording which GGUF produced it, so later scans pair the two exactly.
+The output carries `mlx-converter.json` recording its GGUF source, so later
+scans can associate the output with that source using provenance evidence.
+
+## Other checkpoints and backends
+
+Use [Intake](intake.md) to identify the model type and required backend.
+`--backend` and `--model-type` select a declared converter; install an optional
+backend through a separately reviewed [backend plan](backends.md). Use
+`--subfolder` for a cached checkpoint folder, or `--source-path` for the exact
+downloaded directory associated with `--repo`. Conversion does not fetch missing
+weights. GGUF conversion uses `--gguf` rather than an optional backend override.
+
+After conversion finishes, use [Serve](serve.md) for a compatible HTTP model or
+[Local inference](local-inference.md) for supported speech, classification,
+image, and video tasks. Inspect status and logs before relying on outputs.

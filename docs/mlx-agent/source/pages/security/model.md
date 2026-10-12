@@ -1,25 +1,59 @@
 # Security model
 
-mlx-agent is built around one rule: nothing irreversible or external happens without a reviewed preview and an explicit confirmation.
+mlx-agent separates metadata inspection, local execution, confirmed configuration
+changes, and explicit downloads. Confirmation and recovery rules differ by command.
 
-## Never
+## Network access and installation
 
-- **Never downloads models.** Discovery, verification, bench, serve, convert, lora, and fuse all require the model to be local first.
-- **Never installs anything.** Provider CLIs and model runtimes are detected, not installed.
-- **Never persists secrets.** Configs reference `MLX_AGENT_LOCAL_API_KEY`; resolved credentials in existing files are rejected before any write.
-- **Never touches remote endpoints.** Runtime probes are loopback-only: no redirects, no credentials in URLs, no query strings, absolute deadlines, bounded responses.
+Discovery, Research, Watch, and intake analysis read Hub metadata. Discovery
+can use a matching local cache with `--offline`. Adoption and Bench do not
+download weights or start servers.
 
-## Always
+`intake fetch` explicitly downloads a reviewed model source.
+`backend install` explicitly installs dependencies from shipped locks.
+Both require confirmation. Provider CLIs remain separately installed. Serve,
+Convert, LoRA, and Fuse require local model inputs and do not fetch missing weights.
 
-- **Preview-then-confirm.** Every mutation (wire, fleet, serve, convert, lora, fuse, launchd, prune) renders the exact plan first. `--confirm --preview-hash` must match the reviewed preview or the operation fails stale.
-- **Receipts.** Applied transactions, server processes, and batch jobs all leave receipts: hashes, pids, argv, logs. Rollback restores bytes exactly; stop signals only receipt-verified processes.
-- **Deterministic probes.** Role verification uses fixed synthetic prompts with exact validators — never LLM-judged, never user data.
-- **Bounded everything.** Request sizes, response sizes, line counts, iteration counts, and concurrency all have hard caps.
+Runtime verification and health checks restrict endpoints to loopback with
+bounded requests. LiteLLM can still route remotely: route locality matters,
+not only the listener address.
 
-## Verification, not metadata
+## Confirmation and recovery
 
-A model is recommended for a role only on evidence: runtime generation, deterministic role probes, or measured performance. Download counts and tags inform ranking but never count as verification. Tool-use specifically requires a schema-valid synthetic runtime tool call.
+Wire/Fleet apply, Wire rollback, provider install/update/uninstall, lifecycle
+starts, backend removal, and model prune require a reviewed preview hash.
+Changed arguments or state require a new preview.
 
-## Prune is the exception
+Wire and provider transactions keep non-secret receipts and backups.
+Configuration rollback restores recorded bytes after checking current state.
+Server stop targets receipt-owned processes. Job receipts record process and
+output state; they do not offer general rollback for downloads, training,
+generated weights, or dependency installation.
 
-`doctor models --prune` deletes files irreversibly — by design, and it says so loudly. It only targets incomplete cache snapshots, names every directory in the preview, and re-verifies cache containment at delete time.
+Direct inference, research/design pack writes, Watch snapshots, and JIT
+unload/policy commands have their own validated interfaces; they are not all
+preview-confirmed. Prune irreversibly deletes selected incomplete snapshots.
+
+## Credentials and local writers
+
+Rendered connection configs reference `MLX_AGENT_LOCAL_API_KEY`; Wire refuses
+resolved secrets in configuration writes. Receipts are not credential stores.
+Inspect inputs, job logs, and receipt paths before sharing them.
+
+Wire uses advisory locks for cooperative writers. A process that ignores them
+can race a filesystem mutation. Use permissions and process isolation when
+hostile local writers are in scope. Installer ownership checks refuse unowned
+or user-modified artifacts rather than overwriting them.
+
+## Synthetic verification
+
+Role probes use fixed bounded prompts and deterministic validators. Tool-use
+requires a schema-valid synthetic runtime tool call; metadata is not verification.
+The probe supplies a synthetic definition and never executes a real user tool.
+Normalized evidence is retained instead of raw probe prompts, responses,
+endpoints, or credentials. This does not describe logs from separate user-driven
+inference commands.
+
+See [Evidence and sizing](../reference/evidence.md) for probe limits,
+[Troubleshooting](../guides/troubleshooting.md) for failures, and
+[Wire](../capabilities/wire.md) for configuration recovery.

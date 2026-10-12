@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from click import unstyle
+from typer._click.utils import strip_ansi
 from typer.testing import CliRunner
 
 from video_lab.cli import app
@@ -487,10 +487,10 @@ def test_dataset_help_documents_exit_codes_and_command_specific_flags() -> None:
     assert root.exit_code == validate.exit_code == compile_help.exit_code == 0
     assert "64 usage" in root.stdout
     assert "70" in root.stdout and "integrity/security" in root.stdout
-    assert "--source-root" in unstyle(validate.stdout)
-    assert "--tokenizer-root" not in unstyle(validate.stdout)
-    assert "--tokenizer-root" in unstyle(compile_help.stdout)
-    assert "--source-root" not in unstyle(compile_help.stdout)
+    assert "--source-root" in strip_ansi(validate.stdout)
+    assert "--tokenizer-root" not in strip_ansi(validate.stdout)
+    assert "--tokenizer-root" in strip_ansi(compile_help.stdout)
+    assert "--source-root" not in strip_ansi(compile_help.stdout)
 
 
 @pytest.mark.parametrize("command", ["compile", "reproduce"])

@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 from typer._click.utils import strip_ansi
@@ -11,6 +12,12 @@ from video_lab.cli import app
 from video_lab.domain import ExperimentDraft
 
 runner = CliRunner()
+ANSI_ESCAPE = re.compile(r"\033\[[;?0-9]*[a-zA-Z]")
+
+
+def unstyle(text: str) -> str:
+    """Help text without terminal styling escapes."""
+    return ANSI_ESCAPE.sub("", text)
 
 
 def write_json(path: Path, value: object) -> None:

@@ -10,7 +10,7 @@
     },
     {
       "path": "requirements-lab.txt",
-      "sha256": "6f992dea2013d9ecf128eede9510d13438fb99a1112b68f9e63b3db34bc71bba"
+      "sha256": "d0ffe181da86e6147478d236d6f95a15be89729c5e8474938cdef4dc143c1dd9"
     },
     {
       "path": "scripts/mlx-agent",

@@ -13,6 +13,7 @@ import pytest
 from typer._click.utils import strip_ansi
 from typer.testing import CliRunner
 
+from lab_tests.test_cli import unstyle
 from video_lab.cli import app
 from video_lab.dataset_cli import (
     DatasetCliError,

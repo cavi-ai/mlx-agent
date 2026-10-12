@@ -1,6 +1,13 @@
 # Security and recovery boundaries
 
-The universal installer and Wire are deliberately confirmation-gated. `--dry-run` produces a plan; install, update, uninstall, and Wire apply require a current reviewed `--preview-hash`. The project never auto-installs a provider CLI, auto-downloads a model, or persists secrets.
+The universal installer and Wire are confirmation-gated. Installer `--dry-run`
+produces a plan; install, update, uninstall, and Wire apply require a current
+reviewed `--preview-hash`. Provider CLIs are installed separately. Discovery and
+verification do not download weights; explicit `intake fetch` and `backend install`
+download models and optional dependencies only after review and confirmation.
+See the [security model](mlx-agent/source/pages/security/model.md) for the broader
+command boundaries and [Wire](mlx-agent/source/pages/capabilities/wire.md) for
+rollback preview and confirmation.
 
 ## Tool-use verification boundary
 

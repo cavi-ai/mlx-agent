@@ -1,35 +1,56 @@
 # Runtimes
 
-Which runtime executes a model, and how mlx-agent treats each.
+A provider is the coding-agent host that invokes mlx-agent. A runtime loads and
+executes model weights. Installing a provider adapter does not install a runtime.
+Choose one for the model format and task you intend to run.
 
-## Ollama (curated MLX)
+| Runtime | Role in mlx-agent | Conventional port |
+| --- | --- | --- |
+| `mlx_lm` | Native text serving; default text conversion, LoRA, and fusion path | 8080 |
+| `mlx-vlm` | Native vision/language serving and media tasks | 8083 |
+| LM Studio | Desktop-managed models with a local OpenAI-compatible server | 1234 |
+| Ollama | Runtime-managed models and tags through its local API | 11434 |
+| LiteLLM | Router over explicitly configured backends | 4000 |
 
-Ollama 0.30+ uses MLX as its compute engine on Macs with ≥32 GB unified memory. Zero setup for curated tags (`ollama/<tag>`, `:11434`). It cannot run vision models, and it runs Ollama's own curated weights, not arbitrary `mlx-community` repos.
+Ports are defaults or conventions, not proof that a server is running.
+Use `inspect-host`, runtime inventory, and `serve status` as appropriate.
+Serve's `--port` and Fleet's `--port-map role=port` allow explicit choices.
 
-## LM Studio (native MLX)
+## Native MLX servers
 
-Native MLX runtime with a GUI. Download any `mlx-community` repo, then `lms server start` for an OpenAI-compatible endpoint at `:1234`. Lowest friction for trying a new model.
+`serve start` launches `mlx_lm` or `mlx-vlm` with reviewed arguments and
+local weights. The executable must already be installed. `--path` selects a
+local directory; `--repo` selects a cached repository. Text adapters use
+`--adapter-path`. See [Serve](../lifecycle/serve.md) for JIT, launchd, memory
+policy, and process ownership.
 
-## mlx_lm (native, headless)
+## Managed desktop and tag runtimes
 
-`pip install mlx-lm`, then `mlx_lm.server --model <repo> --port 8080`. OpenAI-compatible, tool calling, `--adapter-path` for serving a LoRA. Meaningfully faster than Ollama on MoE models. The default text runtime for serve, convert, lora, and fuse.
+LM Studio and Ollama manage loading and downloads. Select a compatible model in
+the runtime first. Use its advertised identifier for benchmarks and verification;
+a Hub repository ID and an Ollama tag are not interchangeable.
 
-## mlx-vlm (native, vision)
+Detection and configuration rendering do not establish runtime support for
+arbitrary Hub repositories or every modality. Review the runtime's model support
+and your actual inventory.
 
-Required for vision/OCR models (`:8083` by convention). Serves VLMs the other runtimes cannot.
+## Local routers
 
-## LiteLLM (router)
+A loopback LiteLLM endpoint can forward to a remote or paid provider.
+mlx-agent checks route locality before treating it as local for verification.
+Review the router configuration and selected model mapping. A local socket
+alone does not prove local inference.
 
-One OpenAI-compatible front for many backends (`:4000`). Fleet renders its bounded router YAML subset. A loopback LiteLLM route may point at remote paid backends — mlx-agent verifies route locality before treating it as local.
+[Fleet](../lifecycle/fleet.md) emits a bounded router configuration; it does not
+start LiteLLM or load the referenced model servers.
 
-## Port conventions
+## Optional task backends
 
-| Runtime | Port |
-| --- | --- |
-| mlx_lm | 8080 |
-| mlx-vlm | 8083 |
-| LiteLLM | 4000 |
-| Ollama | 11434 |
-| LM Studio | 1234 |
+[Backends](../lifecycle/backends.md) manage locked converter and task-runner
+environments, separate from an always-running HTTP server.
+[Local inference](../lifecycle/local-inference.md) covers speech, classification,
+media description, image generation, and video generation.
 
-Bundled reference packs go deeper: `references/quantization.md` (quant tradeoffs), `references/model-families.md` (chat-template and tool-calling quirks), `references/troubleshooting.md` (symptom-first playbook) — shipped inside every generated skill.
+Reference packs shipped in `src/mlx_agent/resources/references/` cover
+quantization, model families, and serving troubleshooting. Compare performance
+on your actual host with [Bench](../capabilities/bench.md).

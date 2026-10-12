@@ -1,6 +1,23 @@
 # Installation
 
-Requires macOS on Apple Silicon, Python 3.9+ (standard library only), and the coding-agent host of your choice. Optional runtimes (Ollama, LM Studio, `mlx_lm`, `mlx-vlm`, LiteLLM) are detected, never installed for you.
+The core requires Python 3.9+ and uses the standard library. MLX execution and
+macOS host inspection require Apple Silicon. Install the coding-agent host CLI
+separately. Optional model runtimes have their own dependencies; managed optional
+backend installation uses Python 3.12 locks.
+
+These instructions use the package version recorded in this checkout. To work
+with a published release, select its tag and documentation together. To run the
+CLI against the current source, clone the default branch and run commands from
+the repository root:
+
+```bash
+git clone https://github.com/cavi-ai/mlx-agent.git
+cd mlx-agent
+python3 scripts/mlx-agent --help
+python3 scripts/mlx-agent inspect-host --json
+```
+
+Choose a host below, then follow [Your first local model](quickstart.md).
 
 ## Claude Code
 
@@ -36,20 +53,48 @@ Restart Agy, use `/skills` to confirm the package, then ask it to use `mlx-scout
 git clone --depth 1 --branch v0.6.0 https://github.com/cavi-ai/mlx-agent.git
 cd mlx-agent
 python3 scripts/mlx-agent install opencode --scope user --dry-run --json
+# Review the plan; copy data.preview.preview_hash.
 python3 scripts/mlx-agent install opencode --scope user --confirm --preview-hash <preview-hash> --json
 python3 scripts/mlx-agent doctor opencode --scope user --json
 ```
 
-Restart OpenCode, press `Ctrl+P`, filter for `mlx`.
+Restart OpenCode, press `Ctrl+P`, filter for `mlx`, and run `/mlx-scout`.
+Keep any custom XDG paths consistent between installation and host launch.
+
+## AgentSkills-compatible hosts
+
+From a checkout:
+
+```bash
+python3 scripts/mlx-agent install agentskills --scope user --dry-run --json
+# Review the plan; copy data.preview.preview_hash.
+python3 scripts/mlx-agent install agentskills --scope user --confirm --preview-hash <preview-hash> --json
+```
+
+Restart the host and check its skill list. The installer copies a launcher and
+runtime into each installed skill so it can operate on its own. Generated skill
+definitions copied by hand from the repository do not include that runtime.
+Move unowned older `mlx-*` skill folders aside before the first managed install.
 
 ## Universal installer
 
-The same preview-then-confirm installer covers `claude`, `codex`, `agy`, and `opencode` in user or project scope:
+The preview-then-confirm installer covers `claude`, `codex`, `agy`, `opencode`,
+and `agentskills` in user or project scope:
 
 ```bash
 python3 scripts/mlx-agent providers --json
 python3 scripts/mlx-agent install agy --scope user --dry-run --json
+# Review the plan; copy data.preview.preview_hash.
 python3 scripts/mlx-agent install agy --scope user --confirm --preview-hash <preview-hash> --json
 ```
 
-The installer changes only receipt-owned files: no model downloads, no persisted secrets, no edits to unowned configuration.
+For project installs, use `--scope project --project /absolute/project/path`
+for both preview and confirmation. Use the same sequence for `update` and
+`uninstall`; run `doctor <provider>` with matching scope to inspect ownership.
+Installer changes are receipt-owned; unowned or user-modified artifacts are
+refused. Installing an adapter does not download model weights.
+
+The [provider lifecycle guide](https://github.com/cavi-ai/mlx-agent/blob/main/docs/install/index.md)
+includes host-specific configuration paths and recovery. See
+[Backends](../lifecycle/backends.md) for explicit dependency installation and
+[Runtimes](../reference/runtimes.md) for model execution choices.

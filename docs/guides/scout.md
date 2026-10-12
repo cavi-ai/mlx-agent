@@ -2,6 +2,10 @@
 
 Scout is read-only. It ranks MLX candidates for the host and records whether each field is a fetched fact, estimate, or heuristic.
 
+See the [Scout guide](../mlx-agent/source/pages/capabilities/scout.md) for the
+current discovery workflow and [Evidence and sizing](../mlx-agent/source/pages/reference/evidence.md)
+for estimate and verification limits.
+
 ```bash
 python3 scripts/mlx-agent discover --role coding --limit 5 --json
 python3 scripts/mlx-agent discover --role coding --state-dir .mlx-agent/scout-cache --json

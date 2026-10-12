@@ -2,6 +2,9 @@
 
 Wire renders, previews, and applies runtime/provider configuration only. It does not pull, install, or download model weights. A separately reviewed preview hash is required before it writes configuration.
 
+The [Wire guide](../mlx-agent/source/pages/capabilities/wire.md) is the primary
+reference for configuration transactions and recovery.
+
 ```bash
 python3 scripts/mlx-agent wire render mlx-community/example --target mlx_lm --path config.yaml --json
 python3 scripts/mlx-agent wire apply mlx-community/example --target mlx_lm --path config.yaml --json
@@ -22,7 +25,9 @@ Inspect and restore only the receipt you reviewed:
 
 ```bash
 python3 scripts/mlx-agent wire status <receipt-path> --json
-python3 scripts/mlx-agent wire rollback <receipt-path> --confirm --json
+python3 scripts/mlx-agent wire rollback <receipt-path> --json
+# Review the rollback preview and copy data.preview.preview_hash.
+python3 scripts/mlx-agent wire rollback <receipt-path> --confirm --preview-hash <rollback-hash> --json
 ```
 
 Wire uses target-scoped advisory locks to prevent accidental/cooperative concurrent writers. A malicious process that ignores the lock can still race the final rename; review the receipt status and target content after any recovery-required result. Use `/mlx-wire`, or `$mlx-agent:mlx-wire` in Codex.

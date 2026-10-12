@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import sqlite3
 import threading
+from contextlib import closing
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
@@ -2276,8 +2279,33 @@ def _downgrade_checkpoint_publication_to_physical_v36(repository: TrainingReposi
         connection.commit()
 
 
+@lru_cache(maxsize=None)
+def _repository_seed(root: Path) -> tuple[Database, str, str]:
+    """Build prerequisites through the real services once per pytest worker."""
+    root.mkdir()
+    seeded = _build_repository(root)
+    return (
+        Database(seeded.database.path, read_only=True),
+        STAGE2_EVIDENCE_DIGEST,
+        STAGE2_MANIFEST_DIGEST,
+    )
+
+
 @pytest.fixture
 def repository(tmp_path: Path) -> TrainingRepository:
+    """Give every test its own writable database and artifact bytes."""
+    global STAGE2_EVIDENCE_DIGEST, STAGE2_MANIFEST_DIGEST
+    seed_root = tmp_path.parent / "training-repository-seed"
+    seed, STAGE2_EVIDENCE_DIGEST, STAGE2_MANIFEST_DIGEST = _repository_seed(seed_root)
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    database = Database(tmp_path / "lab.sqlite3")
+    with closing(seed.connect()) as source, closing(database.connect()) as destination:
+        source.backup(destination)
+    shutil.copytree(seed_root / "artifacts", tmp_path / "artifacts")
+    return TrainingRepository(database, reviewer_id="owner")
+
+
+def _build_repository(tmp_path: Path) -> TrainingRepository:
     global STAGE2_EVIDENCE_DIGEST, STAGE2_MANIFEST_DIGEST
     database = Database(tmp_path / "lab.sqlite3")
     database.migrate()
@@ -5334,3 +5362,40 @@ def test_failure_messages_reject_local_path_material(
                 failure_id="failure-path", run_id="missing", code="boom", message=message
             )
         )
+
+
+def test_seed_clones_keep_database_and_artifact_mutations_isolated(tmp_path: Path) -> None:
+    first = repository.__wrapped__(tmp_path / "first")
+    second = repository.__wrapped__(tmp_path / "second")
+    with first.database.connect() as connection:
+        campaign_id = connection.execute("SELECT id FROM validation_campaigns").fetchone()[0]
+        assert (
+            _validation_evidence_digest(connection, campaign_id, "owner")
+            == STAGE2_EVIDENCE_DIGEST
+        )
+        connection.execute(
+            "INSERT INTO characters VALUES ('clone-only','owner','Changed',?)",
+            (NOW.isoformat(),),
+        )
+    with second.database.connect() as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM characters WHERE id='clone-only'"
+        ).fetchone()[0] == 0
+        assert (
+            _validation_evidence_digest(connection, campaign_id, "owner")
+            == STAGE2_EVIDENCE_DIGEST
+        )
+    first_artifact = next(
+        path for path in (tmp_path / "first/artifacts").rglob("*") if path.is_file()
+    )
+    relative = first_artifact.relative_to(tmp_path / "first/artifacts")
+    second_artifact = tmp_path / "second/artifacts" / relative
+    original = second_artifact.read_bytes()
+    first_artifact.write_bytes(b"changed")
+    assert second_artifact.read_bytes() == original
+    third = repository.__wrapped__(tmp_path / "third")
+    assert (tmp_path / "third/artifacts" / relative).read_bytes() == original
+    with third.database.connect() as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM characters WHERE id='clone-only'"
+        ).fetchone()[0] == 0

@@ -5,6 +5,14 @@
       "sha256": "a7892639b87fa4cb7364b6f89d1cfc1f8565c2abd1b863eadd7b7fa38baeef9a"
     },
     {
+      "path": "requirements-lab-inference.txt",
+      "sha256": "e36de3390c0817b7045aa9ecda52d55dd768c6e3a2c1631d72b9eab95323110e"
+    },
+    {
+      "path": "requirements-lab.txt",
+      "sha256": "6f992dea2013d9ecf128eede9510d13438fb99a1112b68f9e63b3db34bc71bba"
+    },
+    {
       "path": "scripts/mlx-agent",
       "sha256": "ab779456cac163b4b0c925031596c9f2dff03a3380fe9d75b2329c27869be6df"
     },
@@ -49,8 +57,376 @@
       "sha256": "b6fe6fe6fce77e054c60e4da3869ac00db1439661c47fc7cc17efef962a7ceae"
     },
     {
+      "path": "src/mlx_agent/_lab/video_lab/__init__.py",
+      "sha256": "877280c1be7cc9aa2f9a2c908e4f141453ff3515b89b04e53f231df621b197e4"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/adapter_protocol.py",
+      "sha256": "5bc02c814febbb49c6194d56b78383b1537396bd171edca91c503c07146c30ec"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/adapter_registry.py",
+      "sha256": "2b6a6b92c4b08221cf712dd72117d85f7b41602687c791cde970289d72d6c54a"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/adapters/__init__.py",
+      "sha256": "3061bc27fb428fdc97a7d50069352e996ad7f08ceaa5509cf7c7696ac1f0b2df"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/adapters/animegen_mps.py",
+      "sha256": "bbb401715e4a95faa61bca67520e8459cd04dfb4e97e874bf09585b6dd00f2e2"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/adapters/fake.py",
+      "sha256": "21f909f1030591d803e39fb2a4ccccc24994baf00de6acbb8c47bcef4713208d"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/adapters/wan_mps.py",
+      "sha256": "53741569be40e45435724ab915d319eb4e2a8ce45cfeea88a771864558ee0729"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/adaptive_study_models.py",
+      "sha256": "9fcf404aeb1606fe62e3d584f04e50bde78034395901a1518159a03a4108cf33"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/adaptive_study_repository.py",
+      "sha256": "8db9c8614446789867f3b6c61e3f3f0c794c40305b32654253b07fbc623917db"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/adaptive_study_service.py",
+      "sha256": "2e92435719a43c05f4dc26af9eae884629c0b45fbb455e4968e6c34651424ba8"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/adaptive_web_creation_repository.py",
+      "sha256": "88fcb776a094169375ee5a863266777d8c0ef4d51f8c81f7239be1a786b596ba"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/animegen_feasibility.py",
+      "sha256": "0613fd542dc8395cf6d413e164f83cc63bbdf50a3f6df24e84968edd32cf5453"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/animegen_pair_contract.py",
+      "sha256": "7ca136eac881c6048cb86c164c95ad9bf99118d66ef7caa9619f649f10f01871"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/artifacts.py",
+      "sha256": "9768ac9647092a18c8b9a01528a875561b2c2afc7b77ea7907538a3a2ca999a4"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/capabilities.py",
+      "sha256": "2a32e00989d6428bd00d430e53af9efcc526ee93460316236acfbd9634cae9d1"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/character_benchmark_analysis.py",
+      "sha256": "65ef018b4d2015f2d584a415de646f7e2605d5b233bad8339fd645244853029d"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/character_benchmark_models.py",
+      "sha256": "bfe725e8ce2fe05edd04cb8fe669aec344b1a683040634d2c882d255eb950bce"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/character_benchmark_protocol.py",
+      "sha256": "30a5bb78188167d25296d74e75582e12538f2439a45dc87ec7a11fa5133d05fb"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/character_benchmark_repository.py",
+      "sha256": "6760441591f772e872062f6f282c5feffed40f91fc15fdeec42682112f177dc1"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/character_benchmark_service.py",
+      "sha256": "ee5480a603d84572a86a3e86f2381c75abddd77777ca2700f6869adf6d2a5e36"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/character_images.py",
+      "sha256": "bc92910875b6b9168a828d1965bcd9c261719a84cfea3e7bd1799c3a57b6c9c9"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/character_models.py",
+      "sha256": "ce958efdad86cf6b924ce313d518842c13da6c2d42be1db0e5265a95f425d3fc"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/character_pack.py",
+      "sha256": "dfd0da777504f4150445b203d59b4dbb92f1227ba8186a5bea1c4aedd2e97625"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/character_repository.py",
+      "sha256": "51243bacb0d9bc28d453ac6a40532849e015c5ce4f8370b438605277f9254cef"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/character_service.py",
+      "sha256": "22ca902c4c877283d94cba2deebfdbae4bf46365acc310b31a8a23eacfae11ce"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/character_web_grant_repository.py",
+      "sha256": "a4b37a0f075aab0e3466f89381a9324e9dbb803422da45b4ac49a6ba2664405f"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/cli.py",
+      "sha256": "4adecf198c3db924639da08bdde282ab3f895c5d8fd8224d61041ed6c56db1a2"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/comparison.py",
+      "sha256": "f8529435d7911997b3e5ba6f44c9b9be1cea38e7cdc07b78ce09fc2ddfa19cc0"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/compilers/__init__.py",
+      "sha256": "54c410fd9ae4cf63b4c3477e52554318c12ce12fcadd9e306adb490fc49852db"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/compilers/wan_curated.py",
+      "sha256": "469d386068f4d70d01155ff88778d4f720d5a79c56900badc2dc5577396cb480"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/curated_ids.py",
+      "sha256": "effcbc51d961fef02aad98ba7ac2fafb7f5c5da69e026034462a5d8533950894"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/curated_metrics.py",
+      "sha256": "024746d153967abe5f3ecc60331bf9b9905b2193a73c7340a6713ad8a850198f"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/curated_models.py",
+      "sha256": "21efc918909a77cfec8971c01f708ec2ea4c09f05bafbad90a91c151bd155e6d"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/curated_source.py",
+      "sha256": "68bd7a14ed0510c8d209346f92ccd1667f68f72b74c7a25f203f4bc52edc2fe7"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/curated_splits.py",
+      "sha256": "10bf9c81fe31f9d46ff6baebf0653cb83822e0f1353c34d23a29c7917adb61af"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/curated_validation.py",
+      "sha256": "07223776a0fd31cefe453009a585176aeff31d57c57983188494fdf08b86c553"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/database.py",
+      "sha256": "7bbd11af7aa6cbef1c6b1582e4ba140eff7be4122f5f3f6219e99a62bd854e3c"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/dataset_cli.py",
+      "sha256": "df7fc86f2adac9ae56600814eec9d7ca65cb351b285da6a27d9aecc2677eb9dc"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/dataset_compiler.py",
+      "sha256": "112db0000a112b3858d205c74b195abf82d9a45db921e0e65501be3895d96227"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/dataset_receipts.py",
+      "sha256": "643e8ddd37a1e95e399d30ae7bc5b87db596c6797c1661c38c25e88e7a791152"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/domain.py",
+      "sha256": "359b65bf4d6f9cbbbbb60466938245c680f4f3525328d8043a4b9bcc2a43edf6"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/evidence_service.py",
+      "sha256": "b7dfef08808f0bdf3c7a71e6542fad968841dd03c03955fdc878bdea39254065"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/feasibility.py",
+      "sha256": "bc0b1ef825d2edbe65068e244ce9f6091c17d486f963e0ea93656c74f2722def"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/feasibility_models.py",
+      "sha256": "002813b64f59af99ba4fd2801029d4bad74b3a797536de3a91d27502e97a4ecf"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/feasibility_projection.py",
+      "sha256": "1fb06d3cca6daef0efc03c38725fdfb54e486c88e2ce6726bbb631905d498f94"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/feasibility_repository.py",
+      "sha256": "ac9909e09958be03978ded9661ec9c839a42e052da65d6182781fe16151792ee"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/feasibility_telemetry.py",
+      "sha256": "4277a87749c7557c3ee09045be70f055a560f8054fabaf07ea6bbdb03a693029"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/host_canaries/__init__.py",
+      "sha256": "b3a485142133bc13d8fb64878b40db6f5e0518d5319bfa58e9482acdda2fb62e"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/host_canaries/wan_curated.py",
+      "sha256": "e6f5e67ad4a2c588deb27dc1c6c3442407b31be365f9d3a2ab26f11015004016"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/host_canaries/wan_qualification.py",
+      "sha256": "84f78c8e789a452994657cd87d7cc2e8697c7102caf693fb49bede3b0263033b"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/launcher.py",
+      "sha256": "0a58585ee356c1bceb1005db93d7288a58a0c2f99f98b8f0308cd57ad9daa4e3"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/local_authority.py",
+      "sha256": "51132a6f726e9cf8d528121aaa2cabea99d429635f0aef1617ef4cb258957be3"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/normal_generation.py",
+      "sha256": "8087c47688bf7a836eee17b0ebb054760cf0b3fa5a9d64e9c5d5b83f3e576cea"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/operations.py",
+      "sha256": "5a9855bfaf4f7ab684da435d61cc7d3d77982ea25adc0120e227cd10dce3d4cc"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/preference_optimizer.py",
+      "sha256": "54ace686f83081b3b1dd9d4c089a6ce066bc5a2ba99c7a7e9d10d47fdb7e2d45"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/py.typed",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/queue_service.py",
+      "sha256": "73182f9cf422c2183b9ab360e8bd782df5a6c21863d20396cd41dec9a120e974"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/repositories.py",
+      "sha256": "dbdc9a1d6028eb38d1eb73326504c8ebfd498ecb05a7f6fe30cfbd2a809c5e92"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/review_service.py",
+      "sha256": "04eac0235dbbac00b37deffa775e8cbb152835ef744382587e06df23294a4846"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/reviews.py",
+      "sha256": "aae2accbe96953c35a701abcbb3741327f614dd039dba9a52a14d88264b0bb67"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/runtime_identity.py",
+      "sha256": "56648e335c7ace03c308c0f323e774767ef9a12639fab353c761d5e0735af989"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/services.py",
+      "sha256": "365e6d0be265470e1da8df199c07f5aafaa30de89244fe8bbe621a52d0b31e76"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/source_inventory.py",
+      "sha256": "66312a99e7d6a1da0bcbe0d303bec75fbb48ab206763913ce587591eb530575c"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/states.py",
+      "sha256": "0a627fc1bbbde6d302062fb2957741f427cc487dc930f9ab718abd3b9a9f26b3"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/telemetry.py",
+      "sha256": "6cc118b9f5a8ad38f6d46ad29f3d273ce4cd932c5baa6f8768d7c1c55c029cc2"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/trainer_protocol.py",
+      "sha256": "6e5b3b235f006d262d1a7f95418ad1640a7298987a120564e6501dec33de2976"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/trainers/__init__.py",
+      "sha256": "54f04e5094e2273916143f787eff03807a942b4cc340210f615d93558755349b"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/trainers/fake.py",
+      "sha256": "778121f6984793ed0d838508f09a90112b29a100b0b4ffa2369a197ef805791a"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/trainers/wan_batch.py",
+      "sha256": "f3811c289c9123394386c7ed24a22dddcebaf02a70cdfc81dcc6dd94eb513359"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/trainers/wan_branch_loader.py",
+      "sha256": "f8356ec533e1fd936641fa2d2cb8edfde1681726227d267a71a3e95e10bc402a"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/trainers/wan_branch_runtime.py",
+      "sha256": "9df3b37b647b2249dc0681a903da3acc18452020a468cc57bb3a4bdb6b1f424a"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/trainers/wan_checkpoint.py",
+      "sha256": "a732a25a27412b70d6b077efe39058dd1e4fb8ce83609555c95d9f487ab02a70"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/trainers/wan_continuity.py",
+      "sha256": "6aed7e45f9c13f8f7e3f2dc02d08b6cf9d63aa189c7c876b48e398dec781424c"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/trainers/wan_diffusers_runtime.py",
+      "sha256": "2bbc0c656fc18cd0251a171e1509cd6c08763af8d7e45f9bd05b14934fa83ed8"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/trainers/wan_factory.py",
+      "sha256": "564ca96be4dc7cb248d6791f3e075739cf5d5a98e48489088bb6a7662dbff23d"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/trainers/wan_mps.py",
+      "sha256": "d790865a0f3df8cde658f27df5a498362184da7d459dae8347ee8543ad5127fd"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/trainers/wan_production_models.py",
+      "sha256": "b2fd1b25dcb1739e6f5376700321c48e1e82922951e6ce67a36a7e87af2e0d26"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/training_dataset.py",
+      "sha256": "255f3bc3414c0d27cb3cbf7cfccc3a81021c8ce248d4e995a7c173991462ed5f"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/training_media.py",
+      "sha256": "3124e1cd9ab72978dde7c7d91a7cad62fb8ec12117fd3911963245095daf2883"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/training_models.py",
+      "sha256": "5fdfe136f93eb5c7d366a56d81416cabd9006ad1d2be83ff1b3c22b9f788081e"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/training_repository.py",
+      "sha256": "2ff979d7615be96c62d633427f84cde08b6e6d635b6c120e2691f557146a416d"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/training_service.py",
+      "sha256": "8808e46b98e3fcd99ecbd571e02de0600b6f6a6393fbf494aac6ed4f8f9118db"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/validation_analysis.py",
+      "sha256": "444e9cd9d668dbfddb9bea004a0efcd4e02117b105fd63addf9e3f2a69fa5fb2"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/validation_models.py",
+      "sha256": "5a1adff83286f6da30df56a534d44a87917e81f741925ebb00538d201ab61d64"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/validation_panel.py",
+      "sha256": "a1e19c9853eaee769c71ca2d5fc44cfa8d267931b0fbc2a5319b1b4939763c45"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/validation_repository.py",
+      "sha256": "5a8d4899c6f06fce4f5c77667111d69d0068ed19ef64374e829437ad911fddc3"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/validation_service.py",
+      "sha256": "7cf78bac95204336b9687957efe29e8882d7710344920071dd0ce64ca3c264e8"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/wan_pending.py",
+      "sha256": "940208c0066c5fa1c22cfdb1df82abc9448c3b2d55978ab2dc93c0f4ae5f64d1"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/worker.py",
+      "sha256": "760f0e5f2fc96b3948fcf9d66a00ad51af01a8770f8db7289f3c2c0204938dca"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/worker_control.py",
+      "sha256": "5e78cf260f1657a0d34970b6fdd7663e31fd9328725020e1d35bd7ca054861f6"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/worker_supervisor.py",
+      "sha256": "02ed227cdb953a34e82439887fdb6f6f167adc40b9eb0942fa9282bb5fb2ce33"
+    },
+    {
       "path": "src/mlx_agent/adoption.py",
       "sha256": "ea12b889604d11ada8e3749cc0413a7e25653ec6d5b45b9aa8f14ae2cc0864b2"
+    },
+    {
+      "path": "src/mlx_agent/atomicio.py",
+      "sha256": "b6c69842355eb84f06964f98bb7da2773964c28893a0ecade73b6af63e72089a"
     },
     {
       "path": "src/mlx_agent/backend_install.py",
@@ -74,15 +450,19 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "d088a8ac05c5dddb9fd37cce36477d3e56871a83dd61b625fb89fe1ccc394f64"
+      "sha256": "b854b3ab657b0476919f95ff99b47196c02333d972df0bf3d642bcc9fe7099ba"
     },
     {
       "path": "src/mlx_agent/command_args.py",
-      "sha256": "2c8936d67b4d26745204bcb0b4938aee6829f032dece267d6fa3ab16a37ee5d0"
+      "sha256": "d7b32f79f446bdb9dc00f21e8e84c1acf3913836ef4faa2a83c6b09ba0cedb97"
     },
     {
       "path": "src/mlx_agent/command_executor.py",
       "sha256": "df07ae85a25780d23cfe90e1032a19031ec5fbb388b7940414763ce9a26e5b32"
+    },
+    {
+      "path": "src/mlx_agent/compute.py",
+      "sha256": "1f9804f7975a0f2bca24fb21e59708d8f0c8e19f1069ba7cbc24ee49f3b6b3c8"
     },
     {
       "path": "src/mlx_agent/contextfit.py",
@@ -95,6 +475,10 @@
     {
       "path": "src/mlx_agent/convert.py",
       "sha256": "912328ba9b575b35cce57aae405772172d80c190ca8a96a8d5a57e3bb74e608b"
+    },
+    {
+      "path": "src/mlx_agent/convert_queue.py",
+      "sha256": "0cbae526341fb701e2aba32f2d62d82d910e74743303f687e2e10de8ef4ffa44"
     },
     {
       "path": "src/mlx_agent/decide.py",
@@ -177,12 +561,28 @@
       "sha256": "019b12c8b7deee01a37e4cc2bec9eefdb5d96afaa963400811d2caf226d908c8"
     },
     {
+      "path": "src/mlx_agent/lab.py",
+      "sha256": "7ee7dbaf5b2eea4699ef06b145ab82cbb4dc95e974c8cfdafaf64c9e2df0a08a"
+    },
+    {
+      "path": "src/mlx_agent/lab_adoption.py",
+      "sha256": "830bf6e8ac023872ec8f571ef372f973cb2d493e39c42738b15630321aa80c3f"
+    },
+    {
+      "path": "src/mlx_agent/lab_studies.py",
+      "sha256": "0799d584e38ecc1252a809c7da70aba9256c45c4f98f97f1057b3ce53d9f93a2"
+    },
+    {
+      "path": "src/mlx_agent/lab_workspace.py",
+      "sha256": "076d5253c18826fa88c47e4b756e67cde2469347b0295500b4d2f032e91fecb2"
+    },
+    {
       "path": "src/mlx_agent/lora.py",
-      "sha256": "c567e3a7282decb74e086da50898d44f87136a5c55bad8c4c70edbbc6d539ada"
+      "sha256": "9c0e7a822ca4fa626bd097b5e520d8f06a6afc72b20d1c4dbc5507290324fce2"
     },
     {
       "path": "src/mlx_agent/mcp_server.py",
-      "sha256": "86191b74a19fc7837b8ab63ec03604ad37a695d7c18324687000159e00de2fa2"
+      "sha256": "bebccd3e99b0d9171b4c49447ee0e57aba8013a3bf83e4eb8aaea2be98a8537e"
     },
     {
       "path": "src/mlx_agent/modality.py",
@@ -227,6 +627,14 @@
     {
       "path": "src/mlx_agent/providers.py",
       "sha256": "0d109e26510efb465852d931ff82d7bacaec8d6aaa721f055b7b745ce675882a"
+    },
+    {
+      "path": "src/mlx_agent/queue_bridge.py",
+      "sha256": "91d7741291c1b93fd3aee8075fbc79d6011cd7ec80aff59aba023017dbb0290b"
+    },
+    {
+      "path": "src/mlx_agent/queue_cli.py",
+      "sha256": "acae87fa72026dd3425612ef3a720690e7f49e708ada27a66dcef4cc6a24b87a"
     },
     {
       "path": "src/mlx_agent/research.py",
@@ -383,6 +791,18 @@
     {
       "path": "src/mlx_agent/taxonomy.py",
       "sha256": "02054c484b5c16899612d4a43e1ab3a9b9ee6137f423fc4567e9fc2adc951cb3"
+    },
+    {
+      "path": "src/mlx_agent/training_eval_runtime.py",
+      "sha256": "60754c5ae1f0dd3bfe8ffc5b941df45dc60c78a0acec3c89a438c9eb3905f382"
+    },
+    {
+      "path": "src/mlx_agent/training_evaluation.py",
+      "sha256": "18182d3e44253e1b830c32cac0170471a1c2a7e5abe775e24b0daa52438aa453"
+    },
+    {
+      "path": "src/mlx_agent/training_runner.py",
+      "sha256": "2f8ee130d176d27af4e29e47a6f53b2bbe0641c948eb1b220af2813f832e6ee9"
     },
     {
       "path": "src/mlx_agent/transactions.py",

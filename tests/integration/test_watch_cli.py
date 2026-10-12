@@ -2,6 +2,7 @@ import io
 import json
 import os
 import unittest
+from unittest.mock import patch
 from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -15,6 +16,9 @@ FIXTURE = ROOT / "tests" / "fixtures" / "scout_responses.json"
 
 class WatchCliTests(unittest.TestCase):
     def setUp(self):
+        owned = patch("mlx_agent.cli.collect_owned", return_value=[])
+        owned.start()
+        self.addCleanup(owned.stop)
         os.environ["MLX_AGENT_FIXTURE"] = str(FIXTURE)
         self.addCleanup(lambda: os.environ.pop("MLX_AGENT_FIXTURE", None))
 

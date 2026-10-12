@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""Compatibility entrypoint for the shared engine; preserves video-lab envelopes."""
+from pathlib import Path
+import sys
+
+root = Path(__file__).resolve().parents[1]
+sys.path[:0] = [str(root / "src"), str(root / "src/mlx_agent/_lab")]
+from mlx_agent.lab import run
+
+if __name__ == "__main__":
+    raise SystemExit(run(sys.argv[1:], legacy=True))

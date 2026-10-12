@@ -435,6 +435,8 @@ def _parse_fleet(tokens):
 def parse_command_arguments(capability, raw):
     """Return a validated argv list; this function never runs a process."""
     tokens = _tokens(raw)
+    if capability == "lab":
+        return ["lab"] + tokens
     if capability == "scout":
         return _parse_scout(tokens)
     if capability == "adopt":
@@ -454,7 +456,7 @@ def parse_command_arguments(capability, raw):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("capability", choices=("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"))
+    parser.add_argument("capability", choices=("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "lab"))
     parser.add_argument("raw", help="one opaque custom-command argument string")
     arguments = parser.parse_args(argv)
     try:

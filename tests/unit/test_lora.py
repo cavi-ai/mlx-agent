@@ -1,4 +1,5 @@
 import json
+import tempfile
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -25,6 +26,19 @@ class DatasetValidationTests(unittest.TestCase):
             summary = validate_dataset(directory)
             self.assertEqual(summary["train_lines"], 1)
             self.assertEqual(summary["valid_lines"], 0)
+
+    def test_invalid_record_after_first_fifty_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _dataset(directory, ['{"text":"valid"}'] * 50 + ["broken"])
+            with self.assertRaises(LoraError):
+                validate_dataset(directory)
+
+    def test_dataset_content_changes_preview_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _dataset(directory, ['{"text":"before"}'])
+            first = plan_lora("pub/model", directory)
+            _dataset(directory, ['{"text":"after"}'])
+            self.assertNotEqual(first["preview_hash"], plan_lora("pub/model", directory)["preview_hash"])
 
     def test_messages_dataset(self):
         with TemporaryDirectory() as directory:
@@ -210,13 +224,48 @@ class StatusLoraTests(unittest.TestCase):
         out = self.root / "adapter"
         self._start_one(out)
         out.mkdir()
+        (out / "adapter_config.json").write_text("{}")
+        header = json.dumps({"weight": {"dtype": "F32", "shape": [1], "data_offsets": [0, 4]}}).encode()
+        (out / "adapters.safetensors").write_bytes(len(header).to_bytes(8, "little") + header + b"1234")
+        receipt = next((self.root / ".mlx-agent-receipts/lora").glob("*.json"))
+        Path(json.loads(receipt.read_text())["result_path"]).write_text('{"exit_code":0}')
         entries = status_lora(str(self.root), pid_alive=lambda pid: False)
         self.assertEqual(entries[0]["state"], "done")
 
     def test_missing_output_marks_failed(self):
         self._start_one(self.root / "adapter")
+        receipt = next((self.root / ".mlx-agent-receipts/lora").glob("*.json"))
+        Path(json.loads(receipt.read_text())["result_path"]).write_text('{"exit_code":1}')
         entries = status_lora(str(self.root), pid_alive=lambda pid: False)
         self.assertEqual(entries[0]["state"], "failed")
+
+    def test_stop_refuses_a_changed_process(self):
+        from mlx_agent.lora import stop_lora
+        self._start_one(self.root / "adapter")
+        terminated = []
+        with self.assertRaises(LoraError):
+            stop_lora(8888, str(self.root), pid_alive=lambda pid: True,
+                      pid_command=lambda pid: "unrelated process", terminate=lambda *args: terminated.append(args))
+        self.assertEqual(terminated, [])
+
+    def test_stop_cancels_only_the_receipt_owned_process_group(self):
+        from mlx_agent.lora import stop_lora
+        from unittest.mock import patch
+        self._start_one(self.root / "adapter")
+        terminated = []
+        with patch("mlx_agent.lora.os.getpgid", return_value=8888):
+            result = stop_lora(8888, str(self.root), pid_alive=lambda pid: True,
+                pid_command=lambda pid: self._COMMAND, terminate=lambda *args: terminated.append(args))
+        self.assertEqual(result["status"], "cancelled")
+        self.assertEqual(terminated[0][0], 8888)
+        receipt = json.loads(Path(result["receipt"]).read_text())
+        self.assertEqual(receipt["exit_status"], "cancelled")
+
+    def test_folder_without_exit_evidence_remains_unknown(self):
+        out = self.root / "adapter"
+        self._start_one(out)
+        out.mkdir()
+        self.assertEqual(status_lora(str(self.root), pid_alive=lambda pid: False)[0]["state"], "unknown")
 
 
 if __name__ == "__main__":

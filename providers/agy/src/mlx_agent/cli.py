@@ -1736,6 +1736,7 @@ def _add_convert_arguments(parser):
 
 
 def _run_convert(arguments):
+    from .compute import ComputeBusy
     operation = "convert-{0}".format(arguments.convert_command)
     try:
         if arguments.convert_command == "status":
@@ -1748,14 +1749,16 @@ def _run_convert(arguments):
             if not 1 <= arguments.timeout <= 3600:
                 raise ValueError("--timeout must be 1..3600 seconds")
             plan = plan_transcribe(arguments.path, arguments.audio, language=arguments.language)
-            result = run_transcribe(plan, timeout=arguments.timeout)
+            from .compute import guarded_start
+            result = guarded_start("transcribe", run_transcribe, plan, timeout=arguments.timeout)
             return _emit_serve_result(
                 ResultEnvelope.ok(operation, result), arguments.json, human=result["text"],
             )
         if arguments.convert_command == "decide":
             if not 1 <= arguments.timeout <= 3600:
                 raise ValueError("--timeout must be 1..3600 seconds")
-            result = run_decide(plan_decide(arguments.path, arguments.request), timeout=arguments.timeout)
+            from .compute import guarded_start
+            result = guarded_start("decide", run_decide, plan_decide(arguments.path, arguments.request), timeout=arguments.timeout)
             return _emit_serve_result(
                 ResultEnvelope.ok(operation, result), arguments.json, human=json.dumps(result["answers"], indent=2),
             )
@@ -1764,21 +1767,24 @@ def _run_convert(arguments):
                 raise ValueError("--timeout must be 1..7200 seconds")
             plan = plan_generate(arguments.path, arguments.prompt, arguments.out, width=arguments.width,
                                  height=arguments.height, steps=arguments.steps, seed=arguments.seed)
-            result = run_generate(plan, timeout=arguments.timeout)
+            from .compute import guarded_start
+            result = guarded_start("generate", run_generate, plan, timeout=arguments.timeout)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
         if arguments.convert_command == "music":
             if not 1 <= arguments.timeout <= 14400:
                 raise ValueError("--timeout must be 1..14400 seconds")
             plan = plan_music(arguments.path, arguments.caption, arguments.lyrics, arguments.out,
                               duration=arguments.duration, steps=arguments.steps, seed=arguments.seed)
-            result = run_music(plan, timeout=arguments.timeout)
+            from .compute import guarded_start
+            result = guarded_start("music", run_music, plan, timeout=arguments.timeout)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
         if arguments.convert_command == "speak":
             if not 1 <= arguments.timeout <= 7200:
                 raise ValueError("--timeout must be 1..7200 seconds")
             plan = plan_speak(arguments.path, arguments.text, arguments.out, voice=arguments.voice,
                               speed=arguments.speed, lang_code=arguments.lang_code)
-            result = run_speak(plan, timeout=arguments.timeout)
+            from .compute import guarded_start
+            result = guarded_start("speak", run_speak, plan, timeout=arguments.timeout)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
         if arguments.convert_command == "describe":
             if not 1 <= arguments.timeout <= 7200:
@@ -1786,7 +1792,8 @@ def _run_convert(arguments):
             plan = plan_describe(arguments.path, arguments.prompt, image=arguments.image, video=arguments.video,
                                  max_tokens=arguments.max_tokens, temperature=arguments.temperature,
                                  fps=arguments.fps, max_pixels=arguments.max_pixels)
-            result = run_describe(plan, timeout=arguments.timeout)
+            from .compute import guarded_start
+            result = guarded_start("describe", run_describe, plan, timeout=arguments.timeout)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["text"])
         if arguments.convert_command == "video":
             if not 1 <= arguments.timeout <= 14400:
@@ -1794,7 +1801,8 @@ def _run_convert(arguments):
             plan = plan_video(arguments.path, arguments.prompt, arguments.out, width=arguments.width,
                               height=arguments.height, frames=arguments.frames, fps=arguments.fps,
                               steps=arguments.steps, seed=arguments.seed)
-            result = run_video(plan, timeout=arguments.timeout)
+            from .compute import guarded_start
+            result = guarded_start("video", run_video, plan, timeout=arguments.timeout)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
         if arguments.convert_command == "scan":
             report = _convert_scan(arguments)
@@ -1833,7 +1841,8 @@ def _run_convert(arguments):
                 print("  preview_hash: {0}".format(plan["preview_hash"]))
                 print("Confirmation required: rerun with --confirm --preview-hash PREVIEW_HASH.")
             return 2
-        outcome = start_convert(
+        from .compute import guarded_start
+        outcome = guarded_start('convert', start_convert,
             plan,
             receipts_dir=arguments.receipts_dir,
             confirm=True,
@@ -1847,6 +1856,8 @@ def _run_convert(arguments):
                 receipt["repo"], receipt["out"], receipt["pid"], receipt["log_path"]
             ),
         )
+    except ComputeBusy as error:
+        result = ResultEnvelope.fail(operation, "compute_busy", str(error), "Stop the owning model operation before retrying.")
     except (ConvertError, GGUFError, TranscribeError, DecideError, GenerateError, SpeakError, MusicError, DescribeError, VideoError) as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
@@ -1963,10 +1974,20 @@ def _add_lora_arguments(parser):
     status.add_argument("--receipts-dir", default=None)
     status.add_argument("--json", action="store_true")
 
+    stop = actions.add_parser("stop", help="cancel a matching receipt-owned training process")
+    stop.add_argument("--pid", type=int, required=True)
+    stop.add_argument("--receipts-dir", default=None)
+    stop.add_argument("--json", action="store_true")
+
 
 def _run_lora(arguments):
+    from .compute import ComputeBusy
     operation = "lora-{0}".format(arguments.lora_command)
     try:
+        if arguments.lora_command == "stop":
+            from .lora import stop_lora
+            return _emit_serve_result(ResultEnvelope.ok(operation, stop_lora(arguments.pid, arguments.receipts_dir)),
+                                      arguments.json, human="Training cancellation requested.")
         if arguments.lora_command == "status":
             entries = status_lora(arguments.receipts_dir)
             return _emit_serve_result(
@@ -1996,7 +2017,8 @@ def _run_lora(arguments):
                 print("  preview_hash: {0}".format(plan["preview_hash"]))
                 print("Confirmation required: rerun with --confirm --preview-hash PREVIEW_HASH.")
             return 2
-        outcome = start_lora(
+        from .compute import guarded_start
+        outcome = guarded_start('lora', start_lora,
             plan,
             receipts_dir=arguments.receipts_dir,
             confirm=True,
@@ -2010,6 +2032,8 @@ def _run_lora(arguments):
                 receipt["repo"], receipt["out"], receipt["pid"], receipt["log_path"]
             ),
         )
+    except ComputeBusy as error:
+        result = ResultEnvelope.fail(operation, "compute_busy", str(error), "Stop the owning model operation before retrying.")
     except LoraError as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
@@ -2060,6 +2084,7 @@ def _add_fuse_arguments(parser):
 
 
 def _run_fuse(arguments):
+    from .compute import ComputeBusy
     operation = "fuse-{0}".format(arguments.fuse_command)
     try:
         if arguments.fuse_command == "status":
@@ -2083,7 +2108,8 @@ def _run_fuse(arguments):
                 print("  preview_hash: {0}".format(plan["preview_hash"]))
                 print("Confirmation required: rerun with --confirm --preview-hash PREVIEW_HASH.")
             return 2
-        outcome = start_fuse(
+        from .compute import guarded_start
+        outcome = guarded_start("fuse", start_fuse,
             plan,
             receipts_dir=arguments.receipts_dir,
             confirm=True,
@@ -2097,6 +2123,8 @@ def _run_fuse(arguments):
                 receipt["repo"], receipt["out"], receipt["pid"], receipt["log_path"]
             ),
         )
+    except ComputeBusy as error:
+        result = ResultEnvelope.fail(operation, "compute_busy", str(error), "Stop the owning model operation before retrying.")
     except FuseError as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
@@ -2395,6 +2423,7 @@ def converter_main(argv=None):
 def build_parser():
     parser = argparse.ArgumentParser(description="MLX agent command-line core.")
     subcommands = parser.add_subparsers(dest="command", required=True)
+    subcommands.add_parser("lab", help="experiments, studies, datasets and training")
     discover = subcommands.add_parser("discover", help="discover MLX models for this host")
     _add_discovery_arguments(discover)
     inspect_host = subcommands.add_parser("inspect-host", help="inspect local Apple Silicon and runtime inventory without model discovery")
@@ -2444,6 +2473,10 @@ def build_parser():
 
 
 def main(argv=None):
+    raw = list(sys.argv[1:] if argv is None else argv)
+    if raw and raw[0] == "lab":
+        from .lab import run
+        return run(raw[1:])
     parser = build_parser()
     arguments = parser.parse_args(argv)
     if arguments.command == "adopt":

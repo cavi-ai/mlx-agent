@@ -696,6 +696,8 @@ def _runtime_bundle(destination: Path, source_root: Optional[Path] = None) -> Di
         destination / "scripts" / "mlx-agent": (ROOT / "scripts" / "mlx-agent").read_text(encoding="utf-8"),
         destination / "scripts" / "mlx-agent-mcp": (ROOT / "scripts" / "mlx-agent-mcp").read_text(encoding="utf-8"),
     }
+    for requirements in ("requirements-lab.txt", "requirements-lab-inference.txt"):
+        bundle[destination / requirements] = (ROOT / requirements).read_bytes()
     for source in _production_bundle_sources(root):
         bundle[destination / "src" / "mlx_agent" / source.relative_to(root)] = source.read_bytes()
     return bundle
@@ -741,7 +743,7 @@ def _allowed_surface_paths(surface: Optional[Path]) -> set:
         Path("commands/mlx-fleet.md"),
         Path("agents/mlx-advisor.md"), Path("scripts/mlx-adopt.workflow.mjs"),
     }
-    runtime = {Path("scripts/mlx-agent"), Path("scripts/mlx-agent-mcp")}
+    runtime = {Path("scripts/mlx-agent"), Path("scripts/mlx-agent-mcp"), Path("requirements-lab.txt"), Path("requirements-lab-inference.txt")}
     runtime.update(Path("src/mlx_agent") / source.relative_to(ROOT / "src" / "mlx_agent") for source in _production_bundle_sources())
     legacy_gemini_runtime = {
         Path("src/mlx_agent/gemini_args.py"),

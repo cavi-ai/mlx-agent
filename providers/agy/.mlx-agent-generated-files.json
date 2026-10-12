@@ -369,6 +369,10 @@
       "sha256": "d05ecae9655f641b74229549d840a57f48db00d525f123492cf5f23c95ad2fc2"
     },
     {
+      "path": "src/mlx_agent/_lab/video_lab/training_data_cli.py",
+      "sha256": "2a4f41508d3447ae94e45a3dad996fd3ed16ee644d36715941cfbab2eff21909"
+    },
+    {
       "path": "src/mlx_agent/_lab/video_lab/training_dataset.py",
       "sha256": "25be426bfd98cf1858da6ed363ea6d138ddee6b370b725f9df6645ed6e24faee"
     },
@@ -566,7 +570,7 @@
     },
     {
       "path": "src/mlx_agent/lab.py",
-      "sha256": "7ee7dbaf5b2eea4699ef06b145ab82cbb4dc95e974c8cfdafaf64c9e2df0a08a"
+      "sha256": "0f393fc1b64ca8ce66b8ac062328491ac5c9ab0943e9ec1db10879e85d035b19"
     },
     {
       "path": "src/mlx_agent/lab_adoption.py",

@@ -85,7 +85,11 @@ def run(argv, legacy=False):
     env["PYTHONPATH"] = os.pathsep.join((str(ENGINE_ROOT), str(Path(__file__).resolve().parents[1])))
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     try:
-        module = {"workspace": "mlx_agent.lab_workspace", "queue": "mlx_agent.queue_cli"}.get(_operation(arguments), "video_lab.cli")
+        module = {
+            "workspace": "mlx_agent.lab_workspace",
+            "queue": "mlx_agent.queue_cli",
+            "training-data": "video_lab.training_data_cli",
+        }.get(_operation(arguments), "video_lab.cli")
         from .compute import ComputeLease, ComputeBusy
         operation = _operation(arguments)
         heavy = (operation == "worker" and any(item in arguments for item in ("run-once", "recover"))) or (operation == "adapter" and "probe" in arguments) or (operation == "adapter" and "feasibility" in arguments and "resume" in arguments)

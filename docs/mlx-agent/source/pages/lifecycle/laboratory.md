@@ -40,3 +40,13 @@ The Python engine API in `video_lab.training_data` accepts content-addressed med
 `freeze_dataset` rejects duplicate identities, duplicate media content, split leakage, and an empty training split. The frozen content digest binds all samples and policy settings, independent of sample order, and is checked when loading a snapshot. Caller-provided media identities and metadata must still be verified against the source bytes before training.
 
 The persisted character-training v1 format retains its specialized validation rules. Generic dataset snapshots do not yet authorize video training jobs or provide a Workbench video-training workflow; backend qualification and job integration remain separate requirements.
+
+The standalone metadata commands accept canonical UTF-8 JSON (sorted keys, compact separators, no trailing newline) from an explicit request root. Inputs are limited to 1 MiB; symlinks and non-regular files are rejected. They return JSON and do not open a database, read media bytes, load models, or launch training.
+
+```sh
+python scripts/mlx-agent lab training-data validate --request-root DATA --request-file dataset.json --json
+python scripts/mlx-agent lab training-data freeze --request-root DATA --request-file dataset.json --json
+python scripts/mlx-agent lab training-data inspect --request-root DATA --request-file frozen.json --json
+```
+
+Save the `data` object returned by `freeze` as canonical JSON for `inspect`. Frozen output orders samples by sample ID; validation failures include stable reason codes. `inspect` rechecks both readiness and the snapshot content digest.

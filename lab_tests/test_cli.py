@@ -1,7 +1,7 @@
 import json
-import re
 from pathlib import Path
 
+from typer._click.utils import strip_ansi
 from pydantic import BaseModel
 from typer.testing import CliRunner, Result
 
@@ -11,12 +11,6 @@ from video_lab.cli import app
 from video_lab.domain import ExperimentDraft
 
 runner = CliRunner()
-ANSI_ESCAPE = re.compile(r"\033\[[;?0-9]*[a-zA-Z]")
-
-
-def unstyle(text: str) -> str:
-    """Help text without terminal styling escapes."""
-    return ANSI_ESCAPE.sub("", text)
 
 
 def write_json(path: Path, value: object) -> None:
@@ -307,7 +301,7 @@ def test_help_remains_standard_human_output() -> None:
 
     assert result.exit_code == 0
     assert "Usage:" in result.stdout
-    assert "--database" in unstyle(result.stdout)
+    assert "--database" in strip_ansi(result.stdout)
     assert result.stderr == ""
 
 

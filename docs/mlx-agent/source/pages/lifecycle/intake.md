@@ -15,6 +15,15 @@ and warnings. A registry match is conversion guidance, not evidence that the
 model has run. Sources can identify a repository, revision, subfolder, or file.
 Use `--revision` to select a revision explicitly.
 
+The `mlx_conversions` field lists up to eight MLX models that the Hub records as
+quantized from the source repository, ordered by downloads. Each entry includes
+`repo`, `downloads`, and `library_name`. The lookup is omitted for sources already
+classified as MLX and for subfolder sources. A failed lookup leaves the list
+empty and adds a warning without changing the resolution verdict.
+
+These are metadata matches, not verified runtime results. Review each candidate's
+revision, license, size, and backend compatibility before fetching it.
+
 ## Review and fetch
 
 ```bash

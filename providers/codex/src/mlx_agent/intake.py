@@ -191,7 +191,7 @@ def _empty_payload(text, source):
         "model_type": None, "components": [], "task": None, "custom_code": False, "gated": False,
         "library_name": None, "pipeline_tag": None, "transformers_version": None, "bytes": 0,
         "download_bytes": 0, "estimated_output_bytes": None, "q_bits": list(ESTIMATE_BITS), "recipe": None,
-        "files": {"safetensors": 0, "gguf": [], "python": []}, "warnings": [],
+        "files": {"safetensors": 0, "gguf": [], "python": []}, "mlx_conversions": [], "warnings": [],
     }
 
 
@@ -248,6 +248,34 @@ def _verdict(payload, tags, files, config, manifests, registries):
     if payload["custom_code"]:
         reasons.append("custom_code")
     return "unsupported", reasons, None
+
+
+MLX_CONVERSIONS_LIMIT = 8
+
+
+def list_mlx_conversions(client, repo, warnings):
+    """Existing MLX conversions of ``repo`` on the Hub, in the API's download order."""
+    try:
+        rows = client.list_mlx_conversions(repo, limit_fetch=MLX_CONVERSIONS_LIMIT)
+    except (HuggingFaceHTTPError,) + TRANSPORT_ERRORS as error:
+        warnings.append("mlx conversions lookup failed: {0}".format(error))
+        return []
+    if not isinstance(rows, list):
+        warnings.append("mlx conversions lookup returned a non-list document")
+        return []
+    found = []
+    for row in rows:
+        name = row.get("id") if isinstance(row, dict) else None
+        if not isinstance(name, str) or not name or name == repo:
+            continue
+        downloads = row.get("downloads")
+        if not isinstance(downloads, int) or isinstance(downloads, bool) or downloads < 0:
+            downloads = 0
+        found.append({
+            "repo": name, "downloads": downloads,
+            "library_name": _text(row.get("library_name")),
+        })
+    return found[:MLX_CONVERSIONS_LIMIT]
 
 
 def resolve(text, revision=None, client=None, manifests=None, registries=None):
@@ -327,6 +355,8 @@ def resolve(text, revision=None, client=None, manifests=None, registries=None):
         verdict=verdict, reasons=reasons, backend=backend,
         backend_installed=bool(backend and registries.get(backend, {}).get("installed")),
     )
+    if verdict != "already_mlx" and not subfolder:
+        payload["mlx_conversions"] = list_mlx_conversions(client, source["repo"], payload["warnings"])
     if verdict in ("convertible", "convertible_after_install"):
         payload["q_bits"] = port_bits(payload["model_type"], backend, manifests) or list(ESTIMATE_BITS)
     # A recipe's weights come from its base repository and a pipeline's from component folders,

@@ -11,7 +11,7 @@ from jsonschema import Draft202012Validator
 from mlx_agent import cli
 from mlx_agent.backends import load_manifests, load_registries
 from mlx_agent.huggingface import HuggingFaceHTTPError
-from mlx_agent.intake import resolve
+from mlx_agent.intake import _empty_payload, resolve
 
 from .backend_fixtures import synthetic_manifests, synthetic_registries
 
@@ -21,8 +21,11 @@ SCHEMA = json.loads((ROOT / "schemas" / "intake.schema.json").read_text(encoding
 
 
 class FakeClient:
-    def __init__(self, info=None, files=None, info_error=None, headers=None):
+    def __init__(self, info=None, files=None, info_error=None, headers=None, conversions=None, conversions_error=None):
         self.info = info
+        self.conversions = conversions or []
+        self.conversions_error = conversions_error
+        self.conversion_requests = []
         self.files = files or {}
         self.info_error = info_error
         self.headers = headers or {}
@@ -33,6 +36,12 @@ class FakeClient:
         if self.info_error is not None:
             raise self.info_error
         return self.info
+
+    def list_mlx_conversions(self, repo, limit_fetch=8, timeout=8):
+        self.conversion_requests.append((repo, limit_fetch))
+        if self.conversions_error is not None:
+            raise self.conversions_error
+        return self.conversions
 
     def fetch_raw_text(self, repo, revision, filename, timeout=8):
         self.raw_requests.append(filename)
@@ -323,6 +332,81 @@ class ResolveTests(unittest.TestCase):
             self.assertEqual(payload["backend"], "mlx-vlm")
             self.assertEqual(payload["backend_installed"], bool(installed))
             self.assertIsNone(payload["estimated_output_bytes"])
+
+    def test_existing_mlx_conversions_are_listed_without_the_repo_itself(self):
+        rows = [
+            {"id": "a/one-mlx-8bit", "downloads": 9, "library_name": "mlx"},
+            {"id": "org/name", "downloads": 5},
+            {"id": 7, "downloads": 5},
+            {"id": "", "downloads": 5},
+            {"id": "b/two", "downloads": None, "library_name": None},
+        ] + [{"id": "c/extra{0}".format(n), "downloads": n} for n in range(10)]
+        client = FakeClient(info=repo_info(pipeline_tag="text-generation"), files={"config.json": json.dumps({"model_type": "qwen2"})},
+                            conversions=rows)
+        payload = self.run_resolve(client, installed=("mlx-lm",))
+        self.assertEqual(client.conversion_requests, [("org/name", 8)])
+        self.assertEqual(payload["verdict"], "convertible")
+        self.assertEqual(len(payload["mlx_conversions"]), 8)
+        self.assertEqual(payload["mlx_conversions"][:3], [
+            {"repo": "a/one-mlx-8bit", "downloads": 9, "library_name": "mlx"},
+            {"repo": "b/two", "downloads": 0, "library_name": None},
+            {"repo": "c/extra0", "downloads": 0, "library_name": None},
+        ])
+
+    def test_already_mlx_and_subfolder_repos_skip_the_conversion_lookup(self):
+        mlx = FakeClient(info=repo_info(library_name="mlx", tags=["mlx"]), files={"config.json": "{}"},
+                         conversions=[{"id": "a/b", "downloads": 1}])
+        self.assertEqual(self.run_resolve(mlx)["mlx_conversions"], [])
+        self.assertEqual(mlx.conversion_requests, [])
+        info = repo_info(files=("config.json", "multilingual/config.json", "multilingual/model.safetensors"))
+        sub = FakeClient(info=info, files={"multilingual/config.json": "{}"}, conversions=[{"id": "a/b", "downloads": 1}])
+        self.assertEqual(self.run_resolve(sub, text="org/name/multilingual")["mlx_conversions"], [])
+        self.assertEqual(sub.conversion_requests, [])
+
+    def test_a_failed_conversion_lookup_warns_and_keeps_the_verdict(self):
+        files = {"config.json": json.dumps({"model_type": "qwen2"})}
+        info = repo_info(pipeline_tag="text-generation")
+        ok = self.run_resolve(FakeClient(info=info, files=files), installed=("mlx-lm",))
+        failed = self.run_resolve(FakeClient(info=info, files=files, conversions_error=OSError("offline")), installed=("mlx-lm",))
+        self.assertEqual(failed["mlx_conversions"], [])
+        self.assertEqual(failed["warnings"], ["mlx conversions lookup failed: offline"] + ok["warnings"])
+        self.assertEqual(dict(failed, warnings=[]), dict(ok, warnings=[]))
+
+    def test_malformed_download_counts_become_zero(self):
+        files = {"config.json": json.dumps({"model_type": "qwen2"})}
+        info = repo_info(pipeline_tag="text-generation")
+        ok = self.run_resolve(FakeClient(info=info, files=files), installed=("mlx-lm",))
+        bad = ["1.2k", -5, [1], float("inf"), True, float("nan"), {"a": 1}]
+        rows = [{"id": "a/m{0}".format(n), "downloads": value} for n, value in enumerate(bad)]
+        payload = self.run_resolve(FakeClient(info=info, files=files, conversions=rows), installed=("mlx-lm",))
+        self.assertEqual([entry["downloads"] for entry in payload["mlx_conversions"]], [0] * len(bad))
+        self.assertEqual(dict(payload, mlx_conversions=[]), ok)
+
+    def test_a_non_list_conversion_document_warns_once(self):
+        files = {"config.json": json.dumps({"model_type": "qwen2"})}
+        info = repo_info(pipeline_tag="text-generation")
+        ok = self.run_resolve(FakeClient(info=info, files=files), installed=("mlx-lm",))
+        payload = self.run_resolve(FakeClient(info=info, files=files, conversions={"error": "x"}), installed=("mlx-lm",))
+        self.assertEqual(payload["mlx_conversions"], [])
+        self.assertEqual(payload["warnings"], ["mlx conversions lookup returned a non-list document"] + ok["warnings"])
+        self.assertEqual(dict(payload, warnings=[]), dict(ok, warnings=[]))
+
+    def test_human_output_lists_conversions_before_warnings(self):
+        payload = _empty_payload("org/name", {"repo": "org/name", "revision": "main", "file": None})
+        payload["warnings"] = ["w"]
+        self.assertNotIn("MLX conversions", cli._intake_resolve_human(payload))
+        payload["mlx_conversions"] = [
+            {"repo": "a/b", "downloads": 9, "library_name": "mlx"},
+            {"repo": "c/d", "downloads": 0, "library_name": None},
+        ]
+        lines = cli._intake_resolve_human(payload).split("\n")
+        header = lines.index("  MLX conversions on the Hub:")
+        self.assertEqual(lines[header + 1:header + 3], ["    a/b (9 downloads)", "    c/d (0 downloads)"])
+        self.assertLess(header, lines.index("  warning: w"))
+
+    def test_early_returns_carry_an_empty_conversion_list(self):
+        for client in (FakeClient(info_error=HuggingFaceHTTPError(404, "gone")), FakeClient(info_error=TimeoutError("deadline"))):
+            self.assertEqual(self.run_resolve(client)["mlx_conversions"], [])
 
     def test_hub_failures(self):
         missing = self.run_resolve(FakeClient(info_error=HuggingFaceHTTPError(401, "HTTP 401")))

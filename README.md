@@ -84,6 +84,9 @@ does not download weights. Make the chosen model available with your runtime
 or an explicitly confirmed [Intake](docs/mlx-agent/source/pages/lifecycle/intake.md)
 download, then start its local server.
 
+Intake can also list existing MLX conversions of a source model on the Hub.
+Review these candidates before downloading or converting weights.
+
 Follow [Your first local model](docs/mlx-agent/source/pages/introduction/quickstart.md)
 to load weights, verify the shortlist, measure performance, and preview a
 configuration. Keep the returned receipts for inspection and rollback.

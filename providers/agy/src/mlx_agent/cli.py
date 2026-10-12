@@ -1465,6 +1465,10 @@ def _intake_resolve_human(payload):
         else:
             target = "no MLX implementation"
         lines.append("  {0}: {1} -> {2}".format(component["role"], component["model_type"], target))
+    if payload["mlx_conversions"]:
+        lines.append("  MLX conversions on the Hub:")
+        for entry in payload["mlx_conversions"]:
+            lines.append("    {0} ({1} downloads)".format(entry["repo"], entry["downloads"]))
     for warning in payload["warnings"]:
         lines.append("  warning: {0}".format(warning))
     return "\n".join(lines)

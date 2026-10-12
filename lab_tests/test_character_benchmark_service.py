@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import gc
 import json
+import shutil
+from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -26,6 +28,7 @@ from video_lab.character_benchmark_repository import (
 )
 from video_lab.character_benchmark_service import CharacterBenchmarkService
 from video_lab.character_pack import CharacterPack
+from video_lab.database import Database
 from video_lab.repositories import ExperimentRepository, JobRepository
 from video_lab.review_service import ReviewService
 from video_lab.reviews import ReviewRepository
@@ -424,6 +427,39 @@ def test_exact_judgment_retries_survive_advancement_restart_and_terminal_state(
     assert evidence_counts(database, created.campaign_id) == before_terminal_retry
 
 
+@pytest.fixture(scope="module")
+def completed_benchmark_seed(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> tuple[Database, Path, str]:
+    """Build the completed prerequisite through the real review workflow."""
+    root = tmp_path_factory.mktemp("completed-benchmark-seed")
+    database = Database(root / "lab.sqlite3")
+    database.migrate()
+    benchmark = service(database, root)
+    created = benchmark.create(
+        character_pack_id="character_pack_" + "6" * 64,
+        stage_2_campaign_id="validation_stage_2",
+        identity_prompt="same character, preserve identity",
+        panel_input=panel_input(),
+    )
+    benchmark.preregister(created.campaign_id)
+    complete_jobs(benchmark, root)
+    finish(benchmark, created.campaign_id)
+    return Database(database.path, read_only=True), root, created.campaign_id
+
+
+@pytest.fixture
+def completed_benchmark(
+    database: Database, tmp_path: Path, completed_benchmark_seed: tuple[Database, Path, str]
+) -> tuple[CharacterBenchmarkService, str]:
+    """Confine corrupted relations and media bytes to each test."""
+    seed, root, campaign_id = completed_benchmark_seed
+    with closing(seed.connect()) as source, closing(database.connect()) as destination:
+        source.backup(destination)
+    shutil.copytree(root / "artifacts", tmp_path / "artifacts")
+    return service(database, tmp_path, seed=False), campaign_id
+
+
 @pytest.mark.parametrize(
     "corruption",
     (
@@ -450,18 +486,9 @@ def test_exact_judgment_retries_survive_advancement_restart_and_terminal_state(
     ),
 )
 def test_analysis_and_export_fail_closed_for_each_corrupt_relation(
-    database, tmp_path: Path, corruption: str
+    database, tmp_path: Path, corruption: str, completed_benchmark
 ) -> None:
-    benchmark = service(database, tmp_path)
-    created = benchmark.create(
-        character_pack_id="character_pack_" + "6" * 64,
-        stage_2_campaign_id="validation_stage_2",
-        identity_prompt="same character, preserve identity",
-        panel_input=panel_input(),
-    )
-    benchmark.preregister(created.campaign_id)
-    complete_jobs(benchmark, tmp_path)
-    finish(benchmark, created.campaign_id)
+    benchmark, campaign_id = completed_benchmark
 
     if corruption == "pack_artifact_bytes":
         benchmark.character_packs.corrupt_bytes = True
@@ -573,7 +600,7 @@ def test_analysis_and_export_fail_closed_for_each_corrupt_relation(
                     "UPDATE character_benchmark_campaigns "
                     "SET character_pack_storage_id='other-pack', character_pack_id=? "
                     "WHERE id=?",
-                    ("character_pack_" + "8" * 64, created.campaign_id),
+                    ("character_pack_" + "8" * 64, campaign_id),
                 )
             elif corruption == "cross_reviewer":
                 connection.execute(
@@ -624,16 +651,16 @@ def test_analysis_and_export_fail_closed_for_each_corrupt_relation(
                 connection.execute("DROP TRIGGER guard_character_benchmark_event_delete")
                 connection.execute(
                     "DELETE FROM character_benchmark_events WHERE campaign_id=? AND sequence=6",
-                    (created.campaign_id,),
+                    (campaign_id,),
                 )
             else:
                 connection.execute("DROP TRIGGER guard_character_benchmark_result_update")
                 connection.execute(
                     "UPDATE character_benchmark_results SET content_digest=? WHERE campaign_id=?",
-                    ("sha256:" + "0" * 64, created.campaign_id),
+                    ("sha256:" + "0" * 64, campaign_id),
                 )
 
     with pytest.raises(CharacterBenchmarkConflict):
-        benchmark.analyze(created.campaign_id)
+        benchmark.analyze(campaign_id)
     with pytest.raises(CharacterBenchmarkConflict):
-        benchmark.export_evidence(created.campaign_id)
+        benchmark.export_evidence(campaign_id)

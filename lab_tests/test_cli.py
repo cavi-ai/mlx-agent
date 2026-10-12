@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from click import unstyle
 from pydantic import BaseModel
 from typer.testing import CliRunner, Result
 
@@ -300,7 +301,7 @@ def test_help_remains_standard_human_output() -> None:
 
     assert result.exit_code == 0
     assert "Usage:" in result.stdout
-    assert "--database" in result.stdout
+    assert "--database" in unstyle(result.stdout)
     assert result.stderr == ""
 
 

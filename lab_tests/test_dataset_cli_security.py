@@ -6,9 +6,11 @@ import signal
 import socket
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+from click import unstyle
 from typer.testing import CliRunner
 
 from video_lab.cli import app
@@ -190,7 +192,9 @@ def test_dataset_exit_code_matrix_is_stable(
 def test_agent_subprocess_rejection_is_byte_stable_and_offline(tmp_path: Path) -> None:
     (tmp_path / "request.json").write_text('{"schema_version":"wrong"}')
     command = [
-        str(Path.cwd() / ".venv/bin/video-lab"),
+        sys.executable,
+        "-m",
+        "video_lab.launcher",
         "--database",
         str(tmp_path / "db"),
         "--artifacts",
@@ -483,10 +487,10 @@ def test_dataset_help_documents_exit_codes_and_command_specific_flags() -> None:
     assert root.exit_code == validate.exit_code == compile_help.exit_code == 0
     assert "64 usage" in root.stdout
     assert "70" in root.stdout and "integrity/security" in root.stdout
-    assert "--source-root" in validate.stdout
-    assert "--tokenizer-root" not in validate.stdout
-    assert "--tokenizer-root" in compile_help.stdout
-    assert "--source-root" not in compile_help.stdout
+    assert "--source-root" in unstyle(validate.stdout)
+    assert "--tokenizer-root" not in unstyle(validate.stdout)
+    assert "--tokenizer-root" in unstyle(compile_help.stdout)
+    assert "--source-root" not in unstyle(compile_help.stdout)
 
 
 @pytest.mark.parametrize("command", ["compile", "reproduce"])

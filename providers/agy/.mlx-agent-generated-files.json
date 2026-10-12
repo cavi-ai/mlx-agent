@@ -753,6 +753,10 @@
       "sha256": "795091373646294e6df319a0cb6da96981a21b66d022c2acf12ff3c032d3357b"
     },
     {
+      "path": "src/mlx_agent/resources/ports/mlx-video/t2v/training.py",
+      "sha256": "a605a71b2ec0addbf1f852749bc65c817849180e24dcd421833b1a559a7b8d65"
+    },
+    {
       "path": "src/mlx_agent/resources/references/model-families.md",
       "sha256": "666bd3e3fd4b9922488d8232075eb5a3bd9d168bb0c90162c1a459bc44df6b90"
     },

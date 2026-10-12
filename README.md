@@ -7,7 +7,7 @@ checks, measures served models, and writes reviewed connection configurations.
 The Python core uses the standard library. Model execution needs a separately
 installed runtime; optional backends have their own dependencies.
 
-Current package version: **0.6.0**. These docs describe the current checkout;
+Current package version: **0.7.0**. These docs describe the current checkout;
 published releases may contain earlier behavior.
 
 ## Install
@@ -29,7 +29,7 @@ Run `/mlx-scout` after restarting.
 ### Codex CLI
 
 ```bash
-codex plugin marketplace add cavi-ai/mlx-agent --ref v0.6.0
+codex plugin marketplace add cavi-ai/mlx-agent --ref v0.7.0
 codex plugin add mlx-agent@mlx-agent
 ```
 
@@ -39,7 +39,7 @@ slash commands.
 ### Agy
 
 ```bash
-git clone --depth 1 --branch v0.6.0 https://github.com/cavi-ai/mlx-agent.git
+git clone --depth 1 --branch v0.7.0 https://github.com/cavi-ai/mlx-agent.git
 agy plugin validate ./mlx-agent/providers/agy
 agy plugin install ./mlx-agent/providers/agy
 ```
@@ -51,7 +51,7 @@ Restart Agy, check `/skills`, and ask it to use `mlx-scout`.
 From a release checkout:
 
 ```bash
-git clone --depth 1 --branch v0.6.0 https://github.com/cavi-ai/mlx-agent.git
+git clone --depth 1 --branch v0.7.0 https://github.com/cavi-ai/mlx-agent.git
 cd mlx-agent
 python3 scripts/mlx-agent install opencode --scope user --dry-run --json
 # Review the plan; copy data.preview.preview_hash.

@@ -2,7 +2,16 @@
 
 ## Unreleased
 
+## 0.7.0 - 2026-10-12
+
+- Add local music generation and requantization with checkpoint tokenizer validation.
+- Add shared experiment, blind review, workspace adoption, and text LoRA evaluation workflows.
+- Add native MLX Wan LoRA training and loading of converted Wan training inputs.
 - Add `mlx_conversions` to `intake resolve`: MLX models already quantized from the repository on the Hub (repo, downloads, library), for repositories that are not already MLX.
+- Select isolated serving backends from local model metadata.
+- Organize installation, model lifecycle, examples, troubleshooting, and contribution documentation into focused guides.
+- Remove undeclared Click imports from laboratory regression tests.
+- Record GitHub release deployments on the hosted publishing job.
 
 ## 0.6.0 - 2026-10-08
 

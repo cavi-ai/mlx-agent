@@ -12,10 +12,17 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Annotated, Any, Literal, cast
 
-from pydantic import Field, ValidationInfo, field_serializer, field_validator, model_validator
+from pydantic import (
+    Field,
+    ValidationInfo,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from video_lab.domain import FrozenModel, canonical_json
 from video_lab.trainer_protocol import LoRAConfiguration
+from video_lab.training_data import DatasetMedia
 
 TRAINING_DATASET_SCHEMA_VERSION = "character-training-dataset.v1"
 TRAINING_RECIPE_SCHEMA_VERSION = "character-training-recipe.v1"
@@ -323,28 +330,10 @@ class DatasetSplit(StrEnum):
     SEALED_HOLDOUT = "sealed_holdout"
 
 
-class TrainingMedia(FrozenModel):
-    """Bounded metadata derived from local bytes; it deliberately has no path."""
+class TrainingMedia(DatasetMedia):
+    """Versioned media metadata for persisted character-training records."""
 
     schema_version: Literal["character-training-media.v1"] = "character-training-media.v1"
-    sha256: Sha256Digest
-    media_type: Literal["image/jpeg", "image/png", "image/webp", "video/mp4"]
-    byte_size: int = Field(gt=0)
-    width: int = Field(gt=0)
-    height: int = Field(gt=0)
-    duration_seconds: float | None = Field(default=None, gt=0)
-    frame_count: int | None = Field(default=None, gt=0)
-    fps: float | None = Field(default=None, gt=0)
-
-    @model_validator(mode="after")
-    def validate_kind_metadata(self) -> TrainingMedia:
-        video = self.media_type == "video/mp4"
-        values = (self.duration_seconds, self.frame_count, self.fps)
-        if video and any(value is None for value in values):
-            raise ValueError("MP4 metadata requires duration, frame_count, and fps")
-        if not video and any(value is not None for value in values):
-            raise ValueError("still metadata must not contain video fields")
-        return self
 
 
 class TrainingAnnotation(FrozenModel):

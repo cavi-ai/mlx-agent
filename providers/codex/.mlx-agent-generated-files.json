@@ -365,8 +365,12 @@
       "sha256": "b2fd1b25dcb1739e6f5376700321c48e1e82922951e6ce67a36a7e87af2e0d26"
     },
     {
+      "path": "src/mlx_agent/_lab/video_lab/training_data.py",
+      "sha256": "d05ecae9655f641b74229549d840a57f48db00d525f123492cf5f23c95ad2fc2"
+    },
+    {
       "path": "src/mlx_agent/_lab/video_lab/training_dataset.py",
-      "sha256": "255f3bc3414c0d27cb3cbf7cfccc3a81021c8ce248d4e995a7c173991462ed5f"
+      "sha256": "25be426bfd98cf1858da6ed363ea6d138ddee6b370b725f9df6645ed6e24faee"
     },
     {
       "path": "src/mlx_agent/_lab/video_lab/training_media.py",
@@ -374,7 +378,7 @@
     },
     {
       "path": "src/mlx_agent/_lab/video_lab/training_models.py",
-      "sha256": "5fdfe136f93eb5c7d366a56d81416cabd9006ad1d2be83ff1b3c22b9f788081e"
+      "sha256": "15eb38816bf5d612440ab59ada8073b95bfdcf039123258c8e9d9aa45f4cd452"
     },
     {
       "path": "src/mlx_agent/_lab/video_lab/training_repository.py",

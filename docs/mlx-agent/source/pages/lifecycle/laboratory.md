@@ -32,3 +32,11 @@ A completed adapter can be evaluated against its pinned base model using identic
 An existing directory alone does not establish successful training. Historical receipts without exit evidence remain unknown; receipts without pinned base identity cannot authorize a new linked evaluation. Comparison outputs are evidence and do not automatically record a quality judgment.
 
 Media training remains governed by its existing qualification gates. Text LoRA acceptance does not qualify video training.
+
+## Media dataset contracts
+
+The Python engine API in `video_lab.training_data` accepts content-addressed media, captions, source lineage, train/validation/holdout splits, and per-sample weights. It requires no character pack, outfit, reserved token, or campaign evidence. `DatasetPolicy` lets callers select minimum sample count, clip duration bounds, and a maximum weighted synthetic share; duration and synthetic-share limits are unset by default.
+
+`freeze_dataset` rejects duplicate identities, duplicate media content, split leakage, and an empty training split. The frozen content digest binds all samples and policy settings, independent of sample order, and is checked when loading a snapshot. Caller-provided media identities and metadata must still be verified against the source bytes before training.
+
+The persisted character-training v1 format retains its specialized validation rules. Generic dataset snapshots do not yet authorize video training jobs or provide a Workbench video-training workflow; backend qualification and job integration remain separate requirements.

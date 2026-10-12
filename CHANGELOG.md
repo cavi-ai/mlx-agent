@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `mlx_conversions` to `intake resolve`: MLX models already quantized from the repository on the Hub (repo, downloads, library), for repositories that are not already MLX.
+
 ## 0.6.0 - 2026-10-08
 
 - Add `serve start --jit`: the loopback endpoint stays reachable while its local model is unloaded; chat and completion requests load one owned worker from the confirmed local files, concurrent requests share the load, and active streams block unload.

@@ -91,6 +91,7 @@
       "transcription"
     ]
   },
+  "mlx_conversions": [],
   "transformers_version": "5.13.0",
   "verdict": "convertible_after_install",
   "warnings": []

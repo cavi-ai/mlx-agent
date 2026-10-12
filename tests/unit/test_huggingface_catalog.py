@@ -109,6 +109,12 @@ class CatalogListHelpersTests(unittest.TestCase):
         self.assertEqual(query["search"], ["ocr"])
         self.assertEqual(query["limit"], ["10"])
 
+    def test_list_mlx_conversions_url_repeats_the_filter(self):
+        url = HuggingFaceClient.list_mlx_conversions_url("org/name", limit_fetch=8)
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+        self.assertEqual(query["filter"], ["base_model:quantized:org/name", "mlx"])
+        self.assertEqual((query["sort"], query["direction"], query["limit"]), (["downloads"], ["-1"], ["8"]))
+
     def test_list_datasets_url_targets_datasets_api(self):
         url = HuggingFaceClient.list_datasets_url(search="contracts", limit_fetch=7)
         self.assertTrue(url.startswith(HF_DATASETS_API))

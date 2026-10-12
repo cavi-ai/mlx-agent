@@ -11,7 +11,7 @@ from jsonschema import Draft202012Validator
 from mlx_agent import cli
 from mlx_agent.backends import load_manifests, load_registries
 from mlx_agent.huggingface import HuggingFaceHTTPError
-from mlx_agent.intake import resolve
+from mlx_agent.intake import _empty_payload, resolve
 
 from .backend_fixtures import synthetic_manifests, synthetic_registries
 
@@ -371,6 +371,38 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual(failed["mlx_conversions"], [])
         self.assertEqual(failed["warnings"], ["mlx conversions lookup failed: offline"] + ok["warnings"])
         self.assertEqual(dict(failed, warnings=[]), dict(ok, warnings=[]))
+
+    def test_malformed_download_counts_become_zero(self):
+        files = {"config.json": json.dumps({"model_type": "qwen2"})}
+        info = repo_info(pipeline_tag="text-generation")
+        ok = self.run_resolve(FakeClient(info=info, files=files), installed=("mlx-lm",))
+        bad = ["1.2k", -5, [1], float("inf"), True, float("nan"), {"a": 1}]
+        rows = [{"id": "a/m{0}".format(n), "downloads": value} for n, value in enumerate(bad)]
+        payload = self.run_resolve(FakeClient(info=info, files=files, conversions=rows), installed=("mlx-lm",))
+        self.assertEqual([entry["downloads"] for entry in payload["mlx_conversions"]], [0] * len(bad))
+        self.assertEqual(dict(payload, mlx_conversions=[]), ok)
+
+    def test_a_non_list_conversion_document_warns_once(self):
+        files = {"config.json": json.dumps({"model_type": "qwen2"})}
+        info = repo_info(pipeline_tag="text-generation")
+        ok = self.run_resolve(FakeClient(info=info, files=files), installed=("mlx-lm",))
+        payload = self.run_resolve(FakeClient(info=info, files=files, conversions={"error": "x"}), installed=("mlx-lm",))
+        self.assertEqual(payload["mlx_conversions"], [])
+        self.assertEqual(payload["warnings"], ["mlx conversions lookup returned a non-list document"] + ok["warnings"])
+        self.assertEqual(dict(payload, warnings=[]), dict(ok, warnings=[]))
+
+    def test_human_output_lists_conversions_before_warnings(self):
+        payload = _empty_payload("org/name", {"repo": "org/name", "revision": "main", "file": None})
+        payload["warnings"] = ["w"]
+        self.assertNotIn("MLX conversions", cli._intake_resolve_human(payload))
+        payload["mlx_conversions"] = [
+            {"repo": "a/b", "downloads": 9, "library_name": "mlx"},
+            {"repo": "c/d", "downloads": 0, "library_name": None},
+        ]
+        lines = cli._intake_resolve_human(payload).split("\n")
+        header = lines.index("  MLX conversions on the Hub:")
+        self.assertEqual(lines[header + 1:header + 3], ["    a/b (9 downloads)", "    c/d (0 downloads)"])
+        self.assertLess(header, lines.index("  warning: w"))
 
     def test_early_returns_carry_an_empty_conversion_list(self):
         for client in (FakeClient(info_error=HuggingFaceHTTPError(404, "gone")), FakeClient(info_error=TimeoutError("deadline"))):

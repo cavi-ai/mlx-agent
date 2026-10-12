@@ -584,8 +584,7 @@ class HuggingFaceClient:
 
     def list_mlx_conversions(self, repo, limit_fetch=8, timeout=8):
         """List MLX models quantized from a repository (read-only)."""
-        rows = self._http_get(self.list_mlx_conversions_url(repo, limit_fetch=limit_fetch), timeout=timeout)
-        return rows if isinstance(rows, list) else []
+        return self._http_get(self.list_mlx_conversions_url(repo, limit_fetch=limit_fetch), timeout=timeout)
 
     def list_datasets(self, search="", limit_fetch=20, timeout=10):
         """List dataset rows from the Hub (read-only)."""

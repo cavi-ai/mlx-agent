@@ -260,13 +260,19 @@ def list_mlx_conversions(client, repo, warnings):
     except (HuggingFaceHTTPError,) + TRANSPORT_ERRORS as error:
         warnings.append("mlx conversions lookup failed: {0}".format(error))
         return []
+    if not isinstance(rows, list):
+        warnings.append("mlx conversions lookup returned a non-list document")
+        return []
     found = []
     for row in rows:
         name = row.get("id") if isinstance(row, dict) else None
         if not isinstance(name, str) or not name or name == repo:
             continue
+        downloads = row.get("downloads")
+        if not isinstance(downloads, int) or isinstance(downloads, bool) or downloads < 0:
+            downloads = 0
         found.append({
-            "repo": name, "downloads": int(row.get("downloads") or 0),
+            "repo": name, "downloads": downloads,
             "library_name": _text(row.get("library_name")),
         })
     return found[:MLX_CONVERSIONS_LIMIT]

@@ -48,7 +48,7 @@
     "mlx_conversions": {"type": "array", "items": {
       "type": "object", "additionalProperties": false, "required": ["repo", "downloads", "library_name"],
       "properties": {
-        "repo": {"type": "string"},
+        "repo": {"type": "string", "minLength": 1},
         "downloads": {"type": "integer", "minimum": 0},
         "library_name": {"type": ["string", "null"]}
       }

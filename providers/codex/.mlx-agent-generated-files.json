@@ -534,7 +534,7 @@
     },
     {
       "path": "src/mlx_agent/huggingface.py",
-      "sha256": "8662600dc03b7b776193177a3aa661f857d944925c2e06b732e76e0698a682ef"
+      "sha256": "5c67cab17f54cc8aeeed2afaad8b5976bb81ed30ce9dea7bb55f955b86bd461f"
     },
     {
       "path": "src/mlx_agent/installer.py",
@@ -542,7 +542,7 @@
     },
     {
       "path": "src/mlx_agent/intake.py",
-      "sha256": "67dfe66a8bf56224da2af882c3533d2484d8cf3e8347c6c74840a7a0998cefae"
+      "sha256": "848be5932a3322f96f654d76ac8c6421fb5f8cb288f56f5f104f30b4e2a7a714"
     },
     {
       "path": "src/mlx_agent/intake_fetch.py",

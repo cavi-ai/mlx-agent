@@ -21,3 +21,24 @@ python3 scripts/mlx-agent discover --json
 ## Filters
 
 `--role`, `--limit`, `--memory-gb`, `--quantization`, `--license`, `--publisher`, `--runtime`, `--exclude-gated`, `--offline`, `--refresh`, and `--context` compose freely. `discover --wire <repo> --target <runtime>` emits a ready config block for a chosen model.
+
+`--offline` and `--refresh` are mutually exclusive. Offline discovery requires
+a cache created by an earlier online request with matching policy. Use a
+consistent `--state-dir`, or supply `MLX_AGENT_STATE_DIR`:
+
+```bash
+python3 scripts/mlx-agent discover --role coding --state-dir .mlx-agent/scout-cache --json
+python3 scripts/mlx-agent discover --role coding --state-dir .mlx-agent/scout-cache --offline --json
+```
+
+Missing cache returns `offline_cache_missing`. Fast mode skips enrichment;
+inspect each field's evidence before treating a value as a fetched fact.
+
+## Tool-use and next steps
+
+A model retains its primary role while also carrying `tool-use` membership.
+Metadata is not verification. A `metadata-only` status can accompany either
+`metadata_only` or `heuristic_only` strength; inspect both fields.
+
+Use [Adopt](adopt.md) after making the selected model available locally.
+[Evidence and sizing](../reference/evidence.md) explains fit and probe limits.

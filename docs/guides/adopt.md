@@ -2,6 +2,10 @@
 
 Adopt creates a resumable, explicit state file. It may inspect a local runtime, but it does not download a model or change a provider configuration.
 
+See the [Adopt guide](../mlx-agent/source/pages/capabilities/adopt.md) for the
+current workflow and [Your first local model](../mlx-agent/source/pages/introduction/quickstart.md)
+for making weights available before verification.
+
 ```bash
 python3 scripts/mlx-agent adopt start --state .mlx-agent/adoption.json --role coding --json
 python3 scripts/mlx-agent adopt status --state .mlx-agent/adoption.json --json

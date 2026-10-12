@@ -7,7 +7,7 @@
       "pages": [
         { "title": "Overview", "path": "introduction/overview.md" },
         { "title": "Installation", "path": "introduction/installation.md" },
-        { "title": "Quickstart", "path": "introduction/quickstart.md" }
+        { "title": "Your first local model", "path": "introduction/quickstart.md" }
       ]
     },
     {
@@ -16,15 +16,21 @@
         { "title": "Scout", "path": "capabilities/scout.md" },
         { "title": "Adopt", "path": "capabilities/adopt.md" },
         { "title": "Wire", "path": "capabilities/wire.md" },
-        { "title": "Bench", "path": "capabilities/bench.md" }
+        { "title": "Bench", "path": "capabilities/bench.md" },
+        { "title": "Research", "path": "capabilities/research.md" },
+        { "title": "Blueprint", "path": "capabilities/blueprint.md" }
       ]
     },
     {
       "title": "Lifecycle",
       "pages": [
+        { "title": "Model intake", "path": "lifecycle/intake.md" },
+        { "title": "Optional backends", "path": "lifecycle/backends.md" },
         { "title": "Serve", "path": "lifecycle/serve.md" },
         { "title": "Convert", "path": "lifecycle/convert.md" },
+        { "title": "Local inference", "path": "lifecycle/local-inference.md" },
         { "title": "LoRA and fuse", "path": "lifecycle/lora-and-fuse.md" },
+        { "title": "Experiments and training", "path": "lifecycle/laboratory.md" },
         { "title": "Fleet", "path": "lifecycle/fleet.md" },
         { "title": "Doctor", "path": "lifecycle/doctor.md" },
         { "title": "Watch", "path": "lifecycle/watch.md" }
@@ -34,7 +40,23 @@
       "title": "Reference",
       "pages": [
         { "title": "Runtimes", "path": "reference/runtimes.md" },
-        { "title": "Command line", "path": "reference/cli.md" }
+        { "title": "Command line", "path": "reference/cli.md" },
+        { "title": "Evidence and sizing", "path": "reference/evidence.md" }
+      ]
+    },
+    {
+      "title": "Guides",
+      "pages": [
+        { "title": "Troubleshooting", "path": "guides/troubleshooting.md" },
+        { "title": "Development", "path": "guides/development.md" }
+      ]
+    },
+    {
+      "title": "Examples",
+      "pages": [
+        { "title": "Legal research", "path": "examples/legal-research-pack.md" },
+        { "title": "Audio research", "path": "examples/audio-research-pack.md" },
+        { "title": "Video research", "path": "examples/video-research-pack.md" }
       ]
     },
     {

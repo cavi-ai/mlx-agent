@@ -1,21 +1,38 @@
 # MLX Agent overview
 
-mlx-agent discovers, verifies, measures, wires, serves, converts, and trains local MLX-optimized models on Apple Silicon — for your coding agent. It queries the Hugging Face Hub live, matches models to your machine's memory and installed runtimes, proves behavior with deterministic runtime probes, measures real tokens-per-second on your chip, and emits confirmation-gated configuration for the agent you use.
+mlx-agent helps you choose and operate local models on Apple Silicon for a coding
+agent. It combines Hugging Face discovery, local role verification, performance
+measurements, configuration transactions, and model lifecycle commands in one
+provider-neutral Python core.
 
-## What it is not
+## Requirements and boundaries
 
-- It never downloads model weights. Discovery and verification read metadata and already-served models only.
-- It never installs provider CLIs or model runtimes. You install them; the pack detects them.
-- It never mutates configuration without a reviewed preview and an explicit `--confirm --preview-hash`.
+The core requires Python 3.9+ and uses the standard library. MLX execution
+requires Apple Silicon and the appropriate runtime. Optional backend installation
+uses Python 3.12 dependency locks; provider CLIs are installed separately.
+
+Discovery, adoption, and benchmarks do not download weights. Explicit
+`intake fetch` downloads a reviewed model source; `backend install` installs
+declared optional dependencies. Both require a reviewed preview and confirmation.
+
+Wire and Fleet change configuration. Serve launches owned processes. Convert,
+LoRA, and Fuse create outputs from local inputs. Those jobs have reviewed starts
+and receipts, but are not configuration rollback transactions. Research and
+Blueprint write guidance packs without training or scaffolding applications.
 
 ## The pipeline
 
-1. **Discover** — `scout` ranks live Hub candidates with real download sizes, license and gating, reasoning detection, and KV-cache-aware fit.
+1. **Discover** — `discover` ranks Hub candidates using size, license, gating, reasoning detection, and KV-cache-aware fit estimates.
 2. **Verify** — `adopt` runs deterministic role probes (coding, reasoning, vision OCR, embedding, tool-use) against your local runtime before recommending.
 3. **Measure** — `bench` records TTFT and tok/s on your chip as `runtime_measured` evidence.
 4. **Wire** — `wire` applies configuration through a preview-confirm-receipt-rollback transaction.
-5. **Operate** — `serve`, `doctor`, `fleet`, and `watch` run the fleet day to day.
-6. **Produce** — `convert`, `lora`, and `fuse` quantize, train, and fuse your own models.
+5. **Operate** — `serve`, `doctor models`, `fleet`, and `watch` manage local model processes, health, configuration, and Hub changes.
+6. **Produce** — `intake`, `backend`, `convert`, `lora`, and `fuse` acquire sources, manage dependencies, quantize, train, and fuse local models.
+
+[Your first local model](quickstart.md) covers making weights available and
+starting a server before verification. For domain research or project design,
+use [Research](../capabilities/research.md) or [Blueprint](../capabilities/blueprint.md).
+See [Evidence and sizing](../reference/evidence.md) for probe and fit limits.
 
 ## Providers
 

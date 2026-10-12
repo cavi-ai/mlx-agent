@@ -6,7 +6,7 @@ LoRA trains an adapter on a cached base model; fuse merges the adapter back into
 
 ```bash
 python3 scripts/mlx-agent lora start --repo <repo> --data ./my-dataset --iters 1000
-python3 scripts/mlx-agent lora start --repo <repo> --data ./my-dataset --confirm --preview-hash <hash>
+python3 scripts/mlx-agent lora start --repo <repo> --data ./my-dataset --iters 1000 --confirm --preview-hash <hash>
 python3 scripts/mlx-agent lora status
 ```
 
@@ -29,3 +29,14 @@ python3 scripts/mlx-agent serve start --repo <repo> --runtime mlx_lm --adapter-p
 ```
 
 Train on a quantized base, fuse to keep the quant, serve either the adapter or the fused model.
+
+The serve command above is a preview; review it and confirm with its hash to
+launch. Both training and fusion require local inputs, an installed runtime,
+and a fresh output path. Keep every argument identical between preview and
+confirmation. Inspect job status and logs before using outputs; starting a job
+does not establish successful training or fusion. These model jobs are not
+configuration rollback transactions. Training retains actual exit results,
+verified adapter content identity, and pinned base/dataset inputs. A completed
+adapter can produce a linked base-versus-adapter evaluation with matching prompt
+and sampling settings. See [Experiments and training](laboratory.md) for retained
+evaluations and the separate video-training qualification gates.

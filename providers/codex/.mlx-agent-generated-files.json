@@ -742,7 +742,7 @@
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-video/t2v/__init__.py",
-      "sha256": "58ce139e1e91920dd8956e402f332ca5d608c3c8bf399eb63f3541285b2f4696"
+      "sha256": "1c5f8c84c8f50acf12911ceaf73e911dc831244d436f207358b80a6c4db9f9f0"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-video/t2v/convert.py",
@@ -755,6 +755,10 @@
     {
       "path": "src/mlx_agent/resources/ports/mlx-video/t2v/training.py",
       "sha256": "a605a71b2ec0addbf1f852749bc65c817849180e24dcd421833b1a559a7b8d65"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-video/t2v/training_inputs.py",
+      "sha256": "9d901483823ebc15a5130438e879c2011090bd3f27189b02f3fb2dbf2e8769dc"
     },
     {
       "path": "src/mlx_agent/resources/references/model-families.md",

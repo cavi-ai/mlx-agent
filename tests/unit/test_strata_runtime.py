@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import struct
+import subprocess
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -109,6 +110,30 @@ class StrataProfileTests(unittest.TestCase):
         self.assertGreater(after["weight_bytes"], before["weight_bytes"])
         self.assertEqual(after["memory_estimate_bytes"], before["memory_estimate_bytes"])
         self.assertNotEqual(after["fingerprint"], before["fingerprint"])
+
+    def test_standalone_jit_memory_admission_retains_headroom_and_unknown_memory_guards(self):
+        self.valid_model()
+        from mlx_agent import jit_serve
+        program = """
+import runpy, sys
+module = runpy.run_path(sys.argv[1])
+worker = module['ModelWorker']({'local_path': sys.argv[2], 'runtime': 'strata',
+                              'memory_policy': {'minimum_headroom_gb': 2}})
+worker.memory_probe = lambda: 1 << 40
+worker._check_memory()
+assert worker.memory_check['required_available_bytes'] > 10_000_000_000
+for available, code in ((100, 'insufficient_headroom'), (None, 'memory_unknown')):
+    worker.memory_probe = lambda: available
+    try:
+        worker._check_memory()
+    except module['GatewayError'] as error:
+        assert error.code == code, error.code
+    else:
+        raise AssertionError('memory admission was bypassed')
+"""
+        result = subprocess.run([sys.executable, "-c", program, str(Path(jit_serve.__file__).resolve()), str(self.root)],
+                                capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_frontend_receives_only_controlled_offline_engine_arguments(self):
         self.valid_model()

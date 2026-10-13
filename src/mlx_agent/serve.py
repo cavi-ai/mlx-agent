@@ -78,6 +78,38 @@ def receipts_root(root=None):
     return base / ".mlx-agent-receipts" / "serve"
 
 
+def _local_weight_evidence(path):
+    """Describe only locally declared weight facts; never resolve or fetch a repo."""
+    root = Path(path)
+    try:
+        location = root / "config.json"
+        if location.stat().st_size > 1024 * 1024:
+            return {}
+        raw = location.read_bytes()
+        config = json.loads(raw)
+        if not isinstance(config, dict):
+            return {}
+        evidence = {"model_config_fingerprint": hashlib.sha256(raw).hexdigest()}
+        if any(root.glob("*.safetensors")):
+            evidence["weight_format"] = "safetensors"
+        quantization = config.get("quantization")
+        if isinstance(quantization, dict):
+            mode = quantization.get("mode", "affine")
+            if mode not in ("affine", "mxfp4", "mxfp8", "nvfp4"):
+                mode = "quantized"
+            if config.get("vq_modules") or config.get("vq_ple"):
+                description = "VQ + per-tensor " + mode
+            elif any(isinstance(value, dict) for value in quantization.values()):
+                description = "per-tensor " + mode
+            else:
+                bits = quantization.get("bits")
+                description = mode + (" {}-bit".format(bits) if type(bits) is int and 1 <= bits <= 16 else "")
+            evidence["weight_quantization"] = description
+        return evidence
+    except (OSError, ValueError):
+        return {}
+
+
 def resolve_serve_runtime(repo, path, runtime, recipes, hf_cache=None,
                           manifests=None, registries=None, backend_root=None):
     """Select a declared local loader and its isolated executable; never fetch or import model code."""
@@ -246,7 +278,10 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
     if strata_model:
         plan.update(strata_model_fingerprint=strata_model["fingerprint"],
                     strata_runtime_fingerprint=strata_runtime["fingerprint"],
+                    weight_format="gguf", weight_quantization=strata_model["quantization"], weights_preserved=True,
                     strata_speculation=strata_speculation, strata_memory_estimate_bytes=strata_model["memory_estimate_bytes"], readiness_deadline=900)
+    elif has_path:
+        plan.update(_local_weight_evidence(local_path))
     if jit:
         from .convert import cached_snapshot
         from .jit_serve import model_fingerprint

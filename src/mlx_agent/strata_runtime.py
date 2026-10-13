@@ -157,6 +157,7 @@ def read_model(path):
         # its 30 KB/token float16 cache allowance at the configured capacity.
         memory_estimate = math.ceil(first.stat().st_size * 1.2 + mtp_bytes + 5e9 + 131072 * 30000)
         return {"root": str(root), "gguf": str(first), "tokenizer": str(tokenizer), "mtp": str(mtp) if mtp else None,
+                "quantization": "GSQ-RCO " + _FIRST.fullmatch(first.name).group(1),
                 "fingerprint": fingerprint, "weight_bytes": first.stat().st_size + second.stat().st_size,
                 "memory_estimate_bytes": memory_estimate}
     except StrataError:

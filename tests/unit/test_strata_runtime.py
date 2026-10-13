@@ -1,10 +1,17 @@
 import json
+import os
+import sys
+import struct
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from mlx_agent import strata_runtime as strata
 from .test_gguf import write_gguf
+from mlx_agent.serve import ServeError, load_recipes, plan_start, resolve_serve_runtime
+from mlx_agent.gguf import scan_gguf, scan_mlx_outputs
+from mlx_agent import serve
 
 
 class StrataProfileTests(unittest.TestCase):
@@ -86,16 +93,107 @@ class StrataProfileTests(unittest.TestCase):
         (self.root / "tokenizer/vocab.json").write_text('{"a": 0}')
         self.assertNotEqual(model["fingerprint"], strata.read_model(self.root)["fingerprint"])
 
+    def test_ngram_companion_may_omit_architecture_metadata(self):
+        self.valid_model()
+        companion = self.root / "Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00002-of-00002.gguf"
+        companion.write_bytes(b"GGUF" + struct.pack("<IQQ", 3, 1, 0))
+        self.assertEqual(strata.read_model(self.root)["root"], str(self.root))
+
+    def test_disk_ngram_table_does_not_inflate_resident_memory_admission(self):
+        self.valid_model()
+        before = strata.read_model(self.root)
+        companion = self.root / "Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00002-of-00002.gguf"
+        with companion.open("ab") as handle:
+            handle.write(b"x" * 65536)
+        after = strata.read_model(self.root)
+        self.assertGreater(after["weight_bytes"], before["weight_bytes"])
+        self.assertEqual(after["memory_estimate_bytes"], before["memory_estimate_bytes"])
+        self.assertNotEqual(after["fingerprint"], before["fingerprint"])
+
     def test_frontend_receives_only_controlled_offline_engine_arguments(self):
         self.valid_model()
         model = strata.read_model(self.root)
-        runtime = {"python": "/installed/python", "root": "/installed"}
+        runtime = {"python": "/installed/python", "engine": "/installed/strata-mlx", "root": "/installed"}
         config = strata.frontend_config(model, runtime, speculation=False)
-        self.assertEqual(config["exe"], runtime["python"])
+        self.assertEqual(config["exe"], runtime["engine"])
+        self.assertEqual(config["args"][0], "--native")
         self.assertEqual(config["host"], "127.0.0.1")
         self.assertEqual(config["model_name"], model["root"])
         self.assertEqual(config["args"][config["args"].index("--spec") + 1], "1")
-        self.assertEqual(config["args"][config["args"].index("--suffix-draft") + 1], "off")
+        self.assertEqual(config["args"][config["args"].index("--suffix-draft") + 1], "0")
+
+    def installed(self):
+        runtime = self.root / "runtime"
+        for folder in ("engine/strata_mlx", "engine/.venv/bin", "http/serve", "http/tools"):
+            (runtime / folder).mkdir(parents=True, exist_ok=True)
+        for source in ("engine/strata_mlx/serve.py", "http/serve/server.py", "http/tools/strata_tokenizer.py"):
+            (runtime / source).write_text("# pinned source")
+        (runtime / "engine/.venv/bin/python").symlink_to(sys.executable)
+        (runtime / "strata-mlx").write_text(strata.engine_launcher(runtime))
+        (runtime / "strata-mlx").chmod(0o700)
+        marker = {"engine_revision": strata.ENGINE_REVISION, "http_revision": strata.HTTP_REVISION,
+                  "source_sha256": strata.source_digest(runtime)}
+        (runtime / strata.INSTALL_MARKER).write_text(json.dumps(marker))
+        self.environment = patch.dict(os.environ, {"MLX_AGENT_STRATA_ROOT": str(runtime)})
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
+        return runtime
+
+    def test_auto_selects_strata_only_for_an_explicit_valid_local_profile(self):
+        self.valid_model()
+        runtime = self.installed()
+        resolved, executable = resolve_serve_runtime(None, str(self.root), "auto", load_recipes())
+        self.assertEqual(resolved, "strata")
+        self.assertEqual(executable, str(runtime / "engine/.venv/bin/python"))
+
+    def test_strata_plan_binds_model_runtime_and_speculation_to_preview(self):
+        self.valid_model()
+        self.installed()
+        plan = plan_start(None, "strata", load_recipes(), path=str(self.root), strata_speculation=True)
+        off = plan_start(None, "strata", load_recipes(), path=str(self.root), strata_speculation=False)
+        default = plan_start(None, "strata", load_recipes(), path=str(self.root))
+        self.assertFalse(default["strata_speculation"])
+        self.assertEqual(default["preview_hash"], off["preview_hash"])
+        self.assertNotEqual(plan["preview_hash"], off["preview_hash"])
+        self.assertEqual(plan["runtime"], "strata")
+        self.assertIn("--expected-model-fingerprint", plan["argv"])
+        self.assertIn("--expected-runtime-fingerprint", plan["argv"])
+        self.assertEqual(plan["bind"], "127.0.0.1")
+        self.assertEqual(plan["readiness_deadline"], 900)
+        (self.root / "tokenizer/vocab.json").write_text('{"b": 1}')
+        changed = plan_start(None, "strata", load_recipes(), path=str(self.root))
+        self.assertNotEqual(plan["preview_hash"], changed["preview_hash"])
+
+    def test_jit_preserves_strata_adapter_and_reviewed_assets(self):
+        self.valid_model()
+        self.installed()
+        plan = plan_start(None, "strata", load_recipes(), path=str(self.root), jit=True)
+        self.assertIn("strata_runtime.py", " ".join(plan["worker_argv"]))
+        self.assertIn("--expected-model-fingerprint", plan["worker_argv"])
+        self.assertEqual(plan["worker_argv"][plan["worker_argv"].index("--host") + 1], "127.0.0.1")
+
+    def test_strata_refuses_repo_ids_and_lora_without_downloading(self):
+        self.valid_model()
+        self.installed()
+        for arguments in ({"repo": "Qwen/Qwen3.8-Flash-Next"}, {"repo": None, "path": str(self.root), "adapter_path": "/adapter"}):
+            with self.subTest(arguments=arguments):
+                with self.assertRaises(ServeError):
+                    plan_start(runtime="strata", recipes=load_recipes(), **arguments)
+
+    def test_inventory_includes_a_valid_profile_and_excludes_a_changed_one(self):
+        self.valid_model()
+        self.assertEqual([item["runtime"] for item in scan_mlx_outputs([self.root])], ["strata"])
+        (self.root / "tokenizer/vocab.json").unlink()
+        self.assertEqual(scan_mlx_outputs([self.root]), [])
+
+    def test_prepared_profile_shards_are_not_separate_conversion_candidates(self):
+        self.valid_model()
+        self.assertEqual(scan_gguf([self.root]), [])
+
+    def test_exited_child_ends_readiness_wait_without_waiting_for_full_deadline(self):
+        with patch.object(serve.os, "waitpid", return_value=(42, 256)), patch.object(serve.urllib.request, "build_opener") as opener:
+            self.assertFalse(serve._default_readiness("http://127.0.0.1:8084/v1/models", 900, child_pid=42))
+            opener.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -100,6 +100,15 @@ def resolve_serve_runtime(repo, path, runtime, recipes, hf_cache=None,
         if runtime == "auto":
             raise ServeError("model_config_unavailable", "Automatic runtime selection needs a readable local config.json.",
                              "Select a downloaded local model or explicitly review its serving runtime.") from None
+    if runtime == "strata" or (runtime == "auto" and config.get("serving_runtime") == "strata"):
+        from .strata_runtime import StrataError, installed_runtime, read_model
+        try:
+            if path is None:
+                raise StrataError("strata_model_required", "Strata serves prepared local GGUF profiles only.")
+            read_model(path)
+            return "strata", installed_runtime()["python"]
+        except StrataError as error:
+            raise ServeError(error.code, str(error), error.remediation) from error
     hits = lookup(config.get("model_type"), manifests, registries) if config.get("model_type") else []
     if runtime == "auto":
         backend = choose_backend(hits, "text_llm", "vision_config" in config)
@@ -128,7 +137,7 @@ def resolve_serve_runtime(repo, path, runtime, recipes, hf_cache=None,
 
 def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                adapter_path=None, path=None, jit=False, receipts_dir=None, hf_cache=None, memory_policy=None,
-               runtime_executable=None):
+               runtime_executable=None, strata_speculation=False):
     """Render the exact start plan; pure and side-effect free."""
     if memory_policy is not None:
         from .jit_serve import validate_memory_policy
@@ -199,8 +208,26 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         "repo": model_value,
         "port": str(selected_port),
         "max_tokens": str(max_tokens),
+        "runtime_adapter": str(Path(__file__).with_name("strata_runtime.py").resolve()),
     }
+    strata_model = strata_runtime = None
+    if runtime == "strata":
+        from .strata_runtime import StrataError, installed_runtime, read_model
+        try:
+            if not has_path or adapter_path is not None or type(strata_speculation) is not bool:
+                raise StrataError("strata_model_required", "Strata requires a local GGUF profile without a LoRA adapter.")
+            strata_model = read_model(local_path)
+            strata_runtime = installed_runtime()
+            if runtime_executable is not None and runtime_executable != strata_runtime["python"]:
+                raise StrataError("strata_not_installed", "The reviewed Strata executable changed.")
+            values["executable"] = strata_runtime["python"]
+        except StrataError as error:
+            raise ServeError(error.code, str(error), error.remediation) from error
     argv = [part.format(**values) for part in recipe["argv"]]
+    if strata_model:
+        argv += ["--runtime-root", strata_runtime["root"], "--speculation", "on" if strata_speculation else "off",
+                 "--expected-model-fingerprint", strata_model["fingerprint"],
+                 "--expected-runtime-fingerprint", strata_runtime["fingerprint"]]
     if adapter_path is not None:
         argv.extend(
             part.format(adapter_path=str(adapter_path)) for part in recipe["adapter_argv"]
@@ -216,6 +243,10 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         "readiness": recipe["readiness"].format(port=selected_port),
         "bind": "127.0.0.1",
     }
+    if strata_model:
+        plan.update(strata_model_fingerprint=strata_model["fingerprint"],
+                    strata_runtime_fingerprint=strata_runtime["fingerprint"],
+                    strata_speculation=strata_speculation, strata_memory_estimate_bytes=strata_model["memory_estimate_bytes"], readiness_deadline=900)
     if jit:
         from .convert import cached_snapshot
         from .jit_serve import model_fingerprint
@@ -271,10 +302,17 @@ def _default_spawn(argv, log_path):
     return process.pid
 
 
-def _default_readiness(url, deadline_seconds, clock=time.monotonic, sleep=time.sleep):
+def _default_readiness(url, deadline_seconds, clock=time.monotonic, sleep=time.sleep, child_pid=None):
     validate_health_endpoint(url)
     deadline = clock() + deadline_seconds
     while clock() < deadline:
+        if child_pid is not None:
+            try:
+                if os.waitpid(child_pid, os.WNOHANG)[0] == child_pid:
+                    return False
+            except ChildProcessError:
+                if not _pid_alive(child_pid):
+                    return False
         try:
             request = urllib.request.Request(url, method="GET")
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -325,7 +363,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
     which = which or _default_which
     port_free = port_free or _default_port_free
     spawn = spawn or _default_spawn
-    readiness = readiness or _default_readiness
+    readiness = readiness or (lambda url, deadline: _default_readiness(url, deadline, child_pid=pid if spawn is _default_spawn else None))
     pid_alive = pid_alive or _pid_alive
     root = receipts_root(receipts_dir)
 
@@ -411,13 +449,17 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         if config_path.parent != root.absolute() or config_path.is_symlink():
             raise ServeError("invalid_arguments", "Unsafe JIT configuration path.", "Review a fresh serve plan.")
         config = {key: plan[key] for key in ("local_path", "fingerprint", "worker_argv", "max_tokens")}
+        if "readiness_deadline" in plan:
+            config["worker_readiness_seconds"] = plan["readiness_deadline"]
+        if plan["runtime"] == "strata":
+            config["runtime"] = "strata"
         config.update(model=plan["repo"] or plan["path"], control_token=secrets.token_hex(32),
                       memory_policy=plan.get("memory_policy"), config_path=str(config_path),
                       state_path=str(root.absolute() / "{}.jit-state.json".format(plan["port"])),
                       log_path=str(root.absolute() / "{}.worker.log".format(plan["port"])))
         _atomic_in_directory(root, config_path.name, json.dumps(config).encode(), 0o600)
     pid = spawn(plan["argv"], str(log_path))
-    if not readiness(plan["readiness"], readiness_deadline):
+    if not readiness(plan["readiness"], plan.get("readiness_deadline", readiness_deadline)):
         _terminate_pid(pid)
         raise ServeError(
             "readiness_timeout",
@@ -641,7 +683,7 @@ def stop_serve(port, receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_c
             "The live pid {0} does not match the serve receipt; refusing to signal it.".format(pid),
             "Inspect the process yourself; the receipt is retained at {0}.".format(receipt_path),
         )
-    if receipt.get("jit") and terminate is _terminate_pid and os.getpgid(pid) == receipt["pid"]:
+    if (receipt.get("jit") or receipt.get("runtime") == "strata") and terminate is _terminate_pid and os.getpgid(pid) == receipt["pid"]:
         terminate = lambda _pid, sig: os.killpg(receipt["pid"], sig)
     terminate(pid, signal.SIGTERM)
     deadline = clock() + STOP_DEADLINE_SECONDS

@@ -190,8 +190,11 @@ def _keep(key):
     return any(key.endswith(suffix) for suffix in _STRUCTURE_SUFFIXES + _DRAFT_SUFFIXES)
 
 
-def read_gguf_header(path):
+def read_gguf_header(path, include_tensors=False):
     """Parse the bounded metadata header of one GGUF file.
+
+    With include_tensors, also read bounded tensor descriptors and their data
+    offset without reading tensor payloads.
 
     Returns a dict with ``version``, ``tensor_count`` and the inventory-relevant
     ``metadata`` subset, or raises :class:`GGUFError` for anything unreadable.
@@ -218,10 +221,30 @@ def read_gguf_header(path):
             for _ in range(min(pair_count, MAX_METADATA_PAIRS)):
                 key = _read_string(handle)
                 value_type = struct.unpack("<I", _read_exactly(handle, 4))[0]
-                if _keep(key):
+                if _keep(key) or (include_tensors and key == "general.alignment"):
                     metadata[key] = _read_value(handle, value_type)
                 else:
                     _skip_value(handle, value_type)
+            tensors = []
+            if include_tensors:
+                if pair_count > MAX_METADATA_PAIRS or not 0 < tensor_count <= 100000:
+                    raise _Truncated("unbounded tensor header")
+                for _ in range(tensor_count):
+                    name = _read_string(handle)
+                    rank = struct.unpack("<I", _read_exactly(handle, 4))[0]
+                    if not 1 <= rank <= 4:
+                        raise _Truncated("invalid tensor rank")
+                    shape = [struct.unpack("<Q", _read_exactly(handle, 8))[0] for _ in range(rank)]
+                    if any(not 0 < dimension <= 2**31 for dimension in shape):
+                        raise _Truncated("invalid tensor dimensions")
+                    kind, offset = struct.unpack("<IQ", _read_exactly(handle, 12))
+                    tensors.append({"name": name, "shape": shape, "type": kind, "offset": offset})
+                    if handle.tell() > 64 * 1024 * 1024:
+                        raise _Truncated("oversized tensor header")
+                alignment = metadata.get("general.alignment", 32)
+                if type(alignment) is not int or not 0 < alignment <= 4096 or alignment & (alignment - 1):
+                    raise _Truncated("invalid tensor alignment")
+                tensor_data_offset = (handle.tell() + alignment - 1) // alignment * alignment
     except (_Truncated, struct.error) as error:
         raise GGUFError(
             "gguf_header_unreadable",
@@ -234,12 +257,15 @@ def read_gguf_header(path):
             "{0} could not be read.".format(location.name),
             "Check the path and its permissions, then rerun the scan.",
         ) from error
-    return {
+    result = {
         "version": version,
         "tensor_count": tensor_count,
         "metadata_pairs": pair_count,
         "metadata": metadata,
     }
+    if include_tensors:
+        result.update(tensors=tensors, tensor_data_offset=tensor_data_offset)
+    return result
 
 
 def file_signature(path, chunk_bytes=SIGNATURE_CHUNK_BYTES):

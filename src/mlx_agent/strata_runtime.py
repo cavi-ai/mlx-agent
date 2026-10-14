@@ -18,6 +18,11 @@ HTTP_REVISION = "a0116b2782a5b82622358c04a06496485d12b2d6"
 MODEL_MARKER = "strata-model.json"
 INSTALL_MARKER = "installed.json"
 _FIRST = re.compile(r"Qwen3\.8-Flash-Next-GSQ-RCO-(Q2_0|IQ3_S)-00001-of-00002\.gguf")
+# GGUF block layouts implemented by the pinned engine. No tensor data is loaded here.
+_BLOCKS = {0: (1, 4), 1: (1, 2), 30: (1, 2), 2: (32, 18), 6: (32, 22), 8: (32, 34),
+           11: (256, 110), 12: (256, 144), 13: (256, 176), 14: (256, 210),
+           20: (32, 18), 23: (256, 136), 42: (64, 18), 16: (256, 66), 17: (256, 74),
+           18: (256, 98), 21: (256, 110), 22: (256, 82), 29: (256, 56)}
 
 
 class StrataError(RuntimeError):
@@ -158,6 +163,7 @@ def read_model(path):
         memory_estimate = math.ceil(first.stat().st_size * 1.2 + mtp_bytes + 5e9 + 131072 * 30000)
         return {"root": str(root), "gguf": str(first), "tokenizer": str(tokenizer), "mtp": str(mtp) if mtp else None,
                 "quantization": "GSQ-RCO " + _FIRST.fullmatch(first.name).group(1),
+                "mtp_bytes": mtp_bytes,
                 "fingerprint": fingerprint, "weight_bytes": first.stat().st_size + second.stat().st_size,
                 "memory_estimate_bytes": memory_estimate}
     except StrataError:
@@ -168,9 +174,49 @@ def read_model(path):
         raise StrataError("strata_model_invalid", str(error)) from error
 
 
-def frontend_config(model, runtime, speculation=False):
+def memory_estimate(model, expert_memory_gb=None, context_tokens=131072):
+    """Conservative resident estimate for the reviewed paging budget and context."""
+    if type(context_tokens) is not int or not 512 <= context_tokens <= 131072:
+        raise StrataError("invalid_arguments", "Strata context must be an integer from 512 to 131072 tokens.")
+    if expert_memory_gb is None:
+        return model["memory_estimate_bytes"] - 131072 * 30000 + context_tokens * 30000
+    if (type(expert_memory_gb) not in (int, float) or not math.isfinite(expert_memory_gb)
+            or not 0.5 <= expert_memory_gb <= 64):
+        raise StrataError("invalid_arguments", "Expert memory must be a finite number from 0.5 to 64 GB.")
+    from mlx_agent.gguf import GGUFError, read_gguf_header
+    try:
+        header = read_gguf_header(model["gguf"], include_tensors=True)
+        experts = dense = floats = 0
+        file_bytes = Path(model["gguf"]).stat().st_size
+        for tensor in header["tensors"]:
+            block, size = _BLOCKS[tensor["type"]]
+            count = math.prod(tensor["shape"])
+            byte_count = count // block * size
+            if count % block or header["tensor_data_offset"] + tensor["offset"] + byte_count > file_bytes:
+                raise ValueError("Tensor data exceeds its GGUF file")
+            if tensor["name"].endswith("_exps.weight"):
+                experts += byte_count
+            else:
+                dense += byte_count
+                if tensor["type"] == 14 and tensor["name"] != "output.weight":
+                    floats += count * 2
+        if not experts or not dense:
+            raise ValueError("Expert and dense tensor sizes are required")
+        mtp_bytes = model.get("mtp_bytes", 0)
+        # Count dense expansion, Q6_K prompt copies, full draft files, runtime
+        # working memory and context cache. The n-gram companion remains on disk.
+        return math.ceil(min(experts, expert_memory_gb * 1e9) + dense * 2 + floats
+                         + mtp_bytes + 5e9 + context_tokens * 30000)
+    except (GGUFError, OSError, ValueError, KeyError) as error:
+        raise StrataError("strata_memory_unknown", "Cannot estimate paged Strata memory: " + str(error)) from error
+
+
+def frontend_config(model, runtime, speculation=False, expert_memory_gb=None, context_tokens=131072):
+    memory_estimate(model, expert_memory_gb, context_tokens)
     args = ["--native", model["gguf"], "--spec", "4" if speculation else "1",
-            "--suffix-draft", "auto" if speculation else "0", "--max-context", "131072"]
+            "--suffix-draft", "auto" if speculation else "0", "--max-context", str(context_tokens)]
+    if expert_memory_gb is not None:
+        args += ["--expert-memory", str(expert_memory_gb)]
     if model["mtp"]:
         args += ["--mtp", model["mtp"]]
     return {"exe": runtime["engine"], "args": args, "cwd": runtime["root"], "tokenizer": model["tokenizer"],
@@ -187,6 +233,8 @@ def main():
     parser.add_argument("--host", choices=["127.0.0.1"], default="127.0.0.1")
     parser.add_argument("--max-tokens", type=int, default=8192)
     parser.add_argument("--speculation", choices=["on", "off"], default="off")
+    parser.add_argument("--expert-memory-gb", type=float)
+    parser.add_argument("--context-tokens", type=int, default=131072)
     parser.add_argument("--expected-model-fingerprint", required=True)
     parser.add_argument("--expected-runtime-fingerprint", required=True)
     args = parser.parse_args()
@@ -196,7 +244,7 @@ def main():
         raise StrataError("preview_stale", "The model assets or Strata runtime changed after the serving preview.")
     os.environ.update(MLX_AGENT_STRATA_ROOT=runtime["root"], HF_HUB_OFFLINE="1", HF_DATASETS_OFFLINE="1", MLX_ENABLE_TF32="0")
     # The only config reaching the frontend is constructed here; model files cannot supply code or commands.
-    config = frontend_config(model, runtime, args.speculation == "on")
+    config = frontend_config(model, runtime, args.speculation == "on", args.expert_memory_gb, args.context_tokens)
     source = Path(runtime["root"]) / "http"
     sys.path[:0] = [str(source), str(source / "tools")]
     with tempfile.TemporaryDirectory(prefix="mlx-agent-strata-") as directory:

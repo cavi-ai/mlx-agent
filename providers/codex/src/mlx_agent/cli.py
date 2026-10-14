@@ -911,6 +911,8 @@ def _add_serve_arguments(parser):
     start.add_argument("--path", default=None, help="local model directory to serve instead of a cache repo id")
     start.add_argument("--runtime", required=True, choices=["auto", "mlx_lm", "mlx-vlm", "strata"])
     start.add_argument("--strata-speculation", choices=["on", "off"], help="opt-in draft-and-verify decoding for Strata profiles (default: off)")
+    start.add_argument("--strata-expert-memory-gb", type=float, help="Strata resident expert budget in decimal GB (0.5–64); other experts remain on disk")
+    start.add_argument("--strata-context-tokens", type=int, help="Strata context capacity (512–131072 tokens)")
     start.add_argument("--port", type=int, default=None, help="loopback port (defaults per runtime recipe)")
     start.add_argument("--max-tokens", type=int, default=MAX_TOKENS_DEFAULT)
     start.add_argument("--adapter-path", default=None, help="LoRA adapter directory (mlx_lm only)")
@@ -997,6 +999,8 @@ def _run_serve(arguments):
             hf_cache=arguments.hf_cache,
             runtime_executable=executable,
             strata_speculation=arguments.strata_speculation == "on",
+            strata_expert_memory_gb=arguments.strata_expert_memory_gb,
+            strata_context_tokens=arguments.strata_context_tokens,
             memory_policy=_memory_arguments(arguments) if (arguments.idle_timeout is not None or arguments.keep_loaded or arguments.min_headroom_gb is not None) else None,
         )
         if arguments.launchd:

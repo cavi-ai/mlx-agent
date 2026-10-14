@@ -16,6 +16,98 @@ from mlx_agent import serve
 
 
 class StrataProfileTests(unittest.TestCase):
+    def tensor_model(self):
+        self.valid_model()
+        from .test_gguf import _string
+        first = self.root / "Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00001-of-00002.gguf"
+        write_gguf(first, architecture="qwen4exp", tensor_count=2)
+        metadata = first.read_bytes()
+        table = (_string("blk.0.ffn_up_exps.weight") + struct.pack("<IQQIQ", 2, 64, 2, 42, 0)
+                 + _string("output.weight") + struct.pack("<IQIQ", 1, 32, 1, 64))
+        prefix = metadata + table
+        first.write_bytes(prefix + b"\0" * ((-len(prefix)) % 32) + b"\0" * 128)
+
+    def test_expert_budget_and_context_reach_engine_and_change_confirmation(self):
+        self.tensor_model()
+        self.installed()
+        plan = plan_start(None, "strata", load_recipes(), path=str(self.root),
+                          strata_expert_memory_gb=8, strata_context_tokens=8192)
+        self.assertEqual(plan["strata_expert_memory_gb"], 8)
+        self.assertEqual(plan["strata_context_tokens"], 8192)
+        self.assertIn("--expert-memory-gb", plan["argv"])
+        config = strata.frontend_config(strata.read_model(self.root), strata.installed_runtime(),
+                                       expert_memory_gb=8, context_tokens=8192)
+        self.assertEqual(config["args"][config["args"].index("--expert-memory") + 1], "8")
+        self.assertEqual(config["args"][config["args"].index("--max-context") + 1], "8192")
+        other = plan_start(None, "strata", load_recipes(), path=str(self.root),
+                           strata_expert_memory_gb=9, strata_context_tokens=8192)
+        self.assertNotEqual(plan["preview_hash"], other["preview_hash"])
+        self.assertGreater(strata.memory_estimate(strata.read_model(self.root), 8, 131072),
+                           plan["strata_memory_estimate_bytes"])
+
+    def test_memory_options_refuse_invalid_numbers_and_unknown_tensor_types(self):
+        self.tensor_model()
+        for budget in (0, -1, float("nan"), float("inf"), True, 65, "8"):
+            with self.subTest(budget=budget), self.assertRaises(strata.StrataError):
+                strata.memory_estimate(strata.read_model(self.root), budget, 8192)
+        for context in (0, 511, 131073, True, 1024.5):
+            with self.subTest(context=context), self.assertRaises(strata.StrataError):
+                strata.memory_estimate(strata.read_model(self.root), 8, context)
+
+        first = Path(strata.read_model(self.root)["gguf"])
+        data = first.read_bytes()
+        # The first descriptor's type follows its rank and dimensions.
+        from .test_gguf import _string
+        start = data.index(_string("blk.0.ffn_up_exps.weight")) + len(_string("blk.0.ffn_up_exps.weight")) + 20
+        first.write_bytes(data[:start] + struct.pack("<I", 999) + data[start + 4:])
+        with self.assertRaises(strata.StrataError) as error:
+            strata.memory_estimate(strata.read_model(self.root), 8, 8192)
+        self.assertEqual(error.exception.code, "strata_memory_unknown")
+
+    def test_eager_admission_refuses_unknown_and_insufficient_memory_before_spawn(self):
+        self.tensor_model()
+        self.installed()
+        plan = plan_start(None, "strata", load_recipes(), path=str(self.root),
+                          strata_expert_memory_gb=8, strata_context_tokens=8192)
+        for available, code in ((None, "memory_unknown"), (1, "insufficient_headroom")):
+            with self.subTest(available=available), patch("mlx_agent.jit_serve.available_memory_bytes", return_value=available):
+                spawn = unittest.mock.Mock()
+                with self.assertRaises(ServeError) as error:
+                    serve.start_serve(plan, preview_hash=plan["preview_hash"], confirm=True, spawn=spawn)
+                self.assertEqual(error.exception.code, code)
+                spawn.assert_not_called()
+
+    def test_paged_estimate_refuses_truncated_tensor_payload(self):
+        self.tensor_model()
+        model = strata.read_model(self.root)
+        first = Path(model["gguf"])
+        first.write_bytes(first.read_bytes()[:-100])
+        with self.assertRaises(strata.StrataError) as error:
+            strata.memory_estimate(model, 2, 8192)
+        self.assertEqual(error.exception.code, "strata_memory_unknown")
+
+    def test_jit_admission_uses_the_reviewed_budget_and_context(self):
+        self.tensor_model()
+        from mlx_agent import jit_serve
+        worker = jit_serve.ModelWorker({"local_path": str(self.root), "runtime": "strata",
+            "strata_expert_memory_gb": 2, "strata_context_tokens": 8192,
+            "memory_policy": {"minimum_headroom_gb": 2}})
+        required = strata.memory_estimate(strata.read_model(self.root), 2, 8192) + 2_000_000_000
+        worker.memory_probe = lambda: required
+        worker._check_memory()
+        self.assertEqual(worker.memory_check["required_available_bytes"], required)
+        worker.memory_probe = lambda: required - 1
+        with self.assertRaises(jit_serve.GatewayError) as error:
+            worker._check_memory()
+        self.assertEqual(error.exception.code, "insufficient_headroom")
+
+    def test_standalone_helper_can_estimate_explicit_expert_budget(self):
+        self.tensor_model()
+        program = "import runpy,sys; m=runpy.run_path(sys.argv[1]); assert m[\"memory_estimate\"](m[\"read_model\"](sys.argv[2]), 2, 8192) > 0"
+        result = subprocess.run([sys.executable, "-c", program, str(Path(strata.__file__).resolve()), str(self.root)],
+                                capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def setUp(self):
         self.temp = TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

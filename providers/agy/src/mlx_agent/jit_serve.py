@@ -163,6 +163,9 @@ class ModelWorker:
                       if item.is_file() and item.suffix in (".safetensors", ".npz", ".bin", ".gguf"))
         available = self.memory_probe()
         required = math.ceil(weights * 1.10 + 1.5e9 + reserve * 1e9) if weights else None
+        if self.config.get("runtime") == "strata":
+            from mlx_agent.strata_runtime import read_model
+            required = math.ceil(read_model(self.config["local_path"])["memory_estimate_bytes"] + reserve * 1e9)
         with self.condition:
             self.memory_check = {"available_bytes": available, "required_available_bytes": required,
                                  "captured_at": time.time(), "estimated": True}
@@ -192,7 +195,8 @@ class ModelWorker:
                 self._start()
             else:
                 with self.condition:
-                    self.condition.wait_for(lambda: self.model_state != "loading" or self.closed, timeout=65)
+                    self.condition.wait_for(lambda: self.model_state != "loading" or self.closed,
+                                            timeout=self.config.get("worker_readiness_seconds", 60) + 5)
             with self.condition:
                 if self.closed or self.model_state != "loaded":
                     raise GatewayError(503, "model_load_failed", self.last_error or "Model is not ready.")
@@ -224,7 +228,7 @@ class ModelWorker:
                 self._persist()
                 process = self.process
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-            deadline = time.monotonic() + 60
+            deadline = time.monotonic() + self.config.get("worker_readiness_seconds", 60)
             while time.monotonic() < deadline:
                 if process.poll() is not None or self.closed:
                     raise GatewayError(503, "model_load_failed", "Model worker exited before readiness.")

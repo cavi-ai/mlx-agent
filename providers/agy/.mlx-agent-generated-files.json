@@ -450,7 +450,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "b854b3ab657b0476919f95ff99b47196c02333d972df0bf3d642bcc9fe7099ba"
+      "sha256": "0c129ccb7717777edcc9d53c26b7bdebccfccea7f1bce48c25bd6ce0f8c2763c"
     },
     {
       "path": "src/mlx_agent/command_args.py",
@@ -522,7 +522,7 @@
     },
     {
       "path": "src/mlx_agent/gguf.py",
-      "sha256": "2d31ad22c6ec4e15e6d1075a2f7151b4b92ed12578cf845785e06e79dd55ac60"
+      "sha256": "c04e0a54ac647b5497dcdcb9eb06a8912bbbc4bff5a979bbbfa34a67a7b7e77b"
     },
     {
       "path": "src/mlx_agent/gguf_runner.py",
@@ -558,7 +558,7 @@
     },
     {
       "path": "src/mlx_agent/jit_serve.py",
-      "sha256": "019b12c8b7deee01a37e4cc2bec9eefdb5d96afaa963400811d2caf226d908c8"
+      "sha256": "7da9e0e222d8f202aaf80fa47f2cf5224fea119758f0df85665850774744df23"
     },
     {
       "path": "src/mlx_agent/lab.py",
@@ -766,7 +766,7 @@
     },
     {
       "path": "src/mlx_agent/resources/serve-recipes.json",
-      "sha256": "f0eb837ad2e42e1bc3271a895d8afd6c6884ba7ae763a1fd4c79152b0e0bedb5"
+      "sha256": "8bdcd7a8d450a85d42e16fee781ec711954e503deba41529c429152609c5a924"
     },
     {
       "path": "src/mlx_agent/runtime_preference.py",
@@ -778,7 +778,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "af6cf12169951cf54683988d0128cadf0a64a8808beed2ecb1ee5d6c58d64e54"
+      "sha256": "e92f52d687b16a1513d314185fdc184f7d8c579a7587c94b246d6c7478113fd8"
     },
     {
       "path": "src/mlx_agent/speak.py",
@@ -787,6 +787,10 @@
     {
       "path": "src/mlx_agent/speak_runner.py",
       "sha256": "5f0eb6f0a523ff9c3319d2478aa0f940b4805656538355958b28108e2c9e924a"
+    },
+    {
+      "path": "src/mlx_agent/strata_runtime.py",
+      "sha256": "a775125cad1d752fce9418c4678b410a1b8ad09e356879753c94acccda762c18"
     },
     {
       "path": "src/mlx_agent/taxonomy.py",

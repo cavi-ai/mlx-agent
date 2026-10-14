@@ -909,7 +909,8 @@ def _add_serve_arguments(parser):
     )
     start.add_argument("--repo", default=None, help="publisher/model present in the local Hugging Face cache")
     start.add_argument("--path", default=None, help="local model directory to serve instead of a cache repo id")
-    start.add_argument("--runtime", required=True, choices=["auto", "mlx_lm", "mlx-vlm"])
+    start.add_argument("--runtime", required=True, choices=["auto", "mlx_lm", "mlx-vlm", "strata"])
+    start.add_argument("--strata-speculation", choices=["on", "off"], help="opt-in draft-and-verify decoding for Strata profiles (default: off)")
     start.add_argument("--port", type=int, default=None, help="loopback port (defaults per runtime recipe)")
     start.add_argument("--max-tokens", type=int, default=MAX_TOKENS_DEFAULT)
     start.add_argument("--adapter-path", default=None, help="LoRA adapter directory (mlx_lm only)")
@@ -981,6 +982,8 @@ def _run_serve(arguments):
         recipes = load_recipes()
         runtime, executable = resolve_serve_runtime(
             arguments.repo, arguments.path, arguments.runtime, recipes, hf_cache=arguments.hf_cache)
+        if arguments.strata_speculation is not None and runtime != "strata":
+            raise ServeError("invalid_arguments", "--strata-speculation requires the Strata runtime.", "Select a prepared local Strata profile.")
         plan = plan_start(
             arguments.repo,
             runtime,
@@ -993,6 +996,7 @@ def _run_serve(arguments):
             receipts_dir=arguments.receipts_dir,
             hf_cache=arguments.hf_cache,
             runtime_executable=executable,
+            strata_speculation=arguments.strata_speculation == "on",
             memory_policy=_memory_arguments(arguments) if (arguments.idle_timeout is not None or arguments.keep_loaded or arguments.min_headroom_gb is not None) else None,
         )
         if arguments.launchd:

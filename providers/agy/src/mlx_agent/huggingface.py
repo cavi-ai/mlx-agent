@@ -550,6 +550,17 @@ class HuggingFaceClient:
         return "{0}?{1}".format(HF_API, urllib.parse.urlencode(params))
 
     @staticmethod
+    def list_mlx_conversions_url(repo, limit_fetch=8):
+        params = [
+            ("filter", "base_model:quantized:{0}".format(repo)),
+            ("filter", "mlx"),
+            ("sort", "downloads"),
+            ("direction", "-1"),
+            ("limit", limit_fetch),
+        ]
+        return "{0}?{1}".format(HF_API, urllib.parse.urlencode(params))
+
+    @staticmethod
     def list_datasets_url(search="", limit_fetch=20):
         params = {
             "sort": "downloads",
@@ -570,6 +581,10 @@ class HuggingFaceClient:
             timeout=timeout,
         )
         return rows if isinstance(rows, list) else []
+
+    def list_mlx_conversions(self, repo, limit_fetch=8, timeout=8):
+        """List MLX models quantized from a repository (read-only)."""
+        return self._http_get(self.list_mlx_conversions_url(repo, limit_fetch=limit_fetch), timeout=timeout)
 
     def list_datasets(self, search="", limit_fetch=20, timeout=10):
         """List dataset rows from the Hub (read-only)."""

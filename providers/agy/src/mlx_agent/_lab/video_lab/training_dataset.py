@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from collections.abc import Iterable
 from decimal import Decimal
 
+from video_lab.training_data import dataset_integrity_reasons
 from video_lab.training_models import (
     DatasetCoverage,
     FrozenTrainingDataset,
@@ -146,15 +146,7 @@ def _readiness_reasons(draft: TrainingDatasetDraft, coverage: DatasetCoverage) -
         synthetic_clip_weight=draft.source_tier_weights[TrainingSourceTier.SYNTHETIC_CLIP],
     ) > Decimal("0.5"):
         reasons.add("synthetic_clip_weight")
-    if len({sample.sample_id for sample in accepted}) != len(accepted):
-        reasons.add("duplicate_sample_id")
-    if len({sample.sample_digest for sample in accepted}) != len(accepted):
-        reasons.add("duplicate_content")
-    lineages: dict[str, set[str]] = defaultdict(set)
-    for sample in accepted:
-        lineages[sample.source_lineage].add(sample.split.value)
-    if any(len(splits) > 1 for splits in lineages.values()):
-        reasons.add("lineage_split_leakage")
+    reasons.update(dataset_integrity_reasons(accepted))
     if any(
         sample.annotation.canonical_outfit_id != draft.canonical_outfit_id for sample in accepted
     ):

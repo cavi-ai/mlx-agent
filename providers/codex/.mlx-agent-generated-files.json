@@ -2,7 +2,7 @@
   "files": [
     {
       "path": ".codex-plugin/plugin.json",
-      "sha256": "a7892639b87fa4cb7364b6f89d1cfc1f8565c2abd1b863eadd7b7fa38baeef9a"
+      "sha256": "8d0b0d04b9029c80eefc936a2855effa76a3de1763871b790740d1a0c53e722a"
     },
     {
       "path": "requirements-lab-inference.txt",
@@ -10,7 +10,7 @@
     },
     {
       "path": "requirements-lab.txt",
-      "sha256": "6f992dea2013d9ecf128eede9510d13438fb99a1112b68f9e63b3db34bc71bba"
+      "sha256": "d0ffe181da86e6147478d236d6f95a15be89729c5e8474938cdef4dc143c1dd9"
     },
     {
       "path": "scripts/mlx-agent",
@@ -50,7 +50,7 @@
     },
     {
       "path": "src/mlx_agent/__init__.py",
-      "sha256": "060c11cf72551b3ec85d44b0dd4afb09bc73efa76739424b06fb831dc94c5f1c"
+      "sha256": "beacc8091d745cc5174788efba19aa71d1938941fe5823695e417737efea4dc7"
     },
     {
       "path": "src/mlx_agent/__main__.py",
@@ -365,8 +365,16 @@
       "sha256": "b2fd1b25dcb1739e6f5376700321c48e1e82922951e6ce67a36a7e87af2e0d26"
     },
     {
+      "path": "src/mlx_agent/_lab/video_lab/training_data.py",
+      "sha256": "d05ecae9655f641b74229549d840a57f48db00d525f123492cf5f23c95ad2fc2"
+    },
+    {
+      "path": "src/mlx_agent/_lab/video_lab/training_data_cli.py",
+      "sha256": "2a4f41508d3447ae94e45a3dad996fd3ed16ee644d36715941cfbab2eff21909"
+    },
+    {
       "path": "src/mlx_agent/_lab/video_lab/training_dataset.py",
-      "sha256": "255f3bc3414c0d27cb3cbf7cfccc3a81021c8ce248d4e995a7c173991462ed5f"
+      "sha256": "25be426bfd98cf1858da6ed363ea6d138ddee6b370b725f9df6645ed6e24faee"
     },
     {
       "path": "src/mlx_agent/_lab/video_lab/training_media.py",
@@ -374,7 +382,7 @@
     },
     {
       "path": "src/mlx_agent/_lab/video_lab/training_models.py",
-      "sha256": "5fdfe136f93eb5c7d366a56d81416cabd9006ad1d2be83ff1b3c22b9f788081e"
+      "sha256": "15eb38816bf5d612440ab59ada8073b95bfdcf039123258c8e9d9aa45f4cd452"
     },
     {
       "path": "src/mlx_agent/_lab/video_lab/training_repository.py",
@@ -450,7 +458,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "0c129ccb7717777edcc9d53c26b7bdebccfccea7f1bce48c25bd6ce0f8c2763c"
+      "sha256": "6bed33644270805965c35dfaa3297dd848db26d5ab956d5efac0d35798d8fb3f"
     },
     {
       "path": "src/mlx_agent/command_args.py",
@@ -534,7 +542,7 @@
     },
     {
       "path": "src/mlx_agent/huggingface.py",
-      "sha256": "91d41359ce18fbc85fac4871f1e44197a55485ad44737ac1eeeb60cea4e0b804"
+      "sha256": "5c67cab17f54cc8aeeed2afaad8b5976bb81ed30ce9dea7bb55f955b86bd461f"
     },
     {
       "path": "src/mlx_agent/installer.py",
@@ -542,7 +550,7 @@
     },
     {
       "path": "src/mlx_agent/intake.py",
-      "sha256": "bc9cccb15d38c2f2418189aca5ba0fdf1b196ec5680a066daeb4501bcc9c46dc"
+      "sha256": "848be5932a3322f96f654d76ac8c6421fb5f8cb288f56f5f104f30b4e2a7a714"
     },
     {
       "path": "src/mlx_agent/intake_fetch.py",
@@ -562,7 +570,7 @@
     },
     {
       "path": "src/mlx_agent/lab.py",
-      "sha256": "7ee7dbaf5b2eea4699ef06b145ab82cbb4dc95e974c8cfdafaf64c9e2df0a08a"
+      "sha256": "0f393fc1b64ca8ce66b8ac062328491ac5c9ab0943e9ec1db10879e85d035b19"
     },
     {
       "path": "src/mlx_agent/lab_adoption.py",
@@ -742,7 +750,7 @@
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-video/t2v/__init__.py",
-      "sha256": "58ce139e1e91920dd8956e402f332ca5d608c3c8bf399eb63f3541285b2f4696"
+      "sha256": "1c5f8c84c8f50acf12911ceaf73e911dc831244d436f207358b80a6c4db9f9f0"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-video/t2v/convert.py",
@@ -751,6 +759,14 @@
     {
       "path": "src/mlx_agent/resources/ports/mlx-video/t2v/t2v.py",
       "sha256": "795091373646294e6df319a0cb6da96981a21b66d022c2acf12ff3c032d3357b"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-video/t2v/training.py",
+      "sha256": "a605a71b2ec0addbf1f852749bc65c817849180e24dcd421833b1a559a7b8d65"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-video/t2v/training_inputs.py",
+      "sha256": "9d901483823ebc15a5130438e879c2011090bd3f27189b02f3fb2dbf2e8769dc"
     },
     {
       "path": "src/mlx_agent/resources/references/model-families.md",

@@ -60,6 +60,7 @@
       "classification"
     ]
   },
+  "mlx_conversions": [],
   "transformers_version": null,
   "verdict": "convertible_after_install",
   "warnings": []

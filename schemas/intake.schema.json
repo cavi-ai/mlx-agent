@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema", "source", "verdict", "reasons", "backend", "backend_installed", "model_type",
                "components", "task", "custom_code", "gated", "library_name", "pipeline_tag",
-               "transformers_version", "bytes", "download_bytes", "estimated_output_bytes", "q_bits", "recipe", "files", "warnings"],
+               "transformers_version", "bytes", "download_bytes", "estimated_output_bytes", "q_bits", "recipe", "files", "mlx_conversions", "warnings"],
   "properties": {
     "schema": {"const": "intake/1"},
     "source": {"$ref": "#/$defs/source"},
@@ -45,6 +45,14 @@
         "python": {"type": "array", "items": {"type": "string"}}
       }
     },
+    "mlx_conversions": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false, "required": ["repo", "downloads", "library_name"],
+      "properties": {
+        "repo": {"type": "string", "minLength": 1},
+        "downloads": {"type": "integer", "minimum": 0},
+        "library_name": {"type": ["string", "null"]}
+      }
+    }},
     "warnings": {"type": "array", "items": {"type": "string"}}
   },
   "$defs": {

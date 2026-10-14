@@ -374,6 +374,15 @@ def _iter_files(roots, suffix, limit=MAX_SCAN_FILES):
         if not base.is_dir():
             continue
         for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
+            if suffix == ".gguf" and "strata-model.json" in filenames:
+                from .strata_runtime import StrataError, read_model
+                try:
+                    read_model(Path(dirpath))
+                except StrataError:
+                    pass
+                else:
+                    dirnames[:] = []
+                    continue
             dirnames[:] = sorted(
                 name for name in dirnames
                 if name not in _SKIP_DIRECTORIES and not name.startswith(".")
@@ -476,6 +485,23 @@ def scan_mlx_outputs(roots, limit=MAX_SCAN_FILES):
             if "config.json" not in filenames:
                 continue
             directory = Path(dirpath)
+            if "strata-model.json" in filenames:
+                from .strata_runtime import StrataError, read_model
+                try:
+                    profile = read_model(directory)
+                except StrataError:
+                    continue
+                resolved = directory.resolve()
+                if resolved not in seen:
+                    seen.add(resolved)
+                    outputs.append({"path": str(directory), "name": directory.name,
+                                    "model_key": _normalize_stem(directory.name), "quantization": None,
+                                    "provenance": None, "runtime": "strata", "format": "gguf",
+                                    "weight_bytes": profile["weight_bytes"]})
+                dirnames[:] = []
+                if len(seen) >= limit:
+                    return sorted(outputs, key=lambda item: item["path"])
+                continue
             if not any(name.endswith(".safetensors") for name in filenames) and not _component_weights(directory):
                 continue
             provenance = read_provenance(directory)

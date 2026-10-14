@@ -26,6 +26,22 @@ def _plan(**overrides):
 
 
 class PlanStartTests(unittest.TestCase):
+    def test_local_vq_evidence_is_reviewed_without_treating_default_bits_as_uniform(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            config = root / "config.json"
+            config.write_text(json.dumps({"quantization": {"bits": 8, "mode": "affine", "layer": {"bits": 4}},
+                                          "vq_modules": {"expert": {"bits": 2}}}))
+            (root / "model.safetensors").write_bytes(b"local")
+            plan = _plan(repo=None, path=str(root), runtime="mlx-vlm")
+            self.assertEqual(plan["weight_format"], "safetensors")
+            self.assertEqual(plan["weight_quantization"], "VQ + per-tensor affine")
+            self.assertNotIn("weights_preserved", plan)
+            config.write_text(json.dumps({"quantization": {"bits": 4, "mode": "affine"}}))
+            changed = _plan(repo=None, path=str(root), runtime="mlx-vlm")
+            self.assertEqual(changed["weight_quantization"], "affine 4-bit")
+            self.assertNotEqual(changed["preview_hash"], plan["preview_hash"])
+
     def test_default_plan(self):
         plan = _plan()
         self.assertEqual(plan["port"], 8080)

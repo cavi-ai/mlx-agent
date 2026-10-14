@@ -164,8 +164,9 @@ class ModelWorker:
         available = self.memory_probe()
         required = math.ceil(weights * 1.10 + 1.5e9 + reserve * 1e9) if weights else None
         if self.config.get("runtime") == "strata":
-            from mlx_agent.strata_runtime import read_model
-            required = math.ceil(read_model(self.config["local_path"])["memory_estimate_bytes"] + reserve * 1e9)
+            from mlx_agent.strata_runtime import read_model, memory_estimate
+            required = math.ceil(memory_estimate(read_model(self.config["local_path"]),
+                self.config.get("strata_expert_memory_gb"), self.config.get("strata_context_tokens", 131072)) + reserve * 1e9)
         with self.condition:
             self.memory_check = {"available_bytes": available, "required_available_bytes": required,
                                  "captured_at": time.time(), "estimated": True}

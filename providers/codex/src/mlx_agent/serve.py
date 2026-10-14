@@ -169,7 +169,8 @@ def resolve_serve_runtime(repo, path, runtime, recipes, hf_cache=None,
 
 def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                adapter_path=None, path=None, jit=False, receipts_dir=None, hf_cache=None, memory_policy=None,
-               runtime_executable=None, strata_speculation=False):
+               runtime_executable=None, strata_speculation=False,
+               strata_expert_memory_gb=None, strata_context_tokens=None):
     """Render the exact start plan; pure and side-effect free."""
     if memory_policy is not None:
         from .jit_serve import validate_memory_policy
@@ -243,12 +244,17 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         "runtime_adapter": str(Path(__file__).with_name("strata_runtime.py").resolve()),
     }
     strata_model = strata_runtime = None
+    if runtime != "strata" and (strata_expert_memory_gb is not None or strata_context_tokens is not None):
+        raise ServeError("invalid_arguments", "Strata memory controls require the Strata runtime.",
+                         "Select a prepared local Strata profile.")
     if runtime == "strata":
-        from .strata_runtime import StrataError, installed_runtime, read_model
+        from .strata_runtime import StrataError, installed_runtime, read_model, memory_estimate
         try:
             if not has_path or adapter_path is not None or type(strata_speculation) is not bool:
                 raise StrataError("strata_model_required", "Strata requires a local GGUF profile without a LoRA adapter.")
             strata_model = read_model(local_path)
+            strata_context_tokens = 131072 if strata_context_tokens is None else strata_context_tokens
+            strata_memory_bytes = memory_estimate(strata_model, strata_expert_memory_gb, strata_context_tokens)
             strata_runtime = installed_runtime()
             if runtime_executable is not None and runtime_executable != strata_runtime["python"]:
                 raise StrataError("strata_not_installed", "The reviewed Strata executable changed.")
@@ -258,8 +264,11 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
     argv = [part.format(**values) for part in recipe["argv"]]
     if strata_model:
         argv += ["--runtime-root", strata_runtime["root"], "--speculation", "on" if strata_speculation else "off",
+                 "--context-tokens", str(strata_context_tokens),
                  "--expected-model-fingerprint", strata_model["fingerprint"],
                  "--expected-runtime-fingerprint", strata_runtime["fingerprint"]]
+        if strata_expert_memory_gb is not None:
+            argv += ["--expert-memory-gb", str(strata_expert_memory_gb)]
     if adapter_path is not None:
         argv.extend(
             part.format(adapter_path=str(adapter_path)) for part in recipe["adapter_argv"]
@@ -279,7 +288,9 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         plan.update(strata_model_fingerprint=strata_model["fingerprint"],
                     strata_runtime_fingerprint=strata_runtime["fingerprint"],
                     weight_format="gguf", weight_quantization=strata_model["quantization"], weights_preserved=True,
-                    strata_speculation=strata_speculation, strata_memory_estimate_bytes=strata_model["memory_estimate_bytes"], readiness_deadline=900)
+                    strata_speculation=strata_speculation, strata_expert_memory_gb=strata_expert_memory_gb,
+                    strata_context_tokens=strata_context_tokens, strata_memory_estimate_bytes=strata_memory_bytes,
+                    readiness_deadline=900)
     elif has_path:
         plan.update(_local_weight_evidence(local_path))
     if jit:
@@ -417,6 +428,17 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "Re-run serve start without --confirm and review the fresh plan.",
         )
 
+    if plan["runtime"] == "strata" and not plan.get("jit"):
+        from .jit_serve import available_memory_bytes
+        available = available_memory_bytes()
+        required = plan["strata_memory_estimate_bytes"] + 2_000_000_000
+        if type(available) is not int or available < 0:
+            raise ServeError("memory_unknown", "Available memory could not be measured.",
+                             "Retry after memory reporting is available.")
+        if available < required:
+            raise ServeError("insufficient_headroom", "Insufficient memory for the reviewed Strata settings and 2 GB reserve.",
+                             "Reduce the expert budget or context capacity, or free memory.")
+
     if which(plan["argv"][0]) is None:
         recipe_hint = load_recipes()[plan["runtime"]]["install_hint"]
         raise ServeError(
@@ -488,6 +510,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             config["worker_readiness_seconds"] = plan["readiness_deadline"]
         if plan["runtime"] == "strata":
             config["runtime"] = "strata"
+            config["strata_expert_memory_gb"] = plan.get("strata_expert_memory_gb")
+            config["strata_context_tokens"] = plan.get("strata_context_tokens", 131072)
         config.update(model=plan["repo"] or plan["path"], control_token=secrets.token_hex(32),
                       memory_policy=plan.get("memory_policy"), config_path=str(config_path),
                       state_path=str(root.absolute() / "{}.jit-state.json".format(plan["port"])),

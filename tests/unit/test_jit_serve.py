@@ -10,6 +10,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from mlx_agent.jit_serve import make_server, model_fingerprint, available_memory_bytes
+from mlx_agent.lora import adapter_identity
 from mlx_agent.serve import load_recipes, plan_start, start_serve, stop_serve, unload_serve, status_serve, configure_serve_memory, ServeError
 
 
@@ -20,8 +21,12 @@ from socketserver import TCPServer
 p = argparse.ArgumentParser()
 p.add_argument('--model'); p.add_argument('--port', type=int); p.add_argument('--trace')
 p.add_argument('--host', default='127.0.0.1')
+p.add_argument('--adapter-path'); p.add_argument('--mutate-adapter', action='store_true')
 a = p.parse_args()
 with open(a.trace, 'a') as f: f.write('start\\n')
+if a.mutate_adapter:
+    from pathlib import Path
+    (Path(a.adapter_path) / 'adapter_config.json').write_text('{"changed":true}')
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args): pass
     def do_GET(self):
@@ -232,6 +237,46 @@ class JITServingTests(unittest.TestCase):
         status, body = self.request('POST', '/v1/chat/completions', {'messages': []})
         self.assertEqual(status, 503)
         self.assertEqual(body['error']['code'], 'model_changed')
+        self.assertFalse(self.trace.exists())
+
+    def use_adapter(self):
+        adapter = self.root / 'adapter'
+        adapter.mkdir()
+        (adapter / 'adapter_config.json').write_text('{}')
+        header = json.dumps({'weight': {'dtype': 'F32', 'shape': [1], 'data_offsets': [0, 4]}}).encode()
+        (adapter / 'adapters.safetensors').write_bytes(len(header).to_bytes(8, 'little') + header + b'1234')
+        self.config.update(adapter_path=str(adapter), adapter_identity=adapter_identity(adapter))
+        self.config['worker_argv'] += ['--adapter-path', str(adapter)]
+        return adapter
+
+    def test_adapter_changes_after_unload_refuse_another_worker(self):
+        adapter = self.use_adapter()
+        self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
+        self.assertEqual(self.unload()[0], 200)
+        tensor = adapter / 'adapters.safetensors'
+        tensor.write_bytes(tensor.read_bytes()[:-4] + b'5678')
+        status, body = self.request('POST', '/v1/chat/completions', {'messages': []})
+        self.assertEqual(status, 503)
+        self.assertEqual(body['error']['code'], 'adapter_changed')
+        self.assertEqual(self.trace.read_text().splitlines(), ['start'])
+        self.assertEqual(self.server.controller.status()['active_requests'], 0)
+
+    def test_adapter_changes_during_load_stop_the_worker(self):
+        self.use_adapter()
+        self.config['worker_argv'] += ['--mutate-adapter']
+        status, body = self.request('POST', '/v1/chat/completions', {'messages': []})
+        self.assertEqual(status, 503)
+        self.assertEqual(body['error']['code'], 'adapter_changed')
+        self.assertEqual(self.server.controller.status()['model_state'], 'failed')
+        self.assertIsNone(self.server.controller.process)
+        self.assertEqual(self.server.controller.status()['active_requests'], 0)
+
+    def test_legacy_adapter_without_content_identity_requires_a_fresh_preview(self):
+        self.use_adapter()
+        del self.config['adapter_identity']
+        status, body = self.request('POST', '/v1/chat/completions', {'messages': []})
+        self.assertEqual(status, 503)
+        self.assertEqual(body['error']['code'], 'adapter_changed')
         self.assertFalse(self.trace.exists())
 
     def test_confirmed_engine_gateway_unloads_without_stopping_endpoint(self):

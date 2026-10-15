@@ -1,5 +1,7 @@
 import io
 import json
+import subprocess
+import sys
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -10,6 +12,27 @@ from mlx_agent.cli import main
 
 
 class ServeCliTests(unittest.TestCase):
+    def test_adapter_byte_changes_reject_confirmed_cli_without_starting_a_server(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            adapter = root / "adapter"; adapter.mkdir()
+            (adapter / "adapter_config.json").write_text("{}")
+            header = json.dumps({"weight": {"dtype": "F32", "shape": [1], "data_offsets": [0, 4]}}).encode()
+            tensor = adapter / "adapters.safetensors"
+            tensor.write_bytes(len(header).to_bytes(8, "little") + header + b"1234")
+            script = Path(__file__).resolve().parents[2] / "scripts/mlx-agent"
+            argv = [sys.executable, str(script), "serve", "start", "--repo", "pub/model",
+                "--runtime", "mlx_lm", "--adapter-path", str(adapter), "--receipts-dir", str(root), "--json"]
+            preview = subprocess.run(argv, capture_output=True, text=True, timeout=15)
+            self.assertEqual(preview.returncode, 2, preview.stderr)
+            plan = json.loads(preview.stdout)["data"]["plan"]
+            tensor.write_bytes(tensor.read_bytes()[:-4] + b"5678")
+            confirm = subprocess.run(argv + ["--confirm", "--preview-hash", plan["preview_hash"]],
+                capture_output=True, text=True, timeout=15)
+            self.assertEqual(confirm.returncode, 2, confirm.stderr)
+            self.assertEqual(json.loads(confirm.stdout)["error"]["code"], "preview_stale")
+            self.assertFalse((root / ".mlx-agent-receipts").exists())
+
     def test_memory_policy_is_bound_to_preview_and_rejected_for_eager_serving(self):
         with TemporaryDirectory() as directory:
             (Path(directory) / 'model.safetensors').write_bytes(b'weights')

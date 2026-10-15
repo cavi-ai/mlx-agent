@@ -566,7 +566,7 @@
     },
     {
       "path": "src/mlx_agent/jit_serve.py",
-      "sha256": "e9767fe1005c24b6739f5f56a4c83a10fde3b35d0ffab137fc868e5219a0990e"
+      "sha256": "6fb8ef2e9fbb3c4040728ccfb4959df7ffceaa6934a346fdcd220c0ccbe40da4"
     },
     {
       "path": "src/mlx_agent/lab.py",
@@ -794,7 +794,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "abb17156b6963563d44a83dd98e765227396bbee6f449ec848d7a0ee52adcc0f"
+      "sha256": "cbfd81278f947aefb6e7e20cca74e2393954b486c6f9ac3583bb2d59e972b72d"
     },
     {
       "path": "src/mlx_agent/speak.py",

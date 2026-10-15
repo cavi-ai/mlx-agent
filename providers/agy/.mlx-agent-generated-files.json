@@ -586,7 +586,7 @@
     },
     {
       "path": "src/mlx_agent/lora.py",
-      "sha256": "a9861936b7d23f5b652ee2ce4c900be209b3efe161e72261e467c2569bf7fd5b"
+      "sha256": "f7af068f7d2257aff97b06eadb166215f1e36b8dbeee094708b42717797f331a"
     },
     {
       "path": "src/mlx_agent/mcp_server.py",

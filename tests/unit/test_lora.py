@@ -19,6 +19,11 @@ def _dataset(root, lines=None, name="train.jsonl"):
     return path
 
 
+def _training_dataset(root):
+    _dataset(root, ['{"text":"training example"}'] * 4)
+    _dataset(root, ['{"text":"validation example"}'] * 4, name="valid.jsonl")
+
+
 class DatasetValidationTests(unittest.TestCase):
     def test_text_dataset(self):
         with TemporaryDirectory() as directory:
@@ -36,9 +41,10 @@ class DatasetValidationTests(unittest.TestCase):
     def test_dataset_content_changes_preview_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             _dataset(directory, ['{"text":"before"}'])
-            first = plan_lora("pub/model", directory)
+            _dataset(directory, name="valid.jsonl")
+            first = plan_lora("pub/model", directory, batch_size=1)
             _dataset(directory, ['{"text":"after"}'])
-            self.assertNotEqual(first["preview_hash"], plan_lora("pub/model", directory)["preview_hash"])
+            self.assertNotEqual(first["preview_hash"], plan_lora("pub/model", directory, batch_size=1)["preview_hash"])
 
     def test_messages_dataset(self):
         with TemporaryDirectory() as directory:
@@ -89,20 +95,44 @@ class PlanLoraTests(unittest.TestCase):
     def setUp(self):
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        _dataset(self.directory.name)
+        _training_dataset(self.directory.name)
 
     def test_default_plan(self):
         plan = plan_lora("pub/model", self.directory.name)
         self.assertEqual(plan["out"], str(Path.cwd() / "model-lora"))
         self.assertEqual(plan["argv"][0], "mlx_lm.lora")
         self.assertIn("--adapter-path", plan["argv"])
-        self.assertEqual(plan["dataset"]["train_lines"], 1)
+        self.assertEqual(plan["dataset"]["train_lines"], 4)
         self.assertEqual(len(plan["preview_hash"]), 64)
 
     def test_invalid_repo(self):
         with self.assertRaises(LoraError) as caught:
             plan_lora("bad", self.directory.name)
         self.assertEqual(caught.exception.code, "invalid_repo")
+
+    def test_missing_validation_is_rejected_before_a_plan(self):
+        _dataset(self.directory.name, ['{"text":"train"}'] * 4)
+        (Path(self.directory.name) / "valid.jsonl").unlink()
+        with self.assertRaises(LoraError) as caught:
+            plan_lora("pub/model", self.directory.name)
+        self.assertEqual(caught.exception.code, "validation_required")
+        self.assertIn("valid.jsonl", str(caught.exception))
+
+    def test_each_split_must_support_the_reviewed_batch_size(self):
+        for training, validation in [(1, 4), (4, 1)]:
+            with self.subTest(training=training, validation=validation):
+                _dataset(self.directory.name, ['{"text":"train"}'] * training)
+                _dataset(self.directory.name, ['{"text":"validate"}'] * validation, name="valid.jsonl")
+                with self.assertRaises(LoraError) as caught:
+                    plan_lora("pub/model", self.directory.name)
+                self.assertEqual(caught.exception.code, "dataset_too_small")
+
+    def test_explicit_single_example_batches_keep_the_requested_setting(self):
+        _dataset(self.directory.name)
+        _dataset(self.directory.name, name="valid.jsonl")
+        plan = plan_lora("pub/model", self.directory.name, batch_size=1)
+        self.assertEqual(plan["batch_size"], 1)
+        self.assertEqual(plan["argv"][plan["argv"].index("--batch-size") + 1], "1")
 
     def test_hyperparameter_bounds(self):
         with self.assertRaises(LoraError):
@@ -121,7 +151,7 @@ class StartLoraTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
         (self.root / "data").mkdir()
-        _dataset(str(self.root / "data"))
+        _training_dataset(self.root / "data")
         self.plan = plan_lora(
             "pub/model", str(self.root / "data"), out=str(self.root / "adapter")
         )
@@ -195,7 +225,7 @@ class StatusLoraTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
         (self.root / "data").mkdir()
-        _dataset(str(self.root / "data"))
+        _training_dataset(self.root / "data")
 
     def _start_one(self, out):
         plan = plan_lora("pub/model", str(self.root / "data"), out=str(out))

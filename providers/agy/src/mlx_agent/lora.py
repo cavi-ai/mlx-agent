@@ -194,6 +194,18 @@ def plan_lora(repo, data, iters=ITERS_DEFAULT, batch_size=BATCH_DEFAULT,
         )
     _validate_hyperparameters(iters, batch_size, learning_rate, num_layers)
     dataset = validate_dataset(data)
+    if not dataset["valid_lines"]:
+        raise LoraError(
+            "validation_required", "Training requires a nonempty valid.jsonl validation set.",
+            "Provide separate training and validation examples; the MLX-LM trainer requires both splits.",
+        )
+    for filename, key in (("train.jsonl", "train_lines"), ("valid.jsonl", "valid_lines")):
+        if dataset[key] < batch_size:
+            raise LoraError(
+                "dataset_too_small",
+                "{0} has {1} examples, fewer than batch-size {2}.".format(filename, dataset[key], batch_size),
+                "Reduce --batch-size or add examples to this split, then preview again.",
+            )
     from .convert import cached_snapshot
     from .jit_serve import model_fingerprint
     snapshot = cached_snapshot(repo)

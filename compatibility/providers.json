@@ -112,6 +112,60 @@
         "model_backed_invocation": {"status": "blocked", "summary": "The native invocation reached the configured provider, but the provider response was blocked by unavailable network access."}
       }
     },
+    "openclaw": {
+      "id": "openclaw",
+      "display_name": "OpenClaw",
+      "documentation": "docs/install/openclaw.md",
+      "minimum_version": "2026.10.3",
+      "last_tested_version": "2026.10.3",
+      "scopes": ["user", "project"],
+      "config_paths": ["$OPENCLAW_STATE_DIR/skills", "<workspace>/skills"],
+      "capabilities": {
+        "scout": {"command": "mlx-scout", "invocation": "/mlx-scout"},
+        "adopt": {"command": "mlx-adopt", "invocation": "/mlx-adopt"},
+        "wire": {"command": "mlx-wire", "invocation": "/mlx-wire"},
+        "bench": {"command": "mlx-bench", "invocation": "/mlx-bench"},
+        "doctor": {"command": "mlx-doctor", "invocation": "/mlx-doctor"},
+        "watch": {"command": "mlx-watch", "invocation": "/mlx-watch"},
+        "fleet": {"command": "mlx-fleet", "invocation": "/mlx-fleet"}
+      },
+      "last_smoke_test": {"status": "fixture", "date": "2026-10-15", "summary": "OpenClaw 2026.10.3 listed all seven skills as eligible and user-invocable from the managed root after a user install and from the workspace root after a project install, and listed none after uninstall. The installed launcher returned fixture-backed Scout output."},
+      "release_evidence": {"id": "rc-2026-10-15-openclaw", "status": "fixture", "date": "2026-10-15", "environment": "macOS arm64, isolated OPENCLAW_STATE_DIR, workspace, and gateway port", "cli_version": "2026.10.3", "scopes_tested": ["user", "project"], "native_discovery": "openclaw skills list reported all seven skills in both scopes", "fixture_bundle": "passed", "uninstall": "passed"},
+      "evidence": {
+        "schema": {"status": "supported", "summary": "OpenClaw skill-root layout validation is covered by provider and installer tests."},
+        "install_round_trip": {"status": "supported", "summary": "OpenClaw 2026.10.3 listed the skills after user and project installs and none after receipt-owned uninstall."},
+        "native_discovery": {"status": "supported", "summary": "openclaw skills list reported all seven skills as eligible and user-invocable from the managed and workspace roots."},
+        "bundle_execution": {"status": "fixture", "summary": "The installed OpenClaw mlx-scout launcher returned fixture-backed Scout output."},
+        "model_backed_invocation": {"status": "not-run", "summary": "No model-backed OpenClaw invocation was tested."}
+      }
+    },
+    "hermes": {
+      "id": "hermes",
+      "display_name": "Hermes Agent",
+      "documentation": "docs/install/hermes.md",
+      "minimum_version": "0.19.1",
+      "last_tested_version": "0.19.1",
+      "scopes": ["user", "project"],
+      "config_paths": ["$HERMES_HOME/skills", "<project>/.hermes/skills"],
+      "capabilities": {
+        "scout": {"command": "mlx-scout", "invocation": "/mlx-scout"},
+        "adopt": {"command": "mlx-adopt", "invocation": "/mlx-adopt"},
+        "wire": {"command": "mlx-wire", "invocation": "/mlx-wire"},
+        "bench": {"command": "mlx-bench", "invocation": "/mlx-bench"},
+        "doctor": {"command": "mlx-doctor", "invocation": "/mlx-doctor"},
+        "watch": {"command": "mlx-watch", "invocation": "/mlx-watch"},
+        "fleet": {"command": "mlx-fleet", "invocation": "/mlx-fleet"}
+      },
+      "last_smoke_test": {"status": "fixture", "date": "2026-10-15", "summary": "Hermes Agent 0.19.1 listed all seven skills after a user install and none after uninstall. It does not read project skill directories, so the project install was not listed. The installed launcher returned fixture-backed Scout output."},
+      "release_evidence": {"id": "rc-2026-10-15-hermes", "status": "fixture", "date": "2026-10-15", "environment": "macOS arm64, isolated HERMES_HOME and project", "cli_version": "0.19.1", "scopes_tested": ["user", "project"], "native_discovery": "hermes skills list reported all seven user-scope skills; 0.19.1 has no project skill discovery", "fixture_bundle": "passed", "uninstall": "passed"},
+      "evidence": {
+        "schema": {"status": "supported", "summary": "Hermes skill-root layout validation is covered by provider and installer tests."},
+        "install_round_trip": {"status": "supported", "summary": "Hermes Agent 0.19.1 listed the user-scope skills after install and none after receipt-owned uninstall."},
+        "native_discovery": {"status": "supported", "summary": "hermes skills list reported all seven user-scope skills; project skill directories need a Hermes release with project skill discovery."},
+        "bundle_execution": {"status": "fixture", "summary": "The installed Hermes mlx-scout launcher returned fixture-backed Scout output."},
+        "model_backed_invocation": {"status": "not-run", "summary": "No model-backed Hermes invocation was tested."}
+      }
+    },
     "agentskills": {
       "id": "agentskills",
       "display_name": "AgentSkills-compatible hosts",

@@ -25,8 +25,8 @@ TOOL_USE_DOC_PATHS = (
     ROOT / "docs" / "guides" / "adopt.md",
     ROOT / "docs" / "security.md",
 )
-PROVIDERS = ("claude", "codex", "agy", "opencode", "agentskills")
-NATIVE_PROVIDERS = ("claude", "codex", "agy", "opencode")
+PROVIDERS = ("claude", "codex", "agy", "opencode", "openclaw", "hermes", "agentskills")
+NATIVE_PROVIDERS = ("claude", "codex", "agy", "opencode", "openclaw", "hermes")
 COMMANDS = ("mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet")
 EVIDENCE_FIELDS = ("schema", "install_round_trip", "native_discovery", "bundle_execution", "model_backed_invocation")
 
@@ -179,6 +179,7 @@ class DocumentationContractTests(unittest.TestCase):
             "agy plugin install ./mlx-agent/providers/agy",
             "python3 scripts/mlx-agent install opencode --scope user --dry-run --json",
             "python3 scripts/mlx-agent install agentskills --scope user --dry-run --json",
+            "python3 scripts/mlx-agent install openclaw --scope user --dry-run --json",
         )
         for command in commands:
             with self.subTest(command=command):

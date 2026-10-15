@@ -916,6 +916,7 @@ def _add_serve_arguments(parser):
     start.add_argument("--port", type=int, default=None, help="loopback port (defaults per runtime recipe)")
     start.add_argument("--max-tokens", type=int, default=MAX_TOKENS_DEFAULT)
     start.add_argument("--adapter-path", default=None, help="LoRA adapter directory (mlx_lm only)")
+    start.add_argument("--training-receipt", default=None, help="completed LoRA receipt selecting its pinned base and adapter")
     start.add_argument("--jit", action="store_true", help="keep endpoint reachable; load local weights on inference requests")
     _add_memory_arguments(start)
     start.add_argument("--launchd", action="store_true", help="install a launchd agent plist instead of spawning now")
@@ -982,8 +983,12 @@ def _run_serve(arguments):
             return _emit_serve_result(ResultEnvelope.ok(operation, outcome), arguments.json,
                                       human="JIT memory policy saved and applied on port {}.".format(arguments.port))
         recipes = load_recipes()
+        if arguments.training_receipt and arguments.launchd:
+            raise ServeError("invalid_arguments", "Receipt-bound adapter serving requires supervised startup.",
+                             "Use serve start without --launchd.")
+        selected_runtime = "mlx_lm" if arguments.training_receipt and arguments.runtime == "auto" else arguments.runtime
         runtime, executable = resolve_serve_runtime(
-            arguments.repo, arguments.path, arguments.runtime, recipes, hf_cache=arguments.hf_cache)
+            arguments.repo, arguments.path, selected_runtime, recipes, hf_cache=arguments.hf_cache)
         if arguments.strata_speculation is not None and runtime != "strata":
             raise ServeError("invalid_arguments", "--strata-speculation requires the Strata runtime.", "Select a prepared local Strata profile.")
         plan = plan_start(
@@ -993,6 +998,7 @@ def _run_serve(arguments):
             port=arguments.port,
             max_tokens=arguments.max_tokens,
             adapter_path=arguments.adapter_path,
+            training_receipt=arguments.training_receipt,
             path=arguments.path,
             jit=arguments.jit,
             receipts_dir=arguments.receipts_dir,

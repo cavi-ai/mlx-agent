@@ -1,4 +1,5 @@
 import json
+import hashlib
 import signal
 import unittest
 import unittest.mock
@@ -147,6 +148,99 @@ class PlanStartTests(unittest.TestCase):
             _plan(port=0)
         with self.assertRaises(ServeError):
             _plan(port=70000)
+
+
+class TrainingReceiptServeTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.model = self.root / "base"; self.model.mkdir()
+        (self.model / "config.json").write_text('{"model_type":"llama"}')
+        (self.model / "model.safetensors").write_bytes(b"local-base")
+        self.adapter = _adapter(self.root / "adapter")
+        from mlx_agent.lora import adapter_identity
+        from mlx_agent.jit_serve import model_fingerprint
+        self.receipt = self.root / "training.json"
+        self.record = {"kind": "lora", "pid": 9, "argv": [], "repo": "pub/model", "run_id": "run-a",
+            "out": str(self.adapter), "exit_status": "done", "adapter_identity": adapter_identity(self.adapter),
+            "base_identity": {"path": str(self.model), "fingerprint": model_fingerprint(self.model)}}
+        self.receipt.write_text(json.dumps(self.record))
+
+    def plan(self, **options):
+        return _plan(repo=None, training_receipt=str(self.receipt), **options)
+
+    def test_completed_receipt_selects_the_pinned_base_and_adapter(self):
+        plan = self.plan()
+        self.assertIsNone(plan["repo"])
+        self.assertEqual(plan["path"], str(self.model))
+        self.assertEqual(plan["adapter_path"], str(self.adapter))
+        binding = plan["training_binding"]
+        self.assertEqual(binding["training_receipt"], str(self.receipt))
+        self.assertEqual(binding["training_receipt_sha256"], hashlib.sha256(self.receipt.read_bytes()).hexdigest())
+        self.assertEqual(binding["adapter_identity"], plan["adapter_identity"])
+        self.assertEqual(binding["base_fingerprint"], self.record["base_identity"]["fingerprint"])
+
+    def test_evaluation_and_serving_use_the_same_receipt_artifacts(self):
+        from mlx_agent.training_evaluation import preview
+        evaluation = preview(str(self.receipt), "A controlled prompt")
+        serving = self.plan()["training_binding"]
+        for key in ["training_receipt", "training_receipt_sha256", "base_path", "adapter_path", "adapter_identity"]:
+            self.assertEqual(evaluation[key], serving[key])
+
+    def test_receipt_cannot_be_combined_with_other_model_or_adapter_inputs(self):
+        for options in [{"repo": "other/model"}, {"path": str(self.model)}, {"adapter_path": str(self.adapter)}]:
+            with self.assertRaises(ServeError) as caught:
+                plan_start(options.pop("repo", None), "mlx_lm", RECIPES, training_receipt=str(self.receipt), **options)
+            self.assertEqual(caught.exception.code, "invalid_arguments")
+
+    def test_unfinished_historical_or_changed_artifacts_cannot_be_selected(self):
+        for change in [{"exit_status": "running"}, {"base_identity": None}, {"adapter_identity": {}}]:
+            self.receipt.write_text(json.dumps(dict(self.record, **change)))
+            with self.assertRaises(ServeError) as caught:
+                self.plan()
+            self.assertEqual(caught.exception.code, "invalid_training_receipt")
+        self.receipt.write_text(json.dumps(self.record))
+        (self.model / "config.json").write_text('{"changed":true}')
+        with self.assertRaises(ServeError): self.plan()
+
+    def test_changed_receipt_revokes_a_reviewed_plan_before_runtime_checks(self):
+        plan = self.plan()
+        self.receipt.write_text(json.dumps(dict(self.record, run_id="changed")))
+        with self.assertRaises(ServeError) as caught:
+            start_serve(plan, receipts_dir=str(self.root), confirm=True, preview_hash=plan["preview_hash"], which=lambda _: None)
+        self.assertEqual(caught.exception.code, "training_receipt_changed")
+        self.assertFalse((self.root / ".mlx-agent-receipts").exists())
+
+    def test_changed_base_revokes_a_reviewed_plan(self):
+        plan = self.plan()
+        (self.model / "config.json").write_text('{"changed":true}')
+        with self.assertRaises(ServeError) as caught:
+            start_serve(plan, receipts_dir=str(self.root), confirm=True, preview_hash=plan["preview_hash"], which=lambda _: None)
+        self.assertEqual(caught.exception.code, "training_receipt_changed")
+
+    def test_training_binding_is_retained_by_jit_config_receipt_and_status(self):
+        plan = self.plan(jit=True, receipts_dir=str(self.root))
+        outcome = start_serve(plan, receipts_dir=str(self.root), confirm=True, preview_hash=plan["preview_hash"],
+            which=lambda _: "/python", port_free=lambda _: True, spawn=lambda *_: 4242, readiness=lambda *_: True)
+        receipt = outcome["receipt"]
+        config = json.loads(Path(plan["control_config"]).read_text())
+        status = status_serve(str(self.root), pid_alive=lambda _: False)[0]
+        for record in [receipt, config, status]:
+            self.assertEqual(record["training_binding"], plan["training_binding"])
+
+    def test_receipt_changes_during_startup_do_not_publish_a_server(self):
+        plan = self.plan()
+        def ready(*_):
+            self.receipt.write_text(json.dumps(dict(self.record, run_id="changed")))
+            return True
+        with unittest.mock.patch("mlx_agent.serve._terminate_pid") as stop:
+            with self.assertRaises(ServeError) as caught:
+                start_serve(plan, receipts_dir=str(self.root), confirm=True, preview_hash=plan["preview_hash"],
+                    which=lambda _: "/python", port_free=lambda _: True, spawn=lambda *_: 4242, readiness=ready)
+        self.assertEqual(caught.exception.code, "training_receipt_changed")
+        stop.assert_called_once_with(4242)
+        self.assertFalse((self.root / ".mlx-agent-receipts/serve/8080.json").exists())
 
 
 class StartServeTests(unittest.TestCase):

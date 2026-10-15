@@ -93,7 +93,7 @@ class PlanLoraTests(unittest.TestCase):
 
     def test_default_plan(self):
         plan = plan_lora("pub/model", self.directory.name)
-        self.assertEqual(plan["out"], "model-lora")
+        self.assertEqual(plan["out"], str(Path.cwd() / "model-lora"))
         self.assertEqual(plan["argv"][0], "mlx_lm.lora")
         self.assertIn("--adapter-path", plan["argv"])
         self.assertEqual(plan["dataset"]["train_lines"], 1)

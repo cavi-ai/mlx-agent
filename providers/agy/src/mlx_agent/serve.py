@@ -193,11 +193,40 @@ def _require_adapter_identity(plan):
                      "Review a fresh serve plan before starting this adapter.")
 
 
+def _require_training_binding(plan):
+    binding = plan.get("training_binding")
+    if binding is None:
+        return
+    try:
+        from .training_artifacts import read_trained_adapter
+        _, current = read_trained_adapter(binding["training_receipt"])
+        if current == binding:
+            return
+    except (OSError, ValueError, TypeError, KeyError):
+        pass
+    raise ServeError("training_receipt_changed", "The training receipt or its pinned artifacts changed.",
+                     "Review a fresh serving preview for the completed training receipt.")
+
+
 def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                adapter_path=None, path=None, jit=False, receipts_dir=None, hf_cache=None, memory_policy=None,
                runtime_executable=None, strata_speculation=False,
-               strata_expert_memory_gb=None, strata_context_tokens=None):
+               strata_expert_memory_gb=None, strata_context_tokens=None, training_receipt=None):
     """Render the start plan and local file identities without side effects."""
+    binding = None
+    if training_receipt is not None:
+        if repo is not None or path is not None or adapter_path is not None:
+            raise ServeError("invalid_arguments", "A training receipt selects its own base model and adapter.",
+                             "Use --training-receipt without --repo, --path or --adapter-path.")
+        if runtime != "mlx_lm":
+            raise ServeError("unsupported_runtime", "Text training receipts require the MLX-LM serving runtime.",
+                             "Use --runtime auto or mlx_lm.")
+        try:
+            from .training_artifacts import read_trained_adapter
+            _, binding = read_trained_adapter(training_receipt)
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            raise ServeError("invalid_training_receipt", str(error), "Select a completed receipt whose base and adapter files are unchanged.") from error
+        path, adapter_path = binding["base_path"], binding["adapter_path"]
     if memory_policy is not None:
         from .jit_serve import validate_memory_policy
         try:
@@ -324,6 +353,8 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         plan.update(_local_weight_evidence(local_path))
     if adapter_path is not None:
         plan["adapter_identity"] = adapter_identity
+    if binding is not None:
+        plan["training_binding"] = binding
     if jit:
         from .convert import cached_snapshot
         from .jit_serve import model_fingerprint
@@ -458,6 +489,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "The supplied preview hash does not match this start plan.",
             "Re-run serve start without --confirm and review the fresh plan.",
         )
+    _require_training_binding(plan)
     _require_adapter_identity(plan)
 
     if plan["runtime"] == "strata" and not plan.get("jit"):
@@ -533,6 +565,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         config = {key: plan[key] for key in ("local_path", "fingerprint", "worker_argv", "max_tokens")}
         if plan.get("adapter_path") is not None:
             config.update(adapter_path=plan["adapter_path"], adapter_identity=plan["adapter_identity"])
+        if plan.get("training_binding") is not None:
+            config["training_binding"] = plan["training_binding"]
         if "readiness_deadline" in plan:
             config["worker_readiness_seconds"] = plan["readiness_deadline"]
         if plan["runtime"] == "strata":
@@ -553,6 +587,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "Inspect the serve log at {0}.".format(log_path),
         )
     try:
+        _require_training_binding(plan)
         _require_adapter_identity(plan)
     except ServeError:
         _terminate_pid(pid)
@@ -576,6 +611,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         receipt["jit"] = True
     if plan.get("adapter_path") is not None:
         receipt.update(adapter_path=plan["adapter_path"], adapter_identity=plan["adapter_identity"])
+    if plan.get("training_binding") is not None:
+        receipt["training_binding"] = plan["training_binding"]
     content = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     _atomic_in_directory(root, receipt_path.name, content, 0o600)
     return {"status": "started", "receipt": receipt}
@@ -622,6 +659,8 @@ def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_comma
             "started_at": receipt.get("started_at"),
         })
         entries[-1].update(_adapter_metadata(receipt, root))
+        if receipt.get("training_binding") is not None:
+            entries[-1]["training_binding"] = receipt["training_binding"]
         if receipt.get("jit"):
             entries[-1]["jit"] = True
             if alive and entries[-1]["argv_match"]:

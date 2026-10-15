@@ -12,6 +12,41 @@ from mlx_agent.cli import main
 
 
 class ServeCliTests(unittest.TestCase):
+    def test_training_receipt_cli_uses_auto_runtime_and_refuses_stale_confirmation(self):
+        from mlx_agent.lora import adapter_identity
+        from mlx_agent.jit_serve import model_fingerprint
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            model = root / "model"; model.mkdir()
+            (model / "config.json").write_text('{"model_type":"llama"}')
+            (model / "model.safetensors").write_bytes(b"local")
+            adapter = root / "adapter"; adapter.mkdir()
+            (adapter / "adapter_config.json").write_text("{}")
+            header = json.dumps({"weight": {"dtype": "F32", "shape": [1], "data_offsets": [0, 4]}}).encode()
+            (adapter / "adapters.safetensors").write_bytes(len(header).to_bytes(8, "little") + header + b"1234")
+            receipt = root / "trained.json"
+            record = {"kind": "lora", "exit_status": "done", "pid": 9, "argv": [], "repo": "pub/model",
+                "run_id": "run-a", "out": str(adapter), "adapter_identity": adapter_identity(adapter),
+                "base_identity": {"path": str(model), "fingerprint": model_fingerprint(model)}}
+            receipt.write_text(json.dumps(record))
+            script = Path(__file__).resolve().parents[2] / "scripts/mlx-agent"
+            argv = [sys.executable, str(script), "serve", "start", "--training-receipt", str(receipt),
+                "--runtime", "auto", "--receipts-dir", str(root), "--json"]
+            preview = subprocess.run(argv, capture_output=True, text=True, timeout=15)
+            self.assertEqual(preview.returncode, 2, preview.stderr)
+            plan = json.loads(preview.stdout)["data"]["plan"]
+            self.assertEqual(plan["runtime"], "mlx_lm")
+            self.assertEqual(plan["path"], str(model))
+            self.assertEqual(plan["adapter_path"], str(adapter))
+            receipt.write_text(json.dumps(dict(record, run_id="changed")))
+            confirm = subprocess.run(argv + ["--confirm", "--preview-hash", plan["preview_hash"]],
+                capture_output=True, text=True, timeout=15)
+            self.assertEqual(confirm.returncode, 2, confirm.stderr)
+            self.assertEqual(json.loads(confirm.stdout)["error"]["code"], "preview_stale")
+            self.assertFalse((root / ".mlx-agent-receipts").exists())
+            deferred = subprocess.run(argv + ["--launchd"], capture_output=True, text=True, timeout=15)
+            self.assertEqual(json.loads(deferred.stdout)["error"]["code"], "invalid_arguments")
+
     def test_adapter_byte_changes_reject_confirmed_cli_without_starting_a_server(self):
         with TemporaryDirectory() as folder:
             root = Path(folder)

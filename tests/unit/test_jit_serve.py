@@ -279,6 +279,37 @@ class JITServingTests(unittest.TestCase):
         self.assertEqual(body['error']['code'], 'adapter_changed')
         self.assertFalse(self.trace.exists())
 
+    def test_training_receipt_changes_after_unload_refuse_another_worker(self):
+        adapter = self.use_adapter()
+        receipt = self.root / 'training.json'
+        record = {'kind': 'lora', 'exit_status': 'done', 'pid': 9, 'argv': [], 'repo': 'pub/model',
+            'run_id': 'run-a', 'out': str(adapter), 'adapter_identity': self.config['adapter_identity'],
+            'base_identity': {'path': str(self.model), 'fingerprint': self.config['fingerprint']}}
+        receipt.write_text(json.dumps(record))
+        plan = plan_start(None, 'mlx_lm', load_recipes(), training_receipt=str(receipt))
+        self.config['training_binding'] = plan['training_binding']
+        self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
+        self.assertEqual(self.unload()[0], 200)
+        receipt.write_text(json.dumps(dict(record, run_id='changed')))
+        status, body = self.request('POST', '/v1/chat/completions', {'messages': []})
+        self.assertEqual(status, 503)
+        self.assertEqual(body['error']['code'], 'training_receipt_changed')
+        self.assertEqual(self.trace.read_text().splitlines(), ['start'])
+
+    def test_memory_admission_includes_adapter_tensor_bytes(self):
+        import math
+        self.use_adapter()
+        base_bytes = (self.model / 'model.safetensors').stat().st_size
+        adapter_bytes = self.config['adapter_identity']['adapters.safetensors']['bytes']
+        required = math.ceil((base_bytes + adapter_bytes) * 1.10 + 1.5e9)
+        self.server.controller.memory_probe = lambda: required - 1
+        self.assertEqual(self.configure({'minimum_headroom_gb': 0})[0], 200)
+        status, body = self.request('POST', '/v1/chat/completions', {'messages': []})
+        self.assertEqual(status, 503)
+        self.assertEqual(body['error']['code'], 'insufficient_headroom')
+        self.assertEqual(self.server.controller.status()['memory_check']['required_available_bytes'], required)
+        self.assertFalse(self.trace.exists())
+
     def test_confirmed_engine_gateway_unloads_without_stopping_endpoint(self):
         recipes = load_recipes()
         recipes['mlx_lm'] = dict(recipes['mlx_lm'], executable=sys.executable,

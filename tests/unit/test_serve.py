@@ -19,6 +19,14 @@ from mlx_agent.serve import (
 RECIPES = load_recipes()
 
 
+def _adapter(root):
+    root.mkdir()
+    (root / "adapter_config.json").write_text("{}")
+    header = json.dumps({"weight": {"dtype": "F32", "shape": [1], "data_offsets": [0, 4]}}).encode()
+    (root / "adapters.safetensors").write_bytes(len(header).to_bytes(8, "little") + header + b"1234")
+    return root
+
+
 def _plan(**overrides):
     values = {"repo": "pub/model", "runtime": "mlx_lm"}
     values.update(overrides)
@@ -62,8 +70,32 @@ class PlanStartTests(unittest.TestCase):
         self.assertEqual(plan["argv"][0], "mlx_vlm.server")
 
     def test_adapter_path_appends_adapter_argv(self):
-        plan = _plan(adapter_path="/tmp/adapters")
-        self.assertEqual(plan["argv"][-2:], ["--adapter-path", "/tmp/adapters"])
+        with TemporaryDirectory() as folder:
+            adapter = _adapter(Path(folder) / "adapter")
+            plan = _plan(adapter_path=str(adapter))
+            self.assertEqual(plan["argv"][-2:], ["--adapter-path", str(adapter)])
+
+    def test_adapter_content_changes_the_reviewed_hash(self):
+        with TemporaryDirectory() as folder:
+            adapter = _adapter(Path(folder) / "adapter")
+            first = _plan(adapter_path=str(adapter))
+            self.assertIn("adapters.safetensors", first["adapter_identity"])
+            (adapter / "adapter_config.json").write_text('{"rank":4}')
+            second = _plan(adapter_path=str(adapter))
+            self.assertNotEqual(first["preview_hash"], second["preview_hash"])
+            tensor = adapter / "adapters.safetensors"
+            tensor.write_bytes(tensor.read_bytes()[:-4] + b"5678")
+            self.assertNotEqual(second["preview_hash"], _plan(adapter_path=str(adapter))["preview_hash"])
+
+    def test_invalid_and_linked_adapters_are_refused_at_preview(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            adapter = _adapter(root / "adapter")
+            link = root / "linked"; link.symlink_to(adapter, target_is_directory=True)
+            for path in [root, root / "missing", link]:
+                with self.assertRaises(ServeError) as caught:
+                    _plan(adapter_path=str(path))
+                self.assertEqual(caught.exception.code, "invalid_adapter")
 
     def test_adapter_rejected_for_vlm(self):
         with self.assertRaises(ServeError) as caught:
@@ -211,8 +243,64 @@ class StartServeTests(unittest.TestCase):
 
     def test_missing_adapter_path(self):
         with self.assertRaises(ServeError) as caught:
-            self._start(_plan(adapter_path="/tmp/definitely-missing-adapters"))
-        self.assertEqual(caught.exception.code, "invalid_arguments")
+            _plan(adapter_path=str(self.root / "missing-adapter"))
+        self.assertEqual(caught.exception.code, "invalid_adapter")
+
+    def test_adapter_drift_refuses_confirmation_before_spawn(self):
+        adapter = _adapter(self.root / "adapter")
+        plan = _plan(adapter_path=str(adapter))
+        (adapter / "adapter_config.json").write_text('{"rank":8}')
+        with self.assertRaises(ServeError) as caught:
+            self._start(plan)
+        self.assertEqual(caught.exception.code, "adapter_changed")
+        self.assertEqual(self.spawned, [])
+
+    def test_adapter_drift_during_load_stops_only_the_started_process(self):
+        adapter = _adapter(self.root / "adapter")
+        plan = _plan(adapter_path=str(adapter))
+        def ready(*_):
+            (adapter / "adapter_config.json").write_text('{"rank":8}')
+            return True
+        with unittest.mock.patch("mlx_agent.serve._terminate_pid") as stop:
+            with self.assertRaises(ServeError) as caught:
+                self._start(plan, readiness=ready)
+        self.assertEqual(caught.exception.code, "adapter_changed")
+        stop.assert_called_once_with(4242)
+        self.assertFalse((self.root / ".mlx-agent-receipts/serve/8080.json").exists())
+
+    def test_adapter_identity_survives_receipts_status_and_jit_config(self):
+        adapter = _adapter(self.root / "adapter")
+        model = self.root / "model"; model.mkdir()
+        (model / "model.safetensors").write_bytes(b"local")
+        plan = _plan(repo=None, path=str(model), adapter_path=str(adapter), jit=True, receipts_dir=str(self.root))
+        receipt = self._start(plan)["receipt"]
+        config = json.loads(Path(plan["control_config"]).read_text())
+        for record in [receipt, config]:
+            self.assertEqual(record["adapter_path"], str(adapter))
+            self.assertEqual(record["adapter_identity"], plan["adapter_identity"])
+        status = status_serve(str(self.root), pid_alive=lambda _: False)[0]
+        self.assertEqual(status["adapter_path"], str(adapter))
+        self.assertEqual(status["adapter_identity"], plan["adapter_identity"])
+        receipt_file = Path(status["receipt"])
+        legacy = json.loads(receipt_file.read_text())
+        legacy.pop("adapter_path"); legacy.pop("adapter_identity")
+        receipt_file.write_text(json.dumps(legacy))
+        legacy_status = status_serve(str(self.root), pid_alive=lambda _: False)[0]
+        self.assertEqual(legacy_status["adapter_path"], str(adapter))
+        self.assertIsNone(legacy_status["adapter_identity"])
+        Path(plan["control_config"]).unlink()
+        self.assertEqual(status_serve(str(self.root), pid_alive=lambda _: False)[0]["adapter_status"], "unknown")
+
+    def test_eager_adapter_receipt_requires_adapter_arguments_in_the_process(self):
+        adapter = _adapter(self.root / "adapter")
+        plan = _plan(adapter_path=str(adapter))
+        self._start(plan)
+        command = " ".join(plan["argv"][:-2])
+        self.assertFalse(status_serve(str(self.root), pid_alive=lambda _: True,
+            pid_command=lambda _: command)[0]["argv_match"])
+        command = " ".join(plan["argv"])
+        self.assertTrue(status_serve(str(self.root), pid_alive=lambda _: True,
+            pid_command=lambda _: command)[0]["argv_match"])
 
     def test_readiness_timeout_terminates_child(self):
         terminated = []

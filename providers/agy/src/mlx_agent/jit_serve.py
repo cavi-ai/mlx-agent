@@ -206,10 +206,24 @@ class ModelWorker:
             self.release()
             raise
 
+    def _check_adapter(self):
+        argv = self.config["worker_argv"]
+        path = self.config.get("adapter_path")
+        if path is None and "--adapter-path" not in argv:
+            return
+        from mlx_agent.lora import adapter_identity
+        if (not isinstance(path, str) or "--adapter-path" not in argv
+                or argv.index("--adapter-path") + 1 >= len(argv)
+                or argv[argv.index("--adapter-path") + 1] != path
+                or not self.config.get("adapter_identity")
+                or adapter_identity(path) != self.config["adapter_identity"]):
+            raise GatewayError(503, "adapter_changed", "Adapter files changed or have no reviewed identity. Stop and review a fresh serve plan.")
+
     def _start(self):
         try:
             if model_fingerprint(self.config["local_path"]) != self.config["fingerprint"]:
                 raise GatewayError(503, "model_changed", "Model files changed. Stop and review a fresh serve plan.")
+            self._check_adapter()
             self._check_memory()
             with socket.socket() as reservation:
                 reservation.bind(("127.0.0.1", 0))
@@ -243,6 +257,7 @@ class ModelWorker:
                 raise GatewayError(503, "model_load_failed", "Model worker did not become ready in 60 seconds.")
             if model_fingerprint(self.config["local_path"]) != self.config["fingerprint"]:
                 raise GatewayError(503, "model_changed", "Model files changed while loading.")
+            self._check_adapter()
             with self.condition:
                 if self.closed:
                     raise GatewayError(503, "endpoint_stopping", "Endpoint is stopping.")

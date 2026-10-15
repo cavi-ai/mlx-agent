@@ -167,11 +167,37 @@ def resolve_serve_runtime(repo, path, runtime, recipes, hf_cache=None,
     return runtime, executable
 
 
+def _adapter_evidence(path):
+    from .lora import adapter_identity
+    try:
+        local = Path(path).expanduser().absolute()
+        identity = adapter_identity(local)
+    except (TypeError, ValueError, OSError):
+        identity = None
+    if identity is None:
+        raise ServeError("invalid_adapter", "Adapter files are missing, invalid or linked.",
+                         "Select a completed adapter with adapter_config.json and adapters.safetensors.")
+    return str(local), identity
+
+
+def _require_adapter_identity(plan):
+    if plan.get("adapter_path") is None:
+        return
+    try:
+        path, identity = _adapter_evidence(plan["adapter_path"])
+        if path == plan["adapter_path"] and identity == plan.get("adapter_identity"):
+            return
+    except ServeError:
+        pass
+    raise ServeError("adapter_changed", "Adapter files changed after the serving preview.",
+                     "Review a fresh serve plan before starting this adapter.")
+
+
 def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                adapter_path=None, path=None, jit=False, receipts_dir=None, hf_cache=None, memory_policy=None,
                runtime_executable=None, strata_speculation=False,
                strata_expert_memory_gb=None, strata_context_tokens=None):
-    """Render the exact start plan; pure and side-effect free."""
+    """Render the start plan and local file identities without side effects."""
     if memory_policy is not None:
         from .jit_serve import validate_memory_policy
         try:
@@ -235,6 +261,9 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
             "The {0} recipe does not support adapter serving.".format(runtime),
             "Serve adapters with a runtime whose recipe declares adapter support.",
         )
+    adapter_identity = None
+    if adapter_path is not None:
+        adapter_path, adapter_identity = _adapter_evidence(adapter_path)
     model_value = repo.strip() if has_repo else local_path
     values = {
         "executable": runtime_executable or recipe["executable"],
@@ -293,6 +322,8 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                     readiness_deadline=900)
     elif has_path:
         plan.update(_local_weight_evidence(local_path))
+    if adapter_path is not None:
+        plan["adapter_identity"] = adapter_identity
     if jit:
         from .convert import cached_snapshot
         from .jit_serve import model_fingerprint
@@ -427,6 +458,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "The supplied preview hash does not match this start plan.",
             "Re-run serve start without --confirm and review the fresh plan.",
         )
+    _require_adapter_identity(plan)
 
     if plan["runtime"] == "strata" and not plan.get("jit"):
         from .jit_serve import available_memory_bytes
@@ -482,13 +514,6 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
                 "A wired config already claims port {0}.".format(plan["port"]),
                 "Move this server to its own --port.",
             )
-    if plan["adapter_path"] is not None and not Path(plan["adapter_path"]).is_dir():
-        raise ServeError(
-            "invalid_arguments",
-            "The adapter path does not exist: {0}".format(plan["adapter_path"]),
-            "Pass an existing --adapter-path directory produced by mlx_lm.lora.",
-        )
-
     receipt_path = root / "{0}.json".format(plan["port"])
     if receipt_path.exists():
         existing = _read_receipt(receipt_path)
@@ -506,6 +531,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         if config_path.parent != root.absolute() or config_path.is_symlink():
             raise ServeError("invalid_arguments", "Unsafe JIT configuration path.", "Review a fresh serve plan.")
         config = {key: plan[key] for key in ("local_path", "fingerprint", "worker_argv", "max_tokens")}
+        if plan.get("adapter_path") is not None:
+            config.update(adapter_path=plan["adapter_path"], adapter_identity=plan["adapter_identity"])
         if "readiness_deadline" in plan:
             config["worker_readiness_seconds"] = plan["readiness_deadline"]
         if plan["runtime"] == "strata":
@@ -525,6 +552,11 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "The server did not answer its readiness endpoint in time.",
             "Inspect the serve log at {0}.".format(log_path),
         )
+    try:
+        _require_adapter_identity(plan)
+    except ServeError:
+        _terminate_pid(pid)
+        raise
 
     receipt = {
         "schema_version": SERVE_RECEIPT_SCHEMA_VERSION,
@@ -542,6 +574,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
     }
     if plan.get("jit"):
         receipt["jit"] = True
+    if plan.get("adapter_path") is not None:
+        receipt.update(adapter_path=plan["adapter_path"], adapter_identity=plan["adapter_identity"])
     content = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     _atomic_in_directory(root, receipt_path.name, content, 0o600)
     return {"status": "started", "receipt": receipt}
@@ -587,6 +621,7 @@ def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_comma
             "log_path": receipt.get("log_path"),
             "started_at": receipt.get("started_at"),
         })
+        entries[-1].update(_adapter_metadata(receipt, root))
         if receipt.get("jit"):
             entries[-1]["jit"] = True
             if alive and entries[-1]["argv_match"]:
@@ -597,6 +632,25 @@ def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_comma
             else:
                 entries[-1]["model_state"] = "unknown"
     return entries
+
+
+def _adapter_metadata(receipt, root):
+    if receipt.get("adapter_path") is not None:
+        return {"adapter_path": receipt["adapter_path"], "adapter_identity": receipt.get("adapter_identity")}
+    argv = receipt.get("argv", [])
+    if receipt.get("jit"):
+        try:
+            argv = _jit_config(receipt, root)["worker_argv"]
+        except (ServeError, KeyError):
+            return {"adapter_status": "unknown"}
+    if not isinstance(argv, list) or any(not isinstance(value, str) for value in argv):
+        return {"adapter_status": "unknown"}
+    if "--adapter-path" in argv:
+        index = argv.index("--adapter-path") + 1
+        if index >= len(argv) or not argv[index]:
+            return {"adapter_status": "unknown"}
+        return {"adapter_path": argv[index], "adapter_identity": None}
+    return {}
 
 
 def _argv_matches(receipt, command, require_port=True):
@@ -614,6 +668,10 @@ def _argv_matches(receipt, command, require_port=True):
     model = receipt.get("repo") or receipt.get("path")
     if not model or executable not in command or str(model) not in command:
         return False
+    if receipt.get("kind") == SERVE_RECEIPT_KIND and not receipt.get("jit") and "--adapter-path" in argv:
+        index = argv.index("--adapter-path") + 1
+        if index >= len(argv) or "--adapter-path" not in command or str(argv[index]) not in command:
+            return False
     if receipt.get("jit"):
         if "--config" not in argv or str(argv[argv.index("--config") + 1]) not in command:
             return False

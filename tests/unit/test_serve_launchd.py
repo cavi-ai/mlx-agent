@@ -35,7 +35,7 @@ class LaunchdRenderTests(unittest.TestCase):
         self.assertTrue(plist.endswith("</plist>\n"))
 
     def test_special_characters_are_escaped(self):
-        plan = _plan(repo="pub/model", adapter_path="/tmp/a & b")
+        plan = _plan(repo=None, path="/tmp/a & b")
         plist = render_launchd_plist(plan, log_path="/tmp/x.log")
         self.assertIn("/tmp/a &amp; b", plist)
 

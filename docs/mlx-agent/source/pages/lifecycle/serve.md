@@ -24,6 +24,17 @@ against live processes; an accepted launch is not proof the model finished loadi
 Stop verifies process ownership against the receipt before signaling it.
 If you supplied `--receipts-dir`, use the same base for status and stop.
 
+For text LoRA serving, add `--adapter-path /absolute/local/adapter` to both
+preview and confirmation. The directory must contain valid `adapter_config.json`
+and `adapters.safetensors` files without symbolic links. The preview binds both
+files' content hashes and sizes. Supervised eager and JIT startup recheck them; a changed
+adapter requires a fresh preview. Receipts and status retain the adapter path and
+reviewed identity separately from the base model. Historical receipts can expose
+an adapter path without a content identity; unavailable historical JIT configuration
+is reported as `adapter_status: unknown`. Direct `--launchd` plists retain their
+existing deferred-launch behavior; these worker-load checks apply to supervised
+serving.
+
 ## Load on request
 
 JIT keeps an endpoint reachable without retaining a loaded model worker:
@@ -44,6 +55,10 @@ model files need a new serve plan.
 Status reports gateway liveness and `model_state` separately. Stop terminates
 the owned gateway/worker process group. The gateway serves its selected model
 and rejects request-time adapter/draft-model overrides.
+
+JIT rechecks the adapter before and after each worker load, including after
+unloading. Older adapter gateways without a recorded content identity require
+a fresh serve preview before loading another worker.
 
 ## Memory policy
 

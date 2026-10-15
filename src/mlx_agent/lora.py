@@ -183,8 +183,34 @@ def _validate_hyperparameters(iters, batch_size, learning_rate, num_layers):
         )
 
 
+def _training_base_identity(snapshot):
+    from .backends import BackendError, load_manifests, load_registries, lookup
+    from .jit_serve import model_fingerprint
+    from .taxonomy import classify, read_config_type
+
+    model_type, keys = read_config_type(snapshot)
+    if not model_type:
+        raise LoraError("model_config_unavailable", "Training needs a readable local config.json with model_type.",
+                        "Choose a complete cached base model, then preview again.")
+    if classify("", model_type=model_type, config_keys=keys, local=True)["type"] == "speculative_draft":
+        raise LoraError("unsupported_training_model", "A speculative drafter is not a standalone training base.",
+                        "Choose the complete target language model instead.")
+    try:
+        manifests = {"mlx-lm": load_manifests()["mlx-lm"]}
+        registries = load_registries(manifests)
+        hits = lookup(model_type, manifests, registries)
+    except (BackendError, OSError, ValueError, KeyError) as error:
+        raise LoraError("training_backend_unavailable", "The MLX-LM model registry could not be read.",
+                        "Restore the declared MLX-LM backend before previewing training.") from error
+    if not hits:
+        raise LoraError("unsupported_training_model", "MLX-LM does not declare the {0} model architecture.".format(model_type),
+                        "Choose a cached language-model base recognized by MLX-LM; other backends are not used for text LoRA.")
+    return {"path": str(snapshot), "revision": snapshot.name, "fingerprint": model_fingerprint(snapshot),
+            "model_type": model_type, "loader": hits[0]["module"], "registry_source": registries["mlx-lm"]["source"]}
+
+
 def plan_lora(repo, data, iters=ITERS_DEFAULT, batch_size=BATCH_DEFAULT,
-              learning_rate=LR_DEFAULT, num_layers=LAYERS_DEFAULT, out=None):
+              learning_rate=LR_DEFAULT, num_layers=LAYERS_DEFAULT, out=None, hf_cache=None):
     """Validate inputs and render the exact training plan; side-effect free."""
     if not isinstance(repo, str) or not _MODEL.fullmatch(repo):
         raise LoraError(
@@ -207,9 +233,8 @@ def plan_lora(repo, data, iters=ITERS_DEFAULT, batch_size=BATCH_DEFAULT,
                 "Reduce --batch-size or add examples to this split, then preview again.",
             )
     from .convert import cached_snapshot
-    from .jit_serve import model_fingerprint
-    snapshot = cached_snapshot(repo)
-    base = {"path": str(snapshot), "revision": snapshot.name, "fingerprint": model_fingerprint(snapshot)} if snapshot else None
+    snapshot = cached_snapshot(repo, hf_cache)
+    base = _training_base_identity(snapshot) if snapshot else None
     if out is None:
         out = "{0}-lora".format(repo.split("/", 1)[1])
     out = str(Path(out).expanduser().absolute())

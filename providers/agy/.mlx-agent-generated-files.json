@@ -458,7 +458,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "d811181e7d08bab80b81830558c4520b6f83ea84233714b7b11c6184e75cca41"
+      "sha256": "8e43e9e31bc4ff47c35dcc2414cf4631aee3521f9f53eeeccaa233cd8e052115"
     },
     {
       "path": "src/mlx_agent/command_args.py",
@@ -586,7 +586,7 @@
     },
     {
       "path": "src/mlx_agent/lora.py",
-      "sha256": "f7af068f7d2257aff97b06eadb166215f1e36b8dbeee094708b42717797f331a"
+      "sha256": "a478efd033f44c6d25b3f2b66dcce17af1a4a1ac3cf692f2f8f655ce1af475c0"
     },
     {
       "path": "src/mlx_agent/mcp_server.py",

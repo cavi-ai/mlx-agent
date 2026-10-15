@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -143,6 +144,51 @@ class PlanLoraTests(unittest.TestCase):
             plan_lora("pub/model", self.directory.name, learning_rate=1.0)
         with self.assertRaises(LoraError):
             plan_lora("pub/model", self.directory.name, num_layers=1000)
+
+
+class TrainingBaseArchitectureTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.data = self.root / "data"
+        self.data.mkdir()
+        _training_dataset(self.data)
+        self.model = self.root / "snapshot"
+        self.model.mkdir()
+
+    def plan(self, config):
+        (self.model / "config.json").write_text(json.dumps(config))
+        with patch("mlx_agent.convert.cached_snapshot", return_value=self.model):
+            return plan_lora("pub/model", str(self.data))
+
+    def test_recognized_type_and_alias_bind_the_declared_loader(self):
+        for model_type, module in [("qwen2", "mlx_lm.models.qwen2"), ("mistral", "mlx_lm.models.llama"),
+                                   ("qwen2_vl", "mlx_lm.models.qwen2_vl")]:
+            with self.subTest(model_type=model_type):
+                plan = self.plan({"model_type": model_type})
+                self.assertEqual(plan["base_identity"]["model_type"], model_type)
+                self.assertEqual(plan["base_identity"]["loader"], module)
+                self.assertIn(plan["base_identity"]["registry_source"], ("installed", "snapshot"))
+
+    def test_other_backend_and_unknown_architectures_are_rejected(self):
+        for model_type in ["whisper", "workbench_unknown_architecture"]:
+            with self.subTest(model_type=model_type):
+                with self.assertRaises(LoraError) as caught:
+                    self.plan({"model_type": model_type})
+                self.assertEqual(caught.exception.code, "unsupported_training_model")
+
+    def test_missing_or_malformed_config_is_rejected(self):
+        for config in [{}, [], {"model_type": 4}]:
+            with self.subTest(config=config):
+                with self.assertRaises(LoraError) as caught:
+                    self.plan(config)
+                self.assertEqual(caught.exception.code, "model_config_unavailable")
+
+    def test_a_drafter_does_not_become_a_training_base(self):
+        with self.assertRaises(LoraError) as caught:
+            self.plan({"model_type": "qwen2", "dspark_target_layer_ids": [0, 1]})
+        self.assertEqual(caught.exception.code, "unsupported_training_model")
 
 
 class StartLoraTests(unittest.TestCase):

@@ -81,6 +81,28 @@ class LoraCliTests(unittest.TestCase):
             payload = json.loads(output)
             self.assertEqual(payload["data"]["jobs"], [])
 
+    def test_custom_cache_uses_its_base_identity_and_architecture(self):
+        with TemporaryDirectory() as directory:
+            self._dataset(directory)
+            cache = Path(directory) / "cache"
+            entry = cache / "models--pub--model"
+            (entry / "refs").mkdir(parents=True)
+            (entry / "refs/main").write_text("revision")
+            model = entry / "snapshots/revision"
+            model.mkdir(parents=True)
+            config = model / "config.json"
+            for model_type in ["whisper", "qwen2"]:
+                config.write_text(json.dumps({"model_type": model_type}))
+                code, output = self._run(["lora", "start", "--repo", "pub/model", "--data", directory,
+                    "--hf-cache", str(cache), "--receipts-dir", directory, "--json"])
+                self.assertEqual(code, 2)
+                result = json.loads(output)
+                if model_type == "whisper":
+                    self.assertEqual(result["error"]["code"], "unsupported_training_model")
+                else:
+                    self.assertEqual(result["data"]["plan"]["base_identity"]["path"], str(model))
+            self.assertFalse((Path(directory) / ".mlx-agent-receipts").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

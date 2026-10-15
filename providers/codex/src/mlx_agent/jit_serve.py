@@ -161,6 +161,8 @@ class ModelWorker:
             return
         weights = sum(item.stat().st_size for item in Path(self.config["local_path"]).rglob("*")
                       if item.is_file() and item.suffix in (".safetensors", ".npz", ".bin", ".gguf"))
+        if weights and self.config.get("adapter_path") is not None:
+            weights += self.config["adapter_identity"]["adapters.safetensors"]["bytes"]
         available = self.memory_probe()
         required = math.ceil(weights * 1.10 + 1.5e9 + reserve * 1e9) if weights else None
         if self.config.get("runtime") == "strata":
@@ -219,10 +221,24 @@ class ModelWorker:
                 or adapter_identity(path) != self.config["adapter_identity"]):
             raise GatewayError(503, "adapter_changed", "Adapter files changed or have no reviewed identity. Stop and review a fresh serve plan.")
 
+    def _check_training_receipt(self):
+        binding = self.config.get("training_binding")
+        if binding is None:
+            return
+        try:
+            from mlx_agent.training_artifacts import read_trained_adapter
+            _, current = read_trained_adapter(binding["training_receipt"])
+            if current == binding:
+                return
+        except (OSError, ValueError, TypeError, KeyError):
+            pass
+        raise GatewayError(503, "training_receipt_changed", "The training receipt or its pinned artifacts changed. Stop and review a fresh serve plan.")
+
     def _start(self):
         try:
             if model_fingerprint(self.config["local_path"]) != self.config["fingerprint"]:
                 raise GatewayError(503, "model_changed", "Model files changed. Stop and review a fresh serve plan.")
+            self._check_training_receipt()
             self._check_adapter()
             self._check_memory()
             with socket.socket() as reservation:
@@ -257,6 +273,7 @@ class ModelWorker:
                 raise GatewayError(503, "model_load_failed", "Model worker did not become ready in 60 seconds.")
             if model_fingerprint(self.config["local_path"]) != self.config["fingerprint"]:
                 raise GatewayError(503, "model_changed", "Model files changed while loading.")
+            self._check_training_receipt()
             self._check_adapter()
             with self.condition:
                 if self.closed:

@@ -9,9 +9,7 @@ import tempfile
 import uuid
 
 from mlx_agent.compute import ComputeLease
-from mlx_agent.convert import _read_receipt, cached_snapshot
 from mlx_agent.lab import _run_child
-from mlx_agent.lora import adapter_identity
 
 
 def _digest(path):
@@ -27,31 +25,20 @@ def preview(receipt_path, prompt, max_tokens=128):
         raise ValueError("Evaluation prompt must contain 1..8000 characters.")
     if type(max_tokens) is not int or not 1 <= max_tokens <= 512:
         raise ValueError("Evaluation token limit must be 1..512.")
-    path = Path(receipt_path).expanduser()
-    if not path.is_absolute() or path.is_symlink() or not path.is_file() or path.stat().st_size > 65536:
-        raise ValueError("Choose a bounded local training receipt.")
-    receipt = _read_receipt(path, "lora")
-    if receipt is None or receipt.get("exit_status") != "done":
-        raise ValueError("Evaluation requires a completed training receipt with verified adapter output.")
-    identity = adapter_identity(receipt["out"])
-    if not identity or identity != receipt.get("adapter_identity"):
-        raise ValueError("Adapter content no longer matches the completed training receipt.")
-    from mlx_agent.jit_serve import model_fingerprint
-    base = receipt.get("base_identity")
-    if not base:
-        raise ValueError("This historical receipt has no pinned base identity; run a newly reviewed training job.")
-    model = Path(base["path"])
-    if model_fingerprint(model) != base["fingerprint"]:
-        raise ValueError("The trained base-model file identity changed.")
+    from mlx_agent.training_artifacts import read_trained_adapter
+    receipt, binding = read_trained_adapter(receipt_path)
+    path = Path(binding["training_receipt"])
+    model = Path(binding["base_path"])
+    identity = binding["adapter_identity"]
     files = [p for p in model.rglob("*") if p.is_file()]
     if not files or len(files) > 256:
         raise ValueError("Base-model inventory is unavailable or exceeds its bound.")
     inventory = {str(p.relative_to(model)): {"sha256": _digest(p), "bytes": p.stat().st_size}
                  for p in sorted(files)}
     plan = {"schema_version": "text-training-evaluation/1", "training_receipt": str(path),
-            "training_receipt_sha256": _digest(path), "training_run_id": receipt.get("run_id"),
+            "training_receipt_sha256": binding["training_receipt_sha256"], "training_run_id": receipt.get("run_id"),
             "base_repo": receipt["repo"], "base_path": str(model), "base_revision": model.name,
-            "base_inventory": inventory, "dataset": receipt.get("dataset"), "adapter_path": receipt["out"],
+            "base_inventory": inventory, "dataset": receipt.get("dataset"), "adapter_path": binding["adapter_path"],
             "adapter_identity": identity, "prompt": prompt, "max_tokens": max_tokens,
             "temperature": 0.0, "seed": 42}
     plan["preview_hash"] = hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()).hexdigest()

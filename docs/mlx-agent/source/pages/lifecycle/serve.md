@@ -35,6 +35,25 @@ is reported as `adapter_status: unknown`. Direct `--launchd` plists retain their
 existing deferred-launch behavior; these worker-load checks apply to supervised
 serving.
 
+## Serve a trained adapter
+
+Use a completed LoRA receipt to select the base snapshot and adapter together:
+
+```bash
+python3 scripts/mlx-agent serve start --training-receipt /absolute/path/training.json --runtime auto --port 8080 --json
+python3 scripts/mlx-agent serve start --training-receipt /absolute/path/training.json --runtime auto --port 8080 --confirm --preview-hash <hash> --json
+```
+
+The receipt must record completed training, the pinned base file identity and
+matching adapter content hashes. The preview captures the receipt bytes as well
+as both artifacts; changes require a new preview. Do not combine the receipt with
+`--repo`, `--path` or `--adapter-path`. This text LoRA flow uses MLX-LM and supervised
+startup; direct `--launchd` is refused. JIT rechecks the same binding on each load
+and includes adapter tensors in its memory estimate. Completion is not a model
+quality verdict. New training previews record absolute adapter destinations;
+relative paths in older receipts resolve from the invocation's working directory
+and still have to match the recorded content hashes.
+
 ## Load on request
 
 JIT keeps an endpoint reachable without retaining a loaded model worker:

@@ -200,6 +200,7 @@ def plan_lora(repo, data, iters=ITERS_DEFAULT, batch_size=BATCH_DEFAULT,
     base = {"path": str(snapshot), "revision": snapshot.name, "fingerprint": model_fingerprint(snapshot)} if snapshot else None
     if out is None:
         out = "{0}-lora".format(repo.split("/", 1)[1])
+    out = str(Path(out).expanduser().absolute())
     plan = {
         "repo": repo,
         "base_identity": base,

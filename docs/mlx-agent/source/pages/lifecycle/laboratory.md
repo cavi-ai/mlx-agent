@@ -19,6 +19,8 @@ Heavy generation, conversion, and training share a private compute lease. A live
 
 **Compare → Controlled studies** creates a one-variable frozen comparison, queues generation, and retains artifacts. Blind review uses a common playback timeline. Complete rubric scores and a preference are required before immutable submission and authorized reveal. Adaptive studies preserve their budgets and progression.
 
+**Studies → New experiment → Cached model** captures recipes for the registered Wan 2.1 T2V 1.3B Diffusers/MPS adapter. `lab workspace` operations `recipe-catalog` and `recipe-prepare` inspect only the selected interpreter and local Hugging Face cache. Preparation requires an explicit cached commit, complete pipeline assets and weight shards, and installed video runtime dependencies. It hashes the weights and loader assets, records runtime and platform identity, and never downloads weights, loads a model or queues jobs. The existing preview/create operations validate and queue the controlled pair separately. Captured recipes recheck their identities before and after generation; imported legacy recipes retain their existing behavior. An MLX conversion does not replace the required Diffusers cache.
+
 **Workspace…** previews adoption into a new destination. Stop workers and the former web application first. Adoption verifies database and artifact content, preserves IDs and sealed assignments, and retains source backups. It refuses active work, changed inputs, or an occupied destination.
 
 **Activity** reconciles legacy conversion receipts before starting an imported pending item. Import requires a reviewed content digest and retains the source and a backup.

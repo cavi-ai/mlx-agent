@@ -9,8 +9,9 @@ from video_lab.artifacts import ArtifactStore
 def test_evaluation_retains_verified_outputs_and_history(database, tmp_path, monkeypatch):
     from mlx_agent.compute import ComputeLease
     monkeypatch.setattr(evaluation, "ComputeLease", lambda operation: ComputeLease(operation, root=tmp_path / "compute"))
-    plan = {"preview_hash": "reviewed", "training_receipt": "/fixture/receipt.json",
-            "training_run_id": "fixture-run", "prompt": "fixture"}
+    plan = {"schema_version": "text-training-evaluation/1", "preview_hash": "reviewed",
+            "training_receipt": "/fixture/receipt.json", "training_run_id": "fixture-run",
+            "prompt": "fixture", "max_tokens": 128}
     monkeypatch.setattr(evaluation, "preview", lambda *args: copy.deepcopy(plan))
     artifacts = ArtifactStore(database, tmp_path / "artifacts")
     result = evaluation.run(database, artifacts,

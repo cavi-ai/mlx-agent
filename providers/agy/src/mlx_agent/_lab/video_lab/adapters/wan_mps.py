@@ -433,8 +433,13 @@ class WanMpsAdapter:
             if cancelled():
                 raise GenerationCancelled("generation cancelled")
             manifest = request.manifest
-            metadata = self._resolve_metadata(manifest.model_revision)
-            self._verify_pinned_weights(manifest, metadata)
+            if "study-recipes" in manifest.runtime_versions:
+                from mlx_agent.study_recipes import verify
+                sizes = verify(manifest, self._effective_cache_root())
+                metadata = _Metadata(manifest.model_revision, manifest.model_revision, sizes)
+            else:
+                metadata = self._resolve_metadata(manifest.model_revision)
+                self._verify_pinned_weights(manifest, metadata)
             pipeline = self._load(metadata.resolved_revision)
             generator = self._get_torch().Generator(device="cpu").manual_seed(manifest.seed)
 
@@ -476,7 +481,11 @@ class WanMpsAdapter:
             if cancelled():
                 raise GenerationCancelled("generation cancelled")
             partial.replace(final)
-            self._verify_pinned_weights(manifest, metadata)
+            if "study-recipes" in manifest.runtime_versions:
+                from mlx_agent.study_recipes import verify
+                verify(manifest, self._effective_cache_root())
+            else:
+                self._verify_pinned_weights(manifest, metadata)
             return GenerationResult(
                 video_path=final,
                 effective_manifest=manifest,

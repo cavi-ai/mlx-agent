@@ -89,6 +89,17 @@ def manifest(**changes: object) -> Manifest:
     return Manifest(**values)  # type: ignore[arg-type]
 
 
+def test_legacy_source_checksums_do_not_opt_into_recipe_capture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from mlx_agent import study_recipes
+
+    runtime, _, loads = adapter(tmp_path)
+    monkeypatch.setattr(study_recipes, "verify", lambda *_: pytest.fail("Legacy recipe used capture checks"))
+    request = GenerationRequest(job_id="job_legacy", attempt_id="attempt_legacy",
+        manifest=manifest(source_checksums={"source": "sha256:legacy"}), scratch_root=tmp_path / "legacy")
+    runtime.generate(request, lambda _: None, lambda: False)
+    assert loads[0]["revision"] == "resolved-sha"
+
+
 def adapter(
     tmp_path: Path,
     pipe: Pipeline | None = None,

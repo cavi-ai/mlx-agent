@@ -28,6 +28,7 @@ from mlx_agent.compute import ComputeLease
 from video_lab.local_authority import RetainedDirectoryAuthority
 
 _FIELDS = {
+    "recipe-catalog": set(), "recipe-prepare": {"settings"},
     "adopt-preview": {"source_database", "source_artifacts", "destination"},
     "adopt": {"source_database", "source_artifacts", "destination", "preview_hash"},
     "study-list": set(), "study-create": {"manifest"},
@@ -57,6 +58,7 @@ def validate_request(request):
                                  or not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", request[field])):
             raise ValueError("Invalid " + field)
     required = {
+        "recipe-prepare": {"settings"},
         "adopt-preview": {"source_database", "source_artifacts", "destination"},
         "adopt": {"source_database", "source_artifacts", "destination", "preview_hash"},
         "study-create": {"manifest"},
@@ -86,6 +88,9 @@ def validate_request(request):
             raise ValueError("Invalid " + field)
     if operation in ("preview", "create"):
         ExperimentDraft.model_validate(request.get("draft"))
+    if operation == "recipe-prepare":
+        from mlx_agent.study_recipes import validate_settings
+        validate_settings(request["settings"])
     if operation == "review-submit":
         DisplayPreference(request.get("preference"))
         for item in request.get("scores", []):
@@ -97,6 +102,11 @@ def execute(database_path, artifact_root, reviewer, request):
     if not reviewer.strip():
         raise ValueError("A reviewer identity is required.")
     operation = request["operation"]
+    if operation.startswith("recipe-"):
+        from mlx_agent import study_recipes
+        if operation == "recipe-catalog":
+            return {"recipes": study_recipes.catalog()}
+        return {"manifest": study_recipes.prepare(request["settings"])}
     if operation in ("adopt-preview", "adopt"):
         from mlx_agent.lab_adoption import preview, adopt
         arguments = [request["source_database"], request["source_artifacts"], request["destination"]]

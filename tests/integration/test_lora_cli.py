@@ -9,6 +9,17 @@ from mlx_agent.cli import main
 
 
 class LoraCliTests(unittest.TestCase):
+    def test_inspection_returns_blockers_as_data_without_training_confirmation(self):
+        with TemporaryDirectory() as directory:
+            self._dataset(directory)
+            code, output = self._run(["lora", "inspect", "--data", directory, "--hf-cache", directory, "--json"])
+            self.assertEqual(code, 0)
+            report = json.loads(output)["data"]
+            self.assertFalse(report["ready"])
+            self.assertEqual(len(report["checks"]), 4)
+            self.assertNotIn("preview_hash", report)
+            self.assertFalse((Path(directory) / ".mlx-agent-receipts").exists())
+
     def _run(self, argv):
         buffer = io.StringIO()
         with redirect_stdout(buffer):

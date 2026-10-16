@@ -16,8 +16,8 @@ class LoraCliTests(unittest.TestCase):
         return code, buffer.getvalue()
 
     def _dataset(self, root):
-        path = Path(root) / "train.jsonl"
-        path.write_text('{"text": "hello"}\n')
+        for name in ("train.jsonl", "valid.jsonl"):
+            (Path(root) / name).write_text('{"text": "hello"}\n' * 4)
 
     def test_start_preview_requires_confirmation(self):
         with TemporaryDirectory() as directory:
@@ -38,7 +38,18 @@ class LoraCliTests(unittest.TestCase):
             self.assertEqual(code, 2)
             payload = json.loads(output)
             self.assertTrue(payload["data"]["requires_confirmation"])
-            self.assertEqual(payload["data"]["plan"]["dataset"]["train_lines"], 1)
+            self.assertEqual(payload["data"]["plan"]["dataset"]["train_lines"], 4)
+
+    def test_missing_validation_cannot_preview_or_start(self):
+        with TemporaryDirectory() as directory:
+            self._dataset(directory)
+            (Path(directory) / "valid.jsonl").unlink()
+            for extra in ([], ["--confirm", "--preview-hash", "stale"]):
+                code, output = self._run(["lora", "start", "--repo", "pub/model", "--data", directory,
+                    "--receipts-dir", directory, "--json", *extra])
+                self.assertEqual(code, 2)
+                self.assertEqual(json.loads(output)["error"]["code"], "validation_required")
+                self.assertFalse((Path(directory) / ".mlx-agent-receipts").exists())
 
     def test_invalid_dataset_fails_before_preview(self):
         with TemporaryDirectory() as directory:
@@ -69,6 +80,28 @@ class LoraCliTests(unittest.TestCase):
             self.assertEqual(code, 0)
             payload = json.loads(output)
             self.assertEqual(payload["data"]["jobs"], [])
+
+    def test_custom_cache_uses_its_base_identity_and_architecture(self):
+        with TemporaryDirectory() as directory:
+            self._dataset(directory)
+            cache = Path(directory) / "cache"
+            entry = cache / "models--pub--model"
+            (entry / "refs").mkdir(parents=True)
+            (entry / "refs/main").write_text("revision")
+            model = entry / "snapshots/revision"
+            model.mkdir(parents=True)
+            config = model / "config.json"
+            for model_type in ["whisper", "qwen2"]:
+                config.write_text(json.dumps({"model_type": model_type}))
+                code, output = self._run(["lora", "start", "--repo", "pub/model", "--data", directory,
+                    "--hf-cache", str(cache), "--receipts-dir", directory, "--json"])
+                self.assertEqual(code, 2)
+                result = json.loads(output)
+                if model_type == "whisper":
+                    self.assertEqual(result["error"]["code"], "unsupported_training_model")
+                else:
+                    self.assertEqual(result["data"]["plan"]["base_identity"]["path"], str(model))
+            self.assertFalse((Path(directory) / ".mlx-agent-receipts").exists())
 
 
 if __name__ == "__main__":

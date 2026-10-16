@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -17,6 +18,11 @@ def _dataset(root, lines=None, name="train.jsonl"):
     path = Path(root) / name
     path.write_text("\n".join(lines if lines is not None else ['{"text": "hello world"}']) + "\n")
     return path
+
+
+def _training_dataset(root):
+    _dataset(root, ['{"text":"training example"}'] * 4)
+    _dataset(root, ['{"text":"validation example"}'] * 4, name="valid.jsonl")
 
 
 class DatasetValidationTests(unittest.TestCase):
@@ -36,9 +42,10 @@ class DatasetValidationTests(unittest.TestCase):
     def test_dataset_content_changes_preview_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             _dataset(directory, ['{"text":"before"}'])
-            first = plan_lora("pub/model", directory)
+            _dataset(directory, name="valid.jsonl")
+            first = plan_lora("pub/model", directory, batch_size=1)
             _dataset(directory, ['{"text":"after"}'])
-            self.assertNotEqual(first["preview_hash"], plan_lora("pub/model", directory)["preview_hash"])
+            self.assertNotEqual(first["preview_hash"], plan_lora("pub/model", directory, batch_size=1)["preview_hash"])
 
     def test_messages_dataset(self):
         with TemporaryDirectory() as directory:
@@ -89,20 +96,44 @@ class PlanLoraTests(unittest.TestCase):
     def setUp(self):
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        _dataset(self.directory.name)
+        _training_dataset(self.directory.name)
 
     def test_default_plan(self):
         plan = plan_lora("pub/model", self.directory.name)
         self.assertEqual(plan["out"], str(Path.cwd() / "model-lora"))
         self.assertEqual(plan["argv"][0], "mlx_lm.lora")
         self.assertIn("--adapter-path", plan["argv"])
-        self.assertEqual(plan["dataset"]["train_lines"], 1)
+        self.assertEqual(plan["dataset"]["train_lines"], 4)
         self.assertEqual(len(plan["preview_hash"]), 64)
 
     def test_invalid_repo(self):
         with self.assertRaises(LoraError) as caught:
             plan_lora("bad", self.directory.name)
         self.assertEqual(caught.exception.code, "invalid_repo")
+
+    def test_missing_validation_is_rejected_before_a_plan(self):
+        _dataset(self.directory.name, ['{"text":"train"}'] * 4)
+        (Path(self.directory.name) / "valid.jsonl").unlink()
+        with self.assertRaises(LoraError) as caught:
+            plan_lora("pub/model", self.directory.name)
+        self.assertEqual(caught.exception.code, "validation_required")
+        self.assertIn("valid.jsonl", str(caught.exception))
+
+    def test_each_split_must_support_the_reviewed_batch_size(self):
+        for training, validation in [(1, 4), (4, 1)]:
+            with self.subTest(training=training, validation=validation):
+                _dataset(self.directory.name, ['{"text":"train"}'] * training)
+                _dataset(self.directory.name, ['{"text":"validate"}'] * validation, name="valid.jsonl")
+                with self.assertRaises(LoraError) as caught:
+                    plan_lora("pub/model", self.directory.name)
+                self.assertEqual(caught.exception.code, "dataset_too_small")
+
+    def test_explicit_single_example_batches_keep_the_requested_setting(self):
+        _dataset(self.directory.name)
+        _dataset(self.directory.name, name="valid.jsonl")
+        plan = plan_lora("pub/model", self.directory.name, batch_size=1)
+        self.assertEqual(plan["batch_size"], 1)
+        self.assertEqual(plan["argv"][plan["argv"].index("--batch-size") + 1], "1")
 
     def test_hyperparameter_bounds(self):
         with self.assertRaises(LoraError):
@@ -115,13 +146,58 @@ class PlanLoraTests(unittest.TestCase):
             plan_lora("pub/model", self.directory.name, num_layers=1000)
 
 
+class TrainingBaseArchitectureTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.data = self.root / "data"
+        self.data.mkdir()
+        _training_dataset(self.data)
+        self.model = self.root / "snapshot"
+        self.model.mkdir()
+
+    def plan(self, config):
+        (self.model / "config.json").write_text(json.dumps(config))
+        with patch("mlx_agent.convert.cached_snapshot", return_value=self.model):
+            return plan_lora("pub/model", str(self.data))
+
+    def test_recognized_type_and_alias_bind_the_declared_loader(self):
+        for model_type, module in [("qwen2", "mlx_lm.models.qwen2"), ("mistral", "mlx_lm.models.llama"),
+                                   ("qwen2_vl", "mlx_lm.models.qwen2_vl")]:
+            with self.subTest(model_type=model_type):
+                plan = self.plan({"model_type": model_type})
+                self.assertEqual(plan["base_identity"]["model_type"], model_type)
+                self.assertEqual(plan["base_identity"]["loader"], module)
+                self.assertIn(plan["base_identity"]["registry_source"], ("installed", "snapshot"))
+
+    def test_other_backend_and_unknown_architectures_are_rejected(self):
+        for model_type in ["whisper", "workbench_unknown_architecture"]:
+            with self.subTest(model_type=model_type):
+                with self.assertRaises(LoraError) as caught:
+                    self.plan({"model_type": model_type})
+                self.assertEqual(caught.exception.code, "unsupported_training_model")
+
+    def test_missing_or_malformed_config_is_rejected(self):
+        for config in [{}, [], {"model_type": 4}]:
+            with self.subTest(config=config):
+                with self.assertRaises(LoraError) as caught:
+                    self.plan(config)
+                self.assertEqual(caught.exception.code, "model_config_unavailable")
+
+    def test_a_drafter_does_not_become_a_training_base(self):
+        with self.assertRaises(LoraError) as caught:
+            self.plan({"model_type": "qwen2", "dspark_target_layer_ids": [0, 1]})
+        self.assertEqual(caught.exception.code, "unsupported_training_model")
+
+
 class StartLoraTests(unittest.TestCase):
     def setUp(self):
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
         (self.root / "data").mkdir()
-        _dataset(str(self.root / "data"))
+        _training_dataset(self.root / "data")
         self.plan = plan_lora(
             "pub/model", str(self.root / "data"), out=str(self.root / "adapter")
         )
@@ -195,7 +271,7 @@ class StatusLoraTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
         (self.root / "data").mkdir()
-        _dataset(str(self.root / "data"))
+        _training_dataset(self.root / "data")
 
     def _start_one(self, out):
         plan = plan_lora("pub/model", str(self.root / "data"), out=str(out))

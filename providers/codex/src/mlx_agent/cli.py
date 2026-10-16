@@ -2020,6 +2020,7 @@ def _run_lora(arguments):
             learning_rate=arguments.learning_rate,
             num_layers=arguments.num_layers,
             out=arguments.out,
+            hf_cache=arguments.hf_cache,
         )
         if not arguments.confirm:
             result = ResultEnvelope.ok(

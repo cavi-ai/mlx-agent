@@ -1972,6 +1972,12 @@ def _convert_status_human(entries):
 
 def _add_lora_arguments(parser):
     actions = parser.add_subparsers(dest="lora_command", required=True)
+    inspect = actions.add_parser("inspect", help="check local training prerequisites and dataset splits without starting work")
+    inspect.add_argument("--repo", default=None)
+    inspect.add_argument("--data", default=None)
+    inspect.add_argument("--batch-size", type=int, default=BATCH_DEFAULT)
+    inspect.add_argument("--hf-cache", default=None)
+    inspect.add_argument("--json", action="store_true")
     start = actions.add_parser(
         "start",
         help="preview, then confirmation-gated LoRA training on a cached model",
@@ -2002,6 +2008,12 @@ def _run_lora(arguments):
     from .compute import ComputeBusy
     operation = "lora-{0}".format(arguments.lora_command)
     try:
+        if arguments.lora_command == "inspect":
+            from .lora import inspect_lora
+            report = inspect_lora(arguments.repo, arguments.data, arguments.batch_size, arguments.hf_cache)
+            return _emit_serve_result(ResultEnvelope.ok(operation, report), arguments.json,
+                                      human="\n".join("{0}: {1} — {2}".format(item["id"], item["status"], item["message"])
+                                                      for item in report["checks"]))
         if arguments.lora_command == "stop":
             from .lora import stop_lora
             return _emit_serve_result(ResultEnvelope.ok(operation, stop_lora(arguments.pid, arguments.receipts_dir)),

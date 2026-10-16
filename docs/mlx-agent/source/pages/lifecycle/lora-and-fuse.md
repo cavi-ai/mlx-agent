@@ -4,6 +4,21 @@ LoRA trains an adapter on a cached base model; fuse merges the adapter back into
 
 ## Train
 
+Inspect prerequisites independently before preparing a training plan:
+
+```bash
+python3 scripts/mlx-agent lora inspect --repo <repo> --data ./my-dataset --batch-size 4 --json
+```
+
+The read-only report checks training executable availability, cached base
+architecture and both dataset splits. Each split records an example count and
+SHA-256 when valid, or a classified error and remediation. Missing optional
+`--repo` or `--data` inputs appear as blockers. Blockers are report data, so a
+successful inspection exits zero even when `ready` is false. Invalid command
+arguments still fail. Inspection loads no model, downloads nothing and creates
+no plan, output or receipt. It does not measure memory fit or authorize training;
+preview and confirmation recheck the inputs.
+
 ```bash
 python3 scripts/mlx-agent lora start --repo <repo> --data ./my-dataset --iters 1000
 python3 scripts/mlx-agent lora start --repo <repo> --data ./my-dataset --iters 1000 --confirm --preview-hash <hash>

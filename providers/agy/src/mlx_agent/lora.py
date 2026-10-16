@@ -47,6 +47,73 @@ def _utc_now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def inspect_lora(repo=None, data=None, batch_size=BATCH_DEFAULT, hf_cache=None):
+    """Read independent prerequisites without a plan, receipt, download or model load."""
+    from .convert import cached_snapshot
+    from .serve import _default_which
+
+    _validate_hyperparameters(ITERS_DEFAULT, batch_size, LR_DEFAULT, LAYERS_DEFAULT)
+    checks = []
+
+    def check(identity, inspect):
+        item = {"id": identity}
+        try:
+            item.update(inspect())
+            item.setdefault("status", "ready")
+        except LoraError as error:
+            item.update(status="blocked", code=error.code, message=str(error), remediation=error.remediation)
+        except (OSError, UnicodeError, ValueError) as error:
+            item.update(status="blocked", code="input_unreadable", message=str(error),
+                        remediation="Choose readable local inputs, then check setup again.")
+        checks.append(item)
+
+    def runtime():
+        executable = _default_which(EXECUTABLE)
+        if executable is None:
+            raise LoraError("runtime_not_installed", "The mlx_lm.lora executable is not installed.",
+                            "Install the training runtime with make install, then check setup again.")
+        return {"message": "Training executable found.", "path": str(executable)}
+
+    def base():
+        if not repo:
+            raise LoraError("repo_required", "Choose a base model.", "Select a cached language-model base or enter its repo id.")
+        if not isinstance(repo, str) or not _MODEL.fullmatch(repo):
+            raise LoraError("invalid_repo", "The base needs a publisher/model repo id.", "Enter the exact cached repo id.")
+        snapshot = cached_snapshot(repo, hf_cache)
+        if snapshot is None:
+            raise LoraError("model_not_local", "The base model is not in the local Hugging Face cache.",
+                            "Cache the base model before training; checking setup never downloads it.")
+        identity = _training_base_identity(snapshot)
+        return {"message": "Cached architecture is supported by MLX-LM.", "path": str(snapshot), "identity": identity}
+
+    def split(filename):
+        if not data:
+            raise LoraError("dataset_required", "Choose a dataset directory.", "Choose a directory with train.jsonl and valid.jsonl.")
+        path = Path(data) / filename
+        if not path.exists():
+            code = "validation_required" if filename == "valid.jsonl" else "dataset_invalid"
+            raise LoraError(code, filename + " is missing.", "Provide separate training and validation examples.")
+        digest = _dataset_digest(path)
+        count = _validate_jsonl(path)
+        if _dataset_digest(path) != digest:
+            raise LoraError("dataset_changed", filename + " changed during inspection.", "Finish editing the dataset, then check setup again.")
+        result = {"examples": count, "sha256": digest, "path": str(path)}
+        if count < batch_size:
+            result.update(status="blocked", code="dataset_too_small",
+                          message="{0} has {1} examples; batch size is {2}.".format(filename, count, batch_size),
+                          remediation="Reduce batch size or add examples to this split, then check setup again.")
+        else:
+            result["message"] = "{0} examples; enough for batch size {1}.".format(count, batch_size)
+        return result
+
+    check("runtime", runtime)
+    check("base", base)
+    for name, filename in (("train", "train.jsonl"), ("valid", "valid.jsonl")):
+        check(name, lambda filename=filename: split(filename))
+    return {"schema_version": 1, "ready": all(item["status"] == "ready" for item in checks),
+            "repo": repo, "data": data, "batch_size": batch_size, "checks": checks}
+
+
 def validate_dataset(data_dir):
     """Validate an mlx_lm training dataset directory; bounded and read-only."""
     root = Path(data_dir)
@@ -93,10 +160,10 @@ def _validate_jsonl(path):
                         "Split the dataset; lora validates bounded datasets only.",
                     )
                 if len(line.encode("utf-8")) > MAX_RECORD_BYTES:
-                    raise LoraError("dataset_invalid", "Dataset record exceeds its limit.", "Split oversized examples.")
+                    raise LoraError("dataset_invalid", "{0} line {1} exceeds the record size limit.".format(path.name, count), "Split oversized examples.")
                 stripped = line.strip()
                 if not stripped:
-                    raise LoraError("dataset_invalid", "Dataset contains an empty record.", "Remove blank lines.")
+                    raise LoraError("dataset_invalid", "{0} line {1} is an empty record.".format(path.name, count), "Remove blank lines.")
                 try:
                     record = json.loads(stripped)
                 except json.JSONDecodeError:
@@ -106,7 +173,7 @@ def _validate_jsonl(path):
                         "Fix the dataset line; every line must be one JSON object.",
                     )
                 _validate_record(record, path.name, count)
-    except OSError as error:
+    except (OSError, UnicodeError) as error:
         raise LoraError(
             "dataset_invalid",
             "The dataset could not be read: {0}".format(error),

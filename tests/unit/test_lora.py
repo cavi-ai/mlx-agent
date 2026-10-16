@@ -26,6 +26,66 @@ def _training_dataset(root):
 
 
 class DatasetValidationTests(unittest.TestCase):
+    def test_inspection_reports_independent_blockers_without_creating_files(self):
+        from mlx_agent.lora import inspect_lora
+        with TemporaryDirectory() as directory:
+            _dataset(directory, ['{"text":"valid"}', 'broken'])
+            before = sorted(Path(directory).iterdir())
+            with patch("mlx_agent.serve._default_which", return_value=None):
+                report = inspect_lora("org/missing", directory, hf_cache=directory)
+            checks = {item["id"]: item for item in report["checks"]}
+            self.assertFalse(report["ready"])
+            self.assertEqual(set(checks), {"runtime", "base", "train", "valid"})
+            self.assertEqual(checks["runtime"]["code"], "runtime_not_installed")
+            self.assertEqual(checks["base"]["code"], "model_not_local")
+            self.assertIn("train.jsonl line 2", checks["train"]["message"])
+            self.assertEqual(checks["valid"]["code"], "validation_required")
+            self.assertEqual(sorted(Path(directory).iterdir()), before)
+            self.assertNotIn("preview_hash", report)
+
+    def test_inspection_reuses_dataset_rules_and_keeps_valid_split_counts(self):
+        from mlx_agent.lora import inspect_lora
+        with TemporaryDirectory() as directory:
+            _training_dataset(directory)
+            _dataset(directory, ['{"text":"one"}'])
+            with patch("mlx_agent.serve._default_which", return_value="/runtime/mlx_lm.lora"):
+                report = inspect_lora(None, directory, batch_size=4)
+            checks = {item["id"]: item for item in report["checks"]}
+            self.assertEqual(checks["train"]["code"], "dataset_too_small")
+            self.assertEqual(checks["train"]["status"], "blocked")
+            self.assertEqual(checks["train"]["examples"], 1)
+            self.assertEqual(checks["valid"]["examples"], 4)
+            self.assertEqual(checks["valid"]["status"], "ready")
+            self.assertEqual(len(checks["valid"]["sha256"]), 64)
+            self.assertEqual(checks["base"]["code"], "repo_required")
+
+    def test_inspection_accepts_cached_base_but_refuses_changed_dataset(self):
+        from mlx_agent.lora import inspect_lora
+        with TemporaryDirectory() as directory:
+            _training_dataset(directory)
+            with patch("mlx_agent.serve._default_which", return_value="/runtime/mlx_lm.lora"), \
+                    patch("mlx_agent.convert.cached_snapshot", return_value=Path(directory)), \
+                    patch("mlx_agent.lora._training_base_identity", return_value={"path": directory}):
+                first = inspect_lora("org/base", directory)
+                self.assertTrue(first["ready"])
+                self.assertFalse(inspect_lora("org/base", directory, batch_size=5)["ready"])
+                (Path(directory) / "valid.jsonl").unlink()
+                second = inspect_lora("org/base", directory)
+                self.assertFalse(second["ready"])
+
+    def test_inspection_rejects_links_and_malformed_encoding_per_split(self):
+        from mlx_agent.lora import inspect_lora
+        with TemporaryDirectory() as directory:
+            _training_dataset(directory)
+            train = Path(directory) / "train.jsonl"
+            train.unlink()
+            train.symlink_to(Path(directory) / "valid.jsonl")
+            (Path(directory) / "valid.jsonl").write_bytes(b"\xff\n")
+            report = inspect_lora(None, directory)
+            checks = {item["id"]: item for item in report["checks"]}
+            self.assertEqual(checks["train"]["status"], "blocked")
+            self.assertEqual(checks["valid"]["status"], "blocked")
+
     def test_text_dataset(self):
         with TemporaryDirectory() as directory:
             _dataset(directory)

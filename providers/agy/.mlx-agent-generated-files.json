@@ -582,7 +582,7 @@
     },
     {
       "path": "src/mlx_agent/lab_workspace.py",
-      "sha256": "076d5253c18826fa88c47e4b756e67cde2469347b0295500b4d2f032e91fecb2"
+      "sha256": "e740deac1a0eeee60fef91f73ad3d4ca91aef59b3580d35e3866e46d3f7f0098"
     },
     {
       "path": "src/mlx_agent/lora.py",
@@ -818,11 +818,11 @@
     },
     {
       "path": "src/mlx_agent/training_eval_runtime.py",
-      "sha256": "60754c5ae1f0dd3bfe8ffc5b941df45dc60c78a0acec3c89a438c9eb3905f382"
+      "sha256": "d666e4315e4b7f1ef91cde5605c30c7f62926b03cdb7cf414fd43b75bbabd1a1"
     },
     {
       "path": "src/mlx_agent/training_evaluation.py",
-      "sha256": "0b690e492df07d4e41fd94411179c7d30374325cae90814fbfbabcf35c2f6b71"
+      "sha256": "30f7182b2c4345babdbcb902cb1dad07bd41d43cb2b37776280bf1295967fa1c"
     },
     {
       "path": "src/mlx_agent/training_runner.py",

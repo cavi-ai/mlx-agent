@@ -2,6 +2,8 @@
 
 LoRA trains an adapter on a cached base model; fuse merges the adapter back into standalone weights.
 
+Cache discovery honors `HF_HUB_CACHE`, then the legacy `HUGGINGFACE_HUB_CACHE`, then `HF_HOME/hub`, then `XDG_CACHE_HOME/huggingface/hub`. With none set, it uses `~/.cache/huggingface/hub`. An explicit `--hf-cache` takes precedence. Training never downloads a missing base.
+
 ## Train
 
 Inspect prerequisites independently before preparing a training plan:

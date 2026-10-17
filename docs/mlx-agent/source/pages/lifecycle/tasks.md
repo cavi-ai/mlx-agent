@@ -98,6 +98,27 @@ rows or an artifact reference keep the response valid JSON. Read the referenced
 local file for a larger result. Request text and process command lines are not
 included in task summaries.
 
+## Agent access through MCP
+
+The existing `mlx_agent_execute` tool accepts capability `task`. Pass a task
+command in `arguments`; the narrow grammar always requests JSON output:
+
+```json
+{
+  "name": "mlx_agent_execute",
+  "arguments": {
+    "capability": "task",
+    "arguments": "start --request /absolute/request.json --state-dir /absolute/task-state"
+  }
+}
+```
+
+Use the same capability for `status`, `list`, `result` and `cancel`, with the
+returned task ID. Prompt content stays inside the request file. Quote paths
+containing spaces; MCP paths must be absolute and obey its existing bounded
+argument grammar. Large results use the same local artifact references as CLI
+calls, so the MCP response does not contain truncated result JSON.
+
 ## Local storage
 
 Default storage is `~/Library/Application Support/mlx-agent/tasks` on macOS and

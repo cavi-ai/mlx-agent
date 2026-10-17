@@ -106,12 +106,17 @@ def task_status(identifier, state_dir=None):
         return record
     owner = record["supervisor"]
     if owner:
-        observed = process_identity(owner["pid"])
-        alive = process_alive(owner["pid"])
+        try:
+            observed = process_identity(owner["pid"])
+            alive = process_alive(owner["pid"])
+        except (OSError, TypeError, ValueError, subprocess.SubprocessError) as error:
+            raise TaskError("task_process_inspection_failed", "The task process could not be inspected.",
+                            "Retry status when the local process table is available; no process was signaled.") from error
         if alive and observed == owner["identity"]:
             return record
         if alive and observed is None:
-            return dict(record, error={"code": "task_identity_unavailable", "message": "The live supervisor identity could not be inspected.", "remediation": "Retry status; no process was signaled."})
+            raise TaskError("task_identity_unavailable", "The live supervisor identity could not be inspected.",
+                            "Retry status when the local process table is available; no process was signaled.")
     else:
         age = (datetime.now(timezone.utc) - datetime.fromisoformat(record["created_at"])).total_seconds()
         if age < STARTUP_SECONDS:

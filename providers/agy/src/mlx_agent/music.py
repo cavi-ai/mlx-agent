@@ -18,6 +18,18 @@ class MusicError(RuntimeError):
         self.code, self.remediation = code, remediation
 
 
+def validate_parameters(caption, lyrics, duration=15.0, steps=30, seed=42):
+    """Validate generation settings without accessing weights or a backend."""
+    for name, text, limit in (("caption", caption, 2000), ("lyrics", lyrics, 10000)):
+        if not isinstance(text, str) or not text.strip() or len(text) > limit or any(ord(c) < 32 and c not in "\n\t" for c in text):
+            raise MusicError("invalid_arguments", "Invalid {0}.".format(name), "Provide a caption and lyrics; use [instrumental] for instrumental music.")
+    if isinstance(duration, bool) or not isinstance(duration, (float, int)) or not math.isfinite(duration) or not 0 < duration <= 360:
+        raise MusicError("invalid_arguments", "Duration must be greater than 0 and at most 360 seconds.", "Use --duration 15.")
+    if type(steps) is not int or not 1 <= steps <= 30 or type(seed) is not int or not 0 <= seed <= 2**32 - 1:
+        raise MusicError("invalid_arguments", "Steps or seed is out of range.", "Use 1..30 steps and a 32-bit unsigned seed.")
+    return {"caption": caption, "lyrics": lyrics, "duration": duration, "steps": steps, "seed": seed}
+
+
 def plan_music(model_path, caption, lyrics, out, duration=15.0, steps=30, seed=42,
                manifests=None, registries=None, root=None):
     model = Path(model_path).expanduser()
@@ -27,13 +39,7 @@ def plan_music(model_path, caption, lyrics, out, duration=15.0, steps=30, seed=4
             raise ValueError("An absolute local model directory is required")
     except (OSError, ValueError) as error:
         raise MusicError("model_unreadable", str(error), "Pass an existing converted music model directory.") from error
-    for name, text, limit in (("caption", caption, 2000), ("lyrics", lyrics, 10000)):
-        if not isinstance(text, str) or not text.strip() or len(text) > limit or any(ord(c) < 32 and c not in "\n\t" for c in text):
-            raise MusicError("invalid_arguments", "Invalid {0}.".format(name), "Provide a caption and lyrics; use [instrumental] for instrumental music.")
-    if isinstance(duration, bool) or not isinstance(duration, (float, int)) or not math.isfinite(duration) or not 0 < duration <= 360:
-        raise MusicError("invalid_arguments", "Duration must be greater than 0 and at most 360 seconds.", "Use --duration 15.")
-    if type(steps) is not int or not 1 <= steps <= 30 or type(seed) is not int or not 0 <= seed <= 2**32 - 1:
-        raise MusicError("invalid_arguments", "Steps or seed is out of range.", "Use 1..30 steps and a 32-bit unsigned seed.")
+    validate_parameters(caption, lyrics, duration, steps, seed)
     target = Path(out).expanduser()
     if not target.is_absolute() or target.suffix.lower() != ".wav" or target.exists() or target.is_symlink() or not target.parent.is_dir():
         raise MusicError("invalid_arguments", "Output must be a new absolute WAV path.", "Choose a new .wav file in an existing directory.")

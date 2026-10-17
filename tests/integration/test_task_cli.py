@@ -1,5 +1,6 @@
 import io
 import json
+import sqlite3
 import subprocess
 import sys
 import unittest
@@ -10,6 +11,7 @@ from unittest.mock import patch
 
 from mlx_agent.cli import main
 from mlx_agent.task_store import TaskStore, default_root
+from tests.task_fixtures import identity_evidence
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -30,10 +32,13 @@ class TaskCliTests(unittest.TestCase):
         return code, json.loads(output.getvalue())
 
     def create(self, result=None):
-        record = self.store.create(self.request, {})
+        record = self.store.create(self.request, identity_evidence(self.request["model_path"]))
         if result is not None:
+            self.store.transition(record["id"], ("starting",), {"supervisor": {"pid": 42, "identity": "supervisor"}})
+            record = self.store.transition(record["id"], ("starting",), {
+                "state": "running", "execution": {"pid": 43, "identity": "worker"}})
             reference = self.store.write_result(record["id"], result)
-            record = self.store.transition(record["id"], ("starting",), {"state": "succeeded", "result": reference})
+            record = self.store.transition(record["id"], ("running",), {"state": "succeeded", "result": reference})
         return record
 
     def test_capabilities_and_empty_history_do_not_create_store(self):
@@ -89,6 +94,30 @@ class TaskCliTests(unittest.TestCase):
         self.assertLess(len(value["data"]["tasks"]), 30)
         self.assertLessEqual(len(json.dumps(value, separators=(",", ":")).encode()), 12288)
         self.assertEqual(value["data"]["tasks"][0]["id"], self.store.list(1)[0]["id"])
+
+    def test_corrupt_nested_record_returns_bounded_cli_errors_without_writing_store(self):
+        record = self.create()
+        with sqlite3.connect(self.store.database) as connection:
+            raw = connection.execute("SELECT record FROM tasks WHERE id = ?", (record["id"],)).fetchone()[0]
+            value = json.loads(raw)
+            value["supervisor"] = {"pid": "bad"}
+            connection.execute("UPDATE tasks SET record = ? WHERE id = ?", (json.dumps(value), record["id"]))
+        before = self.store.database.read_bytes()
+        command = [sys.executable, str(ROOT / "scripts/mlx-agent"), "task"]
+        cases = [("status", "--id", record["id"]), ("list",), ("result", "--id", record["id"]), ("cancel", "--id", record["id"])]
+        for arguments in cases:
+            with self.subTest(arguments=arguments):
+                completed = subprocess.run(command + list(arguments) + ["--state-dir", str(self.state), "--json"],
+                                           capture_output=True, text=True, timeout=10, cwd=ROOT)
+                self.assertTrue(completed.stdout, completed.stderr)
+                payload = json.loads(completed.stdout)
+                self.assertEqual(completed.returncode, 2, completed.stderr)
+                self.assertEqual(payload["status"], "error")
+                self.assertEqual(payload["error"]["code"], "invalid_task_record")
+                self.assertTrue(payload["error"]["message"])
+                self.assertTrue(payload["error"]["remediation"])
+                self.assertLessEqual(len(completed.stdout.encode()), 12288)
+                self.assertEqual(self.store.database.read_bytes(), before)
 
     def test_platform_default_follows_engine_policy(self):
         with patch("mlx_agent.task_store.sys.platform", "darwin"), patch("mlx_agent.task_store.Path.home", return_value=Path("/home/person")):

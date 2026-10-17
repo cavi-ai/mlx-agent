@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from mlx_agent.task_contracts import TaskError
 from mlx_agent.task_store import TaskStore
+from tests.task_fixtures import identity_evidence
 
 
 class TaskStoreTests(unittest.TestCase):
@@ -20,7 +21,12 @@ class TaskStoreTests(unittest.TestCase):
         self.request = {"schema": "task-request/1", "kind": "classification", "model_path": "/models/local", "parameters": {"state": "refund", "questions": {"route": {"type": "choice", "instructions": "Which team should handle this request?", "criteria": ["billing", "other"]}}}}
 
     def create(self):
-        return self.store.create(self.request, {"schema": "task-identity/1", "model_fingerprint": "a" * 64})
+        return self.store.create(self.request, identity_evidence(self.request["model_path"]))
+
+    def start_execution(self, task):
+        self.store.transition(task["id"], ("starting",), {"supervisor": {"pid": 42, "identity": "supervisor"}})
+        return self.store.transition(task["id"], ("starting",), {
+            "state": "running", "execution": {"pid": 43, "identity": "worker"}})
 
     def test_read_does_not_create_store(self):
         self.assertEqual(self.store.list(20), [])
@@ -30,8 +36,9 @@ class TaskStoreTests(unittest.TestCase):
 
     def test_restart_preserves_terminal_record(self):
         task = self.create()
+        task = self.start_execution(task)
         result = self.store.write_result(task["id"], {"schema": "decide/1", "answers": {"route": "billing"}})
-        completed = self.store.transition(task["id"], ("starting",), {"state": "succeeded", "result": result})
+        completed = self.store.transition(task["id"], ("running",), {"state": "succeeded", "result": result})
         self.assertEqual(TaskStore(self.root).get(task["id"]), completed)
         self.assertEqual(completed["state"], "succeeded")
         self.assertIsNotNone(completed["completed_at"])

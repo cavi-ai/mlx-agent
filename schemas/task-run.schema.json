@@ -1,30 +1,125 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Durable inference task record",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["schema", "id", "kind", "state", "model_path", "created_at", "started_at", "completed_at", "cancel_requested", "identity", "request", "result", "error", "supervisor", "execution", "execution_unresolved"],
-  "properties": {
-    "schema": {"const": "task-run/1"},
-    "id": {"type": "string", "format": "uuid", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
-    "kind": {"enum": ["classification", "music_generation"]},
-    "state": {"enum": ["starting", "running", "succeeded", "failed", "cancelled"]},
-    "model_path": {"type": "string", "pattern": "^/"},
-    "created_at": {"type": "string", "format": "date-time"},
-    "started_at": {"type": ["string", "null"], "format": "date-time"},
-    "completed_at": {"type": ["string", "null"], "format": "date-time"},
-    "cancel_requested": {"type": "boolean"},
-    "execution_unresolved": {"type": "boolean"},
-    "identity": {"type": "object"},
-    "request": {"type": "object"},
-    "result": {"type": ["object", "null"]},
-    "error": {"type": ["object", "null"]},
-    "supervisor": {"type": ["object", "null"]},
-    "execution": {"type": ["object", "null"]}
-  },
-  "allOf": [
-    {"if": {"properties": {"state": {"enum": ["succeeded", "failed", "cancelled"]}}}, "then": {"properties": {"completed_at": {"type": "string"}}}, "else": {"properties": {"completed_at": {"type": "null"}}}},
-    {"if": {"properties": {"state": {"const": "succeeded"}}}, "then": {"properties": {"result": {"type": "object"}}}},
-    {"if": {"properties": {"state": {"const": "failed"}}}, "then": {"properties": {"error": {"type": "object"}}}}
-  ]
+  "title": "Durable inference task record and public summary",
+  "oneOf": [
+    {"$ref": "#/$defs/privateRecord"},
+    {"$ref": "#/$defs/publicSummary"}
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "artifactReference": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^/"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "bytes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "processEvidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["pid", "identity"],
+      "properties": {
+        "pid": {"type": "integer", "minimum": 1},
+        "identity": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"}
+      }
+    },
+    "processReference": {
+      "type": "object", "required": ["pid"],
+      "properties": {"pid": {"type": "integer", "minimum": 1}, "identity": {"type": "string"}}
+    },
+    "error": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "message", "remediation"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+        "message": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+        "remediation": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"}
+      }
+    },
+    "privateIdentity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "requested_model_path", "model_path", "model_fingerprint", "backend", "backend_version", "backend_manifest", "backend_manifest_hash", "requested_executable", "executable", "executable_identity", "engine_version", "python_version"],
+      "properties": {
+        "schema": {"const": "task-identity/1"},
+        "requested_model_path": {"type": "string", "pattern": "^/"},
+        "model_path": {"type": "string", "pattern": "^/"},
+        "model_fingerprint": {"$ref": "#/$defs/sha256"},
+        "backend": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+        "backend_version": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+        "backend_manifest": {"type": "object"},
+        "backend_manifest_hash": {"$ref": "#/$defs/sha256"},
+        "requested_executable": {"type": "string", "pattern": "^/"},
+        "executable": {"type": "string", "pattern": "^/"},
+        "executable_identity": {"type": "array", "minItems": 4, "maxItems": 4, "prefixItems": [{"type": "integer", "minimum": 0}, {"type": "integer", "minimum": 0}, {"type": "integer", "minimum": 0}, {"type": "integer", "minimum": 0}], "items": false},
+        "engine_version": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+        "python_version": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"}
+      }
+    },
+    "recordFields": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "id", "kind", "state", "model_path", "created_at", "started_at", "completed_at", "cancel_requested", "identity", "request", "result", "error", "supervisor", "execution", "execution_unresolved"],
+      "properties": {
+        "schema": {"const": "task-run/1"},
+        "id": {"type": "string", "format": "uuid", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+        "kind": {"enum": ["classification", "music_generation"]},
+        "state": {"enum": ["starting", "running", "succeeded", "failed", "cancelled"]},
+        "model_path": {"type": "string", "pattern": "^/"},
+        "created_at": {"type": "string", "format": "date-time"},
+        "started_at": {"type": ["string", "null"], "format": "date-time"},
+        "completed_at": {"type": ["string", "null"], "format": "date-time"},
+        "cancel_requested": {"type": "boolean"},
+        "identity": {"type": "object"},
+        "request": {"$ref": "#/$defs/artifactReference"},
+        "result": {"oneOf": [{"$ref": "#/$defs/artifactReference"}, {"type": "null"}]},
+        "error": {"oneOf": [{"$ref": "#/$defs/error"}, {"type": "null"}]},
+        "supervisor": {"oneOf": [{"$ref": "#/$defs/processReference"}, {"type": "null"}]},
+        "execution": {"oneOf": [{"$ref": "#/$defs/processReference"}, {"type": "null"}]},
+        "execution_unresolved": {"type": "boolean"}
+      },
+      "allOf": [
+        {"if": {"properties": {"state": {"enum": ["succeeded", "failed", "cancelled"]}}}, "then": {"properties": {"completed_at": {"type": "string"}}}, "else": {"properties": {"completed_at": {"type": "null"}}}},
+        {"if": {"properties": {"state": {"const": "succeeded"}}}, "then": {"properties": {"started_at": {"type": "string"}, "result": {"$ref": "#/$defs/artifactReference"}, "error": {"type": "null"}, "supervisor": {"$ref": "#/$defs/processReference"}, "execution": {"$ref": "#/$defs/processReference"}, "execution_unresolved": {"const": false}}}},
+        {"if": {"properties": {"state": {"const": "running"}}}, "then": {"properties": {"started_at": {"type": "string"}, "supervisor": {"$ref": "#/$defs/processReference"}, "execution": {"$ref": "#/$defs/processReference"}, "result": {"type": "null"}, "error": {"type": "null"}}}},
+        {"if": {"properties": {"state": {"const": "failed"}}}, "then": {"properties": {"error": {"$ref": "#/$defs/error"}, "result": {"type": "null"}}}},
+        {"if": {"properties": {"state": {"const": "cancelled"}}}, "then": {"properties": {"cancel_requested": {"const": true}, "result": {"type": "null"}, "error": {"type": "null"}, "execution_unresolved": {"const": false}}}},
+        {"if": {"properties": {"state": {"not": {"const": "succeeded"}}}}, "then": {"properties": {"result": {"type": "null"}}}},
+        {"if": {"properties": {"execution_unresolved": {"const": true}}}, "then": {"properties": {"state": {"const": "failed"}}}},
+        {"if": {"properties": {"execution": {"type": "object"}}}, "then": {"properties": {"supervisor": {"$ref": "#/$defs/processReference"}}}},
+        {"if": {"properties": {"state": {"const": "starting"}}}, "then": {"properties": {"started_at": {"type": "null"}}}}
+      ]
+    },
+    "privateRecord": {
+      "allOf": [
+        {"$ref": "#/$defs/recordFields"},
+        {"properties": {"identity": {"$ref": "#/$defs/privateIdentity"}, "supervisor": {"oneOf": [{"$ref": "#/$defs/processEvidence"}, {"type": "null"}]}, "execution": {"oneOf": [{"$ref": "#/$defs/processEvidence"}, {"type": "null"}]}}}
+      ]
+    },
+    "publicProcess": {
+      "type": "object", "additionalProperties": false,
+      "required": ["pid"], "properties": {"pid": {"type": "integer", "minimum": 1}}
+    },
+    "publicIdentity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["backend", "backend_version", "engine_version", "python_version", "model_fingerprint"],
+      "properties": {
+        "backend": {"type": "string", "minLength": 1},
+        "backend_version": {"type": "string", "minLength": 1},
+        "engine_version": {"type": "string", "minLength": 1},
+        "python_version": {"type": "string", "minLength": 1},
+        "model_fingerprint": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "publicSummary": {
+      "description": "CLI summary. Full model/backend manifest and process identity details remain private in the stored record.",
+      "allOf": [
+        {"$ref": "#/$defs/recordFields"},
+        {"properties": {
+          "identity": {"$ref": "#/$defs/publicIdentity"},
+          "supervisor": {"oneOf": [{"$ref": "#/$defs/publicProcess"}, {"type": "null"}]},
+          "execution": {"oneOf": [{"$ref": "#/$defs/publicProcess"}, {"type": "null"}]}
+        }}
+      ]
+    }
+  }
 }

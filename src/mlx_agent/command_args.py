@@ -432,9 +432,47 @@ def _parse_fleet(tokens):
     return argv
 
 
+def _parse_task(tokens):
+    if not tokens or tokens[0] not in {"capabilities", "start", "status", "list", "result", "cancel"}:
+        raise CommandArgumentError("Task requires capabilities, start, status, list, result or cancel")
+    action = tokens[0]
+    argv, seen, index = ["task", action], set(), 1
+    required = {"start": "--request", "status": "--id", "result": "--id", "cancel": "--id"}.get(action)
+    allowed = {"--state-dir", "--json"}
+    if required:
+        allowed.add(required)
+    if action == "list":
+        allowed.add("--limit")
+    while index < len(tokens):
+        flag = tokens[index]
+        if flag not in allowed or flag in seen:
+            raise CommandArgumentError("Unsupported or duplicate Task argument: {0}".format(flag))
+        seen.add(flag)
+        if flag == "--json":
+            index += 1
+            continue
+        value = _value(tokens, index, flag)
+        if flag == "--id":
+            if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", value):
+                raise CommandArgumentError("Task ID must be a canonical UUID")
+        elif flag == "--limit":
+            value = _integer(value, "limit", 1, 100)
+        else:
+            value = _path(value, flag)
+            if not Path(value).is_absolute():
+                raise CommandArgumentError("Task paths must be absolute")
+        argv.extend((flag, value))
+        index += 2
+    if required and required not in seen:
+        raise CommandArgumentError("Task {0} requires {1}".format(action, required))
+    return argv + ["--json"]
+
+
 def parse_command_arguments(capability, raw):
     """Return a validated argv list; this function never runs a process."""
     tokens = _tokens(raw)
+    if capability == "task":
+        return _parse_task(tokens)
     if capability == "lab":
         return ["lab"] + tokens
     if capability == "scout":
@@ -456,7 +494,7 @@ def parse_command_arguments(capability, raw):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("capability", choices=("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "lab"))
+    parser.add_argument("capability", choices=("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "lab", "task"))
     parser.add_argument("raw", help="one opaque custom-command argument string")
     arguments = parser.parse_args(argv)
     try:

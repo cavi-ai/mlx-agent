@@ -458,7 +458,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "bccd924e767b8b9c2982a98415c4be7fb39a299c20a98f833d472a619b693e4a"
+      "sha256": "188d135b9dd73cdf868e22991b781336ef29f7897dbabd7092d9d83e7b6a43de"
     },
     {
       "path": "src/mlx_agent/command_args.py",
@@ -598,7 +598,7 @@
     },
     {
       "path": "src/mlx_agent/model_doctor.py",
-      "sha256": "b9e1b20a3982033666cb4da90e142db6178420c81e2b4bfe67b012bb0b7b4f7e"
+      "sha256": "7025db773ffdf2f5cea2450a779f78e6957ab3de514da012f6e5ece80d3639b8"
     },
     {
       "path": "src/mlx_agent/models.py",

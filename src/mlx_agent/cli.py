@@ -1897,11 +1897,11 @@ def _run_convert(arguments):
 
 def _convert_scan(arguments):
     roots = arguments.gguf_roots or default_gguf_roots()
-    if not roots:
+    if not roots and not arguments.mlx_roots:
         raise ConvertError(
             "no_scan_roots",
-            "No GGUF roots were given and none of the well-known directories exist.",
-            "Pass --gguf-root PATH for each directory that holds your .gguf files.",
+            "No model roots were given and none of the well-known GGUF directories exist.",
+            "Pass --gguf-root PATH or --mlx-root PATH for each model directory.",
         )
     report = inventory(
         roots,

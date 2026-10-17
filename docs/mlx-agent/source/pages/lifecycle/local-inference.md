@@ -7,6 +7,9 @@ if needed, and finish [conversion](convert.md) before running these commands.
 These commands execute directly; they do not use the preview/confirmation contract
 of downloads and lifecycle starts. Review inputs, output paths, and resource needs.
 
+For retained classification/music results and cancellation across client exits,
+use [Durable inference tasks](tasks.md).
+
 ## Speech
 
 ```bash

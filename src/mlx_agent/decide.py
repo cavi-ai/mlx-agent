@@ -50,6 +50,12 @@ def read_request(request_path):
         request = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         raise _invalid("The request is not readable JSON: {0}".format(error)) from error
+    validate_request(request)
+    return path
+
+
+def validate_request(request):
+    """Validate decision content without reading or running a model."""
     if not isinstance(request, dict) or "state" not in request:
         raise _invalid("The request needs a state.")
     if not isinstance(request["state"], (str, dict, list)):
@@ -62,7 +68,7 @@ def read_request(request_path):
             raise _invalid("Question {0!r} needs a type of {1}.".format(name, ", ".join(QUESTION_TYPES)))
         if "instructions" not in question:
             raise _invalid("Question {0!r} needs instructions.".format(name))
-    return path
+    return request
 
 
 def plan_decide(model_path, request_path, manifests=None, registries=None, root=None):

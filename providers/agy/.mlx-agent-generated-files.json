@@ -82,7 +82,7 @@
     },
     {
       "path": "src/mlx_agent/_lab/video_lab/adapters/wan_mps.py",
-      "sha256": "53741569be40e45435724ab915d319eb4e2a8ce45cfeea88a771864558ee0729"
+      "sha256": "d17cc3a9b6462c2e7682ad320afedf91c2dc99e830c96fdc8a23871611a004c1"
     },
     {
       "path": "src/mlx_agent/_lab/video_lab/adaptive_study_models.py",
@@ -582,7 +582,7 @@
     },
     {
       "path": "src/mlx_agent/lab_workspace.py",
-      "sha256": "076d5253c18826fa88c47e4b756e67cde2469347b0295500b4d2f032e91fecb2"
+      "sha256": "f763b98ed78b27cb9a58d3c5aa43547b81db9ed7b9138efdbca8a6039a40413f"
     },
     {
       "path": "src/mlx_agent/lora.py",
@@ -809,6 +809,10 @@
       "sha256": "38755d43eba55b485b1ac8dcf3467cdeddeb1f3172aedd5c75ae4d15061ba0d3"
     },
     {
+      "path": "src/mlx_agent/study_recipes.py",
+      "sha256": "039d72bfa53bf2430adca3baf1a9402d081d50c6b2f8ef14c5c0e2f54a250c11"
+    },
+    {
       "path": "src/mlx_agent/taxonomy.py",
       "sha256": "02054c484b5c16899612d4a43e1ab3a9b9ee6137f423fc4567e9fc2adc951cb3"
     },
@@ -818,11 +822,11 @@
     },
     {
       "path": "src/mlx_agent/training_eval_runtime.py",
-      "sha256": "60754c5ae1f0dd3bfe8ffc5b941df45dc60c78a0acec3c89a438c9eb3905f382"
+      "sha256": "d666e4315e4b7f1ef91cde5605c30c7f62926b03cdb7cf414fd43b75bbabd1a1"
     },
     {
       "path": "src/mlx_agent/training_evaluation.py",
-      "sha256": "0b690e492df07d4e41fd94411179c7d30374325cae90814fbfbabcf35c2f6b71"
+      "sha256": "30f7182b2c4345babdbcb902cb1dad07bd41d43cb2b37776280bf1295967fa1c"
     },
     {
       "path": "src/mlx_agent/training_runner.py",

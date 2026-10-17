@@ -50,6 +50,28 @@ Fuse validates the adapter (`adapter_config.json` present and parseable) and ren
 
 ## Serve the result
 
+### Evaluation suites and reviews
+
+The Lab workspace operations `training-preview` and `training-evaluate` accept
+either the legacy `prompt` and optional `max_tokens`, or a `prompt_suite` object
+with `id`, `name`, and `prompts`. Each prompt contains `id`, `text`, and
+`max_tokens`. Suites contain 1–16 uniquely identified text prompts, each limited
+to 8,000 characters and 1–512 output tokens. Mixing the two request forms is
+refused. Preview binds prompt order and settings to the training receipt and
+base/adapter identities before confirmation.
+
+Each variant loads once and generates every prompt with temperature zero and
+seed 42 reset per prompt. A version-2 report retains all paired samples. Partial
+results or changed inputs are refused. Legacy version-1 reports keep their
+single-prompt format. New history rows record suite names and prompt counts.
+
+`training-review` accepts `evaluation_id`, the retained `artifact_sha256`,
+`prompt_id`, a preference (`baseline`, `adapter`, `tie`, or `neither`), and
+optional notes up to 2,000 characters. Preferences are appended as separate
+records under the workspace reviewer identity; they never rewrite generation
+reports. Inspection returns the latest recorded preference per prompt alongside
+the verified report. Reviews do not establish model quality or training success.
+
 ```bash
 python3 scripts/mlx-agent serve start --repo <repo> --runtime mlx_lm --adapter-path ./adapter
 ```

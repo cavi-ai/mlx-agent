@@ -28,13 +28,15 @@ from mlx_agent.compute import ComputeLease
 from video_lab.local_authority import RetainedDirectoryAuthority
 
 _FIELDS = {
+    "recipe-catalog": set(), "recipe-prepare": {"settings"},
     "adopt-preview": {"source_database", "source_artifacts", "destination"},
     "adopt": {"source_database", "source_artifacts", "destination", "preview_hash"},
     "study-list": set(), "study-create": {"manifest"},
     "study-show": {"study_id"}, "study-resume": {"study_id"}, "study-run": {"study_id"},
     "study-submit": {"study_id", "session_id", "preference"},
-    "training-preview": {"receipt", "prompt", "max_tokens"},
-    "training-evaluate": {"receipt", "prompt", "max_tokens", "preview_hash"},
+    "training-preview": {"receipt", "prompt", "max_tokens", "prompt_suite"},
+    "training-evaluate": {"receipt", "prompt", "max_tokens", "prompt_suite", "preview_hash"},
+    "training-review": {"evaluation_id", "artifact_sha256", "prompt_id", "preference", "notes"},
     "training-history": set(), "training-inspect": {"evaluation_id"},
     "snapshot": set(), "preview": {"draft"}, "create": {"draft"},
     "inspect": {"experiment_id"}, "run": {"job_id", "worker_id"},
@@ -51,31 +53,44 @@ def validate_request(request):
     operation = request["operation"]
     if set(request) - (_FIELDS[operation] | {"operation"}):
         raise ValueError("Unexpected workspace fields.")
-    for field in ("experiment_id", "job_id", "worker_id", "session_id", "study_id", "evaluation_id"):
+    for field in ("experiment_id", "job_id", "worker_id", "session_id", "study_id", "evaluation_id", "prompt_id"):
         if field in request and (not isinstance(request[field], str) or not request[field].strip()
                                  or not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", request[field])):
             raise ValueError("Invalid " + field)
     required = {
+        "recipe-prepare": {"settings"},
         "adopt-preview": {"source_database", "source_artifacts", "destination"},
         "adopt": {"source_database", "source_artifacts", "destination", "preview_hash"},
         "study-create": {"manifest"},
         "study-show": {"study_id"}, "study-resume": {"study_id"}, "study-run": {"study_id"},
         "study-submit": {"study_id", "session_id", "preference"},
         "training-inspect": {"evaluation_id"},
-        "training-preview": {"receipt", "prompt"},
-        "training-evaluate": {"receipt", "prompt", "preview_hash"},
+        "training-preview": {"receipt"},
+        "training-evaluate": {"receipt", "preview_hash"},
+        "training-review": {"evaluation_id", "artifact_sha256", "prompt_id", "preference"},
         "inspect": {"experiment_id"}, "cancel": {"job_id"}, "run": {"job_id"},
         "review-start": {"experiment_id"}, "review-media": {"session_id"},
         "review-submit": {"session_id", "preference", "scores"}, "reveal": {"session_id"},
     }.get(operation, set())
     if not required <= set(request):
         raise ValueError("Missing workspace fields.")
+    if operation in ("training-preview", "training-evaluate"):
+        from mlx_agent.training_evaluation import validate_suite, _prompt
+        if "prompt_suite" in request:
+            if "prompt" in request or "max_tokens" in request:
+                raise ValueError("Choose either a prompt suite or a single prompt.")
+            validate_suite(request["prompt_suite"])
+        else:
+            _prompt(request.get("prompt"), request.get("max_tokens", 128))
     for field in ("source_database", "source_artifacts", "destination", "preview_hash"):
         if field in request and (not isinstance(request[field], str) or not request[field]
                 or len(request[field]) > 4096 or any(ord(c) < 32 for c in request[field])):
             raise ValueError("Invalid " + field)
     if operation in ("preview", "create"):
         ExperimentDraft.model_validate(request.get("draft"))
+    if operation == "recipe-prepare":
+        from mlx_agent.study_recipes import validate_settings
+        validate_settings(request["settings"])
     if operation == "review-submit":
         DisplayPreference(request.get("preference"))
         for item in request.get("scores", []):
@@ -87,6 +102,11 @@ def execute(database_path, artifact_root, reviewer, request):
     if not reviewer.strip():
         raise ValueError("A reviewer identity is required.")
     operation = request["operation"]
+    if operation.startswith("recipe-"):
+        from mlx_agent import study_recipes
+        if operation == "recipe-catalog":
+            return {"recipes": study_recipes.catalog()}
+        return {"manifest": study_recipes.prepare(request["settings"])}
     if operation in ("adopt-preview", "adopt"):
         from mlx_agent.lab_adoption import preview, adopt
         arguments = [request["source_database"], request["source_artifacts"], request["destination"]]
@@ -104,7 +124,9 @@ def execute(database_path, artifact_root, reviewer, request):
     if operation.startswith("training-"):
         from mlx_agent import training_evaluation
         if operation == "training-preview":
-            return {"plan": training_evaluation.preview(request["receipt"], request["prompt"], request.get("max_tokens", 128))}
+            return {"plan": training_evaluation.preview(request["receipt"], request.get("prompt"), request.get("max_tokens", 128), request.get("prompt_suite"))}
+        if operation == "training-review":
+            return training_evaluation.review(database, service.artifacts, reviewer, request)
         if operation == "training-history":
             return {"evaluations": training_evaluation.history(database)}
         if operation == "training-inspect":

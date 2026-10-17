@@ -4,6 +4,7 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from mlx_agent import cli
 from mlx_agent.backends import load_manifests, load_registries
@@ -116,6 +117,30 @@ class AnnotateInventoryTests(unittest.TestCase):
 
 
 class ScanTaskCliTests(unittest.TestCase):
+    def test_mlx_only_scan_does_not_require_a_gguf_directory(self):
+        with TemporaryDirectory() as directory:
+            model = Path(directory, "qwen-mlx")
+            model.mkdir()
+            (model / "config.json").write_text(
+                '{"model_type":"qwen2","quantization":{"bits":4,"group_size":64}}', encoding="utf-8")
+            (model / "model.safetensors").write_bytes(b"fixture weights; never loaded")
+            out = io.StringIO()
+            with patch("mlx_agent.cli.default_gguf_roots", return_value=[]), redirect_stdout(out):
+                code = cli.main(["convert", "scan", "--mlx-root", directory,
+                                 "--receipts-dir", directory, "--no-signature", "--json"])
+            envelope = json.loads(out.getvalue())
+            self.assertEqual(code, 0, envelope)
+            self.assertEqual(envelope["data"]["roots"]["gguf"], [])
+            self.assertEqual(envelope["data"]["models"], [])
+            self.assertEqual([item["path"] for item in envelope["data"]["outputs"]], [str(model)])
+
+    def test_scan_still_requires_at_least_one_root(self):
+        out = io.StringIO()
+        with patch("mlx_agent.cli.default_gguf_roots", return_value=[]), redirect_stdout(out):
+            code = cli.main(["convert", "scan", "--json"])
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(out.getvalue())["error"]["code"], "no_scan_roots")
+
     def test_convert_scan_json_carries_task_labels(self):
         with TemporaryDirectory() as directory:
             write_gguf(Path(directory, "tiny-Q4_K_M.gguf"))

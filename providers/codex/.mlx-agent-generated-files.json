@@ -458,7 +458,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "bccd924e767b8b9c2982a98415c4be7fb39a299c20a98f833d472a619b693e4a"
+      "sha256": "188d135b9dd73cdf868e22991b781336ef29f7897dbabd7092d9d83e7b6a43de"
     },
     {
       "path": "src/mlx_agent/command_args.py",

@@ -44,7 +44,7 @@ def capture_identity(model, manifest, executable):
 
 
 def check_identity(expected):
-    from .backends import load_manifests
+    from .backends import BackendError, load_manifests
     try:
         if expected["schema"] != "task-identity/1":
             raise TaskError("identity_changed", "Unsupported task identity algorithm.")
@@ -55,3 +55,6 @@ def check_identity(expected):
                 raise TaskError("identity_changed", "Accepted {0} changed.".format(key), "Start a new task with the current local inputs.")
     except (KeyError, TypeError) as error:
         raise TaskError("identity_changed", "Task identity evidence is invalid.") from error
+    except (OSError, ValueError, BackendError) as error:
+        raise TaskError("identity_unavailable", "Cannot read the current backend identity.",
+                        "Repair the backend manifest and retry the identity check.") from error

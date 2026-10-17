@@ -433,11 +433,11 @@ def _parse_fleet(tokens):
 
 
 def _parse_task(tokens):
-    if not tokens or tokens[0] not in {"capabilities", "start", "status", "list", "result", "cancel"}:
-        raise CommandArgumentError("Task requires capabilities, start, status, list, result or cancel")
+    if not tokens or tokens[0] not in {"capabilities", "start", "status", "list", "result", "cancel", "verify-model"}:
+        raise CommandArgumentError("Task requires capabilities, start, status, list, result, cancel or verify-model")
     action = tokens[0]
     argv, seen, index = ["task", action], set(), 1
-    required = {"start": "--request", "status": "--id", "result": "--id", "cancel": "--id"}.get(action)
+    required = {"start": "--request", "status": "--id", "result": "--id", "cancel": "--id", "verify-model": "--id"}.get(action)
     allowed = {"--state-dir", "--json"}
     if required:
         allowed.add(required)

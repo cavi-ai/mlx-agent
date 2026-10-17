@@ -66,6 +66,7 @@ python3 scripts/mlx-agent task status --id TASK_UUID --json
 python3 scripts/mlx-agent task list --limit 20 --json
 python3 scripts/mlx-agent task result --id TASK_UUID --json
 python3 scripts/mlx-agent task cancel --id TASK_UUID --json
+python3 scripts/mlx-agent task verify-model --id TASK_UUID --json
 ```
 
 Replace `TASK_UUID` with the returned `data.task.id`. Start captures the request
@@ -98,6 +99,15 @@ rows or an artifact reference keep the response valid JSON. Read the referenced
 local file for a larger result. Request text and process command lines are not
 included in task summaries.
 
+Before reusing a retained request, `verify-model` checks the recorded model,
+backend manifest and executable identity against their current local values.
+Success returns the task ID, model path, recorded fingerprint and `matches: true`.
+A changed or missing dependency returns a structured error. This read-only check
+does not start inference, claim compute, or change the task record. Historical
+status and results remain accessible when the model has changed or disappeared.
+Verification describes the files at check time; a later Start captures its own
+current identity and checks it again during execution.
+
 ## Agent access through MCP
 
 The existing `mlx_agent_execute` tool accepts capability `task`. Pass a task
@@ -113,7 +123,7 @@ command in `arguments`; the narrow grammar always requests JSON output:
 }
 ```
 
-Use the same capability for `status`, `list`, `result` and `cancel`, with the
+Use the same capability for `status`, `list`, `result`, `cancel` and `verify-model`, with the
 returned task ID. Prompt content stays inside the request file. Quote paths
 containing spaces; MCP paths must be absolute and obey its existing bounded
 argument grammar. Large results use the same local artifact references as CLI

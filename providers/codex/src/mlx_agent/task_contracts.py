@@ -186,4 +186,5 @@ def _artifact_reference(value):
 def capabilities():
     return {"schema": "task-capabilities/1", "request_schema": REQUEST_SCHEMA, "run_schema": RUN_SCHEMA,
             "tasks": [{"kind": kind, "result_schema": "decide/1" if kind == "classification" else "music/1",
-                       "cancellation": True, "requires_local_model": True} for kind in KINDS]}
+                       "cancellation": True, "requires_local_model": True,
+                       "model_verification": True} for kind in KINDS]}

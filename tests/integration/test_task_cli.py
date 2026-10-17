@@ -10,6 +10,9 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from mlx_agent.cli import main
+from mlx_agent.backends import BackendError, load_manifests
+from mlx_agent.mcp_server import TOOL_NAME, handle_request
+from mlx_agent.task_identity import capture_identity
 from mlx_agent.task_store import TaskStore, default_root
 from tests.task_fixtures import identity_evidence
 
@@ -31,8 +34,8 @@ class TaskCliTests(unittest.TestCase):
             code = main(["task", *args, "--state-dir", str(self.state), "--json"])
         return code, json.loads(output.getvalue())
 
-    def create(self, result=None):
-        record = self.store.create(self.request, identity_evidence(self.request["model_path"]))
+    def create(self, result=None, identity=None):
+        record = self.store.create(self.request, identity or identity_evidence(self.request["model_path"]))
         if result is not None:
             self.store.transition(record["id"], ("starting",), {"supervisor": {"pid": 42, "identity": "supervisor"}})
             record = self.store.transition(record["id"], ("starting",), {
@@ -46,6 +49,7 @@ class TaskCliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(value["operation"], "task.capabilities")
         self.assertEqual(len(value["data"]["tasks"]), 2)
+        self.assertTrue(all(task["model_verification"] for task in value["data"]["tasks"]))
         code, value = self.run_cli("list")
         self.assertEqual(value["data"], {"tasks": [], "has_more": False})
         self.assertFalse(self.state.exists())
@@ -124,3 +128,55 @@ class TaskCliTests(unittest.TestCase):
             self.assertEqual(default_root(), Path("/home/person/Library/Application Support/mlx-agent/tasks"))
         with patch("mlx_agent.task_store.sys.platform", "linux"), patch.dict("os.environ", {"XDG_STATE_HOME": "/state"}):
             self.assertEqual(default_root(), Path("/state/mlx-agent/tasks"))
+
+    def test_verify_model_checks_saved_identity_without_mutating_history(self):
+        model = self.root / "model"
+        model.mkdir()
+        config = model / "config.json"
+        config.write_text('{"model_type":"laya"}')
+        executable = self.root / "python"
+        executable.write_bytes(b"runtime")
+        self.request["model_path"] = str(model)
+        identity = capture_identity(model, load_manifests()["mlx-embeddings"], executable)
+        record = self.create({"answers": {"route": {"choice": "billing"}}}, identity)
+        before = self.store.database.read_bytes()
+        code, value = self.run_cli("verify-model", "--id", record["id"])
+        self.assertEqual(code, 0)
+        self.assertEqual(value["data"], {"id": record["id"], "model_path": str(model),
+                                         "model_fingerprint": identity["model_fingerprint"], "matches": True})
+        response = handle_request({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+            "name": TOOL_NAME, "arguments": {"capability": "task", "arguments":
+                'verify-model --id {0} --state-dir "{1}"'.format(record["id"], self.state)}}})
+        mcp = json.loads(response["result"]["content"][0]["text"])
+        self.assertEqual(mcp["exit_code"], 0)
+        self.assertEqual(json.loads(mcp["stdout"])["data"], value["data"])
+        self.assertEqual(self.store.database.read_bytes(), before)
+        for mutation in (lambda: config.write_text('{"model_type":"changed"}'),
+                         lambda: (config.unlink(), model.rmdir())):
+            mutation()
+            code, value = self.run_cli("verify-model", "--id", record["id"])
+            self.assertEqual(code, 2)
+            self.assertIn(value["error"]["code"], ("identity_changed", "identity_unavailable"))
+            self.assertEqual(self.store.database.read_bytes(), before)
+            code, result = self.run_cli("result", "--id", record["id"])
+            self.assertEqual(code, 0)
+            self.assertEqual(result["data"]["result"]["answers"]["route"]["choice"], "billing")
+
+    def test_verify_model_missing_record_does_not_create_storage(self):
+        code, value = self.run_cli("verify-model", "--id", "11111111-1111-4111-8111-111111111111")
+        self.assertEqual(code, 2)
+        self.assertEqual(value["error"]["code"], "task_not_found")
+        self.assertFalse(self.state.exists())
+
+    def test_verify_model_manifest_failures_preserve_structured_errors_and_store(self):
+        record = self.create()
+        before = self.store.database.read_bytes()
+        errors = (OSError("unreadable manifest"), ValueError("invalid JSON"),
+                  BackendError("manifest_invalid", "Invalid backend", "Repair the manifest."))
+        for error in errors:
+            with self.subTest(error=type(error).__name__), patch("mlx_agent.backends.load_manifests", side_effect=error):
+                code, value = self.run_cli("verify-model", "--id", record["id"])
+                self.assertEqual(code, 2)
+                self.assertEqual(value["error"]["code"], "identity_unavailable")
+                self.assertLessEqual(len(json.dumps(value).encode()), 12288)
+                self.assertEqual(self.store.database.read_bytes(), before)

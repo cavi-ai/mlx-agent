@@ -135,6 +135,14 @@ def cancel_task(identifier, state_dir=None):
     return TaskStore(state_dir).request_cancel(identifier)
 
 
+def verify_task_model(identifier, state_dir=None):
+    """Check recorded model/runtime identity without changing historical state."""
+    record = TaskStore(state_dir).get(identifier)
+    check_identity(record["identity"])
+    return {"id": record["id"], "model_path": record["model_path"],
+            "model_fingerprint": record["identity"]["model_fingerprint"], "matches": True}
+
+
 def task_result(identifier, state_dir=None):
     store = TaskStore(state_dir)
     record = task_status(identifier, state_dir)

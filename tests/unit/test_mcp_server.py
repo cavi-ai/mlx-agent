@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 from mlx_agent.task_store import TaskStore
 
 from mlx_agent.mcp_server import TOOL_NAME, handle_request
+from tests.task_fixtures import identity_evidence
 
 
 class MCPServerTests(unittest.TestCase):
@@ -26,7 +27,7 @@ class MCPServerTests(unittest.TestCase):
             root = Path(directory).resolve() / "tasks with spaces"
             store = TaskStore(root)
             request = {"schema": "task-request/1", "kind": "music_generation", "model_path": "/model", "parameters": {"caption": "piano"}}
-            record = store.create(request, {})
+            record = store.create(request, identity_evidence(request["model_path"]))
             for action in ("status", "cancel"):
                 response = self.task_call('{0} --id {1} --state-dir "{2}" --json'.format(action, record["id"], root))
                 payload = json.loads(response["result"]["content"][0]["text"])
@@ -43,9 +44,12 @@ class MCPServerTests(unittest.TestCase):
             root = Path(directory).resolve() / "tasks"
             store = TaskStore(root)
             request = {"schema": "task-request/1", "kind": "classification", "model_path": "/model", "parameters": {"state": "x", "questions": {"score": {"type": "score", "instructions": "score"}}}}
-            record = store.create(request, {})
+            record = store.create(request, identity_evidence(request["model_path"]))
+            store.transition(record["id"], ("starting",), {"supervisor": {"pid": 42, "identity": "supervisor"}})
+            record = store.transition(record["id"], ("starting",), {
+                "state": "running", "execution": {"pid": 43, "identity": "worker"}})
             reference = store.write_result(record["id"], {"answers": {"text": "x" * 30000}})
-            store.transition(record["id"], ("starting",), {"state": "succeeded", "result": reference})
+            store.transition(record["id"], ("running",), {"state": "succeeded", "result": reference})
             response = self.task_call('result --id {0} --state-dir "{1}"'.format(record["id"], root))
             payload = json.loads(response["result"]["content"][0]["text"])
             self.assertFalse(payload["stdout_truncated"])

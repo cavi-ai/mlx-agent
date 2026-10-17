@@ -189,6 +189,18 @@ def _known_members(process, identity, previous):
     return {pid: value for pid, value in previous.items() if pid in members and process_identity(pid) == value}
 
 
+def _wait_for_execution_ready(process, store, identifier):
+    path = store.artifact_path(identifier, "execute.ready")
+    deadline = time.monotonic() + STARTUP_SECONDS
+    while time.monotonic() < deadline:
+        if path.exists():
+            return
+        if process.poll() is not None:
+            raise TaskError("task_worker_start_failed", "The execution worker exited before completing startup.")
+        time.sleep(POLL_SECONDS)
+    raise TaskError("task_worker_start_timeout", "The execution worker did not complete startup before the deadline.")
+
+
 def _stop(process, identity, known, grace=STOP_SECONDS):
     for sig in (signal.SIGTERM, signal.SIGKILL):
         members = group_members(process.pid)
@@ -252,6 +264,13 @@ def supervise(identifier, state_dir, lease_factory=ComputeLease):
                 raise TaskError("task_identity_unavailable", "Cannot establish the execution worker identity.")
             known = {process.pid: identity}
             lease.bind_process_group(process.pid)
+            store.transition(identifier, ("starting",), {"execution": {"pid": process.pid, "identity": identity}})
+            _wait_for_execution_ready(process, store, identifier)
+            identity = process_identity(process.pid)
+            if not identity:
+                raise TaskError("task_identity_unavailable", "Cannot establish the ready execution worker identity.")
+            known = {process.pid: identity}
+            lease.bind_process_group(process.pid)
             store.transition(identifier, ("starting",), {"state": "running", "execution": {"pid": process.pid, "identity": identity}})
             while process.poll() is None:
                 known = _known_members(process, identity, known)
@@ -311,6 +330,9 @@ def supervise(identifier, state_dir, lease_factory=ComputeLease):
 def execute(identifier, state_dir):
     store = TaskStore(state_dir)
     try:
+        ready_path = store.artifact_path(identifier, "execute.ready")
+        descriptor = os.open(ready_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        os.close(descriptor)
         # Never run until the supervisor has durably bound the group to its lease.
         deadline = time.monotonic() + STARTUP_SECONDS
         while True:

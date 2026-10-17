@@ -826,7 +826,7 @@
     },
     {
       "path": "src/mlx_agent/task_runtime.py",
-      "sha256": "a522b88f3776385376be60f11337447b5fe401803fd6babaef3206d6f8be8d45"
+      "sha256": "1d13b22295dfd2ab8ef6bc5238ab885140aa677a3d1e03b4755a9bce1aa1849b"
     },
     {
       "path": "src/mlx_agent/task_store.py",

@@ -2,9 +2,11 @@
 
 import json
 import os
+import shlex
 import signal
 import subprocess
 import sys
+import threading
 import time
 import unittest
 from functools import partial
@@ -13,7 +15,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from mlx_agent.backends import INSTALL_MARKER, load_manifests
-from mlx_agent.compute import ComputeBusy, ComputeLease, group_members
+from mlx_agent.compute import ComputeBusy, ComputeLease, group_members, process_identity
 from mlx_agent.task_contracts import TaskError
 from mlx_agent.task_runtime import cancel_task, start_task, supervise, task_result, task_status, _stop
 from mlx_agent.task_store import TaskStore
@@ -193,6 +195,51 @@ class TaskProcessTests(unittest.TestCase):
         cancel_task(record["id"], self.state)
         result = self.wait_for(lambda: self.terminal(record["id"]))
         self.assertEqual(result["state"], "cancelled", result)
+        self.assertEqual(group_members(result["execution"]["pid"]), [])
+
+    def test_cancel_after_python_launcher_reexec_preserves_worker_identity(self):
+        import mlx_agent.task_runtime as task_runtime
+
+        record = self.start(behavior="ignore-term", launcher=lambda *args, **kwargs: None)
+        launcher = self.root / "python-launcher"
+        launcher.write_text("#!/bin/sh\n/bin/sleep 0.5\nexec {0} \"$@\"\n".format(shlex.quote(sys.executable)))
+        launcher.chmod(0o700)
+        original_spawn = task_runtime._spawn
+
+        def launch_through_shim(argv, **kwargs):
+            process = subprocess.Popen([str(launcher), *argv[1:]], **kwargs)
+            self.processes.append(process)
+            return process
+
+        def spawn(role, identifier, store, process_launcher=subprocess.Popen):
+            if role == "execute":
+                return original_spawn(role, identifier, store, launcher=launch_through_shim)
+            return original_spawn(role, identifier, store, launcher=process_launcher)
+
+        cancel_errors = []
+        identity_observations = []
+
+        def cancel_after_backend_starts():
+            try:
+                self.wait_for(lambda: (self.root / "started").exists())
+                execution = task_status(record["id"], self.state)["execution"]
+                identity_observations.append((execution["identity"], process_identity(execution["pid"])))
+                cancel_task(record["id"], self.state)
+            except BaseException as error:
+                cancel_errors.append(error)
+
+        cancellation = threading.Thread(target=cancel_after_backend_starts)
+        cancellation.start()
+        with patch.object(task_runtime, "_spawn", spawn):
+            task_runtime.supervise(record["id"], self.state, lease_factory=partial(ComputeLease, root=self.compute))
+        cancellation.join(timeout=10)
+        self.assertFalse(cancellation.is_alive(), "Cancellation request did not finish")
+        self.assertEqual(cancel_errors, [])
+        self.assertEqual(len(identity_observations), 1)
+        self.assertEqual(identity_observations[0][0], identity_observations[0][1])
+        result = task_status(record["id"], self.state)
+        self.assertEqual(result["state"], "cancelled", result)
+        self.assertFalse(result["execution_unresolved"])
         self.assertEqual(group_members(result["execution"]["pid"]), [])
 
     def test_pid_reuse_never_signals_unrelated_process(self):

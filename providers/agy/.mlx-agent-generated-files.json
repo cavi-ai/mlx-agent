@@ -598,7 +598,7 @@
     },
     {
       "path": "src/mlx_agent/model_doctor.py",
-      "sha256": "b9e1b20a3982033666cb4da90e142db6178420c81e2b4bfe67b012bb0b7b4f7e"
+      "sha256": "7025db773ffdf2f5cea2450a779f78e6957ab3de514da012f6e5ece80d3639b8"
     },
     {
       "path": "src/mlx_agent/models.py",

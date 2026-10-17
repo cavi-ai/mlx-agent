@@ -3,17 +3,33 @@ import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from mlx_agent.model_doctor import (
     adapter_references,
     check_endpoint,
     collect_runtime_inventory,
+    default_hf_cache,
     inspect_hf_cache,
     run_model_doctor,
     scan_receipt_after_hashes,
     scan_wired_configs,
 )
 from mlx_agent.wiring import ConfigAdapter
+
+
+class DefaultHFCacheTests(unittest.TestCase):
+    def test_hugging_face_cache_environment_precedence(self):
+        cases = [
+            ({"HF_HUB_CACHE": "/direct", "HF_HOME": "/home", "XDG_CACHE_HOME": "/xdg"}, "/direct"),
+            ({"HUGGINGFACE_HUB_CACHE": "/legacy", "HF_HOME": "/home"}, "/legacy"),
+            ({"HF_HOME": "/home", "XDG_CACHE_HOME": "/xdg"}, "/home/hub"),
+            ({"XDG_CACHE_HOME": "/xdg"}, "/xdg/huggingface/hub"),
+            ({}, str(Path.home() / ".cache/huggingface/hub")),
+        ]
+        for environment, expected in cases:
+            with self.subTest(environment=environment), patch.dict("os.environ", environment, clear=True):
+                self.assertEqual(default_hf_cache(), Path(expected))
 
 
 def _hf_repo(root, name, blob_bytes=b"weights", dangling=False):

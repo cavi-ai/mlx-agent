@@ -42,7 +42,14 @@ _HEALTH_TIMEOUT = 2.0
 
 
 def default_hf_cache():
-    return Path.home() / ".cache" / "huggingface" / "hub"
+    configured = os.environ.get("HF_HUB_CACHE") or os.environ.get("HUGGINGFACE_HUB_CACHE")
+    if configured:
+        return Path(configured).expanduser()
+    home = os.environ.get("HF_HOME")
+    if home:
+        return Path(home).expanduser() / "hub"
+    cache = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache").expanduser()
+    return cache / "huggingface" / "hub"
 
 
 def inspect_hf_cache(cache_dir):

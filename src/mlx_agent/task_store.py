@@ -187,7 +187,11 @@ class TaskStore:
             record = self._load(connection, identifier)
             if record["state"] in TERMINAL or record["state"] not in expected:
                 raise TaskError("task_state_changed", "The task state has already changed.", "Read its current status.")
+            if "supervisor" in changes and record["supervisor"] is not None:
+                raise TaskError("task_state_changed", "The task already has a supervisor.")
             next_state = changes.get("state", record["state"])
+            if next_state == "succeeded" and record["cancel_requested"]:
+                raise TaskError("task_cancel_requested", "Cancellation was requested before result publication.")
             if record["state"] == "running" and next_state == "starting":
                 raise TaskError("invalid_transition", "Running tasks cannot restart under the same identity.")
             record.update(changes)

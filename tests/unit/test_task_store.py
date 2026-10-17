@@ -47,6 +47,13 @@ class TaskStoreTests(unittest.TestCase):
         with self.assertRaises(TaskError):
             self.store.transition(task["id"], ("failed",), {"model_path": "/changed"})
 
+    def test_supervisor_cannot_be_replaced(self):
+        task = self.create()
+        self.store.transition(task["id"], ("starting",), {"supervisor": {"pid": 42, "identity": "original"}})
+        with self.assertRaises(TaskError):
+            self.store.transition(task["id"], ("starting",), {"supervisor": {"pid": 43, "identity": "replacement"}})
+        self.assertEqual(self.store.get(task["id"])["supervisor"]["pid"], 42)
+
     def test_concurrent_cancel_preserves_result(self):
         task = self.create()
         with ThreadPoolExecutor(max_workers=4) as pool:
@@ -55,6 +62,15 @@ class TaskStoreTests(unittest.TestCase):
         result = self.store.write_result(task["id"], {"answers": {"route": "billing"}})
         self.store.transition(task["id"], ("starting",), {"state": "cancelled"})
         self.assertEqual(json.loads(Path(result["path"]).read_text())["answers"]["route"], "billing")
+
+    def test_cancellation_wins_before_success_publication(self):
+        task = self.create()
+        result = self.store.write_result(task["id"], {"answers": {"route": "billing"}})
+        self.store.request_cancel(task["id"])
+        with self.assertRaises(TaskError) as caught:
+            self.store.transition(task["id"], ("starting",), {"state": "succeeded", "result": result})
+        self.assertEqual(caught.exception.code, "task_cancel_requested")
+        self.assertEqual(self.store.get(task["id"])["state"], "starting")
 
     def test_unknown_schema_and_corrupt_database_are_not_reset(self):
         self.create()

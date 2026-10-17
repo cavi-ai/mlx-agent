@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from mlx_agent.compute import ComputeLease, ComputeBusy
+from unittest.mock import patch
 
 class ComputeLeaseTests(unittest.TestCase):
     def test_lock_excludes_other_entrypoints_and_releases(self):
@@ -53,4 +54,38 @@ class ComputeLeaseTests(unittest.TestCase):
             record.chmod(0o600)
             with self.assertRaises(ComputeBusy):
                 with ComputeLease("video", root, inspector=lambda pid: None, alive=lambda pid: True):
+                    pass
+
+    def test_execution_group_keeps_ownership_after_supervisor_loss(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve() / "compute"
+            identities = {os.getpid(): "supervisor", 4242: "execution"}
+            members = [4242, 4343]
+            factory = lambda: ComputeLease("task", root, inspector=identities.get,
+                alive=lambda pid: pid in identities, group_probe=lambda _: list(members))
+            with factory() as lease:
+                with patch("mlx_agent.compute.os.getpgid", return_value=4242):
+                    lease.bind_process_group(4242)
+            del identities[os.getpid()]
+            del identities[4242]
+            members[:] = [4343]
+            with self.assertRaises(ComputeBusy):
+                with factory():
+                    pass
+            self.assertEqual(json.loads((root / "owner.json").read_text())["execution_group"]["pgid"], 4242)
+            members.clear()
+            identities[os.getpid()] = "new-supervisor"
+            with factory():
+                pass
+
+    def test_uninspectable_execution_group_never_releases_compute(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve() / "compute"
+            def unavailable(_):
+                raise OSError("process table unavailable")
+            with ComputeLease("task", root, inspector=lambda _: "identity", group_probe=unavailable) as lease:
+                with patch("mlx_agent.compute.os.getpgid", return_value=4242):
+                    lease.bind_process_group(4242)
+            with self.assertRaises(ComputeBusy):
+                with ComputeLease("new", root, alive=lambda _: False, group_probe=unavailable):
                     pass

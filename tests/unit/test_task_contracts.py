@@ -6,7 +6,7 @@ from mlx_agent.task_contracts import TaskError, capabilities, validate_request
 
 class TaskContractTests(unittest.TestCase):
     def request(self, kind="classification"):
-        parameters = {"state": "refund", "questions": {"route": {"type": "choice", "instructions": ["billing", "other"]}}}
+        parameters = {"state": "refund", "questions": {"route": {"type": "choice", "instructions": "Which team should handle this request?", "criteria": ["billing", "other"]}}}
         if kind == "music_generation":
             parameters = {"caption": "Quiet piano"}
         return {"schema": "task-request/1", "kind": kind, "model_path": "/models/local", "parameters": parameters}

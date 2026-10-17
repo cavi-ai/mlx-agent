@@ -115,13 +115,16 @@ class TaskStore:
             return self._load(connection, identifier)
 
     def list(self, limit=20):
+        return self.list_page(limit)["tasks"]
+
+    def list_page(self, limit=20):
         if type(limit) is not int or not 1 <= limit <= 100:
             raise TaskError("invalid_limit", "Task history limit must be between 1 and 100.")
         with self._connection() as connection:
             if connection is None:
-                return []
-            ids = connection.execute("SELECT id FROM tasks ORDER BY created_at DESC, id DESC LIMIT ?", (limit,)).fetchall()
-            return [self._load(connection, row[0]) for row in ids]
+                return {"tasks": [], "has_more": False}
+            ids = connection.execute("SELECT id FROM tasks ORDER BY created_at DESC, id DESC LIMIT ?", (limit + 1,)).fetchall()
+            return {"tasks": [self._load(connection, row[0]) for row in ids[:limit]], "has_more": len(ids) > limit}
 
     def artifact_path(self, identifier, name):
         task_id(identifier)

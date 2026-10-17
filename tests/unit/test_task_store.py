@@ -17,7 +17,7 @@ class TaskStoreTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve() / "tasks"
         self.store = TaskStore(self.root)
-        self.request = {"schema": "task-request/1", "kind": "classification", "model_path": "/models/local", "parameters": {"state": "refund", "questions": {"route": {"type": "choice", "instructions": ["billing", "other"]}}}}
+        self.request = {"schema": "task-request/1", "kind": "classification", "model_path": "/models/local", "parameters": {"state": "refund", "questions": {"route": {"type": "choice", "instructions": "Which team should handle this request?", "criteria": ["billing", "other"]}}}}
 
     def create(self):
         return self.store.create(self.request, {"schema": "task-identity/1", "model_fingerprint": "a" * 64})

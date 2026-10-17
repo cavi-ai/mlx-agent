@@ -16,7 +16,7 @@ class TaskRuntimeTests(unittest.TestCase):
         self.root = Path(temporary.name).resolve()
         self.state = self.root / "tasks"
         self.store = TaskStore(self.state)
-        self.request = {"schema": "task-request/1", "kind": "classification", "model_path": str(self.root / "missing-model"), "parameters": {"state": "refund", "questions": {"route": {"type": "choice", "instructions": ["billing", "other"]}}}}
+        self.request = {"schema": "task-request/1", "kind": "classification", "model_path": str(self.root / "missing-model"), "parameters": {"state": "refund", "questions": {"route": {"type": "choice", "instructions": "Which team should handle this request?", "criteria": ["billing", "other"]}}}}
 
     def test_missing_model_does_not_create_a_running_task(self):
         path = self.root / "request.json"

@@ -26,7 +26,7 @@ class TaskSchemaTests(unittest.TestCase):
                 self.assertEqual(schema_validator.is_valid(value), accepted)
 
     def test_task_request_schema_matches_runtime(self):
-        classification = {"schema": "task-request/1", "kind": "classification", "model_path": "/models/local", "parameters": {"state": "refund", "questions": {"route": {"type": "choice", "instructions": ["billing", "other"]}}}}
+        classification = {"schema": "task-request/1", "kind": "classification", "model_path": "/models/local", "parameters": {"state": "refund", "questions": {"route": {"type": "choice", "instructions": "Which team should handle this request?", "criteria": ["billing", "other"]}}}}
         music = dict(classification, kind="music_generation", parameters={"caption": "Quiet piano"})
         values = [classification, music, {}, [], dict(music, schema="task-request/2"), dict(music, kind="other"), dict(music, extra=1), dict(music, model_path="relative")]
         for params in ({"caption": ""}, {"caption": "x", "duration": 0}, {"caption": "x", "duration": 360}, {"caption": "x", "steps": True}, {"caption": "x", "seed": 4294967296}, {"caption": "x", "out": "/unowned"}):

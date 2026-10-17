@@ -109,7 +109,7 @@ class TaskProcessTests(unittest.TestCase):
         model_type = "laya" if kind == "classification" else "minimax_music3"
         (self.model / "config.json").write_text(json.dumps({"model_type": model_type, "fixture_behavior": behavior}))
         (self.model / "tokenizer.json").write_text("{}")
-        params = {"state": "refund", "questions": {"route": {"type": "choice", "instructions": ["billing", "other"]}}} if kind == "classification" else {"caption": "Quiet piano"}
+        params = {"state": "refund", "questions": {"route": {"type": "choice", "instructions": "Which team should handle this request?", "criteria": ["billing", "other"]}}} if kind == "classification" else {"caption": "Quiet piano"}
         request = self.root / "request.json"
         request.write_text(json.dumps({"schema": "task-request/1", "kind": kind, "model_path": str(self.model), "parameters": params}))
         return request

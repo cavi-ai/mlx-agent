@@ -2452,8 +2452,10 @@ def converter_main(argv=None):
 
 
 def build_parser():
+    from . import task_cli
     parser = argparse.ArgumentParser(description="MLX agent command-line core.")
     subcommands = parser.add_subparsers(dest="command", required=True)
+    task_cli.add_arguments(subcommands.add_parser("task", help="durable local classification and music tasks"))
     subcommands.add_parser("lab", help="experiments, studies, datasets and training")
     discover = subcommands.add_parser("discover", help="discover MLX models for this host")
     _add_discovery_arguments(discover)
@@ -2510,6 +2512,9 @@ def main(argv=None):
         return run(raw[1:])
     parser = build_parser()
     arguments = parser.parse_args(argv)
+    if arguments.command == "task":
+        from .task_cli import run
+        return run(arguments)
     if arguments.command == "adopt":
         return _run_adoption(arguments)
     if arguments.command == "wire":

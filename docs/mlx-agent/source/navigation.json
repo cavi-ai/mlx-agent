@@ -29,6 +29,7 @@
         { "title": "Serve", "path": "lifecycle/serve.md" },
         { "title": "Convert", "path": "lifecycle/convert.md" },
         { "title": "Local inference", "path": "lifecycle/local-inference.md" },
+        { "title": "Durable inference tasks", "path": "lifecycle/tasks.md" },
         { "title": "LoRA and fuse", "path": "lifecycle/lora-and-fuse.md" },
         { "title": "Experiments and training", "path": "lifecycle/laboratory.md" },
         { "title": "Fleet", "path": "lifecycle/fleet.md" },

@@ -1,7 +1,8 @@
 # Durable inference tasks
 
-Use `task` for classification and music generation that must outlive the calling
-process. The engine retains accepted inputs, status, results and output files.
+Use `task` for classification, music generation, transcription and speech
+synthesis that must outlive the calling process. The engine retains accepted
+inputs, status, results and output files.
 CLI and MCP clients use the same task IDs and storage. Existing synchronous
 `convert decide` and `convert music` commands remain available.
 
@@ -60,6 +61,34 @@ those settings are omitted. Duration is greater than zero and at most 360
 seconds, steps are 1–30, and seed is an unsigned 32-bit integer. Caption and
 lyrics limits are 2,000 and 10,000 characters. Requests are limited to 1 MiB.
 
+Speech tasks use `task-request/2`. Transcription accepts an absolute WAV, FLAC
+or MP3 path and an optional lowercase language code. The engine copies the
+audio into private task storage before accepting the task; later execution
+uses and verifies that snapshot even if the original file changes or disappears.
+
+```json
+{
+  "schema": "task-request/2",
+  "kind": "transcribe",
+  "model_path": "/absolute/local/speech-model",
+  "parameters": {"audio_path": "/absolute/audio.wav", "language": "en"}
+}
+```
+
+Speech synthesis accepts text and optional backend-supported `voice`, `speed`
+and `lang_code` values. Omitted options retain the operation's own defaults.
+Successful synthesis publishes a WAV only after the engine validates that it
+contains readable audio.
+
+```json
+{
+  "schema": "task-request/2",
+  "kind": "speak",
+  "model_path": "/absolute/local/speech-model",
+  "parameters": {"text": "Hello from a local speech model."}
+}
+```
+
 ```bash
 python3 scripts/mlx-agent task start --request /absolute/request.json --json
 python3 scripts/mlx-agent task status --id TASK_UUID --json
@@ -86,8 +115,9 @@ stopped. Uncertain process ownership produces an error without signaling an
 unrelated process. A lost supervisor is reported as interrupted; unresolved
 execution continues to block host compute. Inspect that error before retrying.
 
-Results preserve the underlying `decide/1` or `music/1` metadata. Classification
-answers are model judgments. Successful music execution confirms an output WAV;
+Results preserve the underlying `decide/1`, `music/1`, `transcribe/1` or
+`speak/1` metadata. Classification answers are model judgments. Successful
+music and speech synthesis confirm an output WAV;
 it does not rate listening quality. Music artifacts have a content hash, and
 retrieval refuses a missing or changed output. Task completion does not confer
 a conversion verification or comparison award.

@@ -36,7 +36,7 @@ python3 scripts/mlx-agent intake fetch --help
 | `convert scan` | Inventory GGUF files and candidate duplicates without deletion. |
 | `convert start/status` | Quantize local checkpoints; inspect conversion jobs. |
 | `convert transcribe/decide/generate/speak/music/describe/video` | Execute supported local inference tasks. |
-| `task capabilities/start/status/list/result/cancel/verify-model` | Manage durable local classification and music tasks. See [Durable inference tasks](../lifecycle/tasks.md). |
+| `task capabilities/start/status/list/result/cancel/verify-model` | Manage durable local classification, music, transcription and speech tasks. See [Durable inference tasks](../lifecycle/tasks.md). |
 | `serve start/status/stop` | Launch and inspect receipt-owned local servers. |
 | `serve unload/policy` | Release JIT workers or replace an owned gateway's memory policy. |
 | `lora start/status` | Train an adapter on a cached base and local dataset. |

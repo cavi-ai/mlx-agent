@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from .task_contracts import (MAX_REQUEST_BYTES, RUN_SCHEMA, TERMINAL, TaskError, encoded,
-                             task_id, validate_record, validate_request)
+from .task_contracts import (MAX_REQUEST_BYTES, MEDIA_RUN_SCHEMA, RUN_SCHEMA, TERMINAL, TaskError, encoded,
+                             _artifact_reference, task_id, validate_record, validate_request)
 
 
 def default_root():
@@ -110,6 +110,97 @@ class TaskStore:
         validate_record(record)
         connection.execute("UPDATE tasks SET record = ? WHERE id = ?", (encoded(record).decode(), record["id"]))
 
+    def _ensure_artifact_root(self):
+        for item in (self.root, *self.root.parents):
+            if item.is_symlink():
+                raise TaskError("unsafe_task_storage", "Task storage cannot traverse symbolic links.")
+        self.root.mkdir(parents=True, mode=0o700, exist_ok=True)
+        _private(self.root)
+        artifacts = self.root / "artifacts"
+        artifacts.mkdir(mode=0o700, exist_ok=True)
+        _private(artifacts)
+        return artifacts
+
+    @staticmethod
+    def _fsync_directory(path):
+        descriptor = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+    def stage_input(self, source):
+        """Copy a transcription input into a private, unaccepted staging directory."""
+        source = Path(source).expanduser()
+        suffix = source.suffix.lower()
+        if not source.is_absolute() or suffix not in (".wav", ".flac", ".mp3"):
+            raise TaskError("invalid_input", "Transcription input must be an absolute WAV, FLAC or MP3 path.")
+        identifier = str(uuid4())
+        artifacts = self._ensure_artifact_root()
+        staging = artifacts / (".staging-" + identifier)
+        try:
+            staging.mkdir(mode=0o700)
+            _private(staging)
+            if source.is_symlink():
+                raise TaskError("invalid_input", "Transcription input must be a regular file, not a symbolic link.")
+            source_descriptor = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            output_path = staging / ("input" + suffix)
+            output_descriptor = None
+            try:
+                before = os.fstat(source_descriptor)
+                if not stat.S_ISREG(before.st_mode):
+                    raise TaskError("invalid_input", "Transcription input must be a readable regular file.")
+                output_descriptor = os.open(output_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY |
+                                            getattr(os, "O_NOFOLLOW", 0), 0o600)
+                digest, size = hashlib.sha256(), 0
+                with os.fdopen(source_descriptor, "rb") as input_stream, os.fdopen(output_descriptor, "wb") as output_stream:
+                    source_descriptor = output_descriptor = None
+                    while True:
+                        chunk = input_stream.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        output_stream.write(chunk)
+                        digest.update(chunk)
+                        size += len(chunk)
+                    output_stream.flush()
+                    os.fsync(output_stream.fileno())
+                    after = os.fstat(input_stream.fileno())
+                current = os.stat(source, follow_symlinks=False)
+                identity = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+                if (identity(before) != identity(after) or identity(before) != identity(current)
+                        or size != before.st_size):
+                    raise TaskError("input_changed", "Transcription input changed while it was being copied.")
+                _private(output_path, directory=False)
+                self._fsync_directory(staging)
+                final = artifacts / identifier / output_path.name
+                return {"id": identifier, "staging_path": str(output_path), "staging_directory": str(staging),
+                        "reference": {"path": str(final), "sha256": digest.hexdigest(), "bytes": size}}
+            finally:
+                if source_descriptor is not None:
+                    os.close(source_descriptor)
+                if output_descriptor is not None:
+                    os.close(output_descriptor)
+        except (OSError, TaskError) as error:
+            self.discard_staged_input({"id": identifier, "staging_directory": str(staging)})
+            if isinstance(error, TaskError):
+                raise
+            raise TaskError("input_copy_failed", "Cannot safely copy the transcription input: {0}".format(error),
+                            "Check that the source is readable and the task directory has free space.") from error
+
+    def discard_staged_input(self, staged_input):
+        """Remove only the private staging directory allocated for this submission."""
+        identifier = task_id(staged_input.get("id"))
+        expected = self.root / "artifacts" / (".staging-" + identifier)
+        if Path(staged_input.get("staging_directory", "")) != expected or expected.is_symlink():
+            raise TaskError("invalid_input", "The staged input does not belong to this submission.")
+        if expected.exists():
+            _private(expected)
+            for child in expected.iterdir():
+                if child.is_symlink() or not child.is_file():
+                    raise TaskError("unsafe_task_storage", "Staged input contains unexpected filesystem entries.")
+                child.unlink()
+            expected.rmdir()
+
     def get(self, identifier):
         with self._connection() as connection:
             return self._load(connection, identifier)
@@ -166,21 +257,119 @@ class TaskStore:
             temporary.unlink(missing_ok=True)
         return {"path": str(target), "sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)}
 
-    def create(self, request, identity):
+    def create(self, request, identity, input_artifact=None, staged_input=None):
         request = validate_request(request)
-        identifier = str(uuid4())
-        with self._connection(write=True) as connection:
-            for directory in (self.root / "artifacts", self.root / "artifacts" / identifier):
-                directory.mkdir(mode=0o700, exist_ok=True)
-                _private(directory)
-            reference = self._write_artifact(identifier, "request.json", request)
-            record = {"schema": RUN_SCHEMA, "id": identifier, "kind": request["kind"], "state": "starting",
-                      "model_path": request["model_path"], "created_at": _now(), "started_at": None, "completed_at": None,
-                      "cancel_requested": False, "identity": identity, "request": reference, "result": None, "error": None,
-                      "supervisor": None, "execution": None, "execution_unresolved": False}
-            validate_record(record)
-            connection.execute("INSERT INTO tasks VALUES (?, ?, ?)", (identifier, record["created_at"], encoded(record).decode()))
-            return record
+        media = request["schema"] == "task-request/2"
+        if not media and (staged_input is not None or input_artifact is not None):
+            raise TaskError("invalid_task", "Legacy tasks cannot carry a media input snapshot.")
+        if request["kind"] == "transcribe" and (staged_input is None or input_artifact is None):
+            raise TaskError("invalid_task", "Transcription requires a retained input snapshot.")
+        if request["kind"] == "speak" and (staged_input is not None or input_artifact is not None):
+            raise TaskError("invalid_task", "Speech synthesis does not accept an input snapshot.")
+        identifier = staged_input["id"] if staged_input is not None else str(uuid4())
+        if staged_input is not None:
+            staged_directory = self.root / "artifacts" / (".staging-" + identifier)
+            staged_path = Path(staged_input.get("staging_path", ""))
+            if (Path(staged_input.get("staging_directory", "")) != staged_directory
+                    or staged_path.parent != staged_directory or staged_path.is_symlink()):
+                raise TaskError("invalid_input", "The staged input does not match this task submission.")
+            _private(staged_directory)
+            _private(staged_path, directory=False)
+            digest, size = hashlib.sha256(), 0
+            try:
+                with staged_path.open("rb") as stream:
+                    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                        size += len(chunk)
+            except OSError as error:
+                self.discard_staged_input(staged_input)
+                raise TaskError("input_copy_failed", "The staged transcription input is unavailable.") from error
+            if digest.hexdigest() != input_artifact.get("sha256") or size != input_artifact.get("bytes"):
+                self.discard_staged_input(staged_input)
+                raise TaskError("input_changed", "The staged transcription input changed before acceptance.")
+        artifacts = self._ensure_artifact_root()
+        final_directory = artifacts / identifier
+        moved = False
+        try:
+            with self._connection(write=True) as connection:
+                if staged_input is not None:
+                    expected_stage = artifacts / (".staging-" + identifier)
+                    if (Path(staged_input.get("staging_directory", "")) != expected_stage
+                            or Path(input_artifact.get("path", "")).parent != final_directory
+                            or not expected_stage.is_dir() or final_directory.exists()):
+                        raise TaskError("invalid_input", "The staged input does not match this task submission.")
+                    os.replace(expected_stage, final_directory)
+                    moved = True
+                    self._fsync_directory(artifacts)
+                    _private(final_directory)
+                else:
+                    final_directory.mkdir(mode=0o700, exist_ok=True)
+                    _private(final_directory)
+                reference = self._write_artifact(identifier, "request.json", request)
+                record = {"schema": MEDIA_RUN_SCHEMA if media else RUN_SCHEMA, "id": identifier,
+                          "kind": request["kind"], "state": "starting", "model_path": request["model_path"],
+                          "created_at": _now(), "started_at": None, "completed_at": None,
+                          "cancel_requested": False, "identity": identity, "request": reference, "result": None,
+                          "error": None, "supervisor": None, "execution": None, "execution_unresolved": False}
+                if media:
+                    record["input_artifact"] = input_artifact
+                validate_record(record)
+                connection.execute("INSERT INTO tasks VALUES (?, ?, ?)", (identifier, record["created_at"], encoded(record).decode()))
+                return record
+        except (TaskError, OSError, sqlite3.Error, ValueError):
+            if staged_input is not None:
+                try:
+                    self.discard_staged_input(staged_input)
+                except TaskError:
+                    pass
+                if moved:
+                    try:
+                        self.get(identifier)
+                    except TaskError as error:
+                        if error.code == "task_not_found":
+                            self._remove_unaccepted_directory(final_directory)
+            raise
+
+    @staticmethod
+    def _remove_unaccepted_directory(directory):
+        if not directory.exists() or directory.is_symlink():
+            return
+        _private(directory)
+        for child in directory.iterdir():
+            if child.is_symlink() or not child.is_file():
+                raise TaskError("unsafe_task_storage", "Unaccepted task directory contains unexpected entries.")
+            child.unlink()
+        directory.rmdir()
+
+    def verify_input_artifact(self, identifier, reference):
+        return self.verify_artifact(identifier, reference, allowed_names=("input.wav", "input.flac", "input.mp3"),
+                                    code="input_artifact")
+
+    def verify_artifact(self, identifier, reference, expected_name=None, allowed_names=(), code="artifact"):
+        task_id(identifier)
+        try:
+            _artifact_reference(reference)
+        except TaskError as error:
+            raise TaskError(code + "_changed", "The task artifact reference is invalid.") from error
+        path = Path(reference["path"])
+        names = set(allowed_names)
+        if expected_name is not None:
+            names.add(expected_name)
+        if (path.parent.name != identifier or path.parent.parent != self.root / "artifacts"
+                or path.name not in names):
+            raise TaskError(code + "_changed", "The task artifact is outside its owned directory.")
+        owned = self.artifact_path(identifier, path.name)
+        digest, size = hashlib.sha256(), 0
+        try:
+            with owned.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+                    size += len(chunk)
+        except OSError as error:
+            raise TaskError(code + "_unavailable", "The retained task artifact is unavailable.") from error
+        if str(owned) != reference["path"] or digest.hexdigest() != reference["sha256"] or size != reference["bytes"]:
+            raise TaskError(code + "_changed", "The retained task artifact changed.")
+        return owned
 
     def transition(self, identifier, expected, changes):
         mutable = {"state", "started_at", "completed_at", "result", "error", "supervisor", "execution", "execution_unresolved"}

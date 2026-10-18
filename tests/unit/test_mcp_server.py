@@ -20,7 +20,11 @@ class MCPServerTests(unittest.TestCase):
         response = self.task_call("capabilities")
         payload = json.loads(response["result"]["content"][0]["text"])
         self.assertFalse(payload["stdout_truncated"])
-        self.assertEqual(json.loads(payload["stdout"])["operation"], "task.capabilities")
+        capabilities = json.loads(payload["stdout"])
+        self.assertEqual(capabilities["operation"], "task.capabilities")
+        tasks = {task["kind"]: task for task in capabilities["data"]["tasks"]}
+        self.assertEqual(set(tasks), {"classification", "music_generation", "transcribe", "speak"})
+        self.assertEqual(tasks["transcribe"]["request_schema"], "task-request/2")
 
     def test_task_paths_ids_results_and_cancellation_use_the_same_store(self):
         with TemporaryDirectory() as directory:

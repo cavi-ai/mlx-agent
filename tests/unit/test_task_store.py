@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import sqlite3
 import unittest
@@ -129,3 +130,55 @@ class TaskStoreTests(unittest.TestCase):
         with self.assertRaises(TaskError):
             self.store.write_result(task["id"], {"answers": {"x": 2}})
         self.assertEqual(json.loads(Path(first["path"]).read_text())["answers"], {"x": 1})
+
+    def test_staged_input_is_private_hashed_and_referenced_by_media_record(self):
+        source = self.root.parent / "input.FLAC"
+        source.write_bytes(b"immutable audio bytes")
+        staged = self.store.stage_input(source)
+        request = {"schema": "task-request/2", "kind": "transcribe", "model_path": "/models/whisper",
+                   "parameters": {"audio_path": str(source)}}
+        record = self.store.create(request, identity_evidence(request["model_path"]),
+                                   input_artifact=staged["reference"], staged_input=staged)
+        owned = Path(record["input_artifact"]["path"])
+        self.assertEqual(record["schema"], "task-run/2")
+        self.assertEqual(owned.read_bytes(), b"immutable audio bytes")
+        self.assertEqual(record["input_artifact"], {"path": str(owned), "sha256": hashlib.sha256(b"immutable audio bytes").hexdigest(), "bytes": 21})
+        self.assertEqual(self.store.read_request(record["id"])["parameters"]["audio_path"], str(source))
+        self.assertEqual(self.store.verify_input_artifact(record["id"], record["input_artifact"]), owned)
+        self.assertEqual(owned.stat().st_mode & 0o777, 0o600)
+
+    def test_input_artifact_verification_rejects_changed_bytes_and_wrong_task_path(self):
+        source = self.root.parent / "input.wav"
+        source.write_bytes(b"audio")
+        staged = self.store.stage_input(source)
+        request = {"schema": "task-request/2", "kind": "transcribe", "model_path": "/models/whisper",
+                   "parameters": {"audio_path": str(source)}}
+        record = self.store.create(request, identity_evidence(request["model_path"]),
+                                   input_artifact=staged["reference"], staged_input=staged)
+        owned = Path(record["input_artifact"]["path"])
+        owned.write_bytes(b"changed")
+        with self.assertRaises(TaskError):
+            self.store.verify_input_artifact(record["id"], record["input_artifact"])
+        wrong = dict(record["input_artifact"], path=str(self.root.parent / "other" / owned.name))
+        with self.assertRaises(TaskError):
+            self.store.verify_input_artifact(record["id"], wrong)
+
+    def test_changed_staging_copy_is_rejected_before_task_acceptance(self):
+        source = self.root.parent / "input.wav"
+        source.write_bytes(b"original audio")
+        staged = self.store.stage_input(source)
+        Path(staged["staging_path"]).write_bytes(b"changed audio")
+        request = {"schema": "task-request/2", "kind": "transcribe", "model_path": "/models/local",
+                   "parameters": {"audio_path": str(source)}}
+        with self.assertRaises(TaskError) as caught:
+            self.store.create(request, identity_evidence("/models/local"), staged["reference"], staged)
+        self.assertEqual(caught.exception.code, "input_changed")
+        self.assertEqual(self.store.list(), [])
+        self.assertFalse(Path(staged["staging_directory"]).exists())
+
+    def test_failed_input_copy_leaves_no_task_record_or_owned_directory(self):
+        with self.assertRaises(TaskError):
+            self.store.stage_input(self.root / "missing.wav")
+        self.assertEqual(self.store.list(), [])
+        artifact_root = self.root / "artifacts"
+        self.assertFalse(artifact_root.exists() and list(artifact_root.iterdir()))

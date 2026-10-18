@@ -34,6 +34,15 @@ class TaskSchemaTests(unittest.TestCase):
         for params in ({"caption": ""}, {"caption": "x", "duration": 0}, {"caption": "x", "duration": 360}, {"caption": "x", "steps": True}, {"caption": "x", "seed": 4294967296}, {"caption": "x", "out": "/unowned"}):
             values.append(dict(music, parameters=params))
         values.append(dict(classification, parameters={"state": False, "questions": {"x": {"type": "choice", "instructions": "x"}}}))
+        transcribe = {"schema": "task-request/2", "kind": "transcribe", "model_path": "/models/whisper",
+                      "parameters": {"audio_path": "/audio/input.wav"}}
+        speak = {"schema": "task-request/2", "kind": "speak", "model_path": "/models/tts",
+                 "parameters": {"text": "Hello."}}
+        values.extend((transcribe, speak, dict(transcribe, schema="task-request/1"),
+                       dict(speak, parameters={"text": "Hello.", "speed": True}),
+                       dict(transcribe, parameters={"audio_path": "relative.wav"})))
+        values.append(dict(speak, parameters={"text": " " + ("x" * 2000), "voice": "invalid voice",
+                                              "speed": 3.0, "lang_code": "not_a_language_tag?"}))
         self.assert_parity("task-request.schema.json", validate_request, values)
 
     def test_task_run_schema_matches_runtime(self):
@@ -45,6 +54,18 @@ class TaskSchemaTests(unittest.TestCase):
             value = store.transition(value["id"], ("starting",), {
                 "state": "running", "execution": {"pid": 43, "identity": "worker"}})
             values = [value, {}, dict(value, schema="task-run/2"), dict(value, id="bad"), dict(value, cancel_requested=1), dict(value, state="unknown"), dict(value, created_at="yesterday"), dict(value, state="succeeded"), dict(value, identity=[])]
+            audio = Path(directory).resolve() / "source.wav"
+            audio.write_bytes(b"source audio")
+            staged = store.stage_input(audio)
+            media_request = {"schema": "task-request/2", "kind": "transcribe", "model_path": "/models/whisper",
+                             "parameters": {"audio_path": str(audio)}}
+            media_record = store.create(media_request, identity_evidence(media_request["model_path"]),
+                                        input_artifact=staged["reference"], staged_input=staged)
+            speak_request = {"schema": "task-request/2", "kind": "speak", "model_path": "/models/tts",
+                             "parameters": {"text": "Hello."}}
+            speak_record = store.create(speak_request, identity_evidence(speak_request["model_path"]))
+            values.extend((media_record, speak_record, dict(media_record, input_artifact=None),
+                           dict(speak_record, input_artifact=media_record["input_artifact"])))
             malformed = []
             for key, replacement in (("pid", True), ("pid", 0), ("identity", " ")):
                 candidate = copy.deepcopy(value)

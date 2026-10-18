@@ -39,6 +39,47 @@ class TaskContractTests(unittest.TestCase):
 
     def test_capabilities_do_not_claim_selected_model_readiness(self):
         result = capabilities()
-        self.assertEqual({item["kind"] for item in result["tasks"]}, {"classification", "music_generation"})
+        self.assertEqual({item["kind"] for item in result["tasks"]},
+                         {"classification", "music_generation", "transcribe", "speak"})
         self.assertTrue(all(item["cancellation"] for item in result["tasks"]))
         self.assertNotIn("ready", result)
+
+    def test_media_capabilities_override_schemas_without_changing_legacy_defaults(self):
+        result = capabilities()
+        self.assertEqual((result["request_schema"], result["run_schema"]), ("task-request/1", "task-run/1"))
+        tasks = {item["kind"]: item for item in result["tasks"]}
+        self.assertEqual((tasks["classification"]["result_schema"], tasks["music_generation"]["result_schema"]),
+                         ("decide/1", "music/1"))
+        self.assertEqual((tasks["transcribe"]["request_schema"], tasks["transcribe"]["run_schema"],
+                          tasks["transcribe"]["result_schema"]), ("task-request/2", "task-run/2", "transcribe/1"))
+        self.assertEqual((tasks["speak"]["request_schema"], tasks["speak"]["run_schema"],
+                          tasks["speak"]["result_schema"]), ("task-request/2", "task-run/2", "speak/1"))
+
+    def test_speech_request_v2_validates_without_materializing_planner_defaults(self):
+        requests = [
+            {"schema": "task-request/2", "kind": "transcribe", "model_path": "/models/whisper",
+             "parameters": {"audio_path": "/audio/input.flac"}},
+            {"schema": "task-request/2", "kind": "speak", "model_path": "/models/tts",
+             "parameters": {"text": "Hello.", "voice": "af_heart"}},
+        ]
+        for request in requests:
+            with self.subTest(kind=request["kind"]):
+                self.assertEqual(validate_request(request), request)
+        domain_values = {"text": " " + ("x" * 2000), "voice": "invalid voice", "speed": 3.0,
+                         "lang_code": "not_a_language_tag?"}
+        request = {"schema": "task-request/2", "kind": "speak", "model_path": "/models/tts",
+                   "parameters": domain_values}
+        self.assertEqual(validate_request(request), request)
+
+    def test_speech_request_rejects_unsupported_paths_fields_and_versions(self):
+        base = {"schema": "task-request/2", "kind": "transcribe", "model_path": "/models/whisper",
+                "parameters": {"audio_path": "/audio/input.wav"}}
+        invalid = [dict(base, schema="task-request/1"), dict(base, kind="speak"),
+                   dict(base, parameters={"audio_path": "relative.wav"}),
+                   dict(base, parameters={"audio_path": "/audio/input.wav", "timeout": 10})]
+        for request in invalid:
+            with self.subTest(request=request), self.assertRaises(TaskError):
+                validate_request(request)
+        speak = dict(base, kind="speak", parameters={"text": "Hello.", "speed": True})
+        with self.assertRaises(TaskError):
+            validate_request(speak)

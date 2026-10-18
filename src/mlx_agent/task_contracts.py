@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import math
 from datetime import datetime
 from pathlib import Path
 from uuid import UUID
@@ -11,8 +12,12 @@ from .music import MusicError, validate_parameters as validate_music
 
 REQUEST_SCHEMA = "task-request/1"
 RUN_SCHEMA = "task-run/1"
+MEDIA_REQUEST_SCHEMA = "task-request/2"
+MEDIA_RUN_SCHEMA = "task-run/2"
 MAX_REQUEST_BYTES = 1024 * 1024
-KINDS = ("classification", "music_generation")
+LEGACY_KINDS = ("classification", "music_generation")
+MEDIA_KINDS = ("transcribe", "speak")
+KINDS = LEGACY_KINDS + MEDIA_KINDS
 STATES = ("starting", "running", "succeeded", "failed", "cancelled")
 TERMINAL = ("succeeded", "failed", "cancelled")
 
@@ -45,7 +50,8 @@ def task_id(value):
 def validate_request(value):
     if not isinstance(value, dict) or set(value) != {"schema", "kind", "model_path", "parameters"}:
         raise TaskError("invalid_request", "A task request needs schema, kind, model_path and parameters.")
-    if value["schema"] != REQUEST_SCHEMA or value["kind"] not in KINDS:
+    expected_schema = MEDIA_REQUEST_SCHEMA if value["kind"] in MEDIA_KINDS else REQUEST_SCHEMA
+    if value["schema"] != expected_schema or value["kind"] not in KINDS:
         raise TaskError("unsupported_task", "Unsupported task schema or kind.", "Run mlx-agent task capabilities --json.")
     path = value["model_path"]
     if not isinstance(path, str) or not Path(path).is_absolute() or any(ord(c) < 32 for c in path):
@@ -58,11 +64,31 @@ def validate_request(value):
             if set(parameters) != {"state", "questions"}:
                 raise TaskError("invalid_request", "Classification parameters need state and questions.")
             validate_decision(parameters)
-        else:
+        elif value["kind"] == "music_generation":
             if "caption" not in parameters or set(parameters) - {"caption", "lyrics", "duration", "steps", "seed"}:
                 raise TaskError("invalid_request", "Music parameters need a caption and supported generation settings.")
             parameters = validate_music(parameters["caption"], parameters.get("lyrics", "[instrumental]"),
                                         parameters.get("duration", 15.0), parameters.get("steps", 30), parameters.get("seed", 42))
+        elif value["kind"] == "transcribe":
+            if set(parameters) - {"audio_path", "language"} or "audio_path" not in parameters:
+                raise TaskError("invalid_request", "Transcription parameters need audio_path and optional language.")
+            if not _absolute_path(parameters["audio_path"]):
+                raise TaskError("invalid_request", "audio_path must be an absolute local path.")
+            if "language" in parameters and not isinstance(parameters["language"], str):
+                raise TaskError("invalid_request", "language must be a string.")
+        else:
+            if set(parameters) - {"text", "voice", "speed", "lang_code"} or "text" not in parameters:
+                raise TaskError("invalid_request", "Speech parameters need text and supported synthesis settings.")
+            if not isinstance(parameters["text"], str):
+                raise TaskError("invalid_request", "text must be a string.")
+            if "voice" in parameters and not isinstance(parameters["voice"], str):
+                raise TaskError("invalid_request", "voice must be a string.")
+            if "speed" in parameters and (isinstance(parameters["speed"], bool)
+                                           or not isinstance(parameters["speed"], (int, float))
+                                           or not math.isfinite(parameters["speed"])):
+                raise TaskError("invalid_request", "speed must be a finite number.")
+            if "lang_code" in parameters and not isinstance(parameters["lang_code"], str):
+                raise TaskError("invalid_request", "lang_code must be a string.")
     except (DecideError, MusicError) as error:
         raise TaskError(error.code, str(error), error.remediation) from error
     result = dict(value, parameters=parameters)
@@ -75,11 +101,28 @@ def validate_request(value):
 def validate_record(value):
     required = {"schema", "id", "kind", "state", "model_path", "created_at", "started_at", "completed_at",
                 "cancel_requested", "identity", "request", "result", "error", "supervisor", "execution", "execution_unresolved"}
-    if not isinstance(value, dict) or set(value) != required or value.get("schema") != RUN_SCHEMA:
+    if not isinstance(value, dict):
+        raise TaskError("invalid_task_record", "Unknown or incomplete task record.", "Preserve the store and use a compatible engine.")
+    version = value.get("schema")
+    media = version == MEDIA_RUN_SCHEMA
+    if media:
+        required.add("input_artifact")
+    if set(value) != required or version not in (RUN_SCHEMA, MEDIA_RUN_SCHEMA):
         raise TaskError("invalid_task_record", "Unknown or incomplete task record.", "Preserve the store and use a compatible engine.")
     task_id(value["id"])
-    if value["kind"] not in KINDS or value["state"] not in STATES:
+    allowed_kinds = MEDIA_KINDS if media else LEGACY_KINDS
+    if value["kind"] not in allowed_kinds or value["state"] not in STATES:
         raise TaskError("invalid_task_record", "Unknown task kind or state.")
+    if media:
+        reference = value["input_artifact"]
+        if value["kind"] == "transcribe":
+            _artifact_reference(reference)
+            path = Path(reference["path"])
+            if (path.parent.name != value["id"] or path.parent.parent.name != "artifacts"
+                    or path.name not in ("input.wav", "input.flac", "input.mp3")):
+                raise TaskError("invalid_task_record", "Input artifact path is outside its task directory.")
+        elif reference is not None:
+            raise TaskError("invalid_task_record", "Speech synthesis cannot have an input artifact.")
     if not isinstance(value["model_path"], str) or not Path(value["model_path"]).is_absolute():
         raise TaskError("invalid_task_record", "The task model path is invalid.")
     if any(type(value[key]) is not bool for key in ("cancel_requested", "execution_unresolved")):
@@ -184,7 +227,12 @@ def _artifact_reference(value):
 
 
 def capabilities():
+    tasks = [{"kind": kind, "result_schema": "decide/1" if kind == "classification" else "music/1",
+              "cancellation": True, "requires_local_model": True, "model_verification": True}
+             for kind in LEGACY_KINDS]
+    tasks.extend({"kind": kind, "result_schema": "transcribe/1" if kind == "transcribe" else "speak/1",
+                  "request_schema": MEDIA_REQUEST_SCHEMA, "run_schema": MEDIA_RUN_SCHEMA,
+                  "cancellation": True, "requires_local_model": True, "model_verification": True}
+                 for kind in MEDIA_KINDS)
     return {"schema": "task-capabilities/1", "request_schema": REQUEST_SCHEMA, "run_schema": RUN_SCHEMA,
-            "tasks": [{"kind": kind, "result_schema": "decide/1" if kind == "classification" else "music/1",
-                       "cancellation": True, "requires_local_model": True,
-                       "model_verification": True} for kind in KINDS]}
+            "tasks": tasks}

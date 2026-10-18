@@ -36,7 +36,12 @@ if behavior == "ignore-term":
 (model.parent / "started").write_text(str(os.getpid()))
 if behavior in ("sleep", "descendant", "ignore-term"):
     time.sleep(60)
-if "--out" in args:
+if "--audio" in args:
+    while behavior == "hold-transcription" and not (model.parent / "release-transcription").exists():
+        time.sleep(.01)
+    audio = Path(args[args.index("--audio") + 1])
+    print(json.dumps({"text": audio.read_bytes().decode("utf-8"), "seconds": .1, "audio_seconds": .25}))
+elif "--out" in args:
     target = args[args.index("--out") + 1]
     if behavior == "invalid-audio":
         Path(target).write_bytes(b"not audio")
@@ -44,6 +49,8 @@ if "--out" in args:
         with wave.open(target, "wb") as output:
             output.setparams((1, 2, 8000, 2000, "NONE", "not compressed"))
             output.writeframes(b"\x00\x01" * 2000)
+        if behavior == "truncated-audio":
+            Path(target).write_bytes(Path(target).read_bytes()[:46])
     print(json.dumps({"path": target, "sample_rate": 8000, "audio_seconds": .25, "seconds": .1}))
 else:
     request = json.loads(Path(args[args.index("--request") + 1]).read_text())
@@ -108,12 +115,25 @@ class TaskProcessTests(unittest.TestCase):
         return process
 
     def prepare_request(self, kind="classification", behavior="success"):
-        model_type = "laya" if kind == "classification" else "minimax_music3"
+        model_type = {"classification": "laya", "music_generation": "minimax_music3",
+                      "transcribe": "whisper", "speak": "kokoro"}[kind]
         (self.model / "config.json").write_text(json.dumps({"model_type": model_type, "fixture_behavior": behavior}))
         (self.model / "tokenizer.json").write_text("{}")
-        params = {"state": "refund", "questions": {"route": {"type": "choice", "instructions": "Which team should handle this request?", "criteria": ["billing", "other"]}}} if kind == "classification" else {"caption": "Quiet piano"}
+        schema = "task-request/1"
+        if kind == "classification":
+            params = {"state": "refund", "questions": {"route": {"type": "choice", "instructions": "Which team should handle this request?", "criteria": ["billing", "other"]}}}
+        elif kind == "music_generation":
+            params = {"caption": "Quiet piano"}
+        elif kind == "transcribe":
+            self.audio = self.root / "input.wav"
+            self.audio.write_bytes(b"original speech snapshot")
+            params = {"audio_path": str(self.audio)}
+            schema = "task-request/2"
+        else:
+            params = {"text": "Hello there."}
+            schema = "task-request/2"
         request = self.root / "request.json"
-        request.write_text(json.dumps({"schema": "task-request/1", "kind": kind, "model_path": str(self.model), "parameters": params}))
+        request.write_text(json.dumps({"schema": schema, "kind": kind, "model_path": str(self.model), "parameters": params}))
         return request
 
     def start(self, kind="classification", behavior="success", launcher=None):
@@ -143,6 +163,53 @@ class TaskProcessTests(unittest.TestCase):
                 self.assertEqual(evidence["result"]["model"], str(self.model))
                 self.assertTrue(Path(evidence["artifact"]["path"]).is_file())
                 self.processes[-1].wait(timeout=10)
+
+    def test_transcription_uses_its_fsynced_snapshot_after_original_changes(self):
+        task = self.start("transcribe", behavior="hold-transcription")
+        self.wait_for(lambda: (self.root / "started").exists())
+        self.audio.write_bytes(b"mutated original")
+        self.audio.unlink()
+        (self.root / "release-transcription").touch()
+        result = self.wait_for(lambda: self.terminal(task["id"]))
+        self.assertEqual(result["state"], "succeeded", result)
+        evidence = task_result(task["id"], self.state)["result"]
+        self.assertEqual(evidence["schema"], "transcribe/1")
+        self.assertEqual(evidence["text"], "original speech snapshot")
+        self.assertEqual(evidence["input_artifact"], result["input_artifact"])
+        self.assertEqual(Path(result["input_artifact"]["path"]).read_bytes(), b"original speech snapshot")
+
+    def test_speech_synthesis_returns_only_a_validated_wav_artifact(self):
+        task = self.start("speak")
+        result = self.wait_for(lambda: self.terminal(task["id"]))
+        self.assertEqual(result["state"], "succeeded", result)
+        evidence = task_result(task["id"], self.state)["result"]
+        self.assertEqual(evidence["schema"], "speak/1")
+        self.assertIsNone(result["input_artifact"])
+        output = evidence["output_artifact"]
+        self.assertEqual(Path(output["path"]).name, "output.wav")
+        self.assertTrue(Path(output["path"]).is_file())
+
+    def test_speech_synthesis_rejects_invalid_wav_before_success(self):
+        task = self.start("speak", behavior="invalid-audio")
+        result = self.wait_for(lambda: self.terminal(task["id"]))
+        self.assertEqual(result["state"], "failed", result)
+        self.assertEqual(result["error"]["code"], "invalid_audio_output")
+
+    def test_speech_synthesis_rejects_truncated_wav_payload_before_success(self):
+        task = self.start("speak", behavior="truncated-audio")
+        result = self.wait_for(lambda: self.terminal(task["id"]))
+        self.assertEqual(result["state"], "failed", result)
+        self.assertEqual(result["error"]["code"], "invalid_audio_output")
+
+    def test_invalid_speech_parameters_fail_in_planner_before_acceptance(self):
+        request_path = self.prepare_request("speak")
+        request = json.loads(request_path.read_text())
+        request["parameters"]["speed"] = 3.0
+        request_path.write_text(json.dumps(request))
+        with self.assertRaises(TaskError) as caught:
+            start_task(request_path, self.state, launcher=self.launch)
+        self.assertEqual(caught.exception.code, "invalid_arguments")
+        self.assertEqual(TaskStore(self.state).list(), [])
 
     def test_cancel_waits_for_descendants(self):
         task = self.start(behavior="descendant")

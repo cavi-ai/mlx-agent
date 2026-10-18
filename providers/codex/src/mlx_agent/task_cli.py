@@ -27,7 +27,7 @@ def add_arguments(parser):
         action.add_argument("--state-dir", type=Path, help="absolute task state directory; does not change host compute ownership")
         action.add_argument("--json", action="store_true", help="emit the versioned JSON result envelope")
         if command == "start":
-            action.add_argument("--request", type=Path, required=True, help="task-request/1 JSON file; accepted inputs are retained privately")
+            action.add_argument("--request", type=Path, required=True, help="task-request/1 or task-request/2 JSON file; accepted inputs are retained privately")
         elif command in ("status", "result", "cancel", "verify-model"):
             action.add_argument("--id", required=True, help="task UUID returned by start")
         elif command == "list":

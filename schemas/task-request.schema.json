@@ -1,58 +1,74 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Durable inference task request",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["schema", "kind", "model_path", "parameters"],
-  "properties": {
-    "schema": {"const": "task-request/1"},
-    "kind": {"enum": ["classification", "music_generation"]},
-    "model_path": {"type": "string", "pattern": "^/[^\\u0000-\\u001f]*$"},
-    "parameters": {"type": "object"}
-  },
-  "allOf": [
-    {
-      "if": {"properties": {"kind": {"const": "classification"}}},
-      "then": {
-        "properties": {
-          "parameters": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["state", "questions"],
-            "properties": {
-              "state": {"type": ["string", "object", "array"]},
-              "questions": {
-                "type": "object",
-                "minProperties": 1,
-                "additionalProperties": {
-                  "type": "object",
-                  "required": ["type", "instructions"],
-                  "properties": {"type": {"enum": ["choice", "score", "noul"]}, "instructions": {}}
-                }
-              }
-            }
+  "oneOf": [
+    {"$ref": "#/$defs/legacyRequest"},
+    {"$ref": "#/$defs/speechRequest"}
+  ],
+  "$defs": {
+    "classificationParameters": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "questions"],
+      "properties": {
+        "state": {"type": ["string", "object", "array"]},
+        "questions": {
+          "type": "object", "minProperties": 1,
+          "additionalProperties": {
+            "type": "object", "required": ["type", "instructions"],
+            "properties": {"type": {"enum": ["choice", "score", "noul"]}, "instructions": {}}
           }
         }
       }
     },
-    {
-      "if": {"properties": {"kind": {"const": "music_generation"}}},
-      "then": {
-        "properties": {
-          "parameters": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["caption"],
-            "properties": {
-              "caption": {"type": "string", "minLength": 1, "maxLength": 2000, "allOf": [{"pattern": "\\S"}, {"pattern": "^[^\\u0000-\\u0008\\u000b-\\u001f]*$"}]},
-              "lyrics": {"type": "string", "minLength": 1, "maxLength": 10000, "default": "[instrumental]", "allOf": [{"pattern": "\\S"}, {"pattern": "^[^\\u0000-\\u0008\\u000b-\\u001f]*$"}]},
-              "duration": {"type": "number", "exclusiveMinimum": 0, "maximum": 360, "default": 15},
-              "steps": {"type": "integer", "minimum": 1, "maximum": 30, "default": 30},
-              "seed": {"type": "integer", "minimum": 0, "maximum": 4294967295, "default": 42}
-            }
-          }
-        }
+    "musicParameters": {
+      "type": "object", "additionalProperties": false,
+      "required": ["caption"],
+      "properties": {
+        "caption": {"type": "string", "minLength": 1, "maxLength": 2000, "allOf": [{"pattern": "\\S"}, {"pattern": "^[^\\u0000-\\u0008\\u000b-\\u001f]*$"}]},
+        "lyrics": {"type": "string", "minLength": 1, "maxLength": 10000, "default": "[instrumental]", "allOf": [{"pattern": "\\S"}, {"pattern": "^[^\\u0000-\\u0008\\u000b-\\u001f]*$"}]},
+        "duration": {"type": "number", "exclusiveMinimum": 0, "maximum": 360, "default": 15},
+        "steps": {"type": "integer", "minimum": 1, "maximum": 30, "default": 30},
+        "seed": {"type": "integer", "minimum": 0, "maximum": 4294967295, "default": 42}
       }
+    },
+    "legacyRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "kind", "model_path", "parameters"],
+      "properties": {
+        "schema": {"const": "task-request/1"},
+        "kind": {"enum": ["classification", "music_generation"]},
+        "model_path": {"type": "string", "pattern": "^/[^\\u0000-\\u001f]*$"},
+        "parameters": {"type": "object"}
+      },
+      "allOf": [
+        {"if": {"properties": {"kind": {"const": "classification"}}}, "then": {"properties": {"parameters": {"$ref": "#/$defs/classificationParameters"}}}},
+        {"if": {"properties": {"kind": {"const": "music_generation"}}}, "then": {"properties": {"parameters": {"$ref": "#/$defs/musicParameters"}}}}
+      ]
+    },
+    "speechRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "kind", "model_path", "parameters"],
+      "properties": {
+        "schema": {"const": "task-request/2"},
+        "kind": {"enum": ["transcribe", "speak"]},
+        "model_path": {"type": "string", "pattern": "^/[^\\u0000-\\u001f]*$"},
+        "parameters": {"type": "object"}
+      },
+      "allOf": [
+        {"if": {"properties": {"kind": {"const": "transcribe"}}}, "then": {"properties": {"parameters": {
+          "type": "object", "additionalProperties": false, "required": ["audio_path"],
+          "properties": {"audio_path": {"type": "string", "pattern": "^/[^\\u0000-\\u001f]*$"}, "language": {"type": "string"}}
+        }}}},
+        {"if": {"properties": {"kind": {"const": "speak"}}}, "then": {"properties": {"parameters": {
+          "type": "object", "additionalProperties": false, "required": ["text"],
+          "properties": {
+            "text": {"type": "string"},
+            "voice": {"type": "string"},
+            "speed": {"type": "number"},
+            "lang_code": {"type": "string"}
+          }
+        }}}}
+      ]
     }
-  ]
+  }
 }

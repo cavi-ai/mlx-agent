@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from mlx_agent.task_contracts import TaskError
-from mlx_agent.task_runtime import cancel_task, start_task, supervise, task_result, task_status
+from mlx_agent.task_runtime import _plan, cancel_task, start_task, supervise, task_result, task_status
 from mlx_agent.task_store import TaskStore
 from tests.task_fixtures import identity_evidence
 
@@ -18,6 +18,15 @@ class TaskRuntimeTests(unittest.TestCase):
         self.state = self.root / "tasks"
         self.store = TaskStore(self.state)
         self.request = {"schema": "task-request/1", "kind": "classification", "model_path": str(self.root / "missing-model"), "parameters": {"state": "refund", "questions": {"route": {"type": "choice", "instructions": "Which team should handle this request?", "criteria": ["billing", "other"]}}}}
+
+    def test_speech_planners_receive_only_supplied_optional_values(self):
+        with patch("mlx_agent.task_runtime.plan_transcribe", return_value={}) as transcribe, patch(
+                "mlx_agent.task_runtime.plan_speak", return_value={}) as speak:
+            _plan({"kind": "transcribe", "model_path": "/model", "parameters": {"audio_path": "/audio.wav"}},
+                  self.root, "/owned/input.wav")
+            transcribe.assert_called_once_with("/model", "/owned/input.wav")
+            _plan({"kind": "speak", "model_path": "/model", "parameters": {"text": "Hello."}}, self.root)
+            speak.assert_called_once_with("/model", "Hello.", str(self.root / "output.wav"))
 
     def create(self):
         return self.store.create(self.request, identity_evidence(self.request["model_path"]))

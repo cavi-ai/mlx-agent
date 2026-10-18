@@ -16,9 +16,11 @@ from .backends import BackendError, load_manifests
 from .compute import ComputeBusy, ComputeLease, group_members, process_alive, process_identity
 from .decide import DecideError, plan_decide, run_decide
 from .music import MusicError, plan_music, run_music
-from .task_contracts import MAX_REQUEST_BYTES, TERMINAL, TaskError, encoded, validate_request
+from .speak import SpeakError, plan_speak, run_speak
+from .task_contracts import MAX_REQUEST_BYTES, MEDIA_KINDS, TERMINAL, TaskError, encoded, validate_request
 from .task_identity import capture_identity, check_identity
 from .task_store import TaskStore
+from .transcribe import TranscribeError, plan_transcribe, run_transcribe
 from .wiring import redact_secrets
 
 POLL_SECONDS = .1
@@ -40,14 +42,20 @@ def _write_json(path, value):
         os.fsync(stream.fileno())
 
 
-def _plan(request, directory):
+def _plan(request, directory, input_path=None):
     parameters = request["parameters"]
     if request["kind"] == "classification":
         path = directory / "decision.json"
         _write_json(path, parameters)
         return plan_decide(request["model_path"], str(path))
-    return plan_music(request["model_path"], parameters["caption"], parameters["lyrics"], str(directory / "output.wav"),
-                      duration=parameters["duration"], steps=parameters["steps"], seed=parameters["seed"])
+    if request["kind"] == "music_generation":
+        return plan_music(request["model_path"], parameters["caption"], parameters["lyrics"], str(directory / "output.wav"),
+                          duration=parameters["duration"], steps=parameters["steps"], seed=parameters["seed"])
+    if request["kind"] == "transcribe":
+        options = {key: parameters[key] for key in ("language",) if key in parameters}
+        return plan_transcribe(request["model_path"], input_path or parameters["audio_path"], **options)
+    options = {key: parameters[key] for key in ("voice", "speed", "lang_code") if key in parameters}
+    return plan_speak(request["model_path"], parameters["text"], str(directory / "output.wav"), **options)
 
 
 def _spawn(role, identifier, store, launcher=subprocess.Popen):
@@ -67,6 +75,7 @@ def _spawn(role, identifier, store, launcher=subprocess.Popen):
 
 def start_task(request_path, state_dir=None, launcher=subprocess.Popen):
     store = TaskStore(state_dir)
+    staged_input = None
     try:
         path = Path(request_path)
         if path.is_symlink() or not path.is_file():
@@ -76,12 +85,26 @@ def start_task(request_path, state_dir=None, launcher=subprocess.Popen):
         if len(raw) > MAX_REQUEST_BYTES:
             raise TaskError("request_too_large", "Task requests are limited to 1 MiB.")
         request = validate_request(json.loads(raw))
+        if request["kind"] == "transcribe":
+            staged_input = store.stage_input(request["parameters"]["audio_path"])
         with tempfile.TemporaryDirectory(prefix="mlx-task-plan-") as directory:
-            plan = _plan(request, Path(directory))
+            plan = _plan(request, Path(directory), staged_input["staging_path"] if staged_input else None)
             identity = capture_identity(Path(request["model_path"]), load_manifests()[plan["backend"]], Path(plan["argv"][0]))
-    except (OSError, ValueError, DecideError, MusicError, BackendError) as error:
+    except (OSError, ValueError, DecideError, MusicError, SpeakError, TranscribeError, BackendError) as error:
+        if staged_input is not None:
+            store.discard_staged_input(staged_input)
         raise TaskError(getattr(error, "code", "invalid_request"), str(error), getattr(error, "remediation", "Check the local model, request and installed backend.")) from error
-    record = store.create(request, identity)
+    except TaskError:
+        if staged_input is not None:
+            store.discard_staged_input(staged_input)
+        raise
+    try:
+        record = store.create(request, identity, input_artifact=staged_input["reference"] if staged_input else None,
+                              staged_input=staged_input)
+    except (TaskError, OSError, ValueError):
+        if staged_input is not None:
+            store.discard_staged_input(staged_input)
+        raise
     try:
         _spawn("supervisor", record["id"], store, launcher)
     except TaskError as error:
@@ -167,6 +190,16 @@ def task_result(identifier, state_dir=None):
             output = _artifact_reference(store.artifact_path(identifier, "output.wav"))
             if output != result.get("output_artifact"):
                 raise TaskError("result_changed", "The saved music output changed.")
+        elif record["kind"] in MEDIA_KINDS:
+            result = result if result is not None else json.loads(path.read_bytes())
+            if record["kind"] == "transcribe":
+                store.verify_input_artifact(identifier, record["input_artifact"])
+                if not isinstance(result, dict) or result.get("input_artifact") != record["input_artifact"]:
+                    raise TaskError("result_changed", "The transcription input reference changed.")
+            else:
+                if not isinstance(result, dict):
+                    raise TaskError("result_changed", "The speech result is not a JSON object.")
+                store.verify_artifact(identifier, result.get("output_artifact"), "output.wav", code="output_artifact")
         return {"task": record, "artifact": reference, "inline": inline, "result": result if inline else None}
     except (OSError, ValueError) as error:
         raise TaskError("result_unavailable", "The saved task result is unavailable.") from error
@@ -346,9 +379,24 @@ def execute(identifier, state_dir):
             time.sleep(POLL_SECONDS)
         check_identity(record["identity"])
         request = store.read_request(identifier)
+        record = store.get(identifier)
         directory = store.artifact_path(identifier, "execution-result.json").parent
-        plan = _plan(request, directory)
-        result = run_decide(plan) if request["kind"] == "classification" else run_music(plan)
+        input_path = None
+        if request["kind"] == "transcribe":
+            input_path = str(store.verify_input_artifact(identifier, record["input_artifact"]))
+        plan = _plan(request, directory, input_path)
+        if request["kind"] == "classification":
+            result = run_decide(plan)
+        elif request["kind"] == "music_generation":
+            result = run_music(plan)
+        elif request["kind"] == "transcribe":
+            result = run_transcribe(plan)
+            result["input_artifact"] = record["input_artifact"]
+        else:
+            result = run_speak(plan)
+            output = store.artifact_path(identifier, "output.wav")
+            _validate_wav_output(output)
+            result["output_artifact"] = _artifact_reference(output)
         if request["kind"] == "music_generation":
             path = store.artifact_path(identifier, "output.wav")
             with wave.open(str(path), "rb") as audio:
@@ -357,9 +405,31 @@ def execute(identifier, state_dir):
             result["output_artifact"] = _artifact_reference(path)
         _write_json(store.artifact_path(identifier, "execution-result.json"), {"result": result})
         return 0
-    except (TaskError, DecideError, MusicError, BackendError, OSError, ValueError, wave.Error) as error:
+    except (TaskError, DecideError, MusicError, SpeakError, TranscribeError, BackendError, OSError, ValueError, wave.Error) as error:
         try:
             _write_json(store.artifact_path(identifier, "execution-result.json"), {"error": _error(error)})
         except (TaskError, OSError):
             pass
         return 1
+
+
+def _validate_wav_output(path):
+    try:
+        with wave.open(str(path), "rb") as audio:
+            frames = audio.getnframes()
+            channels = audio.getnchannels()
+            sample_width = audio.getsampwidth()
+            if frames <= 0 or channels <= 0 or sample_width <= 0 or audio.getframerate() <= 0:
+                raise TaskError("invalid_audio_output", "Speech synthesis did not produce usable WAV audio.")
+            frame_bytes = channels * sample_width
+            chunk_frames = max(1, 65536 // frame_bytes)
+            received = 0
+            remaining = frames
+            while remaining:
+                count = min(remaining, chunk_frames)
+                received += len(audio.readframes(count))
+                remaining -= count
+            if received != frames * frame_bytes:
+                raise TaskError("invalid_audio_output", "Speech synthesis produced a truncated WAV payload.")
+    except (OSError, EOFError, wave.Error) as error:
+        raise TaskError("invalid_audio_output", "Speech synthesis did not produce a readable WAV file.") from error

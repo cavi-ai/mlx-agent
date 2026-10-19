@@ -49,7 +49,8 @@ class TaskCliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(value["operation"], "task.capabilities")
         tasks = {task["kind"]: task for task in value["data"]["tasks"]}
-        self.assertEqual(set(tasks), {"classification", "music_generation", "transcribe", "speak", "image_generation", "image_understanding"})
+        self.assertEqual(set(tasks), {"classification", "music_generation", "transcribe", "speak", "image_generation", "image_understanding",
+                                      "video_generation", "video_understanding"})
         self.assertEqual((tasks["transcribe"]["request_schema"], tasks["transcribe"]["run_schema"]),
                          ("task-request/2", "task-run/2"))
         self.assertEqual((tasks["speak"]["request_schema"], tasks["speak"]["run_schema"]),

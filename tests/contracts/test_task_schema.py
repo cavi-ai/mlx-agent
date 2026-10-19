@@ -43,6 +43,13 @@ class TaskSchemaTests(unittest.TestCase):
                        dict(transcribe, parameters={"audio_path": "relative.wav"})))
         values.append(dict(speak, parameters={"text": " " + ("x" * 2000), "voice": "invalid voice",
                                               "speed": 3.0, "lang_code": "not_a_language_tag?"}))
+        video_generation = {"schema": "task-request/2", "kind": "video_generation", "model_path": "/models/video",
+                            "parameters": {"prompt": "A slow camera pan."}}
+        video_understanding = {"schema": "task-request/2", "kind": "video_understanding", "model_path": "/models/vision",
+                               "parameters": {"video_path": "/clips/source.mp4", "prompt": "What changes?"}}
+        values.extend((video_generation, video_understanding,
+                       dict(video_generation, parameters={"prompt": "x", "frames": True}),
+                       dict(video_understanding, parameters={"video_path": "relative.mp4", "prompt": "x"})))
         image_generation = {"schema": "task-request/2", "kind": "image_generation", "model_path": "/models/image",
                             "parameters": {"prompt": "A quiet forest"}}
         image_understanding = {"schema": "task-request/2", "kind": "image_understanding", "model_path": "/models/vision",
@@ -88,6 +95,19 @@ class TaskSchemaTests(unittest.TestCase):
             values.extend((image_record, image_generation_record,
                            dict(image_record, input_artifact=None),
                            dict(image_generation_record, input_artifact=image_record["input_artifact"])))
+            video = Path(directory).resolve() / "source.mov"
+            video.write_bytes(b"source video")
+            staged_video = store.stage_input(video, media_kind="video")
+            video_request = {"schema": "task-request/2", "kind": "video_understanding", "model_path": "/models/vision",
+                             "parameters": {"video_path": str(video), "prompt": "What changes?"}}
+            video_record = store.create(video_request, identity_evidence(video_request["model_path"]),
+                                        input_artifact=staged_video["reference"], staged_input=staged_video)
+            video_generation_request = {"schema": "task-request/2", "kind": "video_generation", "model_path": "/models/video",
+                                        "parameters": {"prompt": "A slow camera pan."}}
+            video_generation_record = store.create(video_generation_request,
+                                                   identity_evidence(video_generation_request["model_path"]))
+            values.extend((video_record, video_generation_record, dict(video_record, input_artifact=None),
+                           dict(video_generation_record, input_artifact=video_record["input_artifact"])))
             malformed = []
             for key, replacement in (("pid", True), ("pid", 0), ("identity", " ")):
                 candidate = copy.deepcopy(value)

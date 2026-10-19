@@ -23,6 +23,28 @@
       "max_tool_tokens": 1024
     },
     {
+      "id": "parallel-capabilities",
+      "probe": "contention",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {"capability": "task", "arguments": "capabilities --json"}
+    },
+    {
+      "id": "capabilities-latency",
+      "probe": "latency-budget",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {"capability": "task", "arguments": "capabilities --json"},
+      "attempts": 3,
+      "max_latency_ms": 2000
+    },
+    {
+      "id": "catalog-pagination",
+      "probe": "pagination",
+      "access": "read_only",
+      "max_pages": 8
+    },
+    {
       "id": "capabilities-input-schema",
       "probe": "schema-guessability",
       "access": "read_only",

@@ -58,7 +58,8 @@ MCPEVAL_HOME="$PWD/.run/mcp-eval" mcpeval probe \
 ```
 
 The manifest checks protocol negotiation, catalog budgets, input validation,
-structured results, repeated calls, and recovery after invalid input. It calls
+structured results, parallel calls, pagination, bounded latency, repeated
+calls, and recovery after invalid input. It calls
 only task capability discovery and rejected inputs; it does not run models or
 change task state. A failed case or incomplete evaluation exits nonzero. CI
 pins the evaluator and runs this gate on Linux and macOS with Python 3.9 and
@@ -70,6 +71,12 @@ it. The overall readiness score therefore does not measure successful model
 execution; the manifest verdict is the regression gate. The unit suite also
 checks catalog annotations and that structured results preserve the text
 response used by older clients.
+
+Each newline-terminated stdio request is limited to 64 KiB, including its
+newline. Oversized frames are discarded through the next newline before a
+later request is read. Invalid JSON, non-finite numbers, and parser-limit
+errors return a parse error without ending the session. Tool arguments retain
+their separate 4096-byte UTF-8 limit.
 
 ## Check documentation artifacts
 

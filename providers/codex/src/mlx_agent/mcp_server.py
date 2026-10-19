@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import sys
 from contextlib import redirect_stderr, redirect_stdout
 
@@ -144,6 +145,17 @@ def handle_request(request, core=None):
     if not isinstance(request, dict) or request.get("jsonrpc") != "2.0":
         return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
     request_id = request.get("id")
+    valid_id = request_id is None or isinstance(request_id, str) or (
+        type(request_id) in (int, float) and (
+            not isinstance(request_id, float) or math.isfinite(request_id)
+        )
+    )
+    if (
+        not valid_id
+        or not isinstance(request.get("method"), str)
+        or ("params" in request and not isinstance(request["params"], (dict, list)))
+    ):
+        return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
     if "id" not in request:
         return None
     method = request.get("method")
@@ -174,18 +186,30 @@ def handle_request(request, core=None):
         return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "Invalid params"}}
 
 
+def _finite_number(value):
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("JSON numbers must be finite")
+    return number
+
+
 def main():
     while True:
         line = sys.stdin.buffer.readline(MAX_REQUEST_BYTES + 1)
         if not line:
             return 0
         if len(line) > MAX_REQUEST_BYTES or not line.endswith(b"\n"):
+            # Discard the entire rejected frame without buffering its remainder.
+            while line and not line.endswith(b"\n"):
+                line = sys.stdin.buffer.readline(MAX_REQUEST_BYTES + 1)
             response = {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
         else:
             try:
-                response = handle_request(json.loads(line.decode("utf-8")))
-            except (UnicodeDecodeError, json.JSONDecodeError):
+                request = json.loads(line.decode("utf-8"), parse_float=_finite_number, parse_constant=_finite_number)
+            except (ValueError, RecursionError):
                 response = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}}
+            else:
+                response = handle_request(request)
         if response is not None:
             sys.stdout.write(json.dumps(response, separators=(",", ":")) + "\n")
             sys.stdout.flush()

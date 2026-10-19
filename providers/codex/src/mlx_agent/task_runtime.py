@@ -24,6 +24,7 @@ from .task_contracts import (INPUT_MEDIA_KINDS, MAX_REQUEST_BYTES, MEDIA_KINDS, 
 from .task_identity import capture_identity, check_identity
 from .task_store import TaskStore
 from .transcribe import TranscribeError, plan_transcribe, run_transcribe
+from .video import VideoError, plan_video, run_video
 from .wiring import redact_secrets
 
 POLL_SECONDS = .1
@@ -63,8 +64,14 @@ def _plan(request, directory, input_path=None):
     if request["kind"] == "image_generation":
         options = {key: parameters[key] for key in ("width", "height", "steps", "seed") if key in parameters}
         return plan_generate(request["model_path"], parameters["prompt"], str(directory / "output.png"), **options)
-    options = {key: parameters[key] for key in ("max_tokens", "temperature", "max_pixels") if key in parameters}
-    return plan_describe(request["model_path"], parameters["prompt"], image=input_path or parameters["image_path"], **options)
+    if request["kind"] == "image_understanding":
+        options = {key: parameters[key] for key in ("max_tokens", "temperature", "max_pixels") if key in parameters}
+        return plan_describe(request["model_path"], parameters["prompt"], image=input_path or parameters["image_path"], **options)
+    if request["kind"] == "video_generation":
+        options = {key: parameters[key] for key in ("width", "height", "frames", "fps", "steps", "seed") if key in parameters}
+        return plan_video(request["model_path"], parameters["prompt"], str(directory / "output.mp4"), **options)
+    options = {key: parameters[key] for key in ("fps", "max_tokens", "temperature", "max_pixels") if key in parameters}
+    return plan_describe(request["model_path"], parameters["prompt"], video=input_path or parameters["video_path"], **options)
 
 
 def _spawn(role, identifier, store, launcher=subprocess.Popen):
@@ -95,13 +102,14 @@ def start_task(request_path, state_dir=None, launcher=subprocess.Popen):
             raise TaskError("request_too_large", "Task requests are limited to 1 MiB.")
         request = validate_request(json.loads(raw))
         if request["kind"] in INPUT_MEDIA_KINDS:
-            media_kind = "audio" if request["kind"] == "transcribe" else "image"
-            field = "audio_path" if media_kind == "audio" else "image_path"
+            media_kind = {"transcribe": "audio", "image_understanding": "image", "video_understanding": "video"}[request["kind"]]
+            field = {"audio": "audio_path", "image": "image_path", "video": "video_path"}[media_kind]
             staged_input = store.stage_input(request["parameters"][field], media_kind=media_kind)
         with tempfile.TemporaryDirectory(prefix="mlx-task-plan-") as directory:
             plan = _plan(request, Path(directory), staged_input["staging_path"] if staged_input else None)
             identity = capture_identity(Path(request["model_path"]), load_manifests()[plan["backend"]], Path(plan["argv"][0]))
-    except (OSError, ValueError, DecideError, DescribeError, GenerateError, MusicError, SpeakError, TranscribeError, BackendError) as error:
+    except (OSError, ValueError, DecideError, DescribeError, GenerateError, MusicError, SpeakError, TranscribeError,
+            VideoError, BackendError) as error:
         if staged_input is not None:
             store.discard_staged_input(staged_input)
         raise TaskError(getattr(error, "code", "invalid_request"), str(error), getattr(error, "remediation", "Check the local model, request and installed backend.")) from error
@@ -204,14 +212,15 @@ def task_result(identifier, state_dir=None):
         elif record["kind"] in MEDIA_KINDS:
             result = result if result is not None else json.loads(path.read_bytes())
             if record["kind"] in INPUT_MEDIA_KINDS:
-                media_kind = "audio" if record["kind"] == "transcribe" else "image"
+                media_kind = {"transcribe": "audio", "image_understanding": "image", "video_understanding": "video"}[record["kind"]]
                 store.verify_input_artifact(identifier, record["input_artifact"], media_kind=media_kind)
                 if not isinstance(result, dict) or result.get("input_artifact") != record["input_artifact"]:
                     raise TaskError("result_changed", "The media input reference changed.")
             else:
                 if not isinstance(result, dict):
                     raise TaskError("result_changed", "The task result is not a JSON object.")
-                output_name = "output.wav" if record["kind"] == "speak" else "output.png"
+                output_name = {"speak": "output.wav", "image_generation": "output.png",
+                               "video_generation": "output.mp4"}[record["kind"]]
                 store.verify_artifact(identifier, result.get("output_artifact"), output_name, code="output_artifact")
         return {"task": record, "artifact": reference, "inline": inline, "result": result if inline else None}
     except (OSError, ValueError) as error:
@@ -396,7 +405,7 @@ def execute(identifier, state_dir):
         directory = store.artifact_path(identifier, "execution-result.json").parent
         input_path = None
         if request["kind"] in INPUT_MEDIA_KINDS:
-            media_kind = "audio" if request["kind"] == "transcribe" else "image"
+            media_kind = {"transcribe": "audio", "image_understanding": "image", "video_understanding": "video"}[request["kind"]]
             input_path = str(store.verify_input_artifact(identifier, record["input_artifact"], media_kind=media_kind))
         plan = _plan(request, directory, input_path)
         if request["kind"] == "classification":
@@ -416,6 +425,11 @@ def execute(identifier, state_dir):
             output = store.artifact_path(identifier, "output.png")
             _validate_png_output(output, plan["argv"][0])
             result["output_artifact"] = _artifact_reference(output)
+        elif request["kind"] == "video_generation":
+            result = run_video(plan)
+            output = store.artifact_path(identifier, "output.mp4")
+            _validate_mp4_output(output, plan["argv"][0])
+            result["output_artifact"] = _artifact_reference(output)
         else:
             result = run_describe(plan)
             result["input_artifact"] = record["input_artifact"]
@@ -427,7 +441,7 @@ def execute(identifier, state_dir):
             result["output_artifact"] = _artifact_reference(path)
         _write_json(store.artifact_path(identifier, "execution-result.json"), {"result": result})
         return 0
-    except (TaskError, DecideError, DescribeError, GenerateError, MusicError, SpeakError, TranscribeError,
+    except (TaskError, DecideError, DescribeError, GenerateError, MusicError, SpeakError, TranscribeError, VideoError,
             BackendError, OSError, ValueError, wave.Error) as error:
         try:
             _write_json(store.artifact_path(identifier, "execution-result.json"), {"error": _error(error)})
@@ -470,3 +484,17 @@ def _validate_png_output(path, backend_python, runner=subprocess.run):
     if completed.returncode != 0:
         raise TaskError("invalid_image_output", "Image generation did not produce a fully decodable PNG.",
                         "Check the image backend output and retry the task.")
+
+
+def _validate_mp4_output(path, backend_python, runner=subprocess.run):
+    validator = Path(__file__).with_name("task_mp4_validator.py")
+    try:
+        completed = runner([backend_python, str(validator), str(path)], stdin=subprocess.DEVNULL,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30,
+                           env=backend_environment(), check=False)
+    except (OSError, subprocess.SubprocessError) as error:
+        raise TaskError("invalid_video_output", "Video generation could not validate its MP4 output.",
+                        "Check the installed video backend and retry the task.") from error
+    if completed.returncode != 0:
+        raise TaskError("invalid_video_output", "Video generation did not produce a decodable MP4 video stream.",
+                        "Check the video backend output and retry the task.")

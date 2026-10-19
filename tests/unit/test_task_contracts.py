@@ -40,7 +40,8 @@ class TaskContractTests(unittest.TestCase):
     def test_capabilities_do_not_claim_selected_model_readiness(self):
         result = capabilities()
         self.assertEqual({item["kind"] for item in result["tasks"]},
-                         {"classification", "music_generation", "transcribe", "speak", "image_generation", "image_understanding"})
+                         {"classification", "music_generation", "transcribe", "speak", "image_generation", "image_understanding",
+                          "video_generation", "video_understanding"})
         self.assertTrue(all(item["cancellation"] for item in result["tasks"]))
         self.assertNotIn("ready", result)
 
@@ -54,6 +55,36 @@ class TaskContractTests(unittest.TestCase):
                           tasks["transcribe"]["result_schema"]), ("task-request/2", "task-run/2", "transcribe/1"))
         self.assertEqual((tasks["speak"]["request_schema"], tasks["speak"]["run_schema"],
                           tasks["speak"]["result_schema"]), ("task-request/2", "task-run/2", "speak/1"))
+
+    def test_video_capabilities_and_requests_use_media_v2_without_materializing_defaults(self):
+        tasks = {item["kind"]: item for item in capabilities()["tasks"]}
+        self.assertEqual((tasks["video_generation"]["request_schema"], tasks["video_generation"]["run_schema"],
+                          tasks["video_generation"]["result_schema"]), ("task-request/2", "task-run/2", "video/1"))
+        self.assertEqual((tasks["video_understanding"]["request_schema"], tasks["video_understanding"]["run_schema"],
+                          tasks["video_understanding"]["result_schema"]), ("task-request/2", "task-run/2", "describe/1"))
+        requests = [
+            {"schema": "task-request/2", "kind": "video_generation", "model_path": "/models/video",
+             "parameters": {"prompt": "A slow camera pan."}},
+            {"schema": "task-request/2", "kind": "video_understanding", "model_path": "/models/vision",
+             "parameters": {"video_path": "/clips/input.mp4", "prompt": "What changes?"}},
+        ]
+        for request in requests:
+            with self.subTest(kind=request["kind"]):
+                self.assertEqual(validate_request(request), request)
+
+    def test_video_requests_reject_wrong_types_fields_and_versions(self):
+        base = {"schema": "task-request/2", "kind": "video_generation", "model_path": "/models/video",
+                "parameters": {"prompt": "A slow camera pan."}}
+        invalid = [dict(base, schema="task-request/1"), dict(base, parameters={"prompt": "x", "frames": True}),
+                   dict(base, parameters={"prompt": "x", "fps": float("nan")}),
+                   dict(base, parameters={"prompt": "x", "timeout": 1}),
+                   {"schema": "task-request/2", "kind": "video_understanding", "model_path": "/models/vision",
+                    "parameters": {"video_path": "relative.mp4", "prompt": "What changes?"}},
+                   {"schema": "task-request/2", "kind": "video_understanding", "model_path": "/models/vision",
+                    "parameters": {"video_path": "/clips/input.mp4", "prompt": "What changes?", "max_pixels": True}}]
+        for request in invalid:
+            with self.subTest(request=request), self.assertRaises(TaskError):
+                validate_request(request)
 
     def test_image_capabilities_and_requests_use_media_v2_without_materializing_defaults(self):
         tasks = {item["kind"]: item for item in capabilities()["tasks"]}

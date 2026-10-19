@@ -161,6 +161,26 @@ class TaskStoreTests(unittest.TestCase):
         self.assertEqual(owned.read_bytes(), b"immutable image bytes")
         self.assertEqual(self.store.verify_input_artifact(record["id"], record["input_artifact"], media_kind="image"), owned)
 
+    def test_video_input_is_snapshotted_with_its_original_extension(self):
+        source = self.root.parent / "input.M4V"
+        source.write_bytes(b"immutable video bytes")
+        staged = self.store.stage_input(source, media_kind="video")
+        request = {"schema": "task-request/2", "kind": "video_understanding", "model_path": "/models/vision",
+                   "parameters": {"video_path": str(source), "prompt": "What changes?"}}
+        record = self.store.create(request, identity_evidence(request["model_path"]),
+                                   input_artifact=staged["reference"], staged_input=staged)
+        owned = Path(record["input_artifact"]["path"])
+        self.assertEqual(record["schema"], "task-run/2")
+        self.assertEqual(owned.name, "input.m4v")
+        self.assertEqual(owned.read_bytes(), b"immutable video bytes")
+        self.assertEqual(self.store.verify_input_artifact(record["id"], record["input_artifact"], media_kind="video"), owned)
+
+    def test_video_task_input_rejects_unsupported_extensions(self):
+        source = self.root.parent / "input.avi"
+        source.write_bytes(b"video")
+        with self.assertRaises(TaskError):
+            self.store.stage_input(source, media_kind="video")
+
     def test_image_task_records_require_a_snapshot_and_only_image_extensions(self):
         for filename in ("input.gif", "input.txt"):
             with self.subTest(filename=filename):

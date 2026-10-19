@@ -1,9 +1,9 @@
 # Durable inference tasks
 
 Use `task` for classification, music generation, transcription, speech
-synthesis, image generation and image understanding that must outlive the
-calling process. The engine retains accepted inputs, status, results and output
-files.
+synthesis, image generation and understanding, and video generation and
+understanding that must outlive the calling process. The engine retains
+accepted inputs, status, results and output files.
 CLI and MCP clients use the same task IDs and storage. Existing synchronous
 `convert decide` and `convert music` commands remain available.
 
@@ -120,6 +120,38 @@ that verified snapshot during inference. The result retains the full
 }
 ```
 
+Video tasks also use `task-request/2`. Video understanding accepts an absolute
+MP4, MOV or M4V `video_path`, a prompt, and the existing description options
+`fps`, `temperature`, `max_tokens` and `max_pixels`. The engine snapshots the
+video before acceptance and preserves the full `describe/1` result with its
+canonical input reference. A backend that cannot decode video reports
+`video_unsupported`.
+
+```json
+{
+  "schema": "task-request/2",
+  "kind": "video_understanding",
+  "model_path": "/absolute/local/vision-model",
+  "parameters": {"video_path": "/absolute/clip.mp4", "prompt": "What changes?"}
+}
+```
+
+Video generation accepts a prompt and optional `width`, `height`, `frames`,
+`fps`, `steps` and `seed`. Omitted values use the existing video planner's
+defaults; model-specific size alignment, frame rules, limits and defaults stay
+with that planner. The selected backend's OpenCV environment must decode a
+video stream and report a positive duration before the task publishes
+`output.mp4`.
+
+```json
+{
+  "schema": "task-request/2",
+  "kind": "video_generation",
+  "model_path": "/absolute/local/video-model",
+  "parameters": {"prompt": "A slow camera pan across a quiet lake."}
+}
+```
+
 ```bash
 python3 scripts/mlx-agent task start --request /absolute/request.json --json
 python3 scripts/mlx-agent task status --id TASK_UUID --json
@@ -147,12 +179,13 @@ unrelated process. A lost supervisor is reported as interrupted; unresolved
 execution continues to block host compute. Inspect that error before retrying.
 
 Results preserve the underlying `decide/1`, `music/1`, `transcribe/1`,
-`speak/1`, `generate/1` or `describe/1` metadata. Classification answers and
-image descriptions are model judgments. Successful music and speech synthesis
-confirm an output WAV; image generation confirms a fully decodable PNG. Tasks
-do not rate output quality. Generated media artifacts have a content hash, and
-retrieval refuses a missing or changed output. Task completion does not confer
-a conversion verification or comparison award.
+`speak/1`, `generate/1`, `video/1` or `describe/1` metadata. Classification
+answers and media descriptions are model judgments. Successful music and
+speech synthesis confirm an output WAV; image generation confirms a fully
+decodable PNG; video generation confirms a decodable MP4 video stream with
+positive duration. Tasks do not rate output quality. Generated media artifacts
+have a content hash, and retrieval refuses a missing or changed output. Task
+completion does not confer a conversion verification or comparison award.
 
 `result` includes an owned JSON artifact reference with path, SHA-256 and byte
 size. Small results are also returned inline; results over 8,192 bytes use

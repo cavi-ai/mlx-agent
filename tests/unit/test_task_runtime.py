@@ -2,10 +2,13 @@ import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from mlx_agent.task_contracts import TaskError
-from mlx_agent.task_runtime import _plan, _validate_png_output, cancel_task, start_task, supervise, task_result, task_status
+from mlx_agent.task_runtime import (_plan, _validate_mp4_output, _validate_png_output, cancel_task,
+                                    start_task, supervise, task_result, task_status)
+from mlx_agent.task_mp4_validator import valid_mp4
 from mlx_agent.task_store import TaskStore
 from tests.task_fixtures import identity_evidence
 
@@ -38,6 +41,65 @@ class TaskRuntimeTests(unittest.TestCase):
                    "parameters": {"image_path": "/original/source.jpeg", "prompt": "Describe."}},
                   self.root, "/owned/input.jpeg")
             describe.assert_called_once_with("/vision", "Describe.", image="/owned/input.jpeg")
+
+    def test_video_planners_receive_snapshots_and_only_supplied_optional_values(self):
+        with patch("mlx_agent.task_runtime.plan_video", return_value={}) as generate, patch(
+                "mlx_agent.task_runtime.plan_describe", return_value={}) as describe:
+            _plan({"kind": "video_generation", "model_path": "/video",
+                   "parameters": {"prompt": "A slow camera pan."}}, self.root)
+            generate.assert_called_once_with("/video", "A slow camera pan.", str(self.root / "output.mp4"))
+            _plan({"kind": "video_understanding", "model_path": "/vision",
+                   "parameters": {"video_path": "/original/source.mov", "prompt": "What changes?"}},
+                  self.root, "/owned/input.mov")
+            describe.assert_called_once_with("/vision", "What changes?", video="/owned/input.mov")
+            _plan({"kind": "video_generation", "model_path": "/video",
+                   "parameters": {"prompt": "A pan.", "width": 256, "height": 256, "frames": 17,
+                                  "fps": 8, "steps": 8, "seed": 42}}, self.root)
+            generate.assert_called_with("/video", "A pan.", str(self.root / "output.mp4"),
+                                        width=256, height=256, frames=17, fps=8, steps=8, seed=42)
+            _plan({"kind": "video_understanding", "model_path": "/vision",
+                   "parameters": {"video_path": "/original/source.mp4", "prompt": "What changes?",
+                                  "fps": 2, "temperature": .25, "max_tokens": 32, "max_pixels": 4096}},
+                  self.root, "/owned/input.mp4")
+            describe.assert_called_with("/vision", "What changes?", video="/owned/input.mp4",
+                                        fps=2, max_tokens=32, temperature=.25, max_pixels=4096)
+
+    def test_mp4_validation_runs_in_selected_backend_and_fails_closed(self):
+        with patch("mlx_agent.task_runtime.backend_environment", return_value={}) as environment:
+            runner = unittest.mock.Mock(return_value=unittest.mock.Mock(returncode=0))
+            _validate_mp4_output(self.root / "output.mp4", "/backend/python", runner=runner)
+            self.assertEqual(runner.call_args.args[0][0:2], [
+                "/backend/python", str(Path(__file__).resolve().parents[2] / "src/mlx_agent/task_mp4_validator.py")])
+            environment.assert_called_once_with()
+            with self.assertRaises(TaskError) as caught:
+                _validate_mp4_output(self.root / "bad.mp4", "/backend/python",
+                                     runner=unittest.mock.Mock(return_value=unittest.mock.Mock(returncode=1)))
+            self.assertEqual(caught.exception.code, "invalid_video_output")
+
+    def test_mp4_validator_rejects_truncated_frame_stream(self):
+        class Capture:
+            def __init__(self, _path):
+                self.frames = iter(([SimpleNamespace(size=1)], []))
+
+            def isOpened(self):
+                return True
+
+            def get(self, property_id):
+                return {1: 8.0, 2: 4.0, 3: 64.0, 4: 64.0}[property_id]
+
+            def read(self):
+                frame = next(self.frames)
+                return (bool(frame), frame[0] if frame else None)
+
+            def release(self):
+                pass
+
+        fake_cv2 = SimpleNamespace(VideoCapture=Capture, CAP_PROP_FPS=1, CAP_PROP_FRAME_COUNT=2,
+                                   CAP_PROP_FRAME_WIDTH=3, CAP_PROP_FRAME_HEIGHT=4)
+        path = self.root / "truncated.mp4"
+        path.write_bytes(b"fixture")
+        with patch.dict("sys.modules", {"cv2": fake_cv2}):
+            self.assertFalse(valid_mp4(path))
 
     def test_png_validation_runs_in_the_selected_backend_and_fails_closed(self):
         with patch("mlx_agent.task_runtime.backend_environment", return_value={}) as environment:

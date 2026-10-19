@@ -13,6 +13,7 @@
       "executable": "mlx_lm.server",
       "argv": ["{executable}", "--model", "{repo}", "--port", "{port}", "--max-tokens", "{max_tokens}"],
       "adapter_argv": ["--adapter-path", "{adapter_path}"],
+      "thinking_off_argv": ["--chat-template-args", "{\"enable_thinking\":false}"],
       "default_port": 8080,
       "readiness": "http://127.0.0.1:{port}/v1/models",
       "install_hint": "pip install mlx-lm"

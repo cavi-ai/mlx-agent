@@ -481,6 +481,12 @@ def _mlx_config(directory):
     }
 
 
+def _mlx_community_snapshot(directory):
+    """A Hugging Face cache snapshot of an mlx-community repository: MLX weights even when unquantized (bf16)."""
+    parts = Path(directory).parts
+    return len(parts) >= 3 and parts[-2] == "snapshots" and parts[-3].startswith("models--mlx-community--")
+
+
 def _component_weights(directory):
     """A converter that saves per-component folders (mflux) lists them in config.json ``components``."""
     try:
@@ -528,11 +534,13 @@ def scan_mlx_outputs(roots, limit=MAX_SCAN_FILES):
                 if len(seen) >= limit:
                     return sorted(outputs, key=lambda item: item["path"])
                 continue
-            if not any(name.endswith(".safetensors") for name in filenames) and not _component_weights(directory):
+            # is_file follows cache symlinks: a snapshot whose weight blobs are missing is not a model.
+            if not any(name.endswith(".safetensors") and (directory / name).is_file() for name in filenames) \
+                    and not _component_weights(directory):
                 continue
             provenance = read_provenance(directory)
             marker = _mlx_config(directory)
-            if provenance is None and marker is None:
+            if provenance is None and marker is None and not _mlx_community_snapshot(directory):
                 continue
             try:
                 resolved = directory.resolve()

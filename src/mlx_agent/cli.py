@@ -917,6 +917,8 @@ def _add_serve_arguments(parser):
     start.add_argument("--max-tokens", type=int, default=MAX_TOKENS_DEFAULT)
     start.add_argument("--adapter-path", default=None, help="LoRA adapter directory (mlx_lm only)")
     start.add_argument("--training-receipt", default=None, help="completed LoRA receipt selecting its pinned base and adapter")
+    start.add_argument("--thinking", choices=["default", "off"], default="default",
+                       help="off asks the chat template to skip reasoning (mlx_lm); other runtimes report unsupported")
     start.add_argument("--jit", action="store_true", help="keep endpoint reachable; load local weights on inference requests")
     _add_memory_arguments(start)
     start.add_argument("--launchd", action="store_true", help="install a launchd agent plist instead of spawning now")
@@ -1008,6 +1010,7 @@ def _run_serve(arguments):
             strata_expert_memory_gb=arguments.strata_expert_memory_gb,
             strata_context_tokens=arguments.strata_context_tokens,
             memory_policy=_memory_arguments(arguments) if (arguments.idle_timeout is not None or arguments.keep_loaded or arguments.min_headroom_gb is not None) else None,
+            thinking=arguments.thinking,
         )
         if arguments.launchd:
             if arguments.jit:

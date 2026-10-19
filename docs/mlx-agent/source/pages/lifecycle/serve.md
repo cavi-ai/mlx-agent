@@ -119,6 +119,11 @@ concurrent cold loads, and later context growth can change usage. See
 `--adapter-path` serves a local LoRA with `mlx_lm`. Default ports are 8080
 for `mlx_lm` and 8083 for `mlx-vlm`.
 
+`--thinking off` asks the chat template to skip reasoning: `mlx_lm` receives
+`--chat-template-args {"enable_thinking":false}`, and the reviewed plan records
+`thinking: off`. Templates without that switch ignore it. Runtimes whose recipe
+has no such argument record `thinking: unsupported` and start unchanged.
+
 `--runtime auto` reads local `config.json` and selects a declared MLX-LM or
 MLX-VLM loader. Optional backends use their isolated executable, bound into
 the eager or JIT preview, rather than global PATH. Specialized preconverted

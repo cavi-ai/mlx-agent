@@ -30,6 +30,8 @@ png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4
 if args and args[0].endswith("task_png_validator.py"):
     image = Path(args[1]).read_bytes()
     sys.exit(0 if image == png else 1)
+if args and args[0].endswith("task_mp4_validator.py"):
+    sys.exit(0 if Path(args[1]).read_bytes() == b"fixture video output" else 1)
 model = Path(args[args.index("--model") + 1])
 config = json.loads((model / "config.json").read_text())
 behavior = config.get("fixture_behavior", "success")
@@ -51,6 +53,11 @@ elif "--out" in args:
     if target.endswith(".png"):
         Path(target).write_bytes(b"not png" if behavior == "invalid-image" else png)
         print(json.dumps({"path": target, "width": 1, "height": 1, "steps": 40, "seed": 42, "seconds": .1}))
+    elif target.endswith(".mp4"):
+        Path(target).write_bytes(b"invalid video" if behavior == "invalid-video" else b"fixture video output")
+        print(json.dumps({"path": target, "width": 832, "height": 480, "frames": 81, "fps": 16,
+                          "duration_seconds": 5.0625, "steps": 50, "seed": 42, "seconds": .1,
+                          "seconds_per_frame": .001, "peak_memory_gb": 1.0, "pixel_std": 1.0}))
     elif behavior == "invalid-audio":
         Path(target).write_bytes(b"not audio")
     else:
@@ -67,6 +74,15 @@ elif "--image" in args:
         time.sleep(.01)
     print(json.dumps({"text": "A detailed description. " + ("More scene detail. " * 150),
                       "prompt_tokens": 12, "generation_tokens": 300, "seconds": .1}))
+elif "--video" in args:
+    while behavior == "hold-video-description" and not (model.parent / "release-video-description").exists():
+        time.sleep(.01)
+    if behavior == "video-unsupported":
+        print(json.dumps({"error": "video_unsupported", "detail": "fixture backend has no video decoder"}))
+        raise SystemExit(3)
+    video = Path(args[args.index("--video") + 1])
+    print(json.dumps({"text": "A detailed video description. " + ("The scene changes over time. " * 100),
+                      "prompt_tokens": 14, "generation_tokens": 400, "seconds": .1}))
 else:
     request = json.loads(Path(args[args.index("--request") + 1]).read_text())
     print(json.dumps({"answers": {"route": "billing"}, "seconds": .1, "usage": {"questions": len(request["questions"])}}))
@@ -95,7 +111,7 @@ class TaskProcessTests(unittest.TestCase):
         self.addCleanup(self.environment.stop)
         self.model = self.root / "model"
         self.model.mkdir()
-        for identifier in ("mlx-audio", "mlx-embeddings", "mflux", "mlx-vlm"):
+        for identifier in ("mlx-audio", "mlx-embeddings", "mflux", "mlx-vlm", "mlx-video"):
             manifest = load_manifests()[identifier]
             backend = self.root / "data/mlx-workbench/backends" / identifier
             (backend / "bin").mkdir(parents=True)
@@ -132,7 +148,8 @@ class TaskProcessTests(unittest.TestCase):
     def prepare_request(self, kind="classification", behavior="success"):
         model_type = {"classification": "laya", "music_generation": "minimax_music3",
                       "transcribe": "whisper", "speak": "kokoro", "image_generation": "qwen_image_21",
-                      "image_understanding": "qwen2_5_vl"}[kind]
+                      "image_understanding": "qwen2_5_vl", "video_understanding": "qwen2_5_vl",
+                      "video_generation": "t2v"}[kind]
         (self.model / "config.json").write_text(json.dumps({"model_type": model_type, "fixture_behavior": behavior}))
         (self.model / "tokenizer.json").write_text("{}")
         schema = "task-request/1"
@@ -151,10 +168,18 @@ class TaskProcessTests(unittest.TestCase):
         elif kind == "image_generation":
             params = {"prompt": "A quiet forest"}
             schema = "task-request/2"
-        else:
+        elif kind == "image_understanding":
             self.image = self.root / "input.png"
             self.image.write_bytes(b"original image snapshot")
             params = {"image_path": str(self.image), "prompt": "Describe the scene."}
+            schema = "task-request/2"
+        elif kind == "video_understanding":
+            self.video = self.root / "input.MOV"
+            self.video.write_bytes(b"original video snapshot")
+            params = {"video_path": str(self.video), "prompt": "What changes?"}
+            schema = "task-request/2"
+        elif kind == "video_generation":
+            params = {"prompt": "A slow camera pan."}
             schema = "task-request/2"
         request = self.root / "request.json"
         request.write_text(json.dumps({"schema": schema, "kind": kind, "model_path": str(self.model), "parameters": params}))
@@ -253,6 +278,51 @@ class TaskProcessTests(unittest.TestCase):
         result = self.wait_for(lambda: self.terminal(task["id"]))
         self.assertEqual(result["state"], "failed", result)
         self.assertEqual(result["error"]["code"], "invalid_image_output")
+
+    def test_video_description_uses_its_fsynced_snapshot_and_preserves_full_text(self):
+        task = self.start("video_understanding", behavior="hold-video-description")
+        self.wait_for(lambda: (self.root / "started").exists())
+        self.video.write_bytes(b"changed video")
+        self.video.unlink()
+        (self.root / "release-video-description").touch()
+        result = self.wait_for(lambda: self.terminal(task["id"]))
+        self.assertEqual(result["state"], "succeeded", result)
+        evidence = task_result(task["id"], self.state)
+        self.assertEqual(evidence["result"]["schema"], "describe/1")
+        self.assertGreater(len(evidence["result"]["text"]), 2000)
+        self.assertEqual(evidence["result"]["input_artifact"], result["input_artifact"])
+        self.assertEqual(Path(result["input_artifact"]["path"]).read_bytes(), b"original video snapshot")
+
+    def test_video_description_preserves_explicit_unsupported_error(self):
+        task = self.start("video_understanding", behavior="video-unsupported")
+        result = self.wait_for(lambda: self.terminal(task["id"]))
+        self.assertEqual(result["state"], "failed", result)
+        self.assertEqual(result["error"]["code"], "video_unsupported")
+
+    def test_video_generation_returns_mp4_only_after_backend_validation(self):
+        task = self.start("video_generation")
+        result = self.wait_for(lambda: self.terminal(task["id"]))
+        self.assertEqual(result["state"], "succeeded", result)
+        evidence = task_result(task["id"], self.state)["result"]
+        self.assertEqual(evidence["schema"], "video/1")
+        self.assertIsNone(result["input_artifact"])
+        self.assertEqual(Path(evidence["output_artifact"]["path"]).name, "output.mp4")
+
+    def test_video_generation_rejects_invalid_mp4_before_success(self):
+        task = self.start("video_generation", behavior="invalid-video")
+        result = self.wait_for(lambda: self.terminal(task["id"]))
+        self.assertEqual(result["state"], "failed", result)
+        self.assertEqual(result["error"]["code"], "invalid_video_output")
+
+    def test_video_model_constraints_fail_before_task_acceptance(self):
+        request_path = self.prepare_request("video_generation")
+        request = json.loads(request_path.read_text())
+        request["parameters"]["frames"] = 18
+        request_path.write_text(json.dumps(request))
+        with self.assertRaises(TaskError) as caught:
+            start_task(request_path, self.state, launcher=self.launch)
+        self.assertEqual(caught.exception.code, "invalid_arguments")
+        self.assertEqual(TaskStore(self.state).list(), [])
 
     def test_invalid_speech_parameters_fail_in_planner_before_acceptance(self):
         request_path = self.prepare_request("speak")

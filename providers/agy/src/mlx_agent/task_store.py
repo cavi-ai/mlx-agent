@@ -133,9 +133,11 @@ class TaskStore:
         """Copy a supported media input into a private, unaccepted staging directory."""
         source = Path(source).expanduser()
         suffix = source.suffix.lower()
-        extensions = {"audio": (".wav", ".flac", ".mp3"), "image": (".png", ".jpg", ".jpeg", ".webp")}
+        extensions = {"audio": (".wav", ".flac", ".mp3"), "image": (".png", ".jpg", ".jpeg", ".webp"),
+                      "video": (".mp4", ".mov", ".m4v")}
         if media_kind not in extensions or not source.is_absolute() or suffix not in extensions[media_kind]:
-            description = "WAV, FLAC or MP3" if media_kind == "audio" else "PNG, JPEG or WebP"
+            description = {"audio": "WAV, FLAC or MP3", "image": "PNG, JPEG or WebP",
+                           "video": "MP4, MOV or M4V"}.get(media_kind, "supported media")
             raise TaskError("invalid_input", "Media input must be an absolute {0} path.".format(description))
         identifier = str(uuid4())
         artifacts = self._ensure_artifact_root()
@@ -345,7 +347,8 @@ class TaskStore:
 
     def verify_input_artifact(self, identifier, reference, media_kind="audio"):
         names_by_kind = {"audio": ("input.wav", "input.flac", "input.mp3"),
-                         "image": ("input.png", "input.jpg", "input.jpeg", "input.webp")}
+                         "image": ("input.png", "input.jpg", "input.jpeg", "input.webp"),
+                         "video": ("input.mp4", "input.mov", "input.m4v")}
         if media_kind not in names_by_kind:
             raise TaskError("invalid_input", "The retained input media kind is unsupported.")
         names = names_by_kind[media_kind]

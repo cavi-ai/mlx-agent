@@ -50,7 +50,7 @@
       "required": ["schema", "kind", "model_path", "parameters"],
       "properties": {
         "schema": {"const": "task-request/2"},
-        "kind": {"enum": ["transcribe", "speak", "image_generation", "image_understanding"]},
+        "kind": {"enum": ["transcribe", "speak", "image_generation", "image_understanding", "video_generation", "video_understanding"]},
         "model_path": {"type": "string", "pattern": "^/[^\\u0000-\\u001f]*$"},
         "parameters": {"type": "object"}
       },
@@ -85,6 +85,29 @@
             "prompt": {"type": "string"},
             "max_tokens": {"type": "integer"},
             "temperature": {"type": "number"},
+            "max_pixels": {"type": "integer"}
+          }
+        }}}},
+        {"if": {"properties": {"kind": {"const": "video_generation"}}}, "then": {"properties": {"parameters": {
+          "type": "object", "additionalProperties": false, "required": ["prompt"],
+          "properties": {
+            "prompt": {"type": "string"},
+            "width": {"type": "integer"},
+            "height": {"type": "integer"},
+            "frames": {"type": "integer"},
+            "steps": {"type": "integer"},
+            "seed": {"type": "integer"},
+            "fps": {"type": "number"}
+          }
+        }}}},
+        {"if": {"properties": {"kind": {"const": "video_understanding"}}}, "then": {"properties": {"parameters": {
+          "type": "object", "additionalProperties": false, "required": ["video_path", "prompt"],
+          "properties": {
+            "video_path": {"type": "string", "pattern": "^/[^\\u0000-\\u001f]*$"},
+            "prompt": {"type": "string"},
+            "fps": {"type": "number"},
+            "temperature": {"type": "number"},
+            "max_tokens": {"type": "integer"},
             "max_pixels": {"type": "integer"}
           }
         }}}}

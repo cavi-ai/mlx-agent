@@ -16,8 +16,9 @@ MEDIA_REQUEST_SCHEMA = "task-request/2"
 MEDIA_RUN_SCHEMA = "task-run/2"
 MAX_REQUEST_BYTES = 1024 * 1024
 LEGACY_KINDS = ("classification", "music_generation")
-MEDIA_KINDS = ("transcribe", "speak", "image_generation", "image_understanding")
-INPUT_MEDIA_KINDS = ("transcribe", "image_understanding")
+MEDIA_KINDS = ("transcribe", "speak", "image_generation", "image_understanding",
+               "video_generation", "video_understanding")
+INPUT_MEDIA_KINDS = ("transcribe", "image_understanding", "video_understanding")
 KINDS = LEGACY_KINDS + MEDIA_KINDS
 STATES = ("starting", "running", "succeeded", "failed", "cancelled")
 TERMINAL = ("succeeded", "failed", "cancelled")
@@ -92,8 +93,12 @@ def validate_request(value):
                 raise TaskError("invalid_request", "lang_code must be a string.")
         elif value["kind"] == "image_generation":
             _validate_image_generation(parameters)
-        else:
+        elif value["kind"] == "image_understanding":
             _validate_image_understanding(parameters)
+        elif value["kind"] == "video_generation":
+            _validate_video_generation(parameters)
+        else:
+            _validate_video_understanding(parameters)
     except (DecideError, MusicError) as error:
         raise TaskError(error.code, str(error), error.remediation) from error
     result = dict(value, parameters=parameters)
@@ -123,7 +128,9 @@ def validate_record(value):
         if value["kind"] in INPUT_MEDIA_KINDS:
             _artifact_reference(reference)
             path = Path(reference["path"])
-            suffixes = (".wav", ".flac", ".mp3") if value["kind"] == "transcribe" else (".png", ".jpg", ".jpeg", ".webp")
+            suffixes = {"transcribe": (".wav", ".flac", ".mp3"),
+                        "image_understanding": (".png", ".jpg", ".jpeg", ".webp"),
+                        "video_understanding": (".mp4", ".mov", ".m4v")}[value["kind"]]
             if (path.parent.name != value["id"] or path.parent.parent.name != "artifacts"
                     or path.name != "input" + path.suffix.lower() or path.suffix.lower() not in suffixes):
                 raise TaskError("invalid_task_record", "Input artifact path is outside its task directory.")
@@ -237,7 +244,8 @@ def capabilities():
               "cancellation": True, "requires_local_model": True, "model_verification": True}
              for kind in LEGACY_KINDS]
     result_schemas = {"transcribe": "transcribe/1", "speak": "speak/1",
-                      "image_generation": "generate/1", "image_understanding": "describe/1"}
+                      "image_generation": "generate/1", "image_understanding": "describe/1",
+                      "video_generation": "video/1", "video_understanding": "describe/1"}
     tasks.extend({"kind": kind, "result_schema": result_schemas[kind],
                   "request_schema": MEDIA_REQUEST_SCHEMA, "run_schema": MEDIA_RUN_SCHEMA,
                   "cancellation": True, "requires_local_model": True, "model_verification": True}
@@ -269,3 +277,34 @@ def _validate_image_understanding(parameters):
     if "temperature" in parameters and (isinstance(parameters["temperature"], bool)
             or not isinstance(parameters["temperature"], (int, float)) or not math.isfinite(parameters["temperature"])):
         raise TaskError("invalid_request", "temperature must be a finite number.")
+
+
+def _validate_video_generation(parameters):
+    if set(parameters) - {"prompt", "width", "height", "frames", "steps", "seed", "fps"} or "prompt" not in parameters:
+        raise TaskError("invalid_request", "Video-generation parameters need prompt and supported options.")
+    if not isinstance(parameters["prompt"], str):
+        raise TaskError("invalid_request", "prompt must be a string.")
+    for key in ("width", "height", "frames", "steps", "seed"):
+        if key in parameters and type(parameters[key]) is not int:
+            raise TaskError("invalid_request", key + " must be an integer.")
+    if "fps" in parameters and not _finite_number(parameters["fps"]):
+        raise TaskError("invalid_request", "fps must be a finite number.")
+
+
+def _validate_video_understanding(parameters):
+    if set(parameters) - {"video_path", "prompt", "fps", "temperature", "max_tokens", "max_pixels"} or not {"video_path", "prompt"} <= set(parameters):
+        raise TaskError("invalid_request", "Video-understanding parameters need video_path, prompt and supported options.")
+    if not _absolute_path(parameters["video_path"]):
+        raise TaskError("invalid_request", "video_path must be an absolute local path.")
+    if not isinstance(parameters["prompt"], str):
+        raise TaskError("invalid_request", "prompt must be a string.")
+    for key in ("max_tokens", "max_pixels"):
+        if key in parameters and type(parameters[key]) is not int:
+            raise TaskError("invalid_request", key + " must be an integer.")
+    for key in ("fps", "temperature"):
+        if key in parameters and not _finite_number(parameters[key]):
+            raise TaskError("invalid_request", key + " must be a finite number.")
+
+
+def _finite_number(value):
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)

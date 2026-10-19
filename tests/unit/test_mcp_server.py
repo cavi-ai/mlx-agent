@@ -3,6 +3,8 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from jsonschema import Draft202012Validator
+
 from mlx_agent.task_store import TaskStore
 
 from mlx_agent.mcp_server import TOOL_NAME, handle_request
@@ -10,6 +12,56 @@ from tests.task_fixtures import identity_evidence
 
 
 class MCPServerTests(unittest.TestCase):
+    def test_initialize_negotiates_only_supported_protocol_versions(self):
+        for requested, expected in (
+            ("2024-11-05", "2024-11-05"),
+            ("2025-03-26", "2025-03-26"),
+            ("2025-06-18", "2025-06-18"),
+            ("2099-01-01", "2025-06-18"),
+        ):
+            with self.subTest(requested=requested):
+                response = handle_request({
+                    "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                    "params": {"protocolVersion": requested},
+                })
+                self.assertEqual(expected, response["result"]["protocolVersion"])
+
+    def test_catalog_describes_arguments_and_declares_possible_mutation(self):
+        tool = handle_request({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"][0]
+        self.assertFalse(tool["annotations"]["readOnlyHint"])
+        self.assertTrue(tool["annotations"]["destructiveHint"])
+        self.assertFalse(tool["annotations"]["idempotentHint"])
+        self.assertTrue(tool["annotations"]["openWorldHint"])
+        for property_schema in tool["inputSchema"]["properties"].values():
+            self.assertTrue(property_schema["description"])
+            self.assertEqual("string", property_schema["type"])
+
+    def test_real_capability_result_matches_output_schema_and_legacy_text(self):
+        tool = handle_request({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"][0]
+        result = self.task_call("capabilities")["result"]
+        payload = result["structuredContent"]
+        Draft202012Validator.check_schema(tool["outputSchema"])
+        Draft202012Validator(tool["outputSchema"]).validate(payload)
+        self.assertEqual(payload, json.loads(result["content"][0]["text"]))
+        self.assertEqual("ok", payload["status"])
+        self.assertEqual(0, payload["exit_code"])
+        self.assertFalse(result["isError"])
+        self.assertEqual("task.capabilities", json.loads(payload["stdout"])["operation"])
+
+    def test_cli_exit_is_a_tool_result_and_does_not_end_the_session(self):
+        for code, expected in ((None, 0), (0, 0), (2, 2), (True, 1), ("failed", 1)):
+            with self.subTest(code=code):
+                def core(argv):
+                    print("CLI output")
+                    raise SystemExit(code)
+
+                result = self.task_call("capabilities", core=core)["result"]
+                self.assertEqual(expected != 0, result["isError"])
+                self.assertEqual(expected, result["structuredContent"]["exit_code"])
+                self.assertIs(int, type(result["structuredContent"]["exit_code"]))
+                self.assertIn("CLI output", result["structuredContent"]["stdout"])
+                self.assertEqual({}, handle_request({"jsonrpc": "2.0", "id": 3, "method": "ping"})["result"])
+
     def task_call(self, arguments, core=None):
         return handle_request({"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {
             "name": TOOL_NAME, "arguments": {"capability": "task", "arguments": arguments}}}, core=core)
@@ -23,9 +75,11 @@ class MCPServerTests(unittest.TestCase):
         capabilities = json.loads(payload["stdout"])
         self.assertEqual(capabilities["operation"], "task.capabilities")
         tasks = {task["kind"]: task for task in capabilities["data"]["tasks"]}
-        self.assertEqual(set(tasks), {"classification", "music_generation", "transcribe", "speak", "image_generation", "image_understanding"})
+        self.assertEqual(set(tasks), {"classification", "music_generation", "transcribe", "speak", "image_generation", "image_understanding",
+                                      "video_generation", "video_understanding"})
         self.assertEqual(tasks["transcribe"]["request_schema"], "task-request/2")
         self.assertEqual(tasks["image_generation"]["run_schema"], "task-run/2")
+        self.assertEqual(tasks["video_generation"]["result_schema"], "video/1")
 
     def test_task_paths_ids_results_and_cancellation_use_the_same_store(self):
         with TemporaryDirectory() as directory:

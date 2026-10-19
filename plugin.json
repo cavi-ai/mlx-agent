@@ -1146,7 +1146,7 @@
         "prefix": "/"
       },
       "minimum_version": "2026.10.3",
-      "last_tested_version": "2026.10.3",
+      "last_tested_version": "2026.10.5",
       "version_probe": {
         "args": [
           "--version"

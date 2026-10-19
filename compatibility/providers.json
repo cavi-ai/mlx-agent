@@ -117,7 +117,7 @@
       "display_name": "OpenClaw",
       "documentation": "docs/install/openclaw.md",
       "minimum_version": "2026.10.3",
-      "last_tested_version": "2026.10.3",
+      "last_tested_version": "2026.10.5",
       "scopes": ["user", "project"],
       "config_paths": ["$OPENCLAW_STATE_DIR/skills", "<workspace>/skills"],
       "capabilities": {

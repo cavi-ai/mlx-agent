@@ -114,7 +114,7 @@
     "openclaw": {
       "install_guide": "docs/install/openclaw.md",
       "minimum_version": "2026.10.3",
-      "last_tested_version": "2026.10.3",
+      "last_tested_version": "2026.10.5",
       "scopes": ["user", "project"],
       "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"]
     },

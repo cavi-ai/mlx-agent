@@ -62,7 +62,8 @@ jobs:
           path: |
             .run/mcp-eval/report.json
             .run/mcp-eval/report.md
-          if-no-files-found: warn
+          include-hidden-files: true
+          if-no-files-found: error
       - name: Reject whitespace errors
         run: git diff --check
 

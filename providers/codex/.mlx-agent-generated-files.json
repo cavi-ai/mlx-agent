@@ -458,7 +458,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "bc2a20d17d9e4943cbc8dcf9a79375339de491be548b082a82e90454d3bb293c"
+      "sha256": "32544d55f4b2be5c3ceb3097ad47efde95dcd0b8e94747bf29db2ff8f6401393"
     },
     {
       "path": "src/mlx_agent/command_args.py",
@@ -530,7 +530,7 @@
     },
     {
       "path": "src/mlx_agent/gguf.py",
-      "sha256": "c7bf0e92b0e3188b7bced7d5b854546438f2016f42fe4c74c8ff4407b19ab5c1"
+      "sha256": "04c180f7bd85143b2cbb77efea0c21d522acb6702ceed3a7948636bd00b68f7d"
     },
     {
       "path": "src/mlx_agent/gguf_runner.py",

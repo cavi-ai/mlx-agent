@@ -1,3 +1,4 @@
+import hashlib
 import json
 import json
 import struct
@@ -10,6 +11,7 @@ from mlx_agent.gguf import (
     describe_gguf,
     file_signature,
     group_duplicates,
+    group_mlx_duplicates,
     inventory,
     pair_conversions,
     read_gguf_header,
@@ -361,6 +363,142 @@ class DuplicateTests(unittest.TestCase):
         entries[1]["status"] = "converted"
         groups = group_duplicates(entries)
         self.assertEqual(groups[0]["keep"], entries[1]["path"])
+
+
+def write_mlx_model(directory, bits=4, weights=b"weights", hidden_size=1024):
+    location = Path(directory)
+    location.mkdir(parents=True, exist_ok=True)
+    config = {"model_type": "qwen3", "hidden_size": hidden_size, "num_hidden_layers": 28,
+              "quantization": {"group_size": 64, "bits": bits}}
+    (location / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    (location / "model.safetensors").write_bytes(weights)
+    return location
+
+
+class MLXDuplicateTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+
+    def test_identical_mlx_folders_group_as_exact_and_keep_the_cache_snapshot(self):
+        snapshot = write_mlx_model(self.root / "hub" / "models--mlx-community--Lambda-Model-4bit" / "snapshots" / "abc")
+        copy = write_mlx_model(self.root / "lmstudio" / "org" / "Lambda-Model-MLX-4bit")
+        report = inventory([self.root])
+        exact = [group for group in report["duplicates"] if group["kind"] == "exact"]
+        self.assertEqual(len(exact), 1)
+        self.assertEqual(exact[0]["model_key"], "lambda-model")
+        self.assertEqual(exact[0]["quantization"], "4-bit")
+        self.assertEqual(exact[0]["keep"], str(snapshot))
+        self.assertEqual(exact[0]["redundant"], [str(copy)])
+        self.assertEqual(exact[0]["reclaimable_bytes"], sum(item.stat().st_size for item in copy.iterdir()))
+        self.assertEqual(report["totals"]["reclaimable_bytes"], exact[0]["reclaimable_bytes"])
+        self.assertTrue(exact[0]["group_id"].startswith("exact:mlx:"))
+
+    def test_mlx_bit_widths_of_one_model_group_as_variant(self):
+        write_mlx_model(self.root / "Mu-Model-MLX-4bit", bits=4, weights=b"four")
+        write_mlx_model(self.root / "Mu-Model-MLX-8bit", bits=8, weights=b"eight-bit")
+        write_mlx_model(self.root / "Mu-Model-Wide-MLX-8bit", bits=8, hidden_size=2048)
+        groups = group_mlx_duplicates(scan_mlx_outputs([self.root]))
+        self.assertEqual([(group["kind"], group["model_key"], group["quantizations"]) for group in groups],
+                         [("variant", "mu-model", ["4-bit", "8-bit"])])
+        self.assertEqual(groups[0]["reclaimable_bytes"], 0)
+
+    def test_same_size_weights_with_different_bytes_are_not_duplicates(self):
+        write_mlx_model(self.root / "a" / "Nu-Model-MLX-4bit", weights=b"tuned-a")
+        write_mlx_model(self.root / "b" / "Nu-Model-MLX-4bit", weights=b"tuned-b")
+        self.assertEqual(group_mlx_duplicates(scan_mlx_outputs([self.root])), [])
+
+    def test_cache_revisions_sharing_blobs_are_one_copy(self):
+        blob = self.root / "hub" / "models--org--Xi-Model-4bit" / "blobs" / "weights"
+        blob.parent.mkdir(parents=True)
+        blob.write_bytes(b"weights")
+        for revision in ("one", "two"):
+            snapshot = write_mlx_model(self.root / "hub" / "models--org--Xi-Model-4bit" / "snapshots" / revision)
+            (snapshot / "model.safetensors").unlink()
+            (snapshot / "model.safetensors").symlink_to(blob)
+        self.assertEqual(group_mlx_duplicates(scan_mlx_outputs([self.root])), [])
+
+
+def write_ollama_model(store, model, tag, layers, config, host="registry.ollama.ai", tree="manifests"):
+    """An Ollama store manifest whose layers are (media type suffix, bytes, tensor or file name)."""
+    blobs = Path(store) / "blobs"
+    blobs.mkdir(parents=True, exist_ok=True)
+
+    def blob(content):
+        digest = "sha256:" + hashlib.sha256(content).hexdigest()
+        (blobs / digest.replace(":", "-")).write_bytes(content)
+        return digest
+
+    entries = []
+    for kind, content, name in layers:
+        layer = {"mediaType": "application/vnd.ollama.image." + kind, "digest": blob(content), "size": len(content)}
+        if name:
+            layer["name"] = name
+        entries.append(layer)
+    encoded = json.dumps(config).encode("utf-8")
+    manifest = {
+        "schemaVersion": 2,
+        "config": {"mediaType": "application/vnd.docker.container.image.v1+json",
+                   "digest": blob(encoded), "size": len(encoded)},
+        "layers": entries,
+    }
+    location = Path(store) / tree / host / "library" / model / tag
+    location.parent.mkdir(parents=True, exist_ok=True)
+    location.write_text(json.dumps(manifest), encoding="utf-8")
+    return location
+
+
+class OllamaTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+
+    def test_an_ollama_copy_of_a_gguf_file_is_kept_and_the_file_is_redundant(self):
+        source = write_gguf(self.root / "lmstudio" / "rho-model-Q4_K_M.gguf", name="Rho Model", padding=b"x" * 64)
+        manifest = write_ollama_model(self.root / "ollama", "rho", "latest", [("model", source.read_bytes(), None)],
+                                      {"model_format": "gguf", "file_type": "Q4_K_M"})
+        report = inventory([self.root])
+        self.assertEqual([(item["name"], item["format"], item["path"]) for item in report["ollama"]],
+                         [("rho:latest", "gguf", str(manifest))])
+        exact = [group for group in report["duplicates"] if group["kind"] == "exact"]
+        self.assertEqual([(group["keep"], group["redundant"]) for group in exact], [(str(manifest), [str(source)])])
+        self.assertEqual(exact[0]["reclaimable_bytes"], source.stat().st_size)
+
+    def test_an_ollama_mlx_model_groups_with_other_bit_widths_of_that_model(self):
+        folder = write_mlx_model(self.root / "lmstudio" / "Sigma-Model-27B-MLX-8bit", bits=8)
+        config = {"model_type": "qwen3", "hidden_size": 1024, "num_hidden_layers": 28}
+        manifest = write_ollama_model(
+            self.root / "ollama", "sigma-model", "27b-mlx",
+            [("json", json.dumps(config).encode("utf-8"), "config.json"), ("tensor", b"tensor", "lm_head.weight")],
+            {"model_format": "safetensors", "file_type": "nvfp4"},
+        )
+        report = inventory([self.root])
+        self.assertEqual([(item["name"], item["format"], item["quantization"]) for item in report["ollama"]],
+                         [("sigma-model:27b-mlx", "safetensors", "nvfp4")])
+        self.assertEqual([(group["kind"], group["quantizations"], group["members"]) for group in report["duplicates"]],
+                         [("variant", ["8-bit", "nvfp4"], sorted([str(folder), str(manifest)]))])
+
+    def test_a_model_in_both_manifest_trees_is_listed_once(self):
+        content = write_gguf(self.root / "source" / "tau.gguf", name="Tau Model").read_bytes()
+        older = write_ollama_model(self.root / "ollama", "tau", "latest",
+                                   [("model", content, None), ("license", b"license", None)], {"model_format": "gguf"})
+        current = write_ollama_model(self.root / "ollama", "tau", "latest", [("model", content, None)],
+                                     {"model_format": "gguf"}, host="ollama.com", tree="manifests-v2")
+        report = inventory([self.root / "ollama"])
+        self.assertTrue(older.exists())
+        self.assertEqual([(item["name"], item["path"]) for item in report["ollama"]], [("tau:latest", str(current))])
+        self.assertEqual(report["duplicates"], [])
+
+    def test_a_manifest_with_a_missing_blob_is_skipped(self):
+        manifest = write_ollama_model(self.root / "ollama", "phi", "latest", [("model", b"GGUF-bytes", None)],
+                                      {"model_format": "gguf"})
+        for blob in (self.root / "ollama" / "blobs").iterdir():
+            if blob.read_bytes() == b"GGUF-bytes":
+                blob.unlink()
+        self.assertTrue(manifest.exists())
+        self.assertEqual(inventory([self.root])["ollama"], [])
 
 
 class InventoryTests(unittest.TestCase):

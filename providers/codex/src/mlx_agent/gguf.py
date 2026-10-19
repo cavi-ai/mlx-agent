@@ -48,6 +48,15 @@ _DRAFT_SUFFIXES = (".block_size", ".hyper_connection.count")
 # Drafter families a bundled port converts, keyed by what marks them in the header.
 _DRAFT_PORTS = (("deepseek_v4_dspark", "dflash", "dflash.hyper_connection.count"),)
 _MIN_NAME_MATCH = 6
+# Trailing MLX quantization labels in folder names: Foo-MLX-4bit, Foo-4.4bpw, Foo-bf16, Foo-mxfp8.
+_MLX_QUANT_SUFFIX = re.compile(
+    r"[-_.](?:mlx|\d+(?:\.\d+)?-?bits?|\d+(?:\.\d+)?bpw|bf16|fp16|f16|fp32|f32|mxfp[48]|nvfp4|q[2-8](?:_[0-9a-z]+)*)$",
+    re.IGNORECASE,
+)
+_MLX_STRUCTURE_KEYS = (
+    "model_type", "hidden_size", "num_hidden_layers", "intermediate_size",
+    "num_attention_heads", "num_key_value_heads", "vocab_size",
+)
 _INTERESTING_KEYS = (
     "general.architecture",
     "general.name",
@@ -672,12 +681,171 @@ def group_duplicates(entries):
     return groups
 
 
+def _hf_snapshot(directory):
+    parts = Path(directory).parts
+    return len(parts) >= 3 and parts[-2] == "snapshots" and parts[-3].startswith("models--")
+
+
+def _mlx_model_key(directory):
+    """Model name of an MLX folder without its MLX quantization suffixes; a cache snapshot uses its repository name."""
+    name = Path(directory).parts[-3].split("--")[-1] if _hf_snapshot(directory) else Path(directory).name
+    stem = name
+    while True:
+        trimmed = _MLX_QUANT_SUFFIX.sub("", stem)
+        if trimmed == stem or not trimmed:
+            break
+        stem = trimmed
+    return _normalize_stem(stem)
+
+
+def _mlx_structure(directory):
+    """Architecture dimensions from config.json (or its text_config), or None when it names none."""
+    location = Path(directory) / "config.json"
+    try:
+        if location.stat().st_size > MAX_CONFIG_BYTES:
+            return None
+        value = json.loads(location.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    nested = value.get("text_config") if isinstance(value.get("text_config"), dict) else {}
+    fields = [str(value.get(key, nested.get(key))) for key in _MLX_STRUCTURE_KEYS]
+    if all(field == "None" for field in fields[1:]):
+        return None
+    return hashlib.sha256("|".join(fields).encode("utf-8")).hexdigest()[:16]
+
+
+def _mlx_files(directory):
+    """(relative path, size, file identity) of every file in an MLX folder, cache symlinks followed.
+
+    None when a file cannot be read, such as a cache symlink whose blob is gone.
+    """
+    base = Path(directory)
+    files = []
+    for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
+        dirnames[:] = sorted(name for name in dirnames if name not in _SKIP_DIRECTORIES and not name.startswith("."))
+        for filename in filenames:
+            location = Path(dirpath) / filename
+            try:
+                stat = location.stat()
+            except OSError:
+                return None
+            files.append((location.relative_to(base).as_posix(), stat.st_size, (stat.st_dev, stat.st_ino)))
+    return sorted(files)
+
+
+def _mlx_quantization(output):
+    marker = output.get("quantization")
+    bits = marker.get("bits") if isinstance(marker, dict) else None
+    return "{0}-bit".format(bits) if isinstance(bits, int) and not isinstance(bits, bool) else "unknown"
+
+
+def group_mlx_duplicates(outputs, signature=True):
+    """Group MLX folders that hold the same model, with the same rules as :func:`group_duplicates`.
+
+    ``exact`` folders hold identical weights: the same weight files at the same
+    sizes, and with ``signature`` the same head and tail bytes; without it, the
+    same model name and bit width too. Folders whose weights are the same files
+    on disk (cache revisions sharing blobs) count once. ``variant`` folders share
+    a model name and architecture at different bit widths.
+    """
+    described = []
+    for output in outputs:
+        if output.get("runtime") == "strata":
+            continue
+        files = _mlx_files(output["path"])
+        if files is None:
+            continue
+        weights = [item for item in files if item[0].endswith(".safetensors")]
+        if not weights:
+            continue
+        try:
+            modified = (Path(output["path"]) / "config.json").stat().st_mtime
+        except OSError:
+            continue
+        described.append(dict(
+            output,
+            model_key=_mlx_model_key(output["path"]),
+            label=_mlx_quantization(output),
+            structure=_mlx_structure(output["path"]),
+            weights=tuple((name, size) for name, size, _identity in weights),
+            identities=frozenset(identity for _name, _size, identity in weights),
+            bytes=sum(size for _name, size, _identity in files),
+            modified_at=modified,
+        ))
+
+    candidates = {}
+    for item in described:
+        key = item["weights"] if signature else (item["model_key"], item["label"], item["weights"])
+        candidates.setdefault(key, {}).setdefault(item["identities"], item)
+    exact = {}
+    for key, distinct in candidates.items():
+        if len(distinct) < 2:
+            continue
+        for item in distinct.values():
+            if not signature:
+                exact.setdefault(hashlib.sha256(repr(key).encode("utf-8")).hexdigest(), []).append(item)
+                continue
+            try:
+                digest = hashlib.sha256("|".join(
+                    "{0}:{1}".format(name, file_signature(Path(item["path"]) / name))
+                    for name, _size in item["weights"]
+                ).encode("utf-8")).hexdigest()
+            except OSError:
+                continue
+            exact.setdefault(digest, []).append(item)
+
+    def _keeper(members):
+        # Keep a converter output, then a shared Hugging Face cache snapshot, then the oldest copy.
+        return sorted(members, key=lambda item: (
+            item.get("provenance") is None, not _hf_snapshot(item["path"]), item["modified_at"], item["path"],
+        ))[0]
+
+    groups = []
+    for identity, members in sorted(exact.items(), key=lambda pair: sorted(item["path"] for item in pair[1])):
+        if len(members) < 2:
+            continue
+        keep = _keeper(members)
+        groups.append({
+            "kind": "exact",
+            "format": "mlx",
+            "identity": "mlx:" + identity,
+            "model_key": keep["model_key"],
+            "quantization": keep["label"],
+            "keep": keep["path"],
+            "redundant": sorted(item["path"] for item in members if item["path"] != keep["path"]),
+            "reclaimable_bytes": sum(item["bytes"] for item in members if item["path"] != keep["path"]),
+        })
+    variant = {}
+    for item in described:
+        if item["structure"] and len(item["model_key"]) >= _MIN_NAME_MATCH:
+            variant.setdefault("{0}:{1}".format(item["model_key"], item["structure"]), []).append(item)
+    for identity, members in sorted(variant.items()):
+        labels = {item["label"] for item in members}
+        if len(members) < 2 or len(labels) < 2:
+            continue
+        groups.append({
+            "kind": "variant",
+            "format": "mlx",
+            "identity": "mlx:" + identity,
+            "model_key": members[0]["model_key"],
+            "quantizations": sorted(labels),
+            "members": sorted(item["path"] for item in members),
+            "redundant": [],
+            "reclaimable_bytes": 0,
+        })
+    return groups
+
+
 def inventory(gguf_roots, mlx_roots=(), receipts=(), signature=True, limit=MAX_SCAN_FILES):
     """One read-only pass: what exists, what is converted, what is redundant."""
     entries = scan_gguf(gguf_roots, signature=signature, limit=limit)
     outputs = scan_mlx_outputs(mlx_roots or gguf_roots, limit=limit)
     paired = pair_conversions(entries, outputs, receipts)
-    duplicates = group_duplicates(paired)
+    duplicates = group_duplicates(paired) + group_mlx_duplicates(outputs, signature=signature)
+    for group in duplicates:
+        group["group_id"] = "{0}:{1}".format(group["kind"], group["identity"])
     pending = [item for item in paired if item["status"] == "pending"]
     return {
         "roots": {

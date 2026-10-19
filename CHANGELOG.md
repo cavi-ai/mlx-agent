@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix: `convert scan` groups duplicate MLX model folders: identical copies as `exact` with reclaimable bytes, other bit widths of one model as `variant`.
+
 ## 0.8.0 - 2026-10-19
 
 - Add durable inference tasks (`task start|status|list|result|cancel|verify-model|capabilities`, also through MCP) for classification, music generation, transcription, and speech synthesis: stable IDs, recent history, cancellation, and verified result artifacts; detached workers keep running after the caller exits and share the compute lease.

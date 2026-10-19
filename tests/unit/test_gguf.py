@@ -10,6 +10,7 @@ from mlx_agent.gguf import (
     describe_gguf,
     file_signature,
     group_duplicates,
+    group_mlx_duplicates,
     inventory,
     pair_conversions,
     read_gguf_header,
@@ -345,6 +346,61 @@ class DuplicateTests(unittest.TestCase):
         entries[1]["status"] = "converted"
         groups = group_duplicates(entries)
         self.assertEqual(groups[0]["keep"], entries[1]["path"])
+
+
+def write_mlx_model(directory, bits=4, weights=b"weights", hidden_size=1024):
+    location = Path(directory)
+    location.mkdir(parents=True, exist_ok=True)
+    config = {"model_type": "qwen3", "hidden_size": hidden_size, "num_hidden_layers": 28,
+              "quantization": {"group_size": 64, "bits": bits}}
+    (location / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    (location / "model.safetensors").write_bytes(weights)
+    return location
+
+
+class MLXDuplicateTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+
+    def test_identical_mlx_folders_group_as_exact_and_keep_the_cache_snapshot(self):
+        snapshot = write_mlx_model(self.root / "hub" / "models--mlx-community--Lambda-Model-4bit" / "snapshots" / "abc")
+        copy = write_mlx_model(self.root / "lmstudio" / "org" / "Lambda-Model-MLX-4bit")
+        report = inventory([self.root])
+        exact = [group for group in report["duplicates"] if group["kind"] == "exact"]
+        self.assertEqual(len(exact), 1)
+        self.assertEqual(exact[0]["model_key"], "lambda-model")
+        self.assertEqual(exact[0]["quantization"], "4-bit")
+        self.assertEqual(exact[0]["keep"], str(snapshot))
+        self.assertEqual(exact[0]["redundant"], [str(copy)])
+        self.assertEqual(exact[0]["reclaimable_bytes"], sum(item.stat().st_size for item in copy.iterdir()))
+        self.assertEqual(report["totals"]["reclaimable_bytes"], exact[0]["reclaimable_bytes"])
+        self.assertTrue(exact[0]["group_id"].startswith("exact:mlx:"))
+
+    def test_mlx_bit_widths_of_one_model_group_as_variant(self):
+        write_mlx_model(self.root / "Mu-Model-MLX-4bit", bits=4, weights=b"four")
+        write_mlx_model(self.root / "Mu-Model-MLX-8bit", bits=8, weights=b"eight-bit")
+        write_mlx_model(self.root / "Mu-Model-Wide-MLX-8bit", bits=8, hidden_size=2048)
+        groups = group_mlx_duplicates(scan_mlx_outputs([self.root]))
+        self.assertEqual([(group["kind"], group["model_key"], group["quantizations"]) for group in groups],
+                         [("variant", "mu-model", ["4-bit", "8-bit"])])
+        self.assertEqual(groups[0]["reclaimable_bytes"], 0)
+
+    def test_same_size_weights_with_different_bytes_are_not_duplicates(self):
+        write_mlx_model(self.root / "a" / "Nu-Model-MLX-4bit", weights=b"tuned-a")
+        write_mlx_model(self.root / "b" / "Nu-Model-MLX-4bit", weights=b"tuned-b")
+        self.assertEqual(group_mlx_duplicates(scan_mlx_outputs([self.root])), [])
+
+    def test_cache_revisions_sharing_blobs_are_one_copy(self):
+        blob = self.root / "hub" / "models--org--Xi-Model-4bit" / "blobs" / "weights"
+        blob.parent.mkdir(parents=True)
+        blob.write_bytes(b"weights")
+        for revision in ("one", "two"):
+            snapshot = write_mlx_model(self.root / "hub" / "models--org--Xi-Model-4bit" / "snapshots" / revision)
+            (snapshot / "model.safetensors").unlink()
+            (snapshot / "model.safetensors").symlink_to(blob)
+        self.assertEqual(group_mlx_duplicates(scan_mlx_outputs([self.root])), [])
 
 
 class InventoryTests(unittest.TestCase):

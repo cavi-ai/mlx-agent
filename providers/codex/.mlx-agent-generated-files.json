@@ -530,7 +530,7 @@
     },
     {
       "path": "src/mlx_agent/gguf.py",
-      "sha256": "d78654aeb6443c6a312150088a5e6c40a21de31d5903a6d43cedcaf261eee131"
+      "sha256": "76e6d56e56b6c56786f86473b22fc1c09f56633b7d39899ada027cc045a9d4ec"
     },
     {
       "path": "src/mlx_agent/gguf_runner.py",

@@ -48,6 +48,15 @@ interior bytes can share it. `variant` groups have different quantizations and
 are informational, with no removal recommendation. Review identity and any
 conversion provenance before deleting a copy. Scan only reports.
 
+MLX model folders are grouped too (`format: "mlx"`). An `exact` MLX group holds
+the same weight files at the same sizes and content signatures; without
+signatures it also needs the same model name and bit width. `keep` is a
+converter output first, then a Hugging Face cache snapshot (named by its
+repository), then the oldest copy; cache revisions sharing blobs count as one
+copy. `variant` MLX
+groups share a model name and architecture at different bit widths. Every
+group carries a `group_id`.
+
 Conversion runs two steps in one job: `transformers` dequantizes the GGUF back to Hugging Face weights, then `mlx_lm.convert` quantizes those to MLX. The intermediate checkpoint is full precision and removed afterwards, so budget roughly twice the source model's fp16 size in free disk while the job runs. It needs `torch`, `transformers`, and `gguf` importable by the same interpreter; missing pieces are named and never installed for you.
 
 Quality is capped by the source: a Q4 GGUF converted to MLX 4bit has been quantized twice. Convert the original fp16 weights when you have them.

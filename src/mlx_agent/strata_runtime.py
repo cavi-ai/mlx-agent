@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -267,5 +268,10 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    # The Strata interpreter gets this package alone, never the installing environment's site-packages.
+    _package = Path(__file__).resolve().parent
+    _spec = importlib.util.spec_from_file_location(
+        "mlx_agent", _package / "__init__.py", submodule_search_locations=[str(_package)])
+    sys.modules["mlx_agent"] = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(sys.modules["mlx_agent"])
     raise SystemExit(main())

@@ -84,6 +84,23 @@ Skills go to `$OPENCLAW_STATE_DIR/skills` (default `~/.openclaw/skills`) or
 `$HERMES_HOME/skills` (default `~/.hermes/skills`). Start a new session and use
 `/mlx-scout`.
 
+### Other MCP hosts
+
+The `mlx-agent` package on PyPI carries the CLI and the MCP server. Add the
+server to any MCP host's configuration:
+
+```json
+{
+  "mcpServers": {
+    "mlx-agent": {"command": "uvx", "args": ["--from", "mlx-agent", "mlx-agent-mcp"]}
+  }
+}
+```
+
+Install the CLI with `uv tool install mlx-agent` or `pipx install mlx-agent`.
+Provider installation copies the plugin files, so `mlx-agent install` runs from
+a checkout.
+
 ## First local model
 
 From a checkout, inspect the host and find candidates:

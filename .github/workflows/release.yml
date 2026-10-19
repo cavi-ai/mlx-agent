@@ -1,10 +1,9 @@
 name: Release
 
-# Cuts the GitHub Release for a v* tag and hands the documentation artifact to
-# every consumer that subscribes to cavi-oss-release. Nothing here publishes to
-# an external registry: Claude Code reads this repository as its marketplace and
-# every other provider installs from a checkout, so distribution is the tag, the
-# attached artifact, and the consumer dispatch.
+# Cuts the GitHub Release for a v* tag, publishes the Python package to PyPI,
+# and hands the documentation artifact to every consumer that subscribes to
+# cavi-oss-release. Plugin hosts install from this repository; the PyPI package
+# carries the CLI and MCP server for hosts without a plugin system.
 
 on:
   push:
@@ -77,6 +76,22 @@ jobs:
       - name: Run full unit integration and contract discovery
         run: PYTHONPATH=src python -m unittest discover -s tests
 
+      - name: Build the Python distributions
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
+        run: |
+          set -euo pipefail
+          python -m build --outdir dist
+          test -f "dist/mlx_agent-${VERSION}-py3-none-any.whl"
+          test -f "dist/mlx_agent-${VERSION}.tar.gz"
+
+      - name: Keep the Python distributions for publishing
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/
+          if-no-files-found: error
+
       - name: Build the release artifact
         id: artifact
         env:
@@ -118,6 +133,25 @@ jobs:
           else
             gh release create "$TAG" "$ASSET" --title "mlx-agent $TAG" --notes-file "$notes"
           fi
+
+  pypi:
+    needs: release
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/mlx-agent/${{ needs.release.outputs.version }}/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/
+
+      - name: Publish to PyPI with trusted publishing
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
 
   notify-consumers:
     needs: release

@@ -458,7 +458,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "62ae032482ac49d1c468a298cc077f8d186056f7862616d25b5a120b5a67cec5"
+      "sha256": "37a1259a0d56c37317ff9f28e0ddbe43cc715750b42e8a508abbb539230ac390"
     },
     {
       "path": "src/mlx_agent/command_args.py",
@@ -806,7 +806,7 @@
     },
     {
       "path": "src/mlx_agent/strata_runtime.py",
-      "sha256": "38755d43eba55b485b1ac8dcf3467cdeddeb1f3172aedd5c75ae4d15061ba0d3"
+      "sha256": "945bef1e39fd0089cc113c7a8adf99ae5f8468d9f1ccbdff20849ca35b91feb8"
     },
     {
       "path": "src/mlx_agent/study_recipes.py",

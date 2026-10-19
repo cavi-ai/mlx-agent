@@ -1945,6 +1945,13 @@ def _convert_scan_human(report, pending_only=False):
         ))
     if totals["unreadable"]:
         lines.append("  {0} file(s) had unreadable headers.".format(totals["unreadable"]))
+    ollama = report.get("ollama") or []
+    if ollama:
+        lines.append("Ollama models: {0} ({1})".format(len(ollama), _human_bytes(sum(item["bytes"] for item in ollama))))
+        for item in ollama:
+            lines.append("  {0}  {1} {2} {3}".format(
+                item["name"], item["format"], item["quantization"], _human_bytes(item["bytes"]),
+            ))
     duplicates = report["duplicates"]
     if duplicates:
         lines.append("Duplicates ({0} reclaimable):".format(

@@ -5,7 +5,7 @@
 - `convert scan` outputs report the `backend` that runs them for their task and whether it is installed; cached `mlx-community` snapshots count as MLX outputs even unquantized (Kokoro bf16), and snapshots whose weight files are missing do not.
 - Add `serve start --thinking off`: `mlx_lm` serves with the chat template's reasoning switched off; other runtimes record `unsupported` in the reviewed plan.
 - `intake resolve` reports `cached` when the Hugging Face cache already holds every file a fetch would download.
-- Fix: `convert scan` groups duplicate MLX model folders: identical copies as `exact` with reclaimable bytes, other bit widths of one model as `variant`.
+- Fix: `convert scan` groups duplicate MLX model folders and reads Ollama stores under its roots: identical copies as `exact` with reclaimable bytes, other bit widths of one model as `variant`, Ollama models listed under `ollama`.
 
 ## 0.8.0 - 2026-10-19
 

@@ -50,9 +50,16 @@ _DRAFT_PORTS = (("deepseek_v4_dspark", "dflash", "dflash.hyper_connection.count"
 _MIN_NAME_MATCH = 6
 # Trailing MLX quantization labels in folder names: Foo-MLX-4bit, Foo-4.4bpw, Foo-bf16, Foo-mxfp8.
 _MLX_QUANT_SUFFIX = re.compile(
-    r"[-_.](?:mlx|\d+(?:\.\d+)?-?bits?|\d+(?:\.\d+)?bpw|bf16|fp16|f16|fp32|f32|mxfp[48]|nvfp4|q[2-8](?:_[0-9a-z]+)*)$",
+    r"[-_.](?:mlx|vq|\d+(?:\.\d+)?-?bits?|\d+(?:\.\d+)?bpw|bf16|fp16|f16|fp32|f32|mxfp[48]|nvfp4|q[2-8](?:_[0-9a-z]+)*)$",
     re.IGNORECASE,
 )
+# A trailing parameter count (Foo-27B, foo:27b); the architecture check tells sizes apart.
+_SIZE_SUFFIX = re.compile(r"[-_.]\d+(?:\.\d+)?[bm]$", re.IGNORECASE)
+# Ollama model stores: manifests (current and v2 trees) naming content-addressed blobs.
+_OLLAMA_MANIFEST_TREES = ("manifests-v2", "manifests")
+_OLLAMA_MEDIA = "application/vnd.ollama.image."
+_OLLAMA_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+MAX_MANIFEST_BYTES = 4 * 1024 * 1024
 _MLX_STRUCTURE_KEYS = (
     "model_type", "hidden_size", "num_hidden_layers", "intermediate_size",
     "num_attention_heads", "num_key_value_heads", "vocab_size",
@@ -652,9 +659,9 @@ def group_duplicates(entries):
             variant.setdefault("{0}:{1}".format(entry["model_key"], structure), []).append(entry)
 
     def _keeper(members):
-        # Keep the already-converted copy, else the oldest stable path.
+        # Keep the already-converted copy, then an Ollama copy (only Ollama removes its blobs), else the oldest path.
         converted = [item for item in members if item.get("status") == "converted"]
-        pool = converted or members
+        pool = converted or [item for item in members if item.get("status") == "ollama"] or members
         return sorted(pool, key=lambda item: (item["modified_at"], item["path"]))[0]
 
     groups = []
@@ -694,27 +701,44 @@ def _hf_snapshot(directory):
     return len(parts) >= 3 and parts[-2] == "snapshots" and parts[-3].startswith("models--")
 
 
-def _mlx_model_key(directory):
-    """Model name of an MLX folder without its MLX quantization suffixes; a cache snapshot uses its repository name."""
-    name = Path(directory).parts[-3].split("--")[-1] if _hf_snapshot(directory) else Path(directory).name
+def _mlx_name(directory):
+    """Folder name of an MLX model; a cache snapshot uses its repository name."""
+    return Path(directory).parts[-3].split("--")[-1] if _hf_snapshot(directory) else Path(directory).name
+
+
+def _mlx_name_key(name, sizes=False):
+    """A model name without trailing MLX quantization labels, and without its parameter count when ``sizes``."""
     stem = name
     while True:
         trimmed = _MLX_QUANT_SUFFIX.sub("", stem)
+        if sizes:
+            trimmed = _SIZE_SUFFIX.sub("", trimmed)
         if trimmed == stem or not trimmed:
             break
         stem = trimmed
     return _normalize_stem(stem)
 
 
-def _mlx_structure(directory):
-    """Architecture dimensions from config.json (or its text_config), or None when it names none."""
-    location = Path(directory) / "config.json"
+def _mlx_model_key(directory):
+    return _mlx_name_key(_mlx_name(directory))
+
+
+def _read_json_object(location, limit):
     try:
-        if location.stat().st_size > MAX_CONFIG_BYTES:
+        if Path(location).stat().st_size > limit:
             return None
-        value = json.loads(location.read_text(encoding="utf-8"))
+        value = json.loads(Path(location).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+    return value if isinstance(value, dict) else None
+
+
+def _mlx_structure(directory):
+    return _config_structure(_read_json_object(Path(directory) / "config.json", MAX_CONFIG_BYTES))
+
+
+def _config_structure(value):
+    """Architecture dimensions from a config.json object (or its text_config), or None when it names none."""
     if not isinstance(value, dict):
         return None
     nested = value.get("text_config") if isinstance(value.get("text_config"), dict) else {}
@@ -749,14 +773,143 @@ def _mlx_quantization(output):
     return "{0}-bit".format(bits) if isinstance(bits, int) and not isinstance(bits, bool) else "unknown"
 
 
-def group_mlx_duplicates(outputs, signature=True):
+def _ollama_stores(roots):
+    """Ollama model stores at or below the roots: folders holding ``blobs`` beside a manifests tree."""
+    stores = []
+    seen = set()
+    for root in roots:
+        base = Path(root).expanduser()
+        if not base.is_dir():
+            continue
+        for dirpath, dirnames, _filenames in os.walk(base, followlinks=False):
+            if "blobs" in dirnames and any(tree in dirnames for tree in _OLLAMA_MANIFEST_TREES):
+                resolved = Path(dirpath).resolve()
+                if resolved not in seen:
+                    seen.add(resolved)
+                    stores.append(Path(dirpath))
+                dirnames[:] = []
+                continue
+            dirnames[:] = sorted(
+                name for name in dirnames
+                if name not in _SKIP_DIRECTORIES and not name.startswith(".")
+            )
+    return stores
+
+
+def _ollama_blob(store, digest):
+    if not isinstance(digest, str) or not _OLLAMA_DIGEST.match(digest):
+        return None
+    location = store / "blobs" / digest.replace(":", "-")
+    return location if location.is_file() else None
+
+
+def _describe_ollama(store, tree, manifest, signature):
+    """One Ollama model and the set of its layer digests, or None when it is not a local model."""
+    parts = manifest.relative_to(tree).parts
+    value = _read_json_object(manifest, MAX_MANIFEST_BYTES)
+    layers = value.get("layers") if value else None
+    if len(parts) < 3 or not isinstance(layers, list) or not layers:
+        return None
+    described = []
+    for layer in layers:
+        media = layer.get("mediaType") if isinstance(layer, dict) else None
+        blob = _ollama_blob(store, layer.get("digest")) if isinstance(media, str) else None
+        if blob is None:
+            return None
+        described.append((media[len(_OLLAMA_MEDIA):] if media.startswith(_OLLAMA_MEDIA) else media, layer, blob))
+    config = value.get("config") if isinstance(value.get("config"), dict) else {}
+    config_blob = _ollama_blob(store, config.get("digest"))
+    config = (_read_json_object(config_blob, MAX_CONFIG_BYTES) if config_blob else None) or {}
+    model, tag = parts[-2], parts[-1]
+    name = "{0}:{1}".format(model if parts[1:-2] == ("library",) else "/".join(parts[:-1]), tag)
+    sizes = {layer["digest"]: layer.get("size") for _kind, layer, _blob in described}
+    record = {
+        "name": name,
+        "path": str(manifest),
+        "blob": None,
+        "bytes": sum(size for size in sizes.values() if isinstance(size, int) and not isinstance(size, bool)),
+        "modified_at": int(manifest.stat().st_mtime),
+    }
+    gguf = next((blob for kind, _layer, blob in described if kind == "model"), None)
+    if gguf is not None:
+        try:
+            entry = describe_gguf(gguf, signature=signature)
+        except GGUFError:
+            return None
+        record.update(
+            format="gguf", blob=str(gguf), architecture=entry["architecture"], model_key=entry["model_key"],
+            quantization=entry["quantization"], structure=entry["structure"], signature=entry["signature"],
+            readable=entry["readable"], draft=entry["draft"],
+        )
+    elif any(kind == "tensor" for kind, _layer, _blob in described):
+        settings = next((_read_json_object(blob, MAX_CONFIG_BYTES) for kind, layer, blob in described
+                         if kind == "json" and layer.get("name") == "config.json"), None) or {}
+        marker = settings.get("quantization") if isinstance(settings.get("quantization"), dict) else {}
+        label = _mlx_quantization({"quantization": marker})
+        if isinstance(config.get("file_type"), str) and config["file_type"]:
+            label = config["file_type"]
+        record.update(
+            format="safetensors", architecture=settings.get("model_type"),
+            model_key=_mlx_name_key("{0}-{1}".format(model, tag)), quantization=label,
+            structure=_config_structure(settings), signature=None, readable=True, draft=None,
+        )
+    else:
+        return None
+    return record, frozenset(layer["digest"] for _kind, layer, _blob in described)
+
+
+def scan_ollama(roots, signature=True, limit=MAX_SCAN_FILES):
+    """Inventory the models in Ollama stores at or below the roots. Read-only.
+
+    A GGUF model is described from its model blob, a safetensors (MLX) model
+    from its ``config.json`` layer. A manifest naming a missing blob is skipped.
+    A model listed in both manifest trees, by name or by identical layers,
+    counts once, from the current (v2) tree.
+    """
+    models = []
+    seen = set()
+    for store in _ollama_stores(roots):
+        for name in _OLLAMA_MANIFEST_TREES:
+            tree = store / name
+            for dirpath, dirnames, filenames in os.walk(tree, followlinks=False):
+                dirnames[:] = sorted(item for item in dirnames if not item.startswith("."))
+                for filename in sorted(item for item in filenames if not item.startswith(".")):
+                    found = _describe_ollama(store, tree, Path(dirpath) / filename, signature)
+                    if found is None:
+                        continue
+                    keys = {(store, found[0]["name"]), (store, found[1])}
+                    if keys & seen:
+                        continue
+                    seen.update(keys)
+                    models.append(found[0])
+                    if len(models) >= limit:
+                        return sorted(models, key=lambda item: item["name"])
+    return sorted(models, key=lambda item: item["name"])
+
+
+def _ollama_gguf_entries(models):
+    """Ollama GGUF models as duplicate-grouping entries; models sharing one blob count once."""
+    entries = {}
+    for model in models:
+        if model["format"] != "gguf" or model["blob"] in entries:
+            continue
+        try:
+            size = Path(model["blob"]).stat().st_size
+        except OSError:
+            continue
+        entries[model["blob"]] = dict(model, bytes=size, shard=None, companion=False, status="ollama")
+    return list(entries.values())
+
+
+def group_mlx_duplicates(outputs, signature=True, ollama=()):
     """Group MLX folders that hold the same model, with the same rules as :func:`group_duplicates`.
 
     ``exact`` folders hold identical weights: the same weight files at the same
     sizes, and with ``signature`` the same head and tail bytes; without it, the
     same model name and bit width too. Folders whose weights are the same files
-    on disk (cache revisions sharing blobs) count once. ``variant`` folders share
-    a model name and architecture at different bit widths.
+    on disk (cache revisions sharing blobs) count once. ``variant`` folders and
+    Ollama safetensors models share a model name (without its parameter count)
+    and architecture at different bit widths.
     """
     described = []
     for output in outputs:
@@ -775,6 +928,7 @@ def group_mlx_duplicates(outputs, signature=True):
         described.append(dict(
             output,
             model_key=_mlx_model_key(output["path"]),
+            variant_key=_mlx_name_key(_mlx_name(output["path"]), sizes=True),
             label=_mlx_quantization(output),
             structure=_mlx_structure(output["path"]),
             weights=tuple((name, size) for name, size, _identity in weights),
@@ -825,19 +979,25 @@ def group_mlx_duplicates(outputs, signature=True):
             "redundant": sorted(item["path"] for item in members if item["path"] != keep["path"]),
             "reclaimable_bytes": sum(item["bytes"] for item in members if item["path"] != keep["path"]),
         })
+    stored = [
+        dict(model, label=model["quantization"], status="ollama",
+             variant_key=_mlx_name_key(model["name"].rsplit("/", 1)[-1].replace(":", "-"), sizes=True))
+        for model in ollama if model["format"] == "safetensors"
+    ]
     variant = {}
-    for item in described:
-        if item["structure"] and len(item["model_key"]) >= _MIN_NAME_MATCH:
-            variant.setdefault("{0}:{1}".format(item["model_key"], item["structure"]), []).append(item)
+    for item in described + stored:
+        if item["structure"] and len(item["variant_key"]) >= _MIN_NAME_MATCH:
+            variant.setdefault("{0}:{1}".format(item["variant_key"], item["structure"]), []).append(item)
     for identity, members in sorted(variant.items()):
         labels = {item["label"] for item in members}
         if len(members) < 2 or len(labels) < 2:
             continue
+        named = sorted(members, key=lambda item: (item.get("status") == "ollama", item["path"]))[0]
         groups.append({
             "kind": "variant",
             "format": "mlx",
             "identity": "mlx:" + identity,
-            "model_key": members[0]["model_key"],
+            "model_key": named["model_key"],
             "quantizations": sorted(labels),
             "members": sorted(item["path"] for item in members),
             "redundant": [],
@@ -850,8 +1010,10 @@ def inventory(gguf_roots, mlx_roots=(), receipts=(), signature=True, limit=MAX_S
     """One read-only pass: what exists, what is converted, what is redundant."""
     entries = scan_gguf(gguf_roots, signature=signature, limit=limit)
     outputs = scan_mlx_outputs(mlx_roots or gguf_roots, limit=limit)
+    ollama = scan_ollama(list(gguf_roots) + list(mlx_roots), signature=signature, limit=limit)
     paired = pair_conversions(entries, outputs, receipts)
-    duplicates = group_duplicates(paired) + group_mlx_duplicates(outputs, signature=signature)
+    duplicates = group_duplicates(paired + _ollama_gguf_entries(ollama)) + group_mlx_duplicates(
+        outputs, signature=signature, ollama=ollama)
     for group in duplicates:
         group["group_id"] = "{0}:{1}".format(group["kind"], group["identity"])
     pending = [item for item in paired if item["status"] == "pending"]
@@ -862,6 +1024,7 @@ def inventory(gguf_roots, mlx_roots=(), receipts=(), signature=True, limit=MAX_S
         },
         "models": paired,
         "outputs": outputs,
+        "ollama": ollama,
         "pending": [item["path"] for item in pending],
         "duplicates": duplicates,
         "totals": {

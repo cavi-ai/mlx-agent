@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "plugin_version": "0.7.0",
+  "plugin_version": "0.8.0",
   "evidence_id": "v0.6.0-rc-2026-10-08",
   "allowed_evidence_statuses": ["supported", "not-run", "blocked", "static", "fixture"],
   "providers": {

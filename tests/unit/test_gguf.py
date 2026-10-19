@@ -218,6 +218,22 @@ class ScanTests(unittest.TestCase):
         outputs = scan_mlx_outputs([self.root])
         self.assertEqual([item["name"] for item in outputs], ["converted-model-MLX-4bit"])
 
+    def test_unquantized_mlx_community_snapshots_are_outputs(self):
+        hub = self.root / "hub"
+        write_mlx_output(hub / "models--mlx-community--Kokoro-82M-bf16" / "snapshots" / ("a" * 40), quantization=False)
+        write_mlx_output(hub / "models--openai--whisper-base" / "snapshots" / ("b" * 40), quantization=False)
+        write_mlx_output(self.root / "models--mlx-community--loose", quantization=False)
+        outputs = scan_mlx_outputs([self.root])
+        self.assertEqual([Path(item["path"]).parts[-3] for item in outputs], ["models--mlx-community--Kokoro-82M-bf16"])
+        self.assertIsNone(outputs[0]["quantization"])
+
+    def test_cache_snapshots_with_missing_weight_blobs_are_not_outputs(self):
+        snapshot = self.root / "hub" / "models--mlx-community--partial-4bit" / "snapshots" / ("c" * 40)
+        write_mlx_output(snapshot)
+        (snapshot / "model.safetensors").unlink()
+        (snapshot / "model.safetensors").symlink_to("../../blobs/missing")
+        self.assertEqual(scan_mlx_outputs([self.root]), [])
+
     def test_component_layout_outputs_need_weights_in_every_listed_component(self):
         def write(name, components, weights):
             directory = self.root / name

@@ -62,6 +62,20 @@ class PlanStartTests(unittest.TestCase):
         self.assertEqual(plan["bind"], "127.0.0.1")
         self.assertEqual(len(plan["preview_hash"]), 64)
 
+    def test_thinking_off_is_a_reviewed_chat_template_argument(self):
+        default = _plan()
+        off = _plan(thinking="off")
+        self.assertNotIn("thinking", default)
+        self.assertEqual(off["thinking"], "off")
+        self.assertEqual(off["argv"][-2:], ["--chat-template-args", '{"enable_thinking":false}'])
+        self.assertNotEqual(default["preview_hash"], off["preview_hash"])
+        vlm = _plan(runtime="mlx-vlm", thinking="off")
+        self.assertEqual(vlm["thinking"], "unsupported")
+        self.assertNotIn("--chat-template-args", vlm["argv"])
+        with self.assertRaises(ServeError) as caught:
+            _plan(thinking="maybe")
+        self.assertEqual(caught.exception.code, "invalid_arguments")
+
     def test_preview_hash_changes_with_plan(self):
         self.assertNotEqual(_plan()["preview_hash"], _plan(port=9090)["preview_hash"])
 

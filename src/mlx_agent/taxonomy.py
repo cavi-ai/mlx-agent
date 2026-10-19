@@ -7,7 +7,8 @@ import re
 from pathlib import Path
 
 from .backends import (
-    BackendError, is_vision_type, load_manifests, load_registries, lookup, lookup_squashed, squash_type,
+    TYPE_PREFERENCE, BackendError, choose_backend, is_vision_type, load_manifests, load_registries, lookup,
+    lookup_squashed, squash_type,
 )
 from .gguf import DRAFT_ARCHITECTURES, MAX_CONFIG_BYTES
 from .modality import detect_facets, detect_modalities
@@ -222,8 +223,44 @@ def annotate_inventory(report, manifests=None, registries=None):
         )
     for output in report.get("outputs", []):
         model_type, keys = read_config_type(output.get("path", ""))
+        name = _output_name(output)
+        if model_type is None:
+            model_type = name_model_type(name, manifests, registries)
         output["task"] = classify(
-            output.get("name"), model_type=model_type, config_keys=keys,
+            name, model_type=model_type, config_keys=keys,
             manifests=manifests, registries=registries, local=True,
         )
+        if output.get("runtime") is None:
+            backend = output_backend(model_type, keys, output["task"]["type"], manifests, registries)
+            if backend is not None:
+                output["backend"] = backend
     return report
+
+
+def _output_name(output):
+    """The repository name for a Hugging Face cache snapshot (its folder is a revision hash), else the folder name."""
+    parts = Path(str(output.get("path", ""))).parts
+    if len(parts) >= 3 and parts[-2] == "snapshots" and parts[-3].startswith("models--"):
+        return parts[-3].split("--")[-1]
+    return output.get("name")
+
+
+def name_model_type(name, manifests, registries):
+    """A backend model module named by the folder's leading word, for configs without a model_type."""
+    match = re.match(r"[a-z]+", str(name or "").lower())
+    if match and lookup(match.group(0), manifests, registries):
+        return match.group(0)
+    return None
+
+
+def output_backend(model_type, config_keys, task_type, manifests, registries):
+    """The backend that runs a local MLX output for its task, and whether it is installed."""
+    hits = lookup(model_type, manifests, registries) if model_type else []
+    backend = choose_backend(hits, task_type, "vision_config" in config_keys)
+    if backend is None and not hits:
+        # Configs without a model_type (Kokoro) fall back to the task's only backend.
+        preference = TYPE_PREFERENCE.get(task_type, ())
+        backend = preference[0] if len(preference) == 1 else None
+    if backend is None or backend not in manifests:
+        return None
+    return {"id": backend, "installed": bool(registries.get(backend, {}).get("installed"))}

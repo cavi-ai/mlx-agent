@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `convert scan` outputs report the `backend` that runs them for their task and whether it is installed; cached `mlx-community` snapshots count as MLX outputs even unquantized (Kokoro bf16), and snapshots whose weight files are missing do not.
+- Add `serve start --thinking off`: `mlx_lm` serves with the chat template's reasoning switched off; other runtimes record `unsupported` in the reviewed plan.
+- `intake resolve` reports `cached` when the Hugging Face cache already holds every file a fetch would download.
+
 ## 0.8.0 - 2026-10-19
 
 - Add durable inference tasks (`task start|status|list|result|cancel|verify-model|capabilities`, also through MCP) for classification, music generation, transcription, and speech synthesis: stable IDs, recent history, cancellation, and verified result artifacts; detached workers keep running after the caller exits and share the compute lease.
@@ -15,7 +19,6 @@
 - Fix: training refuses splits smaller than one batch and base models whose architecture MLX-LM does not support.
 - Fix: `convert scan --mlx-root` inventories MLX models when no GGUF root is configured.
 - Fix: training and model diagnostics honor `HF_HUB_CACHE`, `HF_HOME`, and `XDG_CACHE_HOME`.
-
 ## 0.7.0 - 2026-10-12
 
 - Add local music generation and requantization with checkpoint tokenizer validation.

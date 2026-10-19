@@ -144,6 +144,20 @@ class ResolveTests(unittest.TestCase):
         self.validator.validate(payload)
         return payload
 
+    def test_cached_reports_a_complete_snapshot_of_the_resolved_revision(self):
+        from tempfile import TemporaryDirectory
+
+        info = dict(repo_info("qwen2", files=("config.json", "model.safetensors", "model.onnx")), sha="a" * 40)
+        with TemporaryDirectory() as cache, mock.patch.dict("os.environ", {"HF_HUB_CACHE": cache}):
+            snapshot = Path(cache, "models--org--name", "snapshots", "a" * 40)
+            snapshot.mkdir(parents=True)
+            (snapshot / "config.json").write_text("{}", encoding="utf-8")
+            self.assertFalse(self.run_resolve(FakeClient(info=info, files={"config.json": "{}"}))["cached"])
+            (snapshot / "model.safetensors").write_bytes(b"weights")
+            self.assertTrue(self.run_resolve(FakeClient(info=info, files={"config.json": "{}"}))["cached"])
+            other = dict(info, sha="b" * 40)
+            self.assertFalse(self.run_resolve(FakeClient(info=other, files={"config.json": "{}"}))["cached"])
+
     def test_audio8_converts_through_the_mlx_audio_port_with_no_download(self):
         payload = golden_audio8()
         self.validator.validate(payload)

@@ -24,6 +24,10 @@ empty and adds a warning without changing the resolution verdict.
 These are metadata matches, not verified runtime results. Review each candidate's
 revision, license, size, and backend compatibility before fetching it.
 
+`cached` is true when the local Hugging Face cache already holds every file
+`intake fetch` would download for the resolved revision; a fetch then downloads
+nothing. Ported model types and recipe sources always report false.
+
 ## Review and fetch
 
 ```bash

@@ -211,8 +211,10 @@ def _require_training_binding(plan):
 def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                adapter_path=None, path=None, jit=False, receipts_dir=None, hf_cache=None, memory_policy=None,
                runtime_executable=None, strata_speculation=False,
-               strata_expert_memory_gb=None, strata_context_tokens=None, training_receipt=None):
+               strata_expert_memory_gb=None, strata_context_tokens=None, training_receipt=None, thinking="default"):
     """Render the start plan and local file identities without side effects."""
+    if thinking not in ("default", "off"):
+        raise ServeError("invalid_arguments", "thinking must be default or off.", "Pass --thinking off or omit it.")
     binding = None
     if training_receipt is not None:
         if repo is not None or path is not None or adapter_path is not None:
@@ -331,6 +333,9 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         argv.extend(
             part.format(adapter_path=str(adapter_path)) for part in recipe["adapter_argv"]
         )
+    if thinking == "off" and recipe.get("thinking_off_argv"):
+        # Literal arguments: the chat-template JSON is not a format template.
+        argv.extend(recipe["thinking_off_argv"])
     plan = {
         "repo": repo.strip() if has_repo else None,
         "path": local_path,
@@ -353,6 +358,8 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         plan.update(_local_weight_evidence(local_path))
     if adapter_path is not None:
         plan["adapter_identity"] = adapter_identity
+    if thinking == "off":
+        plan["thinking"] = "off" if recipe.get("thinking_off_argv") else "unsupported"
     if binding is not None:
         plan["training_binding"] = binding
     if jit:

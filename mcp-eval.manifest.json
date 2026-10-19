@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "timeout_ms": 10000,
+  "probes": [
+    {
+      "id": "protocol-negotiation",
+      "probe": "protocol-negotiation",
+      "access": "read_only",
+      "bogus_version": "2099-01-01"
+    },
+    {
+      "id": "bounded-catalog",
+      "probe": "discovery-cost",
+      "access": "read_only",
+      "max_tools": 1,
+      "max_schema_bytes": 4096
+    },
+    {
+      "id": "catalog-token-budget",
+      "probe": "token-cost",
+      "access": "read_only",
+      "max_total_tokens": 1024,
+      "max_tool_tokens": 1024
+    },
+    {
+      "id": "capabilities-input-schema",
+      "probe": "schema-guessability",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {"capability": "task", "arguments": "capabilities --json"}
+    },
+    {
+      "id": "capabilities-output-schema",
+      "probe": "output-schema",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {"capability": "task", "arguments": "capabilities --json"}
+    },
+    {
+      "id": "capabilities-success",
+      "probe": "instruction-fidelity",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {"capability": "task", "arguments": "capabilities --json"},
+      "expect": {
+        "outcome": "ok",
+        "required_result_paths": ["/structuredContent/stdout", "/structuredContent/stderr"],
+        "equals_paths": {
+          "/structuredContent/status": "ok",
+          "/structuredContent/exit_code": 0,
+          "/structuredContent/stdout_truncated": false,
+          "/structuredContent/stderr_truncated": false
+        }
+      }
+    },
+    {
+      "id": "reject-unknown-capability",
+      "probe": "instruction-fidelity",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {"capability": "unknown", "arguments": ""},
+      "expect": {"outcome": "error", "error_code": -32602}
+    },
+    {
+      "id": "reject-extra-arguments",
+      "probe": "instruction-fidelity",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {"capability": "task", "arguments": "capabilities", "extra": true},
+      "expect": {"outcome": "error", "error_code": -32602}
+    },
+    {
+      "id": "reject-shell-tokens",
+      "probe": "instruction-fidelity",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {"capability": "task", "arguments": "capabilities; echo unexpected"},
+      "expect": {"outcome": "error", "error_code": -32602}
+    },
+    {
+      "id": "bounded-arguments",
+      "probe": "payload-bounds",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {"capability": "task", "arguments": "capabilities"},
+      "field": "arguments",
+      "size_bytes": 8192,
+      "expect_handled": false
+    },
+    {
+      "id": "stable-capabilities",
+      "probe": "degradation-over-n",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {"capability": "task", "arguments": "capabilities --json"},
+      "max_attempts": 5
+    },
+    {
+      "id": "reject-unsupported-flag",
+      "probe": "instruction-fidelity",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {"capability": "task", "arguments": "capabilities --unsupported"},
+      "expect": {"outcome": "error", "error_code": -32602}
+    },
+    {
+      "id": "recover-after-invalid-call",
+      "probe": "state-recovery",
+      "access": "read_only",
+      "failure_tool": "mlx_agent_execute",
+      "failure_arguments": {"capability": "task", "arguments": "capabilities --unsupported"},
+      "recovery_tool": "mlx_agent_execute",
+      "recovery_arguments": {"capability": "task", "arguments": "capabilities --json"},
+      "validation_tool": "mlx_agent_execute",
+      "validation_arguments": {"capability": "task", "arguments": "capabilities --json"}
+    }
+  ]
+}

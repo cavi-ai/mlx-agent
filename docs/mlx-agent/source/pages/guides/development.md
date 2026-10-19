@@ -46,6 +46,31 @@ LM Studio, or `mlx_lm` backends. LiteLLM is excluded from automatic live selecti
 because its loopback endpoint can route to remote or paid backends. Use it for
 a live check only after establishing that the selected route stays local.
 
+## MCP regression gate
+
+With [MCP Eval](https://github.com/cavi-ai/mcp-eval) 0.7.1 installed, run the
+same manifest used by CI against the stdio server:
+
+```bash
+MCPEVAL_HOME="$PWD/.run/mcp-eval" mcpeval probe \
+  --server mlx-agent --manifest mcp-eval.manifest.json \
+  -- python3 scripts/mlx-agent-mcp
+```
+
+The manifest checks protocol negotiation, catalog budgets, input validation,
+structured results, repeated calls, and recovery after invalid input. It calls
+only task capability discovery and rejected inputs; it does not run models or
+change task state. A failed case or incomplete evaluation exits nonzero. CI
+pins the evaluator and runs this gate on Linux and macOS with Python 3.9 and
+3.12, retaining JSON and Markdown reports even when a probe fails.
+
+The shared execution tool includes actions that modify files and start jobs,
+so it is annotated as mutating. MCP Eval's standard read-only battery excludes
+it. The overall readiness score therefore does not measure successful model
+execution; the manifest verdict is the regression gate. The unit suite also
+checks catalog annotations and that structured results preserve the text
+response used by older clients.
+
 ## Check documentation artifacts
 
 From the repository root, choose a temporary staging destination:

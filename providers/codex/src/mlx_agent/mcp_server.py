@@ -15,6 +15,7 @@ MAX_ARGUMENT_BYTES = 4096
 MAX_OUTPUT_CHARS = 16384
 MAX_REQUEST_BYTES = 65536
 TOOL_NAME = "mlx_agent_execute"
+SUPPORTED_PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26", "2025-06-18")
 
 
 class _BoundedWriter(io.TextIOBase):
@@ -47,14 +48,42 @@ class _BoundedWriter(io.TextIOBase):
 def _tool_definition():
     return {
         "name": TOOL_NAME,
-        "description": "Run one validated model lifecycle or experiment action without a shell.",
+        "description": "Run one validated model lifecycle or experiment action without a shell. Actions may change local files, start jobs, or contact model registries.",
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
         "inputSchema": {
             "type": "object",
             "additionalProperties": False,
             "required": ["capability", "arguments"],
             "properties": {
-                "capability": {"enum": ["scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "lab", "task"]},
-                "arguments": {"type": "string", "maxLength": MAX_ARGUMENT_BYTES},
+                "capability": {
+                    "type": "string",
+                    "description": "Capability whose validated command grammar is used; task capabilities --json lists supported inference tasks without running a model.",
+                    "enum": ["scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "lab", "task"],
+                },
+                "arguments": {
+                    "type": "string",
+                    "description": "Arguments for the chosen capability, at most 4096 UTF-8 bytes. Shell operators are refused. Example for task: capabilities --json.",
+                    "maxLength": MAX_ARGUMENT_BYTES,
+                },
+            },
+        },
+        "outputSchema": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["status", "exit_code", "stdout", "stderr", "stdout_truncated", "stderr_truncated"],
+            "properties": {
+                "status": {"type": "string", "enum": ["ok", "error"]},
+                "exit_code": {"type": "integer"},
+                "stdout": {"type": "string"},
+                "stderr": {"type": "string"},
+                "stdout_truncated": {"type": "boolean"},
+                "stderr_truncated": {"type": "boolean"},
+                "error": {"type": "string"},
             },
         },
     }
@@ -78,11 +107,18 @@ def _tool_result(arguments, core=None):
         from .cli import main as core
     stdout = _BoundedWriter()
     stderr = _BoundedWriter()
+    execution_error = None
     try:
         with redirect_stdout(stdout), redirect_stderr(stderr):
             returned = core(argv)
         exit_code = 0 if returned is None else int(returned)
-        execution_error = None
+    except SystemExit as error:
+        if error.code is None:
+            exit_code = 0
+        elif isinstance(error.code, int):
+            exit_code = int(error.code)
+        else:
+            exit_code = 1
     except Exception:
         exit_code = 1
         execution_error = "MLX-agent execution failed"
@@ -98,6 +134,7 @@ def _tool_result(arguments, core=None):
         payload["error"] = execution_error
     return {
         "content": [{"type": "text", "text": json.dumps(payload, sort_keys=True)}],
+        "structuredContent": payload,
         "isError": exit_code != 0,
     }
 
@@ -113,7 +150,9 @@ def handle_request(request, core=None):
     try:
         if method == "initialize":
             params = request.get("params") or {}
-            protocol = params.get("protocolVersion", "2024-11-05") if isinstance(params, dict) else "2024-11-05"
+            protocol = params.get("protocolVersion") if isinstance(params, dict) else None
+            if protocol not in SUPPORTED_PROTOCOL_VERSIONS:
+                protocol = SUPPORTED_PROTOCOL_VERSIONS[-1]
             result = {
                 "protocolVersion": protocol,
                 "capabilities": {"tools": {}},

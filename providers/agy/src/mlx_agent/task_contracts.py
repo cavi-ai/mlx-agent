@@ -16,7 +16,8 @@ MEDIA_REQUEST_SCHEMA = "task-request/2"
 MEDIA_RUN_SCHEMA = "task-run/2"
 MAX_REQUEST_BYTES = 1024 * 1024
 LEGACY_KINDS = ("classification", "music_generation")
-MEDIA_KINDS = ("transcribe", "speak")
+MEDIA_KINDS = ("transcribe", "speak", "image_generation", "image_understanding")
+INPUT_MEDIA_KINDS = ("transcribe", "image_understanding")
 KINDS = LEGACY_KINDS + MEDIA_KINDS
 STATES = ("starting", "running", "succeeded", "failed", "cancelled")
 TERMINAL = ("succeeded", "failed", "cancelled")
@@ -76,7 +77,7 @@ def validate_request(value):
                 raise TaskError("invalid_request", "audio_path must be an absolute local path.")
             if "language" in parameters and not isinstance(parameters["language"], str):
                 raise TaskError("invalid_request", "language must be a string.")
-        else:
+        elif value["kind"] == "speak":
             if set(parameters) - {"text", "voice", "speed", "lang_code"} or "text" not in parameters:
                 raise TaskError("invalid_request", "Speech parameters need text and supported synthesis settings.")
             if not isinstance(parameters["text"], str):
@@ -89,6 +90,10 @@ def validate_request(value):
                 raise TaskError("invalid_request", "speed must be a finite number.")
             if "lang_code" in parameters and not isinstance(parameters["lang_code"], str):
                 raise TaskError("invalid_request", "lang_code must be a string.")
+        elif value["kind"] == "image_generation":
+            _validate_image_generation(parameters)
+        else:
+            _validate_image_understanding(parameters)
     except (DecideError, MusicError) as error:
         raise TaskError(error.code, str(error), error.remediation) from error
     result = dict(value, parameters=parameters)
@@ -115,14 +120,15 @@ def validate_record(value):
         raise TaskError("invalid_task_record", "Unknown task kind or state.")
     if media:
         reference = value["input_artifact"]
-        if value["kind"] == "transcribe":
+        if value["kind"] in INPUT_MEDIA_KINDS:
             _artifact_reference(reference)
             path = Path(reference["path"])
+            suffixes = (".wav", ".flac", ".mp3") if value["kind"] == "transcribe" else (".png", ".jpg", ".jpeg", ".webp")
             if (path.parent.name != value["id"] or path.parent.parent.name != "artifacts"
-                    or path.name not in ("input.wav", "input.flac", "input.mp3")):
+                    or path.name != "input" + path.suffix.lower() or path.suffix.lower() not in suffixes):
                 raise TaskError("invalid_task_record", "Input artifact path is outside its task directory.")
         elif reference is not None:
-            raise TaskError("invalid_task_record", "Speech synthesis cannot have an input artifact.")
+            raise TaskError("invalid_task_record", "This task kind cannot have an input artifact.")
     if not isinstance(value["model_path"], str) or not Path(value["model_path"]).is_absolute():
         raise TaskError("invalid_task_record", "The task model path is invalid.")
     if any(type(value[key]) is not bool for key in ("cancel_requested", "execution_unresolved")):
@@ -230,9 +236,36 @@ def capabilities():
     tasks = [{"kind": kind, "result_schema": "decide/1" if kind == "classification" else "music/1",
               "cancellation": True, "requires_local_model": True, "model_verification": True}
              for kind in LEGACY_KINDS]
-    tasks.extend({"kind": kind, "result_schema": "transcribe/1" if kind == "transcribe" else "speak/1",
+    result_schemas = {"transcribe": "transcribe/1", "speak": "speak/1",
+                      "image_generation": "generate/1", "image_understanding": "describe/1"}
+    tasks.extend({"kind": kind, "result_schema": result_schemas[kind],
                   "request_schema": MEDIA_REQUEST_SCHEMA, "run_schema": MEDIA_RUN_SCHEMA,
                   "cancellation": True, "requires_local_model": True, "model_verification": True}
                  for kind in MEDIA_KINDS)
     return {"schema": "task-capabilities/1", "request_schema": REQUEST_SCHEMA, "run_schema": RUN_SCHEMA,
             "tasks": tasks}
+
+
+def _validate_image_generation(parameters):
+    if set(parameters) - {"prompt", "width", "height", "steps", "seed"} or "prompt" not in parameters:
+        raise TaskError("invalid_request", "Image-generation parameters need prompt and optional size, steps and seed.")
+    if not isinstance(parameters["prompt"], str):
+        raise TaskError("invalid_request", "prompt must be a string.")
+    for key in ("width", "height", "steps", "seed"):
+        if key in parameters and (type(parameters[key]) is not int):
+            raise TaskError("invalid_request", key + " must be an integer.")
+
+
+def _validate_image_understanding(parameters):
+    if set(parameters) - {"image_path", "prompt", "max_tokens", "temperature", "max_pixels"} or not {"image_path", "prompt"} <= set(parameters):
+        raise TaskError("invalid_request", "Image-understanding parameters need image_path, prompt and supported options.")
+    if not _absolute_path(parameters["image_path"]):
+        raise TaskError("invalid_request", "image_path must be an absolute local path.")
+    if not isinstance(parameters["prompt"], str):
+        raise TaskError("invalid_request", "prompt must be a string.")
+    for key in ("max_tokens", "max_pixels"):
+        if key in parameters and type(parameters[key]) is not int:
+            raise TaskError("invalid_request", key + " must be an integer.")
+    if "temperature" in parameters and (isinstance(parameters["temperature"], bool)
+            or not isinstance(parameters["temperature"], (int, float)) or not math.isfinite(parameters["temperature"])):
+        raise TaskError("invalid_request", "temperature must be a finite number.")

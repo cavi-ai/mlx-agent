@@ -40,7 +40,7 @@ class TaskContractTests(unittest.TestCase):
     def test_capabilities_do_not_claim_selected_model_readiness(self):
         result = capabilities()
         self.assertEqual({item["kind"] for item in result["tasks"]},
-                         {"classification", "music_generation", "transcribe", "speak"})
+                         {"classification", "music_generation", "transcribe", "speak", "image_generation", "image_understanding"})
         self.assertTrue(all(item["cancellation"] for item in result["tasks"]))
         self.assertNotIn("ready", result)
 
@@ -54,6 +54,35 @@ class TaskContractTests(unittest.TestCase):
                           tasks["transcribe"]["result_schema"]), ("task-request/2", "task-run/2", "transcribe/1"))
         self.assertEqual((tasks["speak"]["request_schema"], tasks["speak"]["run_schema"],
                           tasks["speak"]["result_schema"]), ("task-request/2", "task-run/2", "speak/1"))
+
+    def test_image_capabilities_and_requests_use_media_v2_without_materializing_defaults(self):
+        tasks = {item["kind"]: item for item in capabilities()["tasks"]}
+        for kind, result_schema in (("image_generation", "generate/1"), ("image_understanding", "describe/1")):
+            with self.subTest(kind=kind):
+                self.assertEqual((tasks[kind]["request_schema"], tasks[kind]["run_schema"], tasks[kind]["result_schema"]),
+                                 ("task-request/2", "task-run/2", result_schema))
+        requests = [
+            {"schema": "task-request/2", "kind": "image_generation", "model_path": "/models/image",
+             "parameters": {"prompt": "A red kite"}},
+            {"schema": "task-request/2", "kind": "image_understanding", "model_path": "/models/vision",
+             "parameters": {"image_path": "/images/input.webp", "prompt": "Describe this image."}},
+        ]
+        for request in requests:
+            with self.subTest(request=request):
+                self.assertEqual(validate_request(request), request)
+
+    def test_image_requests_reject_wrong_types_unknown_fields_and_wrong_schema(self):
+        base = {"schema": "task-request/2", "kind": "image_generation", "model_path": "/models/image",
+                "parameters": {"prompt": "A red kite"}}
+        invalid = [dict(base, schema="task-request/1"), dict(base, parameters={"prompt": "x", "width": True}),
+                   dict(base, parameters={"prompt": "x", "timeout": 2}),
+                   {"schema": "task-request/2", "kind": "image_understanding", "model_path": "/models/vision",
+                    "parameters": {"image_path": "relative.png", "prompt": "Describe."}},
+                   {"schema": "task-request/2", "kind": "image_understanding", "model_path": "/models/vision",
+                    "parameters": {"image_path": "/images/a.png", "prompt": "Describe.", "fps": 1.0}}]
+        for request in invalid:
+            with self.subTest(request=request), self.assertRaises(TaskError):
+                validate_request(request)
 
     def test_speech_request_v2_validates_without_materializing_planner_defaults(self):
         requests = [

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from .task_contracts import (MAX_REQUEST_BYTES, MEDIA_RUN_SCHEMA, RUN_SCHEMA, TERMINAL, TaskError, encoded,
+from .task_contracts import (INPUT_MEDIA_KINDS, MAX_REQUEST_BYTES, MEDIA_RUN_SCHEMA, RUN_SCHEMA, TERMINAL, TaskError, encoded,
                              _artifact_reference, task_id, validate_record, validate_request)
 
 
@@ -129,12 +129,14 @@ class TaskStore:
         finally:
             os.close(descriptor)
 
-    def stage_input(self, source):
-        """Copy a transcription input into a private, unaccepted staging directory."""
+    def stage_input(self, source, media_kind="audio"):
+        """Copy a supported media input into a private, unaccepted staging directory."""
         source = Path(source).expanduser()
         suffix = source.suffix.lower()
-        if not source.is_absolute() or suffix not in (".wav", ".flac", ".mp3"):
-            raise TaskError("invalid_input", "Transcription input must be an absolute WAV, FLAC or MP3 path.")
+        extensions = {"audio": (".wav", ".flac", ".mp3"), "image": (".png", ".jpg", ".jpeg", ".webp")}
+        if media_kind not in extensions or not source.is_absolute() or suffix not in extensions[media_kind]:
+            description = "WAV, FLAC or MP3" if media_kind == "audio" else "PNG, JPEG or WebP"
+            raise TaskError("invalid_input", "Media input must be an absolute {0} path.".format(description))
         identifier = str(uuid4())
         artifacts = self._ensure_artifact_root()
         staging = artifacts / (".staging-" + identifier)
@@ -142,14 +144,14 @@ class TaskStore:
             staging.mkdir(mode=0o700)
             _private(staging)
             if source.is_symlink():
-                raise TaskError("invalid_input", "Transcription input must be a regular file, not a symbolic link.")
+                raise TaskError("invalid_input", "Media input must be a regular file, not a symbolic link.")
             source_descriptor = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
             output_path = staging / ("input" + suffix)
             output_descriptor = None
             try:
                 before = os.fstat(source_descriptor)
                 if not stat.S_ISREG(before.st_mode):
-                    raise TaskError("invalid_input", "Transcription input must be a readable regular file.")
+                    raise TaskError("invalid_input", "Media input must be a readable regular file.")
                 output_descriptor = os.open(output_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY |
                                             getattr(os, "O_NOFOLLOW", 0), 0o600)
                 digest, size = hashlib.sha256(), 0
@@ -184,7 +186,7 @@ class TaskStore:
             self.discard_staged_input({"id": identifier, "staging_directory": str(staging)})
             if isinstance(error, TaskError):
                 raise
-            raise TaskError("input_copy_failed", "Cannot safely copy the transcription input: {0}".format(error),
+            raise TaskError("input_copy_failed", "Cannot safely copy the media input: {0}".format(error),
                             "Check that the source is readable and the task directory has free space.") from error
 
     def discard_staged_input(self, staged_input):
@@ -262,10 +264,10 @@ class TaskStore:
         media = request["schema"] == "task-request/2"
         if not media and (staged_input is not None or input_artifact is not None):
             raise TaskError("invalid_task", "Legacy tasks cannot carry a media input snapshot.")
-        if request["kind"] == "transcribe" and (staged_input is None or input_artifact is None):
-            raise TaskError("invalid_task", "Transcription requires a retained input snapshot.")
-        if request["kind"] == "speak" and (staged_input is not None or input_artifact is not None):
-            raise TaskError("invalid_task", "Speech synthesis does not accept an input snapshot.")
+        if request["kind"] in INPUT_MEDIA_KINDS and (staged_input is None or input_artifact is None):
+            raise TaskError("invalid_task", "This task kind requires a retained input snapshot.")
+        if request["kind"] not in INPUT_MEDIA_KINDS and (staged_input is not None or input_artifact is not None):
+            raise TaskError("invalid_task", "This task kind does not accept an input snapshot.")
         identifier = staged_input["id"] if staged_input is not None else str(uuid4())
         if staged_input is not None:
             staged_directory = self.root / "artifacts" / (".staging-" + identifier)
@@ -283,7 +285,7 @@ class TaskStore:
                         size += len(chunk)
             except OSError as error:
                 self.discard_staged_input(staged_input)
-                raise TaskError("input_copy_failed", "The staged transcription input is unavailable.") from error
+                raise TaskError("input_copy_failed", "The staged media input is unavailable.") from error
             if digest.hexdigest() != input_artifact.get("sha256") or size != input_artifact.get("bytes"):
                 self.discard_staged_input(staged_input)
                 raise TaskError("input_changed", "The staged transcription input changed before acceptance.")
@@ -341,8 +343,13 @@ class TaskStore:
             child.unlink()
         directory.rmdir()
 
-    def verify_input_artifact(self, identifier, reference):
-        return self.verify_artifact(identifier, reference, allowed_names=("input.wav", "input.flac", "input.mp3"),
+    def verify_input_artifact(self, identifier, reference, media_kind="audio"):
+        names_by_kind = {"audio": ("input.wav", "input.flac", "input.mp3"),
+                         "image": ("input.png", "input.jpg", "input.jpeg", "input.webp")}
+        if media_kind not in names_by_kind:
+            raise TaskError("invalid_input", "The retained input media kind is unsupported.")
+        names = names_by_kind[media_kind]
+        return self.verify_artifact(identifier, reference, allowed_names=names,
                                     code="input_artifact")
 
     def verify_artifact(self, identifier, reference, expected_name=None, allowed_names=(), code="artifact"):

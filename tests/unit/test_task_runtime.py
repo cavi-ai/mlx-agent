@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from mlx_agent.task_contracts import TaskError
-from mlx_agent.task_runtime import _plan, cancel_task, start_task, supervise, task_result, task_status
+from mlx_agent.task_runtime import _plan, _validate_png_output, cancel_task, start_task, supervise, task_result, task_status
 from mlx_agent.task_store import TaskStore
 from tests.task_fixtures import identity_evidence
 
@@ -27,6 +27,28 @@ class TaskRuntimeTests(unittest.TestCase):
             transcribe.assert_called_once_with("/model", "/owned/input.wav")
             _plan({"kind": "speak", "model_path": "/model", "parameters": {"text": "Hello."}}, self.root)
             speak.assert_called_once_with("/model", "Hello.", str(self.root / "output.wav"))
+
+    def test_image_planners_receive_snapshots_and_only_supplied_optional_values(self):
+        with patch("mlx_agent.task_runtime.plan_generate", return_value={}) as generate, patch(
+                "mlx_agent.task_runtime.plan_describe", return_value={}) as describe:
+            _plan({"kind": "image_generation", "model_path": "/model",
+                   "parameters": {"prompt": "A quiet forest"}}, self.root)
+            generate.assert_called_once_with("/model", "A quiet forest", str(self.root / "output.png"))
+            _plan({"kind": "image_understanding", "model_path": "/vision",
+                   "parameters": {"image_path": "/original/source.jpeg", "prompt": "Describe."}},
+                  self.root, "/owned/input.jpeg")
+            describe.assert_called_once_with("/vision", "Describe.", image="/owned/input.jpeg")
+
+    def test_png_validation_runs_in_the_selected_backend_and_fails_closed(self):
+        with patch("mlx_agent.task_runtime.backend_environment", return_value={}) as environment:
+            runner = unittest.mock.Mock(return_value=unittest.mock.Mock(returncode=0))
+            _validate_png_output(self.root / "output.png", "/backend/python", runner=runner)
+            self.assertEqual(runner.call_args.args[0][0:2], ["/backend/python", str(Path(__file__).resolve().parents[2] / "src/mlx_agent/task_png_validator.py")])
+            environment.assert_called_once_with()
+            with self.assertRaises(TaskError) as caught:
+                _validate_png_output(self.root / "bad.png", "/backend/python",
+                                     runner=unittest.mock.Mock(return_value=unittest.mock.Mock(returncode=1)))
+            self.assertEqual(caught.exception.code, "invalid_image_output")
 
     def create(self):
         return self.store.create(self.request, identity_evidence(self.request["model_path"]))

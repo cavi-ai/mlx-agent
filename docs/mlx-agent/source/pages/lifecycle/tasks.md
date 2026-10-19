@@ -1,8 +1,9 @@
 # Durable inference tasks
 
-Use `task` for classification, music generation, transcription and speech
-synthesis that must outlive the calling process. The engine retains accepted
-inputs, status, results and output files.
+Use `task` for classification, music generation, transcription, speech
+synthesis, image generation and image understanding that must outlive the
+calling process. The engine retains accepted inputs, status, results and output
+files.
 CLI and MCP clients use the same task IDs and storage. Existing synchronous
 `convert decide` and `convert music` commands remain available.
 
@@ -89,6 +90,36 @@ contains readable audio.
 }
 ```
 
+Image tasks also use `task-request/2`. Image generation accepts a prompt and
+optional `width`, `height`, `steps` and `seed`; omitted values use the existing
+image operation defaults. The operation validates its supported ranges. A
+successful task retains `output.png` only after the selected backend's Pillow
+runtime confirms the PNG can be fully decoded.
+
+```json
+{
+  "schema": "task-request/2",
+  "kind": "image_generation",
+  "model_path": "/absolute/local/image-model",
+  "parameters": {"prompt": "A quiet forest at dawn"}
+}
+```
+
+Image understanding accepts an absolute PNG, JPEG or WebP `image_path`, a
+prompt, and optional `max_tokens`, `temperature` and `max_pixels`. The engine
+copies the image into private task storage before accepting the task and uses
+that verified snapshot during inference. The result retains the full
+`describe/1` text and the exact input artifact reference.
+
+```json
+{
+  "schema": "task-request/2",
+  "kind": "image_understanding",
+  "model_path": "/absolute/local/vision-model",
+  "parameters": {"image_path": "/absolute/photo.webp", "prompt": "Describe the scene."}
+}
+```
+
 ```bash
 python3 scripts/mlx-agent task start --request /absolute/request.json --json
 python3 scripts/mlx-agent task status --id TASK_UUID --json
@@ -115,10 +146,11 @@ stopped. Uncertain process ownership produces an error without signaling an
 unrelated process. A lost supervisor is reported as interrupted; unresolved
 execution continues to block host compute. Inspect that error before retrying.
 
-Results preserve the underlying `decide/1`, `music/1`, `transcribe/1` or
-`speak/1` metadata. Classification answers are model judgments. Successful
-music and speech synthesis confirm an output WAV;
-it does not rate listening quality. Music artifacts have a content hash, and
+Results preserve the underlying `decide/1`, `music/1`, `transcribe/1`,
+`speak/1`, `generate/1` or `describe/1` metadata. Classification answers and
+image descriptions are model judgments. Successful music and speech synthesis
+confirm an output WAV; image generation confirms a fully decodable PNG. Tasks
+do not rate output quality. Generated media artifacts have a content hash, and
 retrieval refuses a missing or changed output. Task completion does not confer
 a conversion verification or comparison award.
 

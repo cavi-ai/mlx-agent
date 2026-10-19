@@ -43,6 +43,14 @@ class TaskSchemaTests(unittest.TestCase):
                        dict(transcribe, parameters={"audio_path": "relative.wav"})))
         values.append(dict(speak, parameters={"text": " " + ("x" * 2000), "voice": "invalid voice",
                                               "speed": 3.0, "lang_code": "not_a_language_tag?"}))
+        image_generation = {"schema": "task-request/2", "kind": "image_generation", "model_path": "/models/image",
+                            "parameters": {"prompt": "A quiet forest"}}
+        image_understanding = {"schema": "task-request/2", "kind": "image_understanding", "model_path": "/models/vision",
+                               "parameters": {"image_path": "/images/source.jpeg", "prompt": "Describe the scene.",
+                                              "temperature": 0.25, "max_tokens": 80}}
+        values.extend((image_generation, image_understanding,
+                       dict(image_generation, parameters={"prompt": "x", "width": True}),
+                       dict(image_understanding, parameters={"image_path": "/images/a.gif", "prompt": "x", "fps": 1.0})))
         self.assert_parity("task-request.schema.json", validate_request, values)
 
     def test_task_run_schema_matches_runtime(self):
@@ -66,6 +74,20 @@ class TaskSchemaTests(unittest.TestCase):
             speak_record = store.create(speak_request, identity_evidence(speak_request["model_path"]))
             values.extend((media_record, speak_record, dict(media_record, input_artifact=None),
                            dict(speak_record, input_artifact=media_record["input_artifact"])))
+            image = Path(directory).resolve() / "source.png"
+            image.write_bytes(b"source image")
+            staged_image = store.stage_input(image, media_kind="image")
+            image_request = {"schema": "task-request/2", "kind": "image_understanding", "model_path": "/models/vision",
+                             "parameters": {"image_path": str(image), "prompt": "Describe."}}
+            image_record = store.create(image_request, identity_evidence(image_request["model_path"]),
+                                        input_artifact=staged_image["reference"], staged_input=staged_image)
+            image_generation_request = {"schema": "task-request/2", "kind": "image_generation", "model_path": "/models/image",
+                                        "parameters": {"prompt": "A quiet forest"}}
+            image_generation_record = store.create(image_generation_request,
+                                                   identity_evidence(image_generation_request["model_path"]))
+            values.extend((image_record, image_generation_record,
+                           dict(image_record, input_artifact=None),
+                           dict(image_generation_record, input_artifact=image_record["input_artifact"])))
             malformed = []
             for key, replacement in (("pid", True), ("pid", 0), ("identity", " ")):
                 candidate = copy.deepcopy(value)

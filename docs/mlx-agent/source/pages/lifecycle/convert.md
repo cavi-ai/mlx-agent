@@ -38,7 +38,9 @@ python3 scripts/mlx-agent convert start --gguf ~/models/model-Q4_K_M.gguf --q-bi
 | `shard` | A non-first shard of a split model; convert the `-00001-of-` file. |
 | `companion` | A projector (`mmproj`) or similar sidecar, not convertible alone. |
 
-A directory counts as an MLX output only when its `config.json` carries a `quantization` block or this tool left an `mlx-converter.json` marker, so ordinary PyTorch checkpoints in the cache are never mistaken for conversions.
+A directory counts as an MLX output only when its `config.json` carries a `quantization` block or this tool left an `mlx-converter.json` marker, so ordinary PyTorch checkpoints in the cache are never mistaken for conversions. Cached snapshots of `mlx-community` repositories also count, including unquantized (bf16) ones.
+
+Each output carries a `task` label and, except Strata profiles, a `backend` object: the backend that runs it for that task (`mlx-lm`, `mlx-vlm`, `mlx-audio`, …) and whether it is `installed`. A config without a `model_type` is matched by the folder's (or cached repository's) leading word, as the backends themselves do; Kokoro resolves to `mlx-audio` text to speech.
 
 Duplicate groups use two labels. `exact` groups match a sampled content signature
 or the same header structure and quantization; members outside `keep` count

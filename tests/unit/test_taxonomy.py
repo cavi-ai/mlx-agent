@@ -109,6 +109,50 @@ class AnnotateInventoryTests(unittest.TestCase):
         self.assertEqual(report["outputs"][0]["task"]["type"], "vision_language")
         self.assertEqual(report["outputs"][1]["task"]["type"], "speech_to_text")
 
+    def test_outputs_name_their_backend_and_whether_it_is_installed(self):
+        manifests = load_manifests()
+        nothing = load_registries(manifests, root=Path("/nonexistent"), find_spec=lambda name: None)
+        installed = {key: dict(value, installed=True) for key, value in nothing.items()}
+        with TemporaryDirectory() as directory:
+            configs = {
+                "whisper-base-MLX-4bit": {"model_type": "whisper"},
+                "Qwen2.5-VL-3B-Instruct-4bit": {"model_type": "qwen2_5_vl", "vision_config": {}},
+                "Qwen3-4B-4bit": {"model_type": "qwen3"},
+                "Kokoro-82M-bf16": {"istftnet": {}, "plbert": {}},
+            }
+            outputs = []
+            for name, config in configs.items():
+                Path(directory, name).mkdir()
+                Path(directory, name, "config.json").write_text(json.dumps(config), encoding="utf-8")
+                outputs.append({"name": name, "path": str(Path(directory, name))})
+            strata = {"name": "flash", "path": str(Path(directory, "flash")), "runtime": "strata"}
+            missing = annotate_inventory({"outputs": [dict(item) for item in outputs] + [strata]},
+                                         manifests=manifests, registries=nothing)
+            present = annotate_inventory({"outputs": [dict(item) for item in outputs]},
+                                         manifests=manifests, registries=installed)
+        backends = {item["name"]: item.get("backend") for item in missing["outputs"]}
+        self.assertEqual(backends, {
+            "whisper-base-MLX-4bit": {"id": "mlx-audio", "installed": False},
+            "Qwen2.5-VL-3B-Instruct-4bit": {"id": "mlx-vlm", "installed": False},
+            "Qwen3-4B-4bit": {"id": "mlx-lm", "installed": False},
+            "Kokoro-82M-bf16": {"id": "mlx-audio", "installed": False},
+            "flash": None,
+        })
+        self.assertTrue(all(item["backend"]["installed"] for item in present["outputs"]))
+        self.assertEqual(missing["outputs"][3]["task"]["type"], "text_to_speech")
+
+    def test_cache_snapshots_are_classified_by_repository_name(self):
+        manifests = load_manifests()
+        registries = load_registries(manifests, root=Path("/nonexistent"), find_spec=lambda name: None)
+        with TemporaryDirectory() as directory:
+            snapshot = Path(directory, "models--mlx-community--Kokoro-82M-bf16", "snapshots", "a" * 40)
+            snapshot.mkdir(parents=True)
+            (snapshot / "config.json").write_text(json.dumps({"istftnet": {}}), encoding="utf-8")
+            report = annotate_inventory({"outputs": [{"name": snapshot.name, "path": str(snapshot)}]},
+                                        manifests=manifests, registries=registries)
+        self.assertEqual(report["outputs"][0]["task"]["type"], "text_to_speech")
+        self.assertEqual(report["outputs"][0]["backend"]["id"], "mlx-audio")
+
     def test_read_config_type_tolerates_missing_and_bad_files(self):
         with TemporaryDirectory() as directory:
             self.assertEqual(read_config_type(directory), (None, ()))

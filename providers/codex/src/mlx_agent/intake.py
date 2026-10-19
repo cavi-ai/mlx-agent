@@ -190,7 +190,7 @@ def _empty_payload(text, source):
         "verdict": "unknown", "reasons": [], "backend": None, "backend_installed": False,
         "model_type": None, "components": [], "task": None, "custom_code": False, "gated": False,
         "library_name": None, "pipeline_tag": None, "transformers_version": None, "bytes": 0,
-        "download_bytes": 0, "estimated_output_bytes": None, "q_bits": list(ESTIMATE_BITS), "recipe": None,
+        "download_bytes": 0, "cached": False, "estimated_output_bytes": None, "q_bits": list(ESTIMATE_BITS), "recipe": None,
         "files": {"safetensors": 0, "gguf": [], "python": []}, "mlx_conversions": [], "warnings": [],
     }
 
@@ -278,6 +278,21 @@ def list_mlx_conversions(client, repo, warnings):
     return found[:MLX_CONVERSIONS_LIMIT]
 
 
+def snapshot_cached(repo, revision, names, prefix, model_type, manifests, hf_cache=None):
+    """True when the Hugging Face cache already holds every file ``intake fetch`` would download."""
+    from fnmatch import fnmatch
+
+    from .backends import snapshot_files
+    from .convert import cached_snapshot
+    from .intake_fetch import FETCH_IGNORE_PATTERNS
+
+    snapshot = cached_snapshot(repo, hf_cache, revision=revision) if revision else None
+    if snapshot is None or (model_type and snapshot_files(model_type, manifests)):
+        return False
+    wanted = [name for name in names if not any(fnmatch(prefix + name, pattern) for pattern in FETCH_IGNORE_PATTERNS)]
+    return bool(wanted) and all((snapshot / (prefix + name)).is_file() for name in wanted)
+
+
 def resolve(text, revision=None, client=None, manifests=None, registries=None):
     source = parse_hf_source(text)
     if revision:
@@ -344,6 +359,8 @@ def resolve(text, revision=None, client=None, manifests=None, registries=None):
         recipe_download_bytes(client, recipe, files, payload["warnings"]) if recipe
         else download_bytes(files, payload["model_type"], manifests)
     )
+    payload["cached"] = recipe is None and snapshot_cached(
+        source["repo"], _text(info.get("sha")), files["names"], prefix, payload["model_type"], manifests)
     payload["components"] = components(payload["model_type"], config, manifests, registries)
     payload["task"] = classify(
         source["repo"], tags=tags, pipeline_tag=payload["pipeline_tag"],

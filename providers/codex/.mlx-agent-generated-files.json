@@ -818,19 +818,23 @@
     },
     {
       "path": "src/mlx_agent/task_contracts.py",
-      "sha256": "7ad479e76ff0dc4d7a7fdeb3f3ecf784162c744e0423f1f4d6c06b8c07d46279"
+      "sha256": "ba95319ecdb273397a57784e28867768be950608cec621d7b2ceaca65962e379"
     },
     {
       "path": "src/mlx_agent/task_identity.py",
       "sha256": "5b2062588c4769c2d52500782c4971d587cd8d414bc0b62040c7f361ceb52658"
     },
     {
+      "path": "src/mlx_agent/task_png_validator.py",
+      "sha256": "a8f636e7dc5006c41bd96ce8c3885ec586efee01c362ed14997ebc4f3c4ca41f"
+    },
+    {
       "path": "src/mlx_agent/task_runtime.py",
-      "sha256": "6071cb01a6fb2100aa3f83f89d9720369ff6a2b829834d699b555288ed2f682e"
+      "sha256": "90c9ebbd2beedec8efe7bcb76402a9913c0c2b21ce18d86cb1915b4e5b784bac"
     },
     {
       "path": "src/mlx_agent/task_store.py",
-      "sha256": "318ed8601b672b29efee7c8bffb18b90f5a93bbd79131a51b4ea7eabbe649c80"
+      "sha256": "7863e40100fb71b89d4401d222196c746bbef1d7a941f53f52d17c1ea3ec0bb7"
     },
     {
       "path": "src/mlx_agent/task_worker.py",

@@ -147,6 +147,28 @@ class TaskStoreTests(unittest.TestCase):
         self.assertEqual(self.store.verify_input_artifact(record["id"], record["input_artifact"]), owned)
         self.assertEqual(owned.stat().st_mode & 0o777, 0o600)
 
+    def test_image_input_is_snapshotted_with_its_original_extension(self):
+        source = self.root.parent / "input.JPEG"
+        source.write_bytes(b"immutable image bytes")
+        staged = self.store.stage_input(source, media_kind="image")
+        request = {"schema": "task-request/2", "kind": "image_understanding", "model_path": "/models/vision",
+                   "parameters": {"image_path": str(source), "prompt": "Describe."}}
+        record = self.store.create(request, identity_evidence(request["model_path"]),
+                                   input_artifact=staged["reference"], staged_input=staged)
+        owned = Path(record["input_artifact"]["path"])
+        self.assertEqual(record["schema"], "task-run/2")
+        self.assertEqual(owned.name, "input.jpeg")
+        self.assertEqual(owned.read_bytes(), b"immutable image bytes")
+        self.assertEqual(self.store.verify_input_artifact(record["id"], record["input_artifact"], media_kind="image"), owned)
+
+    def test_image_task_records_require_a_snapshot_and_only_image_extensions(self):
+        for filename in ("input.gif", "input.txt"):
+            with self.subTest(filename=filename):
+                source = self.root.parent / filename
+                source.write_bytes(b"image")
+                with self.assertRaises(TaskError):
+                    self.store.stage_input(source, media_kind="image")
+
     def test_input_artifact_verification_rejects_changed_bytes_and_wrong_task_path(self):
         source = self.root.parent / "input.wav"
         source.write_bytes(b"audio")

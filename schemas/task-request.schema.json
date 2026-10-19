@@ -3,7 +3,7 @@
   "title": "Durable inference task request",
   "oneOf": [
     {"$ref": "#/$defs/legacyRequest"},
-    {"$ref": "#/$defs/speechRequest"}
+    {"$ref": "#/$defs/mediaRequest"}
   ],
   "$defs": {
     "classificationParameters": {
@@ -45,12 +45,12 @@
         {"if": {"properties": {"kind": {"const": "music_generation"}}}, "then": {"properties": {"parameters": {"$ref": "#/$defs/musicParameters"}}}}
       ]
     },
-    "speechRequest": {
+    "mediaRequest": {
       "type": "object", "additionalProperties": false,
       "required": ["schema", "kind", "model_path", "parameters"],
       "properties": {
         "schema": {"const": "task-request/2"},
-        "kind": {"enum": ["transcribe", "speak"]},
+        "kind": {"enum": ["transcribe", "speak", "image_generation", "image_understanding"]},
         "model_path": {"type": "string", "pattern": "^/[^\\u0000-\\u001f]*$"},
         "parameters": {"type": "object"}
       },
@@ -66,6 +66,26 @@
             "voice": {"type": "string"},
             "speed": {"type": "number"},
             "lang_code": {"type": "string"}
+          }
+        }}}},
+        {"if": {"properties": {"kind": {"const": "image_generation"}}}, "then": {"properties": {"parameters": {
+          "type": "object", "additionalProperties": false, "required": ["prompt"],
+          "properties": {
+            "prompt": {"type": "string"},
+            "width": {"type": "integer"},
+            "height": {"type": "integer"},
+            "steps": {"type": "integer"},
+            "seed": {"type": "integer"}
+          }
+        }}}},
+        {"if": {"properties": {"kind": {"const": "image_understanding"}}}, "then": {"properties": {"parameters": {
+          "type": "object", "additionalProperties": false, "required": ["image_path", "prompt"],
+          "properties": {
+            "image_path": {"type": "string", "pattern": "^/[^\\u0000-\\u001f]*$"},
+            "prompt": {"type": "string"},
+            "max_tokens": {"type": "integer"},
+            "temperature": {"type": "number"},
+            "max_pixels": {"type": "integer"}
           }
         }}}}
       ]

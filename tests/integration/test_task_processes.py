@@ -23,8 +23,13 @@ from mlx_agent.task_store import TaskStore
 
 BACKEND = r'''
 import json, os, signal, subprocess, sys, time, wave
+import base64
 from pathlib import Path
 args = sys.argv[1:]
+png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGPgEpEDAABoAD1UCKP3AAAAAElFTkSuQmCC")
+if args and args[0].endswith("task_png_validator.py"):
+    image = Path(args[1]).read_bytes()
+    sys.exit(0 if image == png else 1)
 model = Path(args[args.index("--model") + 1])
 config = json.loads((model / "config.json").read_text())
 behavior = config.get("fixture_behavior", "success")
@@ -43,7 +48,10 @@ if "--audio" in args:
     print(json.dumps({"text": audio.read_bytes().decode("utf-8"), "seconds": .1, "audio_seconds": .25}))
 elif "--out" in args:
     target = args[args.index("--out") + 1]
-    if behavior == "invalid-audio":
+    if target.endswith(".png"):
+        Path(target).write_bytes(b"not png" if behavior == "invalid-image" else png)
+        print(json.dumps({"path": target, "width": 1, "height": 1, "steps": 40, "seed": 42, "seconds": .1}))
+    elif behavior == "invalid-audio":
         Path(target).write_bytes(b"not audio")
     else:
         with wave.open(target, "wb") as output:
@@ -51,7 +59,14 @@ elif "--out" in args:
             output.writeframes(b"\x00\x01" * 2000)
         if behavior == "truncated-audio":
             Path(target).write_bytes(Path(target).read_bytes()[:46])
-    print(json.dumps({"path": target, "sample_rate": 8000, "audio_seconds": .25, "seconds": .1}))
+    if not target.endswith(".png"):
+        print(json.dumps({"path": target, "sample_rate": 8000, "audio_seconds": .25, "seconds": .1}))
+elif "--image" in args:
+    image = Path(args[args.index("--image") + 1])
+    while behavior == "hold-image-description" and not (model.parent / "release-image-description").exists():
+        time.sleep(.01)
+    print(json.dumps({"text": "A detailed description. " + ("More scene detail. " * 150),
+                      "prompt_tokens": 12, "generation_tokens": 300, "seconds": .1}))
 else:
     request = json.loads(Path(args[args.index("--request") + 1]).read_text())
     print(json.dumps({"answers": {"route": "billing"}, "seconds": .1, "usage": {"questions": len(request["questions"])}}))
@@ -80,7 +95,7 @@ class TaskProcessTests(unittest.TestCase):
         self.addCleanup(self.environment.stop)
         self.model = self.root / "model"
         self.model.mkdir()
-        for identifier in ("mlx-audio", "mlx-embeddings"):
+        for identifier in ("mlx-audio", "mlx-embeddings", "mflux", "mlx-vlm"):
             manifest = load_manifests()[identifier]
             backend = self.root / "data/mlx-workbench/backends" / identifier
             (backend / "bin").mkdir(parents=True)
@@ -116,7 +131,8 @@ class TaskProcessTests(unittest.TestCase):
 
     def prepare_request(self, kind="classification", behavior="success"):
         model_type = {"classification": "laya", "music_generation": "minimax_music3",
-                      "transcribe": "whisper", "speak": "kokoro"}[kind]
+                      "transcribe": "whisper", "speak": "kokoro", "image_generation": "qwen_image_21",
+                      "image_understanding": "qwen2_5_vl"}[kind]
         (self.model / "config.json").write_text(json.dumps({"model_type": model_type, "fixture_behavior": behavior}))
         (self.model / "tokenizer.json").write_text("{}")
         schema = "task-request/1"
@@ -129,8 +145,16 @@ class TaskProcessTests(unittest.TestCase):
             self.audio.write_bytes(b"original speech snapshot")
             params = {"audio_path": str(self.audio)}
             schema = "task-request/2"
-        else:
+        elif kind == "speak":
             params = {"text": "Hello there."}
+            schema = "task-request/2"
+        elif kind == "image_generation":
+            params = {"prompt": "A quiet forest"}
+            schema = "task-request/2"
+        else:
+            self.image = self.root / "input.png"
+            self.image.write_bytes(b"original image snapshot")
+            params = {"image_path": str(self.image), "prompt": "Describe the scene."}
             schema = "task-request/2"
         request = self.root / "request.json"
         request.write_text(json.dumps({"schema": schema, "kind": kind, "model_path": str(self.model), "parameters": params}))
@@ -200,6 +224,35 @@ class TaskProcessTests(unittest.TestCase):
         result = self.wait_for(lambda: self.terminal(task["id"]))
         self.assertEqual(result["state"], "failed", result)
         self.assertEqual(result["error"]["code"], "invalid_audio_output")
+
+    def test_image_description_uses_its_fsynced_snapshot_and_preserves_full_text(self):
+        task = self.start("image_understanding", behavior="hold-image-description")
+        self.wait_for(lambda: (self.root / "started").exists())
+        self.image.write_bytes(b"changed image")
+        self.image.unlink()
+        (self.root / "release-image-description").touch()
+        result = self.wait_for(lambda: self.terminal(task["id"]))
+        self.assertEqual(result["state"], "succeeded", result)
+        evidence = task_result(task["id"], self.state)
+        self.assertEqual(evidence["result"]["schema"], "describe/1")
+        self.assertGreater(len(evidence["result"]["text"]), 2000)
+        self.assertEqual(evidence["result"]["input_artifact"], result["input_artifact"])
+        self.assertEqual(Path(result["input_artifact"]["path"]).read_bytes(), b"original image snapshot")
+
+    def test_image_generation_returns_only_a_decodable_png_artifact(self):
+        task = self.start("image_generation")
+        result = self.wait_for(lambda: self.terminal(task["id"]))
+        self.assertEqual(result["state"], "succeeded", result)
+        evidence = task_result(task["id"], self.state)["result"]
+        self.assertEqual(evidence["schema"], "generate/1")
+        self.assertIsNone(result["input_artifact"])
+        self.assertEqual(Path(evidence["output_artifact"]["path"]).name, "output.png")
+
+    def test_image_generation_rejects_undecodable_png_before_success(self):
+        task = self.start("image_generation", behavior="invalid-image")
+        result = self.wait_for(lambda: self.terminal(task["id"]))
+        self.assertEqual(result["state"], "failed", result)
+        self.assertEqual(result["error"]["code"], "invalid_image_output")
 
     def test_invalid_speech_parameters_fail_in_planner_before_acceptance(self):
         request_path = self.prepare_request("speak")

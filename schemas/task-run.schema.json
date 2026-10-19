@@ -62,7 +62,7 @@
       "properties": {
         "schema": {"enum": ["task-run/1", "task-run/2"]},
         "id": {"type": "string", "format": "uuid", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
-        "kind": {"enum": ["classification", "music_generation", "transcribe", "speak"]},
+        "kind": {"enum": ["classification", "music_generation", "transcribe", "speak", "image_generation", "image_understanding"]},
         "state": {"enum": ["starting", "running", "succeeded", "failed", "cancelled"]},
         "model_path": {"type": "string", "pattern": "^/"},
         "created_at": {"type": "string", "format": "date-time"},
@@ -80,9 +80,9 @@
       },
       "allOf": [
         {"if": {"properties": {"schema": {"const": "task-run/1"}}}, "then": {"properties": {"kind": {"enum": ["classification", "music_generation"]}}, "not": {"required": ["input_artifact"]}}},
-        {"if": {"properties": {"schema": {"const": "task-run/2"}}}, "then": {"required": ["input_artifact"], "properties": {"kind": {"enum": ["transcribe", "speak"]}}}},
-        {"if": {"properties": {"kind": {"const": "transcribe"}}}, "then": {"properties": {"input_artifact": {"$ref": "#/$defs/artifactReference"}}}},
-        {"if": {"properties": {"kind": {"const": "speak"}}}, "then": {"properties": {"input_artifact": {"type": "null"}}}},
+        {"if": {"properties": {"schema": {"const": "task-run/2"}}}, "then": {"required": ["input_artifact"], "properties": {"kind": {"enum": ["transcribe", "speak", "image_generation", "image_understanding"]}}}},
+        {"if": {"properties": {"kind": {"enum": ["transcribe", "image_understanding"]}}}, "then": {"properties": {"input_artifact": {"$ref": "#/$defs/artifactReference"}}}},
+        {"if": {"properties": {"kind": {"enum": ["speak", "image_generation"]}}}, "then": {"properties": {"input_artifact": {"type": "null"}}}},
         {"if": {"properties": {"state": {"enum": ["succeeded", "failed", "cancelled"]}}}, "then": {"properties": {"completed_at": {"type": "string"}}}, "else": {"properties": {"completed_at": {"type": "null"}}}},
         {"if": {"properties": {"state": {"const": "succeeded"}}}, "then": {"properties": {"started_at": {"type": "string"}, "result": {"$ref": "#/$defs/artifactReference"}, "error": {"type": "null"}, "supervisor": {"$ref": "#/$defs/processReference"}, "execution": {"$ref": "#/$defs/processReference"}, "execution_unresolved": {"const": false}}}},
         {"if": {"properties": {"state": {"const": "running"}}}, "then": {"properties": {"started_at": {"type": "string"}, "supervisor": {"$ref": "#/$defs/processReference"}, "execution": {"$ref": "#/$defs/processReference"}, "result": {"type": "null"}, "error": {"type": "null"}}}},

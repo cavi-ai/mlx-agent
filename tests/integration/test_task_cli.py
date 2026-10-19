@@ -49,11 +49,14 @@ class TaskCliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(value["operation"], "task.capabilities")
         tasks = {task["kind"]: task for task in value["data"]["tasks"]}
-        self.assertEqual(set(tasks), {"classification", "music_generation", "transcribe", "speak"})
+        self.assertEqual(set(tasks), {"classification", "music_generation", "transcribe", "speak", "image_generation", "image_understanding"})
         self.assertEqual((tasks["transcribe"]["request_schema"], tasks["transcribe"]["run_schema"]),
                          ("task-request/2", "task-run/2"))
         self.assertEqual((tasks["speak"]["request_schema"], tasks["speak"]["run_schema"]),
                          ("task-request/2", "task-run/2"))
+        self.assertEqual((tasks["image_understanding"]["request_schema"], tasks["image_understanding"]["run_schema"],
+                          tasks["image_understanding"]["result_schema"]),
+                         ("task-request/2", "task-run/2", "describe/1"))
         self.assertTrue(all(task["model_verification"] for task in value["data"]["tasks"]))
         code, value = self.run_cli("list")
         self.assertEqual(value["data"], {"tasks": [], "has_more": False})

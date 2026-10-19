@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.8.0 - 2026-10-19
+
+- Add durable inference tasks (`task start|status|list|result|cancel|verify-model|capabilities`, also through MCP) for classification, music generation, transcription, and speech synthesis: stable IDs, recent history, cancellation, and verified result artifacts; detached workers keep running after the caller exits and share the compute lease.
+- Add optional Strata serving for prepared Qwen3.8-Flash-Next GSQ-RCO GGUF profiles in an isolated runtime, with expert-memory and context-capacity controls checked against memory headroom; speculation is off by default.
+- Serving previews describe the weight format and declared quantization.
+- Add `serve start --training-receipt` and `--adapter-path`: serve a LoRA adapter on its pinned base; previews, startup, and each load-on-request reload recheck the receipt and the adapter's config and tensor hashes, and adapter tensors count toward the memory estimate.
+- Add `lora inspect`: read-only checks of the training executable, the cached base architecture, and both dataset splits.
+- Add adapter evaluation prompt suites: up to 16 prompts compared between base and adapter, with per-prompt preferences recorded apart from the generation report.
+- Add `lab training-data validate|freeze|inspect` for content-addressed media datasets with caller-selected readiness limits.
+- Add study recipes captured from cached Wan 2.1 Diffusers revisions, with weight, asset, runtime, and platform identities rechecked before and after generation.
+- Fix: training refuses splits smaller than one batch and base models whose architecture MLX-LM does not support.
+- Fix: `convert scan --mlx-root` inventories MLX models when no GGUF root is configured.
+- Fix: training and model diagnostics honor `HF_HUB_CACHE`, `HF_HOME`, and `XDG_CACHE_HOME`.
+
 ## 0.7.0 - 2026-10-12
 
 - Add local music generation and requantization with checkpoint tokenizer validation.

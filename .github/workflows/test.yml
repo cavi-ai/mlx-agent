@@ -43,6 +43,27 @@ jobs:
         run: PYTHONPATH=src python scripts/render_compatibility.py --check
       - name: Run full unit integration and contract discovery
         run: PYTHONPATH=src python -m unittest discover -s tests -v
+      - name: Evaluate the MCP server
+        id: mcp-eval
+        uses: cavi-ai/mcp-eval@b3652adf308a295eabc15c0b97125e7fe7e2daea # v0.7.1
+        env:
+          MCPEVAL_HOME: ${{ runner.temp }}/mlx-agent-mcpeval
+        with:
+          version: 0.7.1
+          server: mlx-agent
+          manifest: mcp-eval.manifest.json
+          command: python scripts/mlx-agent-mcp
+          report-path: .run/mcp-eval/report.json
+      - name: Upload MCP evaluation report
+        if: ${{ always() && steps.mcp-eval.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-eval-${{ matrix.os }}-python-${{ matrix.python-version }}
+          path: |
+            .run/mcp-eval/report.json
+            .run/mcp-eval/report.md
+          include-hidden-files: true
+          if-no-files-found: error
       - name: Reject whitespace errors
         run: git diff --check
 

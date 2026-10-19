@@ -143,7 +143,10 @@ def _safe_relative(value, field, allow_current=False):
 class ProviderRegistry:
     """Load immutable installation data from the canonical plugin manifest."""
 
-    def __init__(self, manifest_path, home=None, config_root=None, xdg_config_home=None):
+    def __init__(
+        self, manifest_path, home=None, config_root=None, xdg_config_home=None,
+        openclaw_state_dir=None, hermes_home=None,
+    ):
         self.manifest_path = Path(manifest_path).resolve()
         self.home = Path(home).expanduser().resolve() if home else Path.home().resolve()
         # Receipts are state, not configuration, and belong in the XDG state
@@ -156,6 +159,22 @@ class ProviderRegistry:
             Path(xdg_config_home).expanduser().resolve()
             if xdg_config_home else (self.home / ".config").resolve()
         )
+        self.openclaw_state_dir = (
+            Path(openclaw_state_dir).expanduser().resolve()
+            if openclaw_state_dir else (self.home / ".openclaw").resolve()
+        )
+        self.hermes_home = (
+            Path(hermes_home).expanduser().resolve()
+            if hermes_home else (self.home / ".hermes").resolve()
+        )
+
+    def _template_roots(self):
+        return {
+            "home": str(self.home), "config_root": str(self.config_root),
+            "xdg_config_home": str(self.xdg_config_home),
+            "openclaw_state_dir": str(self.openclaw_state_dir),
+            "hermes_home": str(self.hermes_home),
+        }
 
     def definitions(self):
         try:
@@ -277,6 +296,10 @@ class ProviderRegistry:
             self._validate_agy_plugin_layout(user_root, project_root, artifacts)
         if provider_id == "opencode":
             self._validate_opencode_layout(user_root, project_root, artifacts)
+        if provider_id == "openclaw":
+            self._validate_openclaw_layout(user_root, project_root, artifacts)
+        if provider_id == "hermes":
+            self._validate_hermes_layout(user_root, project_root, artifacts)
         return ProviderDefinition(
             id=provider_id,
             detect_commands=tuple(commands),
@@ -323,17 +346,39 @@ class ProviderRegistry:
         if not any(item.destination == Path("src/mlx_agent/command_executor.py") for item in artifacts):
             raise ValueError("provider opencode must install its custom-tool runtime")
 
+    def _validate_openclaw_layout(self, user_root, project_root, artifacts):
+        """Keep OpenClaw's managed and workspace skill roots exact."""
+        if user_root != _physical(_logical(self.openclaw_state_dir)):
+            raise ValueError("provider openclaw.user_root must target the OpenClaw state directory")
+        if project_root != Path("."):
+            raise ValueError("provider openclaw.project_root must target the workspace root")
+        if not any(item.destination == Path("skills/mlx-scout/SKILL.md") for item in artifacts):
+            raise ValueError("provider openclaw must install native skills")
+        if not any(item.destination == Path("skills/mlx-scout/scripts/mlx-agent") for item in artifacts):
+            raise ValueError("provider openclaw must install each skill's bundled launcher")
+
+    def _validate_hermes_layout(self, user_root, project_root, artifacts):
+        """Keep Hermes's profile and project skill roots exact."""
+        if user_root != _physical(_logical(self.hermes_home)):
+            raise ValueError("provider hermes.user_root must target the Hermes home directory")
+        if project_root != Path(".hermes"):
+            raise ValueError("provider hermes.project_root must target .hermes")
+        if not any(item.destination == Path("skills/mlx-scout/SKILL.md") for item in artifacts):
+            raise ValueError("provider hermes must install native skills")
+        if not any(item.destination == Path("skills/mlx-scout/scripts/mlx-agent") for item in artifacts):
+            raise ValueError("provider hermes must install each skill's bundled launcher")
+
     def _user_root(self, template, provider_id):
         if not isinstance(template, str) or "{project}" in template:
             raise ValueError("provider {0}.user_root is invalid".format(provider_id))
         try:
-            path = _logical(template.format(
-                home=str(self.home), config_root=str(self.config_root),
-                xdg_config_home=str(self.xdg_config_home),
-            ))
+            path = _logical(template.format(**self._template_roots()))
         except (KeyError, ValueError) as error:
             raise ValueError("provider {0}.user_root is invalid: {1}".format(provider_id, error))
-        allowed_roots = (self.home, self.config_root, self.xdg_config_home)
+        allowed_roots = (
+            self.home, self.config_root, self.xdg_config_home,
+            self.openclaw_state_dir, self.hermes_home,
+        )
         if not any(root == path or root in path.parents for root in allowed_roots):
             raise ValueError("provider {0}.user_root must be under an approved user configuration root".format(provider_id))
         return _physical(path)
@@ -343,10 +388,7 @@ class ProviderRegistry:
             raise ValueError("provider {0}.project_root is invalid".format(provider_id))
         marker = Path("/__mlx_agent_project_marker__")
         try:
-            rendered = Path(template.format(
-                project=str(marker), home=str(self.home), config_root=str(self.config_root),
-                xdg_config_home=str(self.xdg_config_home),
-            )).resolve()
+            rendered = Path(template.format(project=str(marker), **self._template_roots())).resolve()
             return rendered.relative_to(marker)
         except (KeyError, ValueError):
             raise ValueError("provider {0}.project_root is invalid".format(provider_id))

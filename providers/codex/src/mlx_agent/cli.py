@@ -2227,6 +2227,8 @@ def _installer_registry():
     return ProviderRegistry(
         root / "plugin.json", home=home, config_root=config_root,
         xdg_config_home=xdg_config_home,
+        openclaw_state_dir=os.environ.get("OPENCLAW_STATE_DIR"),
+        hermes_home=os.environ.get("HERMES_HOME"),
     )
 
 

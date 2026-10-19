@@ -61,6 +61,34 @@ python3 scripts/mlx-agent doctor opencode --scope user --json
 Restart OpenCode, press `Ctrl+P`, filter for `mlx`, and run `/mlx-scout`.
 Keep any custom XDG paths consistent between installation and host launch.
 
+## OpenClaw
+
+From a checkout, with the gateway's `OPENCLAW_STATE_DIR` exported when it is not
+`~/.openclaw`:
+
+```bash
+python3 scripts/mlx-agent install openclaw --scope user --dry-run --json
+# Review the plan; copy data.preview.preview_hash.
+python3 scripts/mlx-agent install openclaw --scope user --confirm --preview-hash <preview-hash> --json
+```
+
+Start a new session, check `openclaw skills list`, and run `/mlx-scout`.
+
+## Hermes Agent
+
+From a checkout, with `HERMES_HOME` set to the profile directory when it is not
+`~/.hermes`:
+
+```bash
+python3 scripts/mlx-agent install hermes --scope user --dry-run --json
+# Review the plan; copy data.preview.preview_hash.
+python3 scripts/mlx-agent install hermes --scope user --confirm --preview-hash <preview-hash> --json
+```
+
+Check `hermes skills list`, then run `/mlx-scout`. Project installs go to
+`<project>/.hermes/skills`; Hermes releases with project skill discovery load
+them after `hermes skills trust`.
+
 ## AgentSkills-compatible hosts
 
 From a checkout:
@@ -79,7 +107,7 @@ Move unowned older `mlx-*` skill folders aside before the first managed install.
 ## Universal installer
 
 The preview-then-confirm installer covers `claude`, `codex`, `agy`, `opencode`,
-and `agentskills` in user or project scope:
+`openclaw`, `hermes`, and `agentskills` in user or project scope:
 
 ```bash
 python3 scripts/mlx-agent providers --json

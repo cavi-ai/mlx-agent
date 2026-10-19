@@ -458,7 +458,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "32544d55f4b2be5c3ceb3097ad47efde95dcd0b8e94747bf29db2ff8f6401393"
+      "sha256": "62ae032482ac49d1c468a298cc077f8d186056f7862616d25b5a120b5a67cec5"
     },
     {
       "path": "src/mlx_agent/command_args.py",
@@ -634,7 +634,7 @@
     },
     {
       "path": "src/mlx_agent/providers.py",
-      "sha256": "0d109e26510efb465852d931ff82d7bacaec8d6aaa721f055b7b745ce675882a"
+      "sha256": "8a8793790dee2a1d87ed6067ff7178548463b8695513b3f43a0d4715c4213538"
     },
     {
       "path": "src/mlx_agent/queue_bridge.py",

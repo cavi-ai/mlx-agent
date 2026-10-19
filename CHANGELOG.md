@@ -2,14 +2,9 @@
 
 ## Unreleased
 
-- `convert scan` outputs report the `backend` that runs them for their task and whether it is installed; cached `mlx-community` snapshots count as MLX outputs even unquantized (Kokoro bf16), and snapshots whose weight files are missing do not.
-- Add `serve start --thinking off`: `mlx_lm` serves with the chat template's reasoning switched off; other runtimes record `unsupported` in the reviewed plan.
-- `intake resolve` reports `cached` when the Hugging Face cache already holds every file a fetch would download.
-- Fix: `convert scan` groups duplicate MLX model folders and reads Ollama stores under its roots: identical copies as `exact` with reclaimable bytes, other bit widths of one model as `variant`, Ollama models listed under `ollama`.
-
 ## 0.8.0 - 2026-10-19
 
-- Add durable inference tasks (`task start|status|list|result|cancel|verify-model|capabilities`, also through MCP) for classification, music generation, transcription, and speech synthesis: stable IDs, recent history, cancellation, and verified result artifacts; detached workers keep running after the caller exits and share the compute lease.
+- Add durable inference tasks (`task start|status|list|result|cancel|verify-model|capabilities`, also through MCP) for classification, image and video generation and understanding, music generation, transcription, and speech synthesis: stable IDs, recent history, cancellation, and verified result artifacts; detached workers keep running after the caller exits and share the compute lease.
 - Add optional Strata serving for prepared Qwen3.8-Flash-Next GSQ-RCO GGUF profiles in an isolated runtime, with expert-memory and context-capacity controls checked against memory headroom; speculation is off by default.
 - Serving previews describe the weight format and declared quantization.
 - Add `serve start --training-receipt` and `--adapter-path`: serve a LoRA adapter on its pinned base; previews, startup, and each load-on-request reload recheck the receipt and the adapter's config and tensor hashes, and adapter tensors count toward the memory estimate.
@@ -17,9 +12,15 @@
 - Add adapter evaluation prompt suites: up to 16 prompts compared between base and adapter, with per-prompt preferences recorded apart from the generation report.
 - Add `lab training-data validate|freeze|inspect` for content-addressed media datasets with caller-selected readiness limits.
 - Add study recipes captured from cached Wan 2.1 Diffusers revisions, with weight, asset, runtime, and platform identities rechecked before and after generation.
+- Add `serve start --thinking off`: `mlx_lm` serves with the chat template's reasoning switched off; other runtimes record `unsupported` in the reviewed plan.
+- `convert scan` outputs report the `backend` that runs them for their task and whether it is installed; cached `mlx-community` snapshots count as MLX outputs even unquantized (Kokoro bf16), and snapshots whose weight files are missing do not.
+- `intake resolve` reports `cached` when the Hugging Face cache already holds every file a fetch would download.
 - Fix: training refuses splits smaller than one batch and base models whose architecture MLX-LM does not support.
 - Fix: `convert scan --mlx-root` inventories MLX models when no GGUF root is configured.
+- Fix: `convert scan` groups duplicate MLX model folders and reads Ollama stores under its roots: identical copies as `exact` with reclaimable bytes, other bit widths of one model as `variant`, Ollama models listed under `ollama`.
 - Fix: training and model diagnostics honor `HF_HUB_CACHE`, `HF_HOME`, and `XDG_CACHE_HOME`.
+- Fix: the MCP server negotiates the protocol version, declares which tools change state, and returns structured results with an output schema beside the text response; a CLI exit is returned as the result's `exit_code` instead of ending the server.
+
 ## 0.7.0 - 2026-10-12
 
 - Add local music generation and requantization with checkpoint tokenizer validation.

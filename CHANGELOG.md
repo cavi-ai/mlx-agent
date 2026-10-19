@@ -4,7 +4,7 @@
 
 ## 0.8.0 - 2026-10-19
 
-- Add durable inference tasks (`task start|status|list|result|cancel|verify-model|capabilities`, also through MCP) for classification, image generation and understanding, music generation, transcription, and speech synthesis: stable IDs, recent history, cancellation, and verified result artifacts; detached workers keep running after the caller exits and share the compute lease.
+- Add durable inference tasks (`task start|status|list|result|cancel|verify-model|capabilities`, also through MCP) for classification, image and video generation and understanding, music generation, transcription, and speech synthesis: stable IDs, recent history, cancellation, and verified result artifacts; detached workers keep running after the caller exits and share the compute lease.
 - Add optional Strata serving for prepared Qwen3.8-Flash-Next GSQ-RCO GGUF profiles in an isolated runtime, with expert-memory and context-capacity controls checked against memory headroom; speculation is off by default.
 - Serving previews describe the weight format and declared quantization.
 - Add `serve start --training-receipt` and `--adapter-path`: serve a LoRA adapter on its pinned base; previews, startup, and each load-on-request reload recheck the receipt and the adapter's config and tensor hashes, and adapter tensors count toward the memory estimate.
@@ -19,6 +19,7 @@
 - Fix: `convert scan --mlx-root` inventories MLX models when no GGUF root is configured.
 - Fix: `convert scan` groups duplicate MLX model folders and reads Ollama stores under its roots: identical copies as `exact` with reclaimable bytes, other bit widths of one model as `variant`, Ollama models listed under `ollama`.
 - Fix: training and model diagnostics honor `HF_HUB_CACHE`, `HF_HOME`, and `XDG_CACHE_HOME`.
+- Fix: the MCP server negotiates the protocol version, declares which tools change state, and returns structured results with an output schema beside the text response; a CLI exit is returned as the result's `exit_code` instead of ending the server.
 
 ## 0.7.0 - 2026-10-12
 

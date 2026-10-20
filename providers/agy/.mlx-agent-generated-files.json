@@ -470,11 +470,15 @@
     },
     {
       "path": "src/mlx_agent/coding_capture_client.py",
-      "sha256": "5090363e7b1e8be65e168ab99197d88138dcb1f834ce7a94e3aadb6caed2acf7"
+      "sha256": "df4889dfaf0df8adc0824a253a095cb1d6f3887c460c380fb899dd82251e8c8d"
     },
     {
       "path": "src/mlx_agent/coding_capture_contracts.py",
       "sha256": "d50ec0eb19983ce0935dae9e773d204d7bb90425ea386d458e878de468418f10"
+    },
+    {
+      "path": "src/mlx_agent/coding_capture_plugins.py",
+      "sha256": "74ce0dda5d18d98c1c6d484c0d035ddefe0a70365dbf279073c2af4749951b8f"
     },
     {
       "path": "src/mlx_agent/coding_capture_storage.py",
@@ -719,6 +723,26 @@
     {
       "path": "src/mlx_agent/resources/bench-community.json",
       "sha256": "2e127b8ca192b0f5a087109156d9ff604aa4cdd7a1b48b0af031d71b33eef429"
+    },
+    {
+      "path": "src/mlx_agent/resources/coding_capture/freeze.mjs",
+      "sha256": "2e15120ac21b1f20dc3afd0dbf87ed097bc7f1a693d6c2b1b42293278eb51cee"
+    },
+    {
+      "path": "src/mlx_agent/resources/coding_capture/legacy.mjs",
+      "sha256": "70bf71c1425831f1a716a4305b910b26691153eb8365a7d7427cca551fd73437"
+    },
+    {
+      "path": "src/mlx_agent/resources/coding_capture/proxy.mjs",
+      "sha256": "a6d2408493f3df6ccd3190486c6501061b734e6c88e64b3d2aeb8f53f207935f"
+    },
+    {
+      "path": "src/mlx_agent/resources/coding_capture/rpc.mjs",
+      "sha256": "c0a49f3b22a5665c0398255f4b9347084b07db44e07580803e9e78e0c9ceefcc"
+    },
+    {
+      "path": "src/mlx_agent/resources/coding_capture/worker.mjs",
+      "sha256": "8fcd5835850cae91e70591e4cd074fd1aa4bcc3151efcbc66262513732088720"
     },
     {
       "path": "src/mlx_agent/resources/ports/mflux/qwen_image_21/__init__.py",

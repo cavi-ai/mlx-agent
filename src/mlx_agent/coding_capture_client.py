@@ -9,7 +9,7 @@ from .task_contracts import TaskError, encoded
 
 EVENT_TYPES = frozenset(("step_start", "step_finish", "text", "reasoning", "tool_use", "error"))
 MESSAGE_TYPES = frozenset(("agent-switched", "model-switched", "location-switched", "user", "synthetic", "system",
-                           "skill", "shell", "assistant", "compaction"))
+                           "skill", "shell", "assistant", "compaction", "idle"))
 
 
 def _require(condition, message):
@@ -114,6 +114,9 @@ def validate_session_export(raw: bytes, session_id: str, model: str) -> Dict:
         _require(message["id"] not in identities, "Export contains duplicate message identities.")
         identities.add(message["id"])
         _require(message.get("type") in MESSAGE_TYPES, "Export contains an unsupported message type.")
+        if message["type"] == "idle":
+            _require(message.get("outcome") in ("succeeded", "failed", "interrupted"),
+                     "Export contains an unsupported idle outcome.")
         _require("sessionID" not in message or message["sessionID"] == session_id, "Export contains another session's message.")
         if "model" in message:
             check_model(message["model"])

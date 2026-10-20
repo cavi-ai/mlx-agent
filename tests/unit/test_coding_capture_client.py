@@ -98,6 +98,19 @@ class OpenCodeEvidenceTests(unittest.TestCase):
         del value["info"]["model"]
         self.assertEqual(client.validate_session_export(encoded(value), "ses_root", "capture/local"), value)
 
+    def test_export_retains_documented_idle_outcomes_and_rejects_unknown_outcomes(self):
+        value = transfer()
+        marker = {"id": "msg_idle", "type": "idle", "outcome": "succeeded"}
+        value["messages"].append(marker)
+        for outcome in ("succeeded", "failed", "interrupted"):
+            marker["outcome"] = outcome
+            with self.subTest(outcome=outcome):
+                self.assertEqual(client.validate_session_export(encoded(value), "ses_root", "capture/local"), value)
+        for outcome in (None, "complete", True):
+            marker["outcome"] = outcome
+            with self.subTest(outcome=outcome), self.assertRaises(TaskError):
+                client.validate_session_export(encoded(value), "ses_root", "capture/local")
+
     def test_global_project_and_schema_valid_session_prefix_are_not_rewritten(self):
         value = transfer("ses123")
         value["info"]["projectID"] = "global"

@@ -462,7 +462,7 @@
     },
     {
       "path": "src/mlx_agent/capture_volume.py",
-      "sha256": "7fe77d985e667fe328f2d739d9e84c2cb1445527add8987c45f6600b0994f38b"
+      "sha256": "a591a1f0cea635921cca0216d484c830ed47fffab6240676e7c7a88ec34d09f0"
     },
     {
       "path": "src/mlx_agent/cli.py",

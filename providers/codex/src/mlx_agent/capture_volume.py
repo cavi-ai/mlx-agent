@@ -210,14 +210,33 @@ class CaptureVolume:
             raise TaskError("unsafe_capture_volume", "Capture storage cannot traverse links.")
         root.mkdir(mode=0o700)
         _root(root)
+        created_identity = _identity(root)
         image = root / "capture.sparsebundle"
-        # hdiutil's create -size suffix 'b' means sectors, not bytes.
-        _run([HDIUTIL, "create", "-sectors", str(capacity_bytes // 512), "-fs", "HFS+", "-layout", "NONE",
-              "-type", "SPARSEBUNDLE", "-volname", "MLX Capture", "-nospotlight", "-quiet", str(image)])
-        _safe_image(image)
-        record = {"schema": "capture-volume/1", "task_id": task_id, "capacity_bytes": capacity_bytes,
-                  "root_identity": _identity(root), "image_identity": _identity(image), "volume_uuid": None}
-        _write_marker(root, record)
+        try:
+            # hdiutil's create -size suffix 'b' means sectors, not bytes.
+            _run([HDIUTIL, "create", "-sectors", str(capacity_bytes // 512), "-fs", "HFS+", "-layout", "NONE",
+                  "-type", "SPARSEBUNDLE", "-volname", "MLX Capture", "-nospotlight", "-quiet", str(image)])
+            _safe_image(image)
+            record = {"schema": "capture-volume/1", "task_id": task_id, "capacity_bytes": capacity_bytes,
+                      "root_identity": created_identity, "image_identity": _identity(image), "volume_uuid": None}
+            _write_marker(root, record)
+        except BaseException:
+            if not (root / "volume.json").exists():
+                try:
+                    _root(root)
+                    if _identity(root) != created_identity:
+                        raise OSError("Created storage was replaced")
+                    for item in root.rglob("*"):
+                        _private(item, directory=item.is_dir())
+                        if item.lstat().st_dev != created_identity[0]:
+                            raise OSError("Partial storage crosses a filesystem boundary")
+                    if _identity(root) != created_identity:
+                        raise OSError("Created storage was replaced")
+                    shutil.rmtree(root)
+                except (OSError, TaskError) as error:
+                    raise TaskError("capture_volume_unresolved", "Partial capture storage could not be removed.",
+                                    "Inspect {0} for recovery; do not delete a replaced path.".format(root)) from error
+            raise
         with _locked(root):
             with _mounted(root, record, readonly=False) as (_, observed):
                 record["volume_uuid"] = observed["volume_uuid"]

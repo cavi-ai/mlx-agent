@@ -195,7 +195,11 @@ class TaskProcessTests(unittest.TestCase):
             if value:
                 return value
             time.sleep(.05)
-        self.fail("Task condition was not reached before its deadline")
+        diagnostics = {
+            "tasks": TaskStore(self.state).list(100),
+            "supervisors": [(process.pid, process.poll()) for process in self.processes],
+        }
+        self.fail("Task condition was not reached before its deadline: {!r}".format(diagnostics))
 
     def terminal(self, identifier):
         value = task_status(identifier, self.state)

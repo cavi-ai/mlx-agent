@@ -79,7 +79,8 @@ uses and verifies that snapshot even if the original file changes or disappears.
 Speech synthesis accepts text and optional backend-supported `voice`, `speed`
 and `lang_code` values. Omitted options retain the operation's own defaults.
 Successful synthesis publishes a WAV only after the engine validates that it
-contains readable audio.
+contains readable audio. Durable speech tasks use the speech operation's
+600-second execution timeout; the task request has no timeout override.
 
 ```json
 {

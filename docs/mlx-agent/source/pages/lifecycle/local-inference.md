@@ -19,6 +19,8 @@ python3 scripts/mlx-agent convert speak --path /absolute/local/tts-model --text 
 
 Transcription accepts an audio file and optional `--language`. Speech output
 requires a new absolute `.wav` path; voice, speed, and language depend on the model.
+Speech generation has a 600-second execution timeout. For longer runs, pass
+`--timeout` to `convert speak`; it accepts 1 to 7,200 seconds.
 
 ## Music
 

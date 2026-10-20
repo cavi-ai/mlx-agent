@@ -163,6 +163,111 @@
           }
         }
       ]
+    },
+    {
+      "id": "optional-surfaces",
+      "probe": "surface-listing",
+      "access": "read_only",
+      "max_pages": 8
+    },
+    {
+      "id": "sampling-client",
+      "probe": "sampling",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {
+        "capability": "task",
+        "arguments": "capabilities --json"
+      },
+      "max_requests": 2
+    },
+    {
+      "id": "elicitation-accept",
+      "probe": "elicitation",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {
+        "capability": "task",
+        "arguments": "capabilities --json"
+      },
+      "max_requests": 2,
+      "respond": "accept"
+    },
+    {
+      "id": "elicitation-decline",
+      "probe": "elicitation",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {
+        "capability": "task",
+        "arguments": "capabilities --json"
+      },
+      "max_requests": 2,
+      "respond": "decline"
+    },
+    {
+      "id": "elicitation-cancel",
+      "probe": "elicitation",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {
+        "capability": "task",
+        "arguments": "capabilities --json"
+      },
+      "max_requests": 2,
+      "respond": "cancel"
+    },
+    {
+      "id": "resource-subscriptions",
+      "probe": "resource-subscription",
+      "access": "read_only",
+      "uri": "mlx-agent://capabilities",
+      "max_wait_seconds": 1
+    },
+    {
+      "id": "argument-completion",
+      "probe": "completion",
+      "access": "read_only",
+      "ref_type": "ref/prompt",
+      "ref_uri": "capabilities",
+      "argument_name": "capability",
+      "argument_value": "task",
+      "max_values": 10
+    },
+    {
+      "id": "cancel-capabilities",
+      "probe": "cancellation",
+      "access": "read_only",
+      "tool": "mlx_agent_capabilities",
+      "arguments": {},
+      "grace_seconds": 1,
+      "reason": "full-battery",
+      "require_honored": false
+    },
+    {
+      "id": "large-payload",
+      "probe": "payload-bounds",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {
+        "capability": "task",
+        "arguments": "capabilities --json"
+      },
+      "field": "arguments",
+      "size_bytes": 1000000,
+      "expect_handled": false
+    },
+    {
+      "id": "validation-retryability",
+      "probe": "error-honesty",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {
+        "capability": "task",
+        "arguments": "capabilities --unsupported"
+      },
+      "max_attempts": 2,
+      "expect_retryable": false
     }
   ]
 }

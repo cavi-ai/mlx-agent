@@ -45,11 +45,11 @@ jobs:
         run: PYTHONPATH=src python -m unittest discover -s tests -v
       - name: Evaluate the MCP server
         id: mcp-eval
-        uses: cavi-ai/mcp-eval@b3652adf308a295eabc15c0b97125e7fe7e2daea # v0.7.1
+        uses: cavi-ai/mcp-eval@154cbaa943bb19e1dc94b5028240f8c1359d8c2b # v0.8.0
         env:
           MCPEVAL_HOME: ${{ runner.temp }}/mlx-agent-mcpeval
         with:
-          version: 0.7.1
+          version: 0.8.0
           server: mlx-agent
           manifest: mcp-eval.manifest.json
           command: python scripts/mlx-agent-mcp

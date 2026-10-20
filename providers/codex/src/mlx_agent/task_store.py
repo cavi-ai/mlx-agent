@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
+from typing import Dict, Optional, Sequence
 
 from .task_contracts import (INPUT_MEDIA_KINDS, MAX_REQUEST_BYTES, MEDIA_RUN_SCHEMA, RUN_SCHEMA, TERMINAL, TaskError, encoded,
                              _artifact_reference, task_id, validate_record, validate_request)
@@ -212,14 +213,47 @@ class TaskStore:
     def list(self, limit=20):
         return self.list_page(limit)["tasks"]
 
-    def list_page(self, limit=20):
+    def list_page(self, limit: int = 20, kinds: Optional[Sequence[str]] = None) -> Dict:
         if type(limit) is not int or not 1 <= limit <= 100:
             raise TaskError("invalid_limit", "Task history limit must be between 1 and 100.")
+        if kinds is not None and (not isinstance(kinds, (tuple, list)) or not kinds
+                                  or any(not isinstance(kind, str) or not kind for kind in kinds)):
+            raise TaskError("invalid_kind", "Task history kinds must be a nonempty list of names.")
         with self._connection() as connection:
             if connection is None:
                 return {"tasks": [], "has_more": False}
-            ids = connection.execute("SELECT id FROM tasks ORDER BY created_at DESC, id DESC LIMIT ?", (limit + 1,)).fetchall()
-            return {"tasks": [self._load(connection, row[0]) for row in ids[:limit]], "has_more": len(ids) > limit}
+            cursor = connection.execute("SELECT id, record FROM tasks ORDER BY created_at DESC, id DESC")
+            tasks = []
+            for identifier, raw in cursor:
+                try:
+                    value = json.loads(raw)
+                except (ValueError, TypeError) as error:
+                    raise TaskError("invalid_task_record", "The stored task record is not readable JSON.") from error
+                if kinds is not None and isinstance(value, dict) and value.get("kind") not in kinds:
+                    continue
+                record = validate_record(value)
+                if record["id"] != identifier:
+                    raise TaskError("invalid_task_record", "Task row identity does not match its record.")
+                tasks.append(record)
+                if len(tasks) > limit:
+                    break
+            return {"tasks": tasks[:limit], "has_more": len(tasks) > limit}
+
+    def create_capture(self, task_id: str, request_ref: Dict, identity: Dict, preview_hash: str) -> Dict:
+        """Index an accepted in-volume request without copying its body outside the volume."""
+        from .coding_capture_contracts import KIND, RUN_SCHEMA as CAPTURE_RUN_SCHEMA
+        record = {"schema": CAPTURE_RUN_SCHEMA, "id": task_id, "kind": KIND, "state": "starting",
+                  "created_at": _now(), "started_at": None, "completed_at": None, "cancel_requested": False,
+                  "request": request_ref, "preview_hash": preview_hash, "context": identity, "processes": {},
+                  "client_outcome": "pending", "attribution": "pending", "result": None, "error": None,
+                  "execution_unresolved": False, "artifacts_removed_at": None}
+        record = json.loads(encoded(validate_record(record)))
+        with self._connection(write=True) as connection:
+            try:
+                connection.execute("INSERT INTO tasks VALUES (?, ?, ?)", (task_id, record["created_at"], encoded(record).decode()))
+            except sqlite3.IntegrityError as error:
+                raise TaskError("task_exists", "A task with that ID already exists.") from error
+        return record
 
     def artifact_path(self, identifier, name):
         task_id(identifier)
@@ -382,15 +416,20 @@ class TaskStore:
         return owned
 
     def transition(self, identifier, expected, changes):
-        mutable = {"state", "started_at", "completed_at", "result", "error", "supervisor", "execution", "execution_unresolved"}
-        if not isinstance(changes, dict) or set(changes) - mutable:
-            raise TaskError("invalid_transition", "Task identity and accepted inputs are immutable.")
         with self._connection(write=True) as connection:
             record = self._load(connection, identifier)
+            capture = record["kind"] == "coding_capture"
+            mutable = {"state", "started_at", "completed_at", "result", "error", "execution_unresolved"}
+            mutable.update(("processes", "client_outcome", "attribution") if capture else ("supervisor", "execution"))
+            if not isinstance(changes, dict) or set(changes) - mutable:
+                raise TaskError("invalid_transition", "Task identity and accepted inputs are immutable.")
             if record["state"] in TERMINAL or record["state"] not in expected:
                 raise TaskError("task_state_changed", "The task state has already changed.", "Read its current status.")
             if "supervisor" in changes and record["supervisor"] is not None:
                 raise TaskError("task_state_changed", "The task already has a supervisor.")
+            if capture and "processes" in changes and isinstance(changes["processes"], dict):
+                if any(changes["processes"].get(role) != identity for role, identity in record["processes"].items()):
+                    raise TaskError("task_state_changed", "Accepted capture process identities cannot be replaced.")
             next_state = changes.get("state", record["state"])
             if next_state == "succeeded" and record["cancel_requested"]:
                 raise TaskError("task_cancel_requested", "Cancellation was requested before result publication.")
@@ -414,6 +453,8 @@ class TaskStore:
 
     def read_request(self, identifier):
         record = self.get(identifier)
+        if record["kind"] == "coding_capture":
+            raise TaskError("capture_storage_required", "Read capture requests through their bounded owned volume.")
         try:
             path = self.artifact_path(identifier, "request.json")
             if path.stat().st_size > MAX_REQUEST_BYTES:
@@ -428,6 +469,8 @@ class TaskStore:
     def write_result(self, identifier, value):
         with self._connection(write=True) as connection:
             record = self._load(connection, identifier)
+            if record["kind"] == "coding_capture":
+                raise TaskError("capture_storage_required", "Publish capture results inside their bounded owned volume.")
             if record["state"] in TERMINAL:
                 raise TaskError("task_state_changed", "A terminal task cannot acquire new result evidence.")
             return self._write_artifact(identifier, "result.json", value)

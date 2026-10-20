@@ -590,7 +590,7 @@
     },
     {
       "path": "src/mlx_agent/mcp_server.py",
-      "sha256": "680ab6e589cf90c2045de005a8cc8d5540f09e98a2ca623b140b17fe817addfc"
+      "sha256": "0c5ecf17c72b99dbbb0841b686c0b12738efdb9b132e1422ad03802fb1a8ac38"
     },
     {
       "path": "src/mlx_agent/modality.py",

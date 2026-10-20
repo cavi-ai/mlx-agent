@@ -2,7 +2,7 @@ pydantic==2.14.0
 typer==0.27.3
 click==8.5.0
 numpy==2.5.3
-pillow==12.3.0
+pillow==13.0.0
 psutil==7.2.2
 imageio==2.38.1
 imageio-ffmpeg==0.6.0

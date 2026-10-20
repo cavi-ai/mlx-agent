@@ -58,18 +58,30 @@ MCPEVAL_HOME="$PWD/.run/mcp-eval" mcpeval probe \
 ```
 
 The manifest checks protocol negotiation, catalog budgets, input validation,
-structured results, repeated calls, and recovery after invalid input. It calls
+structured results, parallel calls, pagination, bounded latency, repeated
+calls, read-only workflows, and recovery after invalid input. It calls
 only task capability discovery and rejected inputs; it does not run models or
 change task state. A failed case or incomplete evaluation exits nonzero. CI
 pins the evaluator and runs this gate on Linux and macOS with Python 3.9 and
 3.12, retaining JSON and Markdown reports even when a probe fails.
 
-The shared execution tool includes actions that modify files and start jobs,
-so it is annotated as mutating. MCP Eval's standard read-only battery excludes
-it. The overall readiness score therefore does not measure successful model
-execution; the manifest verdict is the regression gate. The unit suite also
+`mlx_agent_capabilities` takes an empty argument object and returns task
+capabilities without starting inference, accessing task state, or contacting
+registries. Its read-only annotation allows discovery workflows and the
+standard read-only battery. `mlx_agent_execute` includes actions that modify
+files and start jobs, so it remains annotated as mutating and excluded from
+read-only workflows. The readiness score measures discovery rather than model
+execution; the manifest verdict is the regression gate. Invalid arguments
+return JSON-RPC error `-32602` with `data.retryable: false`; retrying the same
+input cannot correct it. The unit suite also
 checks catalog annotations and that structured results preserve the text
 response used by older clients.
+
+Each newline-terminated stdio request is limited to 64 KiB, including its
+newline. Oversized frames are discarded through the next newline before a
+later request is read. Invalid JSON, non-finite numbers, and parser-limit
+errors return a parse error without ending the session. Tool arguments retain
+their separate 4096-byte UTF-8 limit.
 
 ## Check documentation artifacts
 

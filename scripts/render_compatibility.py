@@ -22,6 +22,8 @@ PACKAGE_TYPES = {
     "codex": "Native plugin",
     "agy": "Native plugin",
     "opencode": "Native plugin",
+    "openclaw": "Native skills",
+    "hermes": "Native skills",
     "agentskills": "Portable skills",
 }
 

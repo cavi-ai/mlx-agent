@@ -2219,14 +2219,20 @@ def _add_wire_arguments(parser):
     restore.add_argument("--json", action="store_true")
 
 
+def _plugin_manifest():
+    # The plugin tree exists only in a checkout; an installed package carries the runtime alone.
+    return Path(__file__).resolve().parents[2] / "plugin.json"
+
+
 def _installer_registry():
-    root = Path(__file__).resolve().parents[2]
     home = os.environ.get("MLX_AGENT_HOME")
     config_root = os.environ.get("MLX_AGENT_CONFIG_ROOT") or os.environ.get("XDG_STATE_HOME")
     xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
     return ProviderRegistry(
-        root / "plugin.json", home=home, config_root=config_root,
+        _plugin_manifest(), home=home, config_root=config_root,
         xdg_config_home=xdg_config_home,
+        openclaw_state_dir=os.environ.get("OPENCLAW_STATE_DIR"),
+        hermes_home=os.environ.get("HERMES_HOME"),
     )
 
 
@@ -2402,6 +2408,12 @@ def _run_installer(arguments):
     operation = arguments.command
     if operation == "doctor" and "models" in (getattr(arguments, "providers", None) or []):
         return _run_model_doctor(arguments)
+    if not _plugin_manifest().is_file():
+        return _installer_result(operation, {}, arguments.json, "error", (
+            "plugin_files_unavailable",
+            "Provider installation copies the mlx-agent plugin files, which the Python package does not include.",
+            "Run this command from a clone of https://github.com/cavi-ai/mlx-agent, or install through the host's plugin marketplace.",
+        ))
     try:
         installer = Installer(_installer_registry(), project_root=arguments.project)
         detections = [item.to_dict() for item in installer.detected()]

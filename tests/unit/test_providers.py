@@ -22,7 +22,7 @@ class ProviderRegistryTests(unittest.TestCase):
             definitions = registry.definitions()
 
             self.assertEqual(
-                {"claude", "codex", "agy", "opencode", "agentskills"},
+                {"claude", "codex", "agy", "opencode", "openclaw", "hermes", "agentskills"},
                 set(definitions),
             )
             for provider_id, definition in definitions.items():
@@ -33,6 +33,10 @@ class ProviderRegistryTests(unittest.TestCase):
                             expected_root = root / "home/.claude/plugins/mlx-agent"
                         elif provider_id == "agentskills":
                             expected_root = root / "home/.agents"
+                    elif provider_id == "openclaw":
+                        expected_root = root / "home/.openclaw"
+                    elif provider_id == "hermes":
+                        expected_root = root / "home/.hermes"
                     elif provider_id in {"agy", "opencode"}:
                         expected_root = root / "home"
                     else:
@@ -141,10 +145,56 @@ class ProviderRegistryTests(unittest.TestCase):
             definitions = registry.definitions()
 
             self.assertEqual(
-                {"claude", "codex", "agy", "opencode", "agentskills"},
+                {"claude", "codex", "agy", "opencode", "openclaw", "hermes", "agentskills"},
                 set(definitions),
             )
             self.assertEqual(elsewhere.resolve(), definitions["opencode"].user_root)
+
+    def test_openclaw_and_hermes_skill_roots_follow_injected_state_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            registry = ProviderRegistry(
+                ROOT / "plugin.json", home=root / "home", config_root=root / "config",
+                openclaw_state_dir=root / "volume" / ".openclaw",
+                hermes_home=root / "volume" / ".hermes",
+            )
+            definitions = registry.definitions()
+
+            self.assertEqual((root / "volume" / ".openclaw").resolve(), definitions["openclaw"].user_root)
+            self.assertEqual((root / "volume" / ".hermes").resolve(), definitions["hermes"].user_root)
+            self.assertEqual(Path("."), definitions["openclaw"].project_root)
+            self.assertEqual(Path(".hermes"), definitions["hermes"].project_root)
+            for provider_id in ("openclaw", "hermes"):
+                destinations = {str(item.destination) for item in definitions[provider_id].artifacts}
+                for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
+                    with self.subTest(provider=provider_id, capability=capability):
+                        self.assertIn("skills/mlx-{0}/SKILL.md".format(capability), destinations)
+                        self.assertIn("skills/mlx-{0}/scripts/mlx-agent".format(capability), destinations)
+                        self.assertIn("skills/mlx-{0}/src/mlx_agent/cli.py".format(capability), destinations)
+
+    def test_openclaw_and_hermes_reject_roots_outside_their_native_skill_locations(self):
+        cases = (
+            ("openclaw", "user_root", "{home}/.openclaw-other", "OpenClaw state directory"),
+            ("openclaw", "project_root", "{project}/.openclaw", "workspace root"),
+            ("hermes", "user_root", "{home}/.config/hermes", "Hermes home directory"),
+            ("hermes", "project_root", "{project}/.agents", "target .hermes"),
+        )
+        for provider_id, key, template, message in cases:
+            with self.subTest(provider=provider_id, key=key), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "SKILL.md").write_text("fixture\n")
+                (root / "mlx-agent").write_text("fixture\n")
+                manifest = json.loads((ROOT / "plugin.json").read_text())
+                manifest["providers"] = {provider_id: manifest["providers"][provider_id]}
+                manifest["providers"][provider_id]["artifacts"] = [
+                    {"source": "SKILL.md", "destination": "skills/mlx-scout/SKILL.md"},
+                    {"source": "mlx-agent", "destination": "skills/mlx-scout/scripts/mlx-agent"},
+                ]
+                manifest["providers"][provider_id][key] = template
+                path = root / "plugin.json"
+                path.write_text(json.dumps(manifest))
+                with self.assertRaisesRegex(ValueError, message):
+                    ProviderRegistry(path, home=root / "home", config_root=root / "config").definitions()
 
     def test_user_root_still_rejects_escaping_an_approved_root(self):
         with tempfile.TemporaryDirectory() as directory:

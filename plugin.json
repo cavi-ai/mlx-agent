@@ -1121,6 +1121,314 @@
       ],
       "config_paths": []
     },
+    "openclaw": {
+      "native": true,
+      "capabilities": [
+        "scout",
+        "adopt",
+        "wire",
+        "bench",
+        "doctor",
+        "watch",
+        "fleet"
+      ],
+      "commands": [
+        "mlx-scout",
+        "mlx-adopt",
+        "mlx-wire",
+        "mlx-bench",
+        "mlx-doctor",
+        "mlx-watch",
+        "mlx-fleet"
+      ],
+      "invocation": {
+        "kind": "command",
+        "prefix": "/"
+      },
+      "minimum_version": "2026.10.3",
+      "last_tested_version": "2026.10.5",
+      "version_probe": {
+        "args": [
+          "--version"
+        ],
+        "timeout_seconds": 5
+      },
+      "install_mode": "direct",
+      "detect_commands": [
+        "openclaw"
+      ],
+      "user_root": "{openclaw_state_dir}",
+      "project_root": "{project}",
+      "artifacts": [
+        {
+          "source": "providers/agentskills/mlx-scout/SKILL.md",
+          "destination": "skills/mlx-scout/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-scout/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-scout/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-scout/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-adopt/SKILL.md",
+          "destination": "skills/mlx-adopt/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-adopt/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-adopt/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-adopt/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-wire/SKILL.md",
+          "destination": "skills/mlx-wire/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-wire/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-wire/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-wire/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-bench/SKILL.md",
+          "destination": "skills/mlx-bench/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-bench/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-bench/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-bench/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-doctor/SKILL.md",
+          "destination": "skills/mlx-doctor/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-doctor/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-doctor/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-doctor/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-watch/SKILL.md",
+          "destination": "skills/mlx-watch/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-watch/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-watch/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-watch/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-fleet/SKILL.md",
+          "destination": "skills/mlx-fleet/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-fleet/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-fleet/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-fleet/scripts/mlx-agent-mcp"
+        }
+      ],
+      "config_paths": []
+    },
+    "hermes": {
+      "native": true,
+      "capabilities": [
+        "scout",
+        "adopt",
+        "wire",
+        "bench",
+        "doctor",
+        "watch",
+        "fleet"
+      ],
+      "commands": [
+        "mlx-scout",
+        "mlx-adopt",
+        "mlx-wire",
+        "mlx-bench",
+        "mlx-doctor",
+        "mlx-watch",
+        "mlx-fleet"
+      ],
+      "invocation": {
+        "kind": "command",
+        "prefix": "/"
+      },
+      "minimum_version": "0.19.1",
+      "last_tested_version": "0.19.1",
+      "version_probe": {
+        "args": [
+          "--version"
+        ],
+        "timeout_seconds": 5
+      },
+      "install_mode": "direct",
+      "detect_commands": [
+        "hermes"
+      ],
+      "user_root": "{hermes_home}",
+      "project_root": "{project}/.hermes",
+      "artifacts": [
+        {
+          "source": "providers/agentskills/mlx-scout/SKILL.md",
+          "destination": "skills/mlx-scout/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-scout/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-scout/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-scout/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-adopt/SKILL.md",
+          "destination": "skills/mlx-adopt/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-adopt/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-adopt/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-adopt/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-wire/SKILL.md",
+          "destination": "skills/mlx-wire/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-wire/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-wire/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-wire/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-bench/SKILL.md",
+          "destination": "skills/mlx-bench/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-bench/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-bench/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-bench/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-doctor/SKILL.md",
+          "destination": "skills/mlx-doctor/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-doctor/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-doctor/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-doctor/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-watch/SKILL.md",
+          "destination": "skills/mlx-watch/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-watch/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-watch/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-watch/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-fleet/SKILL.md",
+          "destination": "skills/mlx-fleet/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-fleet/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-fleet/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-fleet/scripts/mlx-agent-mcp"
+        }
+      ],
+      "config_paths": []
+    },
     "agentskills": {
       "native": false,
       "capabilities": [

@@ -30,13 +30,15 @@ CAPABILITY_ACTIONS = {
     "watch": ("snapshot", "diff"),
     "fleet": ("render", "apply"),
 }
-NATIVE_PROVIDERS = ("claude", "codex", "agy", "opencode")
+NATIVE_PROVIDERS = ("claude", "codex", "agy", "opencode", "openclaw", "hermes")
 PROVIDERS = NATIVE_PROVIDERS + ("agentskills",)
 PROVIDER_INVOCATIONS = {
     "claude": {"kind": "command", "prefix": "/"},
     "codex": {"kind": "skill", "prefix": "$"},
     "agy": {"kind": "skill", "prefix": ""},
     "opencode": {"kind": "command", "prefix": "/"},
+    "openclaw": {"kind": "command", "prefix": "/"},
+    "hermes": {"kind": "command", "prefix": "/"},
     "agentskills": {"kind": "skill", "prefix": ""},
 }
 PROVIDER_COMMANDS = {
@@ -44,6 +46,8 @@ PROVIDER_COMMANDS = {
     "codex": ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire", "mlx-agent:mlx-bench", "mlx-agent:mlx-doctor", "mlx-agent:mlx-watch", "mlx-agent:mlx-fleet"],
     "agy": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"],
     "opencode": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"],
+    "openclaw": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"],
+    "hermes": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"],
     "agentskills": [],
 }
 DATE_TIME_PATTERN = re.compile(
@@ -500,7 +504,7 @@ def validate_manifest(path: Path) -> List[str]:
     else:
         if set(providers) != set(PROVIDERS):
             errors.append(
-                "providers must equal ['claude', 'codex', 'agy', 'opencode', 'agentskills']"
+                "providers must equal {0}".format(list(PROVIDERS))
             )
         for provider in PROVIDERS:
             if provider in providers:

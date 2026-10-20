@@ -12,7 +12,7 @@
       "id": "bounded-catalog",
       "probe": "discovery-cost",
       "access": "read_only",
-      "max_tools": 1,
+      "max_tools": 2,
       "max_schema_bytes": 4096
     },
     {
@@ -21,6 +21,28 @@
       "access": "read_only",
       "max_total_tokens": 1024,
       "max_tool_tokens": 1024
+    },
+    {
+      "id": "parallel-capabilities",
+      "probe": "contention",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {"capability": "task", "arguments": "capabilities --json"}
+    },
+    {
+      "id": "capabilities-latency",
+      "probe": "latency-budget",
+      "access": "read_only",
+      "tool": "mlx_agent_execute",
+      "arguments": {"capability": "task", "arguments": "capabilities --json"},
+      "attempts": 3,
+      "max_latency_ms": 2000
+    },
+    {
+      "id": "catalog-pagination",
+      "probe": "pagination",
+      "access": "read_only",
+      "max_pages": 8
     },
     {
       "id": "capabilities-input-schema",
@@ -113,6 +135,34 @@
       "recovery_arguments": {"capability": "task", "arguments": "capabilities --json"},
       "validation_tool": "mlx_agent_execute",
       "validation_arguments": {"capability": "task", "arguments": "capabilities --json"}
+    },
+    {
+      "id": "capabilities-workflow",
+      "probe": "workflow",
+      "access": "read_only",
+      "repetitions": 2,
+      "steps": [
+        {
+          "tool": "mlx_agent_capabilities",
+          "arguments": {},
+          "expect": {
+            "outcome": "ok",
+            "equals_paths": {
+              "/structuredContent/status": "ok"
+            }
+          }
+        },
+        {
+          "tool": "mlx_agent_capabilities",
+          "arguments": {},
+          "expect": {
+            "outcome": "ok",
+            "equals_paths": {
+              "/structuredContent/status": "ok"
+            }
+          }
+        }
+      ]
     }
   ]
 }

@@ -91,12 +91,14 @@
     "providers": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["claude", "codex", "agy", "opencode", "agentskills"],
+      "required": ["claude", "codex", "agy", "opencode", "openclaw", "hermes", "agentskills"],
       "properties": {
         "claude": {"$ref": "#/$defs/provider"},
         "codex": {"$ref": "#/$defs/provider"},
         "agy": {"$ref": "#/$defs/provider"},
         "opencode": {"$ref": "#/$defs/provider"},
+        "openclaw": {"$ref": "#/$defs/provider"},
+        "hermes": {"$ref": "#/$defs/provider"},
         "agentskills": {"$ref": "#/$defs/provider"}
       }
     },
@@ -126,12 +128,14 @@
         "provider_contracts": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["claude", "codex", "agy", "opencode", "agentskills"],
+          "required": ["claude", "codex", "agy", "opencode", "openclaw", "hermes", "agentskills"],
           "properties": {
             "claude": {"$ref": "#/$defs/providerEvidence"},
             "codex": {"$ref": "#/$defs/providerEvidence"},
             "agy": {"$ref": "#/$defs/providerEvidence"},
             "opencode": {"$ref": "#/$defs/providerEvidence"},
+            "openclaw": {"$ref": "#/$defs/providerEvidence"},
+            "hermes": {"$ref": "#/$defs/providerEvidence"},
             "agentskills": {"$ref": "#/$defs/providerEvidence"}
           }
         }

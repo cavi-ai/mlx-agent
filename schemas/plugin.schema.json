@@ -282,6 +282,8 @@
         "codex",
         "agy",
         "opencode",
+        "openclaw",
+        "hermes",
         "agentskills"
       ],
       "properties": {
@@ -295,6 +297,12 @@
           "$ref": "#/$defs/provider"
         },
         "opencode": {
+          "$ref": "#/$defs/provider"
+        },
+        "openclaw": {
+          "$ref": "#/$defs/provider"
+        },
+        "hermes": {
           "$ref": "#/$defs/provider"
         },
         "agentskills": {

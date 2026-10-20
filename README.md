@@ -70,6 +70,37 @@ python3 scripts/mlx-agent install agentskills --scope user --confirm --preview-h
 The installer copies a runtime into each installed portable skill. Move unowned
 older `mlx-*` skill folders aside before the first managed install.
 
+### OpenClaw and Hermes Agent
+
+From the same checkout, use the preview/confirm sequence with `openclaw` or
+`hermes`:
+
+```bash
+python3 scripts/mlx-agent install openclaw --scope user --dry-run --json
+python3 scripts/mlx-agent install openclaw --scope user --confirm --preview-hash <preview-hash> --json
+```
+
+Skills go to `$OPENCLAW_STATE_DIR/skills` (default `~/.openclaw/skills`) or
+`$HERMES_HOME/skills` (default `~/.hermes/skills`). Start a new session and use
+`/mlx-scout`.
+
+### Other MCP hosts
+
+The `mlx-agent` package on PyPI carries the CLI and the MCP server. Add the
+server to any MCP host's configuration:
+
+```json
+{
+  "mcpServers": {
+    "mlx-agent": {"command": "uvx", "args": ["--from", "mlx-agent", "mlx-agent-mcp"]}
+  }
+}
+```
+
+Install the CLI with `uv tool install mlx-agent` or `pipx install mlx-agent`.
+Provider installation copies the plugin files, so `mlx-agent install` runs from
+a checkout.
+
 ## First local model
 
 From a checkout, inspect the host and find candidates:
@@ -134,6 +165,8 @@ First-class adapters are included for each provider below. The universal install
 | [Codex CLI](docs/install/codex.md) | Native plugin | `$mlx-agent:mlx-scout`<br>`$mlx-agent:mlx-adopt`<br>`$mlx-agent:mlx-wire`<br>`$mlx-agent:mlx-bench`<br>`$mlx-agent:mlx-doctor`<br>`$mlx-agent:mlx-watch`<br>`$mlx-agent:mlx-fleet` |
 | [Agy](docs/install/agy.md) | Native plugin | `mlx-scout skill`<br>`mlx-adopt skill`<br>`mlx-wire skill`<br>`mlx-bench skill`<br>`mlx-doctor skill`<br>`mlx-watch skill`<br>`mlx-fleet skill` |
 | [OpenCode](docs/install/opencode.md) | Native plugin | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire`<br>`/mlx-bench`<br>`/mlx-doctor`<br>`/mlx-watch`<br>`/mlx-fleet` |
+| [OpenClaw](docs/install/openclaw.md) | Native skills | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire`<br>`/mlx-bench`<br>`/mlx-doctor`<br>`/mlx-watch`<br>`/mlx-fleet` |
+| [Hermes Agent](docs/install/hermes.md) | Native skills | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire`<br>`/mlx-bench`<br>`/mlx-doctor`<br>`/mlx-watch`<br>`/mlx-fleet` |
 | [AgentSkills-compatible hosts](docs/install/index.md) | Portable skills | `mlx-scout skill`<br>`mlx-adopt skill`<br>`mlx-wire skill`<br>`mlx-bench skill`<br>`mlx-doctor skill`<br>`mlx-watch skill`<br>`mlx-fleet skill` |
 <!-- compatibility:end -->
 

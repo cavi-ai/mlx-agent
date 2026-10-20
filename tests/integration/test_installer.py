@@ -39,6 +39,8 @@ class InstallerRoundTripTests(unittest.TestCase):
             "MLX_AGENT_HOME": str(self.home),
             "XDG_CONFIG_HOME": str(self.root / "xdg-config"),
             "XDG_STATE_HOME": str(self.config),
+            "OPENCLAW_STATE_DIR": str(self.home / ".openclaw"),
+            "HERMES_HOME": str(self.home / ".hermes"),
         })
         environment.start()
         self.addCleanup(environment.stop)
@@ -60,6 +62,51 @@ class InstallerRoundTripTests(unittest.TestCase):
 
         self.assertEqual((xdg_config / "opencode").resolve(), definition.user_root)
         self.assertEqual(xdg_state.resolve(), registry.config_root)
+
+    def test_cli_registry_routes_openclaw_and_hermes_to_their_state_roots(self):
+        openclaw_state = self.root / "volume" / ".openclaw"
+        hermes_home = self.root / "volume" / ".hermes" / "profiles" / "research"
+        with patch.dict(os.environ, {
+            "OPENCLAW_STATE_DIR": str(openclaw_state),
+            "HERMES_HOME": str(hermes_home),
+        }, clear=False):
+            definitions = _installer_registry().definitions()
+
+        self.assertEqual(openclaw_state.resolve(), definitions["openclaw"].user_root)
+        self.assertEqual(hermes_home.resolve(), definitions["hermes"].user_root)
+
+    def test_openclaw_and_hermes_install_runnable_skills_into_native_roots_in_both_scopes(self):
+        roots = {
+            ("openclaw", "user"): self.home / ".openclaw" / "skills",
+            ("openclaw", "project"): self.project / "skills",
+            ("hermes", "user"): self.home / ".hermes" / "skills",
+            ("hermes", "project"): self.project / ".hermes" / "skills",
+        }
+        fixture = ROOT / "tests" / "fixtures" / "scout_responses.json"
+        for (provider, scope), skills in roots.items():
+            with self.subTest(provider=provider, scope=scope):
+                plan = self.installer.plan("install", [provider], scope, self.project)
+                receipt = self.installer.execute(plan, confirmed=plan.preview["preview_hash"])
+                self.assertEqual("applied", receipt.status)
+                for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
+                    skill = skills / "mlx-{0}".format(capability)
+                    self.assertEqual(
+                        (ROOT / "providers" / "agentskills" / skill.name / "SKILL.md").read_text(),
+                        (skill / "SKILL.md").read_text(),
+                    )
+                result = subprocess.run(
+                    ["python3", str(skills / "mlx-scout" / "scripts" / "mlx-agent"), "discover", "--limit", "1", "--json"],
+                    cwd=self.root, env=dict(os.environ, MLX_AGENT_FIXTURE=str(fixture)),
+                    text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual("discover", json.loads(result.stdout)["operation"])
+                removal = self.installer.plan("uninstall", [provider], scope, self.project)
+                self.assertEqual(
+                    "rolled_back",
+                    self.installer.execute(removal, confirmed=removal.preview["preview_hash"]).status,
+                )
+                self.assertFalse((skills / "mlx-scout").exists())
 
     def test_multi_provider_install_is_confirmed_and_doctor_reports_clean_install(self):
         plan = self.installer.plan("install", ["claude", "codex"], "user", self.project)

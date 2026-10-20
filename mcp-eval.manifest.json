@@ -12,7 +12,7 @@
       "id": "bounded-catalog",
       "probe": "discovery-cost",
       "access": "read_only",
-      "max_tools": 1,
+      "max_tools": 2,
       "max_schema_bytes": 4096
     },
     {
@@ -135,6 +135,34 @@
       "recovery_arguments": {"capability": "task", "arguments": "capabilities --json"},
       "validation_tool": "mlx_agent_execute",
       "validation_arguments": {"capability": "task", "arguments": "capabilities --json"}
+    },
+    {
+      "id": "capabilities-workflow",
+      "probe": "workflow",
+      "access": "read_only",
+      "repetitions": 2,
+      "steps": [
+        {
+          "tool": "mlx_agent_capabilities",
+          "arguments": {},
+          "expect": {
+            "outcome": "ok",
+            "equals_paths": {
+              "/structuredContent/status": "ok"
+            }
+          }
+        },
+        {
+          "tool": "mlx_agent_capabilities",
+          "arguments": {},
+          "expect": {
+            "outcome": "ok",
+            "equals_paths": {
+              "/structuredContent/status": "ok"
+            }
+          }
+        }
+      ]
     }
   ]
 }

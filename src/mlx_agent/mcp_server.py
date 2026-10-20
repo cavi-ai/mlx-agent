@@ -1,4 +1,4 @@
-"""Small stdio MCP server exposing one validated MLX-agent execution tool."""
+"""Bounded stdio MCP tools for discovery and validated MLX-agent execution."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ MAX_ARGUMENT_BYTES = 4096
 MAX_OUTPUT_CHARS = 16384
 MAX_REQUEST_BYTES = 65536
 TOOL_NAME = "mlx_agent_execute"
+CAPABILITIES_TOOL_NAME = "mlx_agent_capabilities"
 SUPPORTED_PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26", "2025-06-18")
 
 
@@ -140,6 +141,21 @@ def _tool_result(arguments, core=None):
     }
 
 
+def _capabilities_definition():
+    return {
+        "name": CAPABILITIES_TOOL_NAME,
+        "description": "Describe supported local inference tasks without running models, accessing task state, or contacting registries. Takes no arguments.",
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        "outputSchema": _tool_definition()["outputSchema"],
+    }
+
+
 def handle_request(request, core=None):
     """Handle one JSON-RPC request. Notifications intentionally return None."""
     if not isinstance(request, dict) or request.get("jsonrpc") != "2.0":
@@ -173,17 +189,25 @@ def handle_request(request, core=None):
         elif method == "ping":
             result = {}
         elif method == "tools/list":
-            result = {"tools": [_tool_definition()]}
+            result = {"tools": [_tool_definition(), _capabilities_definition()]}
         elif method == "tools/call":
             params = request.get("params")
-            if not isinstance(params, dict) or params.get("name") != TOOL_NAME:
+            if not isinstance(params, dict):
                 raise CommandArgumentError("unknown tool")
-            result = _tool_result(params.get("arguments"), core=core)
+            if params.get("name") == CAPABILITIES_TOOL_NAME:
+                if params.get("arguments", {}) != {}:
+                    raise CommandArgumentError("capabilities takes no arguments")
+                result = _tool_result({"capability": "task", "arguments": "capabilities --json"}, core=core)
+            elif params.get("name") == TOOL_NAME:
+                result = _tool_result(params.get("arguments"), core=core)
+            else:
+                raise CommandArgumentError("unknown tool")
         else:
             return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "Method not found"}}
         return {"jsonrpc": "2.0", "id": request_id, "result": result}
     except CommandArgumentError:
-        return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "Invalid params"}}
+        return {"jsonrpc": "2.0", "id": request_id, "error": {
+            "code": -32602, "message": "Invalid params", "data": {"retryable": False}}}
 
 
 def _finite_number(value):

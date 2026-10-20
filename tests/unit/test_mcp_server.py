@@ -133,13 +133,36 @@ class MCPServerTests(unittest.TestCase):
             self.assertEqual(payload["exit_code"], 2)
             self.assertEqual(json.loads(payload["stdout"])["error"]["code"], "invalid_request")
 
-    def test_tools_list_exposes_one_constrained_execution_tool(self):
+    def test_tools_list_exposes_execution_and_read_only_capabilities(self):
         response = handle_request({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
         tools = response["result"]["tools"]
-        self.assertEqual([TOOL_NAME], [item["name"] for item in tools])
+        self.assertEqual([TOOL_NAME, "mlx_agent_capabilities"], [item["name"] for item in tools])
         schema = tools[0]["inputSchema"]
         self.assertFalse(schema["additionalProperties"])
         self.assertEqual(["capability", "arguments"], schema["required"])
+
+    def test_capabilities_tool_only_runs_fixed_read_only_discovery(self):
+        tool = handle_request({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"][-1]
+        self.assertTrue(tool["annotations"]["readOnlyHint"])
+        self.assertFalse(tool["annotations"]["destructiveHint"])
+        self.assertFalse(tool["annotations"]["openWorldHint"])
+        calls = []
+        for arguments in ({"arguments": "cancel"}, {"capability": "task"}, [], None):
+            response = handle_request({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+                "name": "mlx_agent_capabilities", "arguments": arguments}}, core=lambda argv: calls.append(argv))
+            self.assertEqual(-32602, response["error"]["code"])
+            self.assertFalse(response["error"]["data"]["retryable"])
+        self.assertEqual([], calls)
+        response = handle_request({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
+            "name": "mlx_agent_capabilities", "arguments": {}}})
+        result = response["result"]
+        Draft202012Validator(tool["outputSchema"]).validate(result["structuredContent"])
+        self.assertEqual("task.capabilities", json.loads(result["structuredContent"]["stdout"])["operation"])
+
+    def test_invalid_arguments_declare_permanent_failure_in_error_data(self):
+        response = self.task_call("capabilities --unsupported")
+        self.assertEqual(-32602, response["error"]["code"])
+        self.assertEqual({"retryable": False}, response["error"]["data"])
 
     def test_valid_tool_call_reaches_core_as_an_argv_array_and_propagates_nonzero(self):
         calls = []

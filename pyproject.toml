@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mlx-agent"
+dynamic = ["version"]
+description = "Discover, verify and wire local MLX models on Apple Silicon"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [{ name = "Sasan Sotoodehfar" }]
+maintainers = [{ name = "CAVI AI" }]
+keywords = ["mlx", "apple-silicon", "mcp", "local-models", "huggingface"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://cavi-ai.xyz"
+Repository = "https://github.com/cavi-ai/mlx-agent"
+Changelog = "https://github.com/cavi-ai/mlx-agent/blob/main/CHANGELOG.md"
+
+[project.scripts]
+mlx-agent = "mlx_agent.cli:main"
+mlx-agent-mcp = "mlx_agent.mcp_server:main"
+
+[tool.hatch.version]
+path = "src/mlx_agent/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+only-include = ["src/mlx_agent", "README.md", "LICENSE", "pyproject.toml"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mlx_agent"]

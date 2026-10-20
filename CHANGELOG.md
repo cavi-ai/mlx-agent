@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Add `openclaw` and `hermes` providers: the installer places the seven skills, each with its launcher and runtime, in `$OPENCLAW_STATE_DIR/skills` or `<workspace>/skills`, and `$HERMES_HOME/skills` or `<project>/.hermes/skills`.
+- Publish the `mlx-agent` package to PyPI with the `mlx-agent` and `mlx-agent-mcp` commands; provider installation from the package reports `plugin_files_unavailable` and points to a checkout.
 
 ## 0.8.0 - 2026-10-19
 

@@ -8,6 +8,7 @@
 - Enforce OpenCode extension ownership and clean up partial capture volumes.
 - Add policy checks for coding-capture commands.
 - Refresh the certifi pins and hashes in the backend dependency locks.
+- Update Pillow to 13.0.0 in backend locks and the experiment engine.
 - Run the full 27-case MCP battery with MCP Eval 0.8.0 in CI.
 
 ## 0.8.0 - 2026-10-19

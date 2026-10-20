@@ -469,6 +469,10 @@
       "sha256": "62ae032482ac49d1c468a298cc077f8d186056f7862616d25b5a120b5a67cec5"
     },
     {
+      "path": "src/mlx_agent/coding_capture_client.py",
+      "sha256": "5090363e7b1e8be65e168ab99197d88138dcb1f834ce7a94e3aadb6caed2acf7"
+    },
+    {
       "path": "src/mlx_agent/coding_capture_contracts.py",
       "sha256": "d50ec0eb19983ce0935dae9e773d204d7bb90425ea386d458e878de468418f10"
     },

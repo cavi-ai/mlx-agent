@@ -469,6 +469,10 @@
       "sha256": "62ae032482ac49d1c468a298cc077f8d186056f7862616d25b5a120b5a67cec5"
     },
     {
+      "path": "src/mlx_agent/coding_capture_contracts.py",
+      "sha256": "d50ec0eb19983ce0935dae9e773d204d7bb90425ea386d458e878de468418f10"
+    },
+    {
       "path": "src/mlx_agent/command_args.py",
       "sha256": "643c366e7c48650672964268fef6a09500beafc65a725231eb810c3bab2a3f42"
     },
@@ -826,7 +830,7 @@
     },
     {
       "path": "src/mlx_agent/task_contracts.py",
-      "sha256": "da0c758911832650a076dc97501f9fdc907aebf2e5a868cf37960ed63fbc56e6"
+      "sha256": "b5ee492697b2bf8c1f5c615ccc9fe6b6bfc46add9d8a872dc993187e480b4418"
     },
     {
       "path": "src/mlx_agent/task_identity.py",
@@ -846,7 +850,7 @@
     },
     {
       "path": "src/mlx_agent/task_store.py",
-      "sha256": "754575a6ed8bf2f552a1f781262e135d1aee4307b03e98f17046b31178bd6fac"
+      "sha256": "ca2d6ffaf75128936dc569a9818ec294efa8908a7f1319e07ba2d3b66ae13efd"
     },
     {
       "path": "src/mlx_agent/task_worker.py",

@@ -109,6 +109,9 @@ def validate_request(value):
 
 
 def validate_record(value):
+    if isinstance(value, dict) and value.get("schema") == "coding-capture-run/1":
+        from .coding_capture_contracts import validate_capture_record
+        return validate_capture_record(value)
     required = {"schema", "id", "kind", "state", "model_path", "created_at", "started_at", "completed_at",
                 "cancel_requested", "identity", "request", "result", "error", "supervisor", "execution", "execution_unresolved"}
     if not isinstance(value, dict):

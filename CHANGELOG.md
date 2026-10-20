@@ -7,6 +7,7 @@
 - Add read-only `mlx_agent_capabilities` discovery for MCP clients and mark invalid CLI arguments as non-retryable.
 - Enforce OpenCode extension ownership and clean up partial capture volumes.
 - Add policy checks for coding-capture commands.
+- Refresh the certifi pins and hashes in the backend dependency locks.
 - Run the full 27-case MCP battery with MCP Eval 0.8.0 in CI.
 
 ## 0.8.0 - 2026-10-19

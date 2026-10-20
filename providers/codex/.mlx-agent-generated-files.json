@@ -10,7 +10,7 @@
     },
     {
       "path": "requirements-lab.txt",
-      "sha256": "d0ffe181da86e6147478d236d6f95a15be89729c5e8474938cdef4dc143c1dd9"
+      "sha256": "406e85ce8cf432084e44519ef3337ee17a542acde7ffe158202a7d4970734082"
     },
     {
       "path": "scripts/mlx-agent",
@@ -690,7 +690,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mflux.lock",
-      "sha256": "eb8bef456152345e433111e394874dbc322ee8b2902c314265be7207a837542b"
+      "sha256": "6b3400d8949007bb5fbd9cdae4a2b70628ad94b2ce8e68fa6ff868e22b055d58"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-audio.json",
@@ -698,7 +698,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-audio.lock",
-      "sha256": "9df5bf482299092cbe2b80ef32b6ee191b91486d76b0fa30d85769bac066ae42"
+      "sha256": "a22abcb86631c66d02e863a7707eb3cf808998fe5bc1b2ffb4058b57c6f2063d"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-embeddings.json",
@@ -706,7 +706,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-embeddings.lock",
-      "sha256": "5c4b7d9732160d6ce7179300b73ec11cfef59902427e526bc9f182e87a6cdd1b"
+      "sha256": "e768b31f9cc64ff0460ddbf51f2f1eccade530771da89681b784c0d23c21f1aa"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-lm.json",
@@ -718,7 +718,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-video.lock",
-      "sha256": "6ab2067c6ba41fda616bd1bcdbb6a447e3897b50f4cb35f6e883c5e75c9bfdf9"
+      "sha256": "bde79bb0300bdb850f92b1e733119031c5d92a519188d9e6d58daee83a0f0048"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-vlm.json",
@@ -726,7 +726,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-vlm.lock",
-      "sha256": "635ede58403f2da422406a37167b1440099fb992baff93f16a1ddb706491ba62"
+      "sha256": "50d91519e592c89a246f2b09ca6d73e9158daf92f65a65c3d2a1c1759ded3ef5"
     },
     {
       "path": "src/mlx_agent/resources/bench-community.json",

@@ -16,11 +16,24 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 
 from mlx_agent.capture_platform import CaptureVolume, capture_process_identity
-from mlx_agent.coding_capture_client import OpenCodeEvents, validate_session_export
-from mlx_agent.coding_capture_plugins import ExtensionHost, freeze_extensions
+from mlx_agent.coding_capture_client import export_session, run_client
+from mlx_agent.coding_capture_plugins import ExtensionHost, freeze_extensions, verify_extensions
+from mlx_agent.task_contracts import TaskError
 
 CLIENT = os.environ.get("MLX_AGENT_OPENCODE_TEST_CLIENT")
 CONFIG = os.environ.get("MLX_AGENT_OPENCODE_TEST_CONFIG")
+
+
+class FixtureArtifacts:
+    def __init__(self, root):
+        self.root = root
+        root.mkdir(mode=0o700)
+
+    def write_artifact(self, name, raw):
+        with (self.root / name).open("xb") as output:
+            os.chmod(output.fileno(), 0o600)
+            output.write(raw)
+        return {"name": name, "sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)}
 
 
 class FixtureAPI(BaseHTTPRequestHandler):
@@ -178,35 +191,39 @@ class OwnedClientCompatibilityTests(unittest.TestCase):
                 self.assertFalse(any(item["path"].startswith("/v1") for item in FixtureAPI.requests))
                 cli_environment = dict(environment)
                 cli_environment.pop("MLX_AGENT_CAPTURE_EXTENSION_FD", None)
-                run = subprocess.run([CLIENT, "run", "--server", address, "--format", "json", "--model", "capture/local",
-                                      "--title", "Compatibility fixture", "Reply with fixture text."],
-                                     env=cli_environment, cwd=project, capture_output=True, timeout=45)
-                self.assertEqual(run.returncode, 0, (run.stdout.decode()[-4096:], run.stderr.decode()[-4096:]))
-                events = OpenCodeEvents(lambda _: None, artifact_bytes=33554432)
-                events.feed(run.stdout)
-                events.finish()
-                self.assertFalse(events.has_error, run.stdout.decode()[-4096:])
-                export = subprocess.run([CLIENT, "session", "export", events.session_id, "--server", address],
-                                        env=cli_environment, cwd=project, capture_output=True, timeout=30)
-                self.assertEqual(export.returncode, 0, export.stderr.decode()[-4096:])
-                try:
-                    session = validate_session_export(export.stdout, events.session_id, "capture/local")
-                except Exception as error:
-                    types = sorted({item.get("type", "<missing>") for item in json.loads(export.stdout).get("messages", [])})
-                    self.fail(str(error) + "; observed message types: " + repr(types))
-                self.assertEqual(session["info"]["id"], events.session_id)
+                def check():
+                    verify_extensions(manifest)
+                    if capture_process_identity(server.pid) != identity:
+                        raise TaskError("capture_context_changed", "Owned fixture server changed.")
+                storage = FixtureArtifacts(profile.parent / "artifacts")
+                processes = {}
+                command_deadline = time.monotonic() + 45
+                command = {"client_path": manifest["client_path"], "project_path": str(project),
+                           "environment": cli_environment, "server_url": address, "model": "capture/local",
+                           "storage": storage, "artifact_bytes": 33554432, "check_context": check,
+                           "on_process": lambda role, value: processes.update({role: value}),
+                           "cancelled": lambda: time.monotonic() >= command_deadline}
+                run = run_client(command, "Reply with fixture text.", lambda _: None)
+                self.assertIsNone(run["error"], run)
+                self.assertEqual(run["exit_code"], 0)
+                self.assertFalse(run["has_error"])
+                export = export_session(command, run["session_id"], storage)
+                self.assertIsNone(export["error"], export)
+                session = export["session"]
+                self.assertEqual(set(processes), {"client", "exporter"})
+                self.assertEqual(session["info"]["id"], run["session_id"])
                 self.assertEqual(session["info"]["location"]["directory"], str(project))
                 requests = [item for item in FixtureAPI.requests if item["path"].startswith("/v1")]
                 self.assertTrue(requests)
-                self.assertTrue(all(item["session"] == events.session_id for item in requests))
+                self.assertTrue(all(item["session"] == run["session_id"] for item in requests))
                 tool_names = sorted({tool.get("function", {}).get("name", "<missing>")
                                      for item in requests for tool in item["body"].get("tools", [])})
                 self.assertIn("mlx_agent_command", tool_names,
                               (tool_names, [(item.get("name"), item.get("permission")) for item in agents],
                                (profile / "server-stderr.log").read_text()[-8192:]))
                 self.assertEqual(capture_process_identity(server.pid), identity)
-                print(json.dumps({"schema": "coding-capture-client-proof/1", "session_id": events.session_id,
-                                  "session_export_sha256": hashlib.sha256(export.stdout).hexdigest(),
+                print(json.dumps({"schema": "coding-capture-client-proof/1", "session_id": run["session_id"],
+                                  "session_export_sha256": hashlib.sha256((storage.root / "session.json").read_bytes()).hexdigest(),
                                   "client_sha256": next(item["sha256"] for item in manifest["inputs"]
                                                         if item["path"] == manifest["client_path"]),
                                   "extensions": len(expected), "inference_requests": len(requests),

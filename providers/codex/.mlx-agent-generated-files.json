@@ -470,7 +470,7 @@
     },
     {
       "path": "src/mlx_agent/coding_capture_client.py",
-      "sha256": "df4889dfaf0df8adc0824a253a095cb1d6f3887c460c380fb899dd82251e8c8d"
+      "sha256": "520072b22bd434f74bf16c009a0309268a13e33f8cebf64410713d42981f3b67"
     },
     {
       "path": "src/mlx_agent/coding_capture_contracts.py",
@@ -479,6 +479,14 @@
     {
       "path": "src/mlx_agent/coding_capture_plugins.py",
       "sha256": "74ce0dda5d18d98c1c6d484c0d035ddefe0a70365dbf279073c2af4749951b8f"
+    },
+    {
+      "path": "src/mlx_agent/coding_capture_policy.py",
+      "sha256": "581d8893fa9d45f17a7772ba9eb6673fda1ee461f21a36410f8669f10371de1a"
+    },
+    {
+      "path": "src/mlx_agent/coding_capture_process.py",
+      "sha256": "0748aa359ae22ae3f8c0956718ca443b09736624cb0c553a9667632da11b3aae"
     },
     {
       "path": "src/mlx_agent/coding_capture_storage.py",

@@ -126,3 +126,13 @@ def validate_session_export(raw: bytes, session_id: str, model: str) -> Dict:
             assistant = True
     _require(assistant, "Export has no model-attributable assistant message.")
     return value
+
+
+def run_client(profile: Dict, prompt: str, on_event: Callable) -> Dict:
+    from .coding_capture_process import run_client as execute
+    return execute(profile, prompt, on_event)
+
+
+def export_session(profile: Dict, session_id: str, storage) -> Dict:
+    from .coding_capture_process import export_session as execute
+    return execute(profile, session_id, storage)

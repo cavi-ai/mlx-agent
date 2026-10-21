@@ -47,5 +47,5 @@ source = ["mlx_agent"]
 omit = ["*/mlx_agent/_lab/*", "*/mlx_agent/resources/*"]
 
 [tool.coverage.report]
-fail_under = 79
+fail_under = 84
 skip_empty = true

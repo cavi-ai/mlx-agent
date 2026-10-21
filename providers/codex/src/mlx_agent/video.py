@@ -7,22 +7,18 @@ import subprocess
 from pathlib import Path
 
 from .backends import (
-    BackendError,
-    backend_environment,
     backend_python,
     is_installed,
     load_manifests,
     load_registries,
     lookup,
-    sync_ports,
 )
-from .wiring import redact_secrets
+from .inference_runner import InferenceError, RunnerContract, invoke
 
 VIDEO_SCHEMA = "video/1"
 VIDEO_RUNNER = Path(__file__).resolve().with_name("video_runner.py")
 DEFAULT_TIMEOUT_SECONDS = 3600
 MAX_PROMPT_CHARS = 2000
-MAX_FAILURE_CHARS = 800
 MAX_SIDE, MIN_SIDE = 1920, 64
 MAX_FRAMES = 241
 MAX_FPS = 60
@@ -31,13 +27,8 @@ DEFAULT_STEPS, DEFAULT_FPS = 50, 16
 DEFAULT_WIDTH, DEFAULT_HEIGHT, DEFAULT_FRAMES = 832, 480, 81
 
 
-class VideoError(RuntimeError):
+class VideoError(InferenceError):
     """Classified video-generation failure safe to surface in a result envelope."""
-
-    def __init__(self, code, message, remediation):
-        super().__init__(message)
-        self.code = code
-        self.remediation = remediation
 
 
 def _invalid(message, remediation):
@@ -139,41 +130,16 @@ def plan_video(model_path, prompt, out, width=DEFAULT_WIDTH, height=DEFAULT_HEIG
     }
 
 
-def _failure(plan, completed=None, reason=None):
-    tail = reason
-    if tail is None:
-        tail = "\n".join((completed.stderr or "").strip().splitlines()[-6:]) or "no output"
-        tail = redact_secrets(tail)[-MAX_FAILURE_CHARS:]
-    return VideoError(
-        "video_failed", "The {0} backend could not render the prompt: {1}".format(plan["backend"], tail),
-        "Check that the directory is a complete converted text-to-video model, or use fewer frames, steps, or a smaller size.",
-    )
+CONTRACT = RunnerContract(
+    verb="video", error=VideoError, accept=lambda value, plan: isinstance(value.get("path"), str),
+    action="render the prompt",
+    remediation="Check that the directory is a complete converted text-to-video model, or use fewer frames, steps, or a smaller size.",
+    activity="Video generation", timeout_remediation="Use fewer frames or steps, or a larger --timeout.",
+)
 
 
 def run_video(plan, manifests=None, root=None, timeout=DEFAULT_TIMEOUT_SECONDS, runner=subprocess.run):
-    manifests = load_manifests() if manifests is None else manifests
-    try:
-        sync_ports(manifests[plan["backend"]], root)
-    except BackendError as error:
-        raise VideoError(error.code, str(error), error.remediation) from error
-    try:
-        completed = runner(
-            plan["argv"], stdin=subprocess.DEVNULL, capture_output=True, text=True,
-            timeout=timeout, env=backend_environment(), check=False,
-        )
-    except subprocess.TimeoutExpired as error:
-        raise _failure(plan, reason="video generation exceeded {0} s; use fewer frames or steps, or a larger --timeout".format(timeout)) from error
-    result = None
-    for line in reversed((completed.stdout or "").splitlines()):
-        try:
-            value = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(value, dict) and isinstance(value.get("path"), str):
-            result = value
-            break
-    if completed.returncode != 0 or result is None:
-        raise _failure(plan, completed)
+    result = invoke(plan, CONTRACT, manifests, root, timeout, runner)
     keys = (
         "path", "width", "height", "frames", "fps", "duration_seconds", "steps", "seed", "seconds", "load_seconds",
         "seconds_per_frame", "peak_memory_gb", "pixel_std",

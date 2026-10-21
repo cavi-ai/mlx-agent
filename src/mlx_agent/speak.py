@@ -9,34 +9,25 @@ import subprocess
 from pathlib import Path
 
 from .backends import (
-    BackendError,
-    backend_environment,
     backend_python,
     is_installed,
     load_manifests,
     load_registries,
     lookup,
-    sync_ports,
 )
-from .wiring import redact_secrets
+from .inference_runner import InferenceError, RunnerContract, invoke
 
 SPEAK_SCHEMA = "speak/1"
 SPEAK_RUNNER = Path(__file__).resolve().with_name("speak_runner.py")
 DEFAULT_TIMEOUT_SECONDS = 600
 MAX_TEXT_CHARS = 2000
 MIN_SPEED, MAX_SPEED = 0.5, 2.0
-MAX_FAILURE_CHARS = 800
 _VOICE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}")
 _LANG_CODE = re.compile(r"[A-Za-z]{1,8}(?:[-_][A-Za-z0-9]{1,8})?")
 
 
-class SpeakError(RuntimeError):
+class SpeakError(InferenceError):
     """Classified speech-synthesis failure safe to surface in a result envelope."""
-
-    def __init__(self, code, message, remediation):
-        super().__init__(message)
-        self.code = code
-        self.remediation = remediation
 
 
 def _invalid(message, remediation):
@@ -120,41 +111,16 @@ def plan_speak(model_path, text, out, voice=None, speed=1.0, lang_code=None,
     }
 
 
-def _failure(plan, completed=None, reason=None):
-    tail = reason
-    if tail is None:
-        tail = "\n".join((completed.stderr or "").strip().splitlines()[-6:]) or "no output"
-        tail = redact_secrets(tail)[-MAX_FAILURE_CHARS:]
-    return SpeakError(
-        "speak_failed", "The {0} backend could not synthesize the text: {1}".format(plan["backend"], tail),
-        "Check that the directory is a complete converted text-to-speech model and that --voice and --lang-code suit it.",
-    )
+CONTRACT = RunnerContract(
+    verb="speak", error=SpeakError, accept=lambda value, plan: isinstance(value.get("path"), str),
+    action="synthesize the text",
+    remediation="Check that the directory is a complete converted text-to-speech model and that --voice and --lang-code suit it.",
+    activity="Speech synthesis", timeout_remediation="Use shorter text or a larger --timeout.",
+)
 
 
 def run_speak(plan, manifests=None, root=None, timeout=DEFAULT_TIMEOUT_SECONDS, runner=subprocess.run):
-    manifests = load_manifests() if manifests is None else manifests
-    try:
-        sync_ports(manifests[plan["backend"]], root)
-    except BackendError as error:
-        raise SpeakError(error.code, str(error), error.remediation) from error
-    try:
-        completed = runner(
-            plan["argv"], stdin=subprocess.DEVNULL, capture_output=True, text=True,
-            timeout=timeout, env=backend_environment(), check=False,
-        )
-    except subprocess.TimeoutExpired as error:
-        raise _failure(plan, reason="speech synthesis exceeded {0} s; use shorter text or a larger --timeout".format(timeout)) from error
-    result = None
-    for line in reversed((completed.stdout or "").splitlines()):
-        try:
-            value = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(value, dict) and isinstance(value.get("path"), str):
-            result = value
-            break
-    if completed.returncode != 0 or result is None:
-        raise _failure(plan, completed)
+    result = invoke(plan, CONTRACT, manifests, root, timeout, runner)
     keys = ("path", "sample_rate", "audio_seconds", "seconds", "load_seconds", "real_time_factor", "peak_memory_gb")
     return dict({"schema": SPEAK_SCHEMA, "backend": plan["backend"], "model": plan["model"],
                  "voice": plan["voice"], "speed": plan["speed"], "lang_code": plan["lang_code"]},

@@ -2,30 +2,14 @@
 
 import os
 import selectors
-import signal
 import subprocess
 import time
 from urllib.parse import urlsplit
 
-from .capture_platform import capture_process_identity
-from .coding_capture_client import OpenCodeEvents, _identifier, validate_session_export
+from .capture_platform import capture_process_identity, stop_owned
+from .coding_capture_client import OpenCodeEvents, is_identifier, validate_session_export
 from .coding_capture_contracts import DEFAULT_LIMITS
 from .task_contracts import MAX_REQUEST_BYTES, TaskError
-
-
-def _stop(process, identity):
-    if process.poll() is not None:
-        return
-    if identity is None or capture_process_identity(process.pid) != identity:
-        raise TaskError("capture_ownership_lost", "Cannot prove the owned client process identity.")
-    os.killpg(process.pid, signal.SIGTERM)
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        if capture_process_identity(process.pid) != identity:
-            raise TaskError("capture_ownership_lost", "Cannot prove the owned client process identity.")
-        os.killpg(process.pid, signal.SIGKILL)
-        process.wait(timeout=5)
 
 
 def _execute(profile, arguments, payload, role, stdout_name, stderr_name, on_stdout=None):
@@ -112,7 +96,7 @@ def _execute(profile, arguments, payload, role, stdout_name, stderr_name, on_std
         try:
             if process is not None:
                 try:
-                    _stop(process, identity)
+                    stop_owned(process, identity)
                 except (TaskError, OSError, subprocess.SubprocessError):
                     failure = TaskError("capture_ownership_lost", "Owned command termination remains unresolved.",
                                         "Retain the capture and inspect its recorded process identities.")
@@ -158,7 +142,7 @@ def run_client(profile, prompt, on_event):
 
 
 def export_session(profile, session_id, storage):
-    if not _identifier(session_id, "ses"):
+    if not is_identifier(session_id, "ses"):
         raise TaskError("invalid_capture_session", "Export requires an observed explicit session identity.")
     result = _execute(dict(profile, storage=storage),
                       ["session", "export", session_id, "--server", profile["server_url"]],

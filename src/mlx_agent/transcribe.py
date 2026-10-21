@@ -8,15 +8,13 @@ import subprocess
 from pathlib import Path
 
 from .backends import (
-    BackendError,
-    backend_environment,
     backend_python,
     is_installed,
     load_manifests,
     load_registries,
     lookup,
-    sync_ports,
 )
+from .inference_runner import InferenceError, RunnerContract, invoke
 
 TRANSCRIBE_SCHEMA = "transcribe/1"
 TRANSCRIBE_RUNNER = Path(__file__).resolve().with_name("transcribe_runner.py")
@@ -24,13 +22,8 @@ DEFAULT_TIMEOUT_SECONDS = 300
 _LANGUAGE = re.compile(r"[a-z]{2,8}")
 
 
-class TranscribeError(RuntimeError):
+class TranscribeError(InferenceError):
     """Classified transcription failure safe to surface in a result envelope."""
-
-    def __init__(self, code, message, remediation):
-        super().__init__(message)
-        self.code = code
-        self.remediation = remediation
 
 
 def plan_transcribe(model_path, audio_path, language=None, manifests=None, registries=None, root=None):
@@ -69,37 +62,15 @@ def plan_transcribe(model_path, audio_path, language=None, manifests=None, regis
     return {"backend": manifest["id"], "model": str(model), "audio": str(audio), "language": language, "argv": argv}
 
 
+CONTRACT = RunnerContract(
+    verb="transcribe", error=TranscribeError, accept=lambda value, plan: isinstance(value.get("text"), str),
+    action="transcribe the clip", remediation="Check that the directory is a complete converted speech model.",
+    activity="Transcription", timeout_remediation="Use a shorter clip or a larger --timeout.",
+)
+
+
 def run_transcribe(plan, manifests=None, root=None, timeout=DEFAULT_TIMEOUT_SECONDS, runner=subprocess.run):
-    manifests = load_manifests() if manifests is None else manifests
-    try:
-        sync_ports(manifests[plan["backend"]], root)
-    except BackendError as error:
-        raise TranscribeError(error.code, str(error), error.remediation) from error
-    try:
-        completed = runner(
-            plan["argv"], stdin=subprocess.DEVNULL, capture_output=True, text=True,
-            timeout=timeout, env=backend_environment(), check=False,
-        )
-    except subprocess.TimeoutExpired as error:
-        raise TranscribeError(
-            "transcribe_timeout", "Transcription exceeded {0} s.".format(timeout),
-            "Use a shorter clip or a larger --timeout.",
-        ) from error
-    result = None
-    for line in reversed((completed.stdout or "").splitlines()):
-        try:
-            value = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(value, dict) and isinstance(value.get("text"), str):
-            result = value
-            break
-    if completed.returncode != 0 or result is None:
-        tail = "\n".join((completed.stderr or "").strip().splitlines()[-6:])
-        raise TranscribeError(
-            "transcribe_failed", "The {0} backend could not transcribe the clip: {1}".format(plan["backend"], tail or "no output"),
-            "Check that the directory is a complete converted speech model.",
-        )
+    result = invoke(plan, CONTRACT, manifests, root, timeout, runner)
     return {
         "schema": TRANSCRIBE_SCHEMA, "backend": plan["backend"], "model": plan["model"], "audio": plan["audio"],
         "language": plan["language"], "text": result["text"],

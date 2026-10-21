@@ -147,7 +147,7 @@ class DescribeTests(unittest.TestCase):
         plan = self.plan(self.model())
         line = json.dumps(RESULT)
         seen = []
-        with mock.patch("mlx_agent.describe.sync_ports", return_value=[]) as sync:
+        with mock.patch("mlx_agent.inference_runner.sync_ports", return_value=[]) as sync:
             result = run_describe(plan, manifests=self.manifests, root=self.root / "backends",
                                   runner=lambda argv, **kw: seen.append((argv, kw)) or Completed(stdout="Fetching\n" + line + "\n"))
             self.assertEqual(sync.call_args.args[0]["id"], "mlx-vlm")
@@ -175,13 +175,13 @@ class DescribeTests(unittest.TestCase):
 
             with self.assertRaises(DescribeError) as caught:
                 run_describe(plan, manifests=self.manifests, root=self.root / "backends", runner=slow, timeout=5)
-            self.assertEqual(caught.exception.code, "describe_failed")
+            self.assertEqual(caught.exception.code, "describe_timeout")
             self.assertIn("exceeded 5 s", str(caught.exception))
 
     def test_run_refuses_video_naming_the_model_type(self):
         plan = self.plan(self.model("moondream3"), image=None, video=self.video)
         refusal = json.dumps({"error": "video_unsupported", "model_type": "moondream3", "detail": "no decoder"})
-        with mock.patch("mlx_agent.describe.sync_ports", return_value=[]):
+        with mock.patch("mlx_agent.inference_runner.sync_ports", return_value=[]):
             with self.assertRaises(DescribeError) as caught:
                 run_describe(plan, manifests=self.manifests, root=self.root / "backends",
                              runner=lambda argv, **kw: Completed(returncode=3, stdout=refusal + "\n"))
@@ -208,7 +208,7 @@ class DescribeTests(unittest.TestCase):
             mock.patch("mlx_agent.describe.load_manifests", return_value=self.manifests),
             mock.patch("mlx_agent.describe.load_registries", return_value=self.registries),
             mock.patch("mlx_agent.describe.is_installed", return_value=True),
-            mock.patch("mlx_agent.describe.sync_ports", return_value=[]),
+            mock.patch("mlx_agent.inference_runner.sync_ports", return_value=[]),
             mock.patch("mlx_agent.cli.run_describe", run),
         )
         for patch in patches:

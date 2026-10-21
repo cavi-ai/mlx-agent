@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import sqlite3
 
-from .coding_capture_plugins import _file
+from .coding_capture_plugins import file_identity
 from .task_contracts import MAX_REQUEST_BYTES, TaskError, encoded
 
 
@@ -18,7 +18,7 @@ def _snapshot(path):
     path = Path(path)
     resolved = path.resolve(strict=False)
     try:
-        item = _file(resolved)
+        item = file_identity(resolved)
     except FileNotFoundError:
         return {"path": str(path), "resolved": str(resolved), "exists": False}
     return {"path": str(path), "resolved": str(resolved), "exists": True,

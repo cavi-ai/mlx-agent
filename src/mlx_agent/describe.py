@@ -8,17 +8,14 @@ import subprocess
 from pathlib import Path
 
 from .backends import (
-    BackendError,
-    backend_environment,
     backend_python,
     is_installed,
     is_vision_type,
     load_manifests,
     load_registries,
     lookup,
-    sync_ports,
 )
-from .wiring import redact_secrets
+from .inference_runner import InferenceError, RunnerContract, invoke
 
 DESCRIBE_SCHEMA = "describe/1"
 DESCRIBE_RUNNER = Path(__file__).resolve().with_name("describe_runner.py")
@@ -29,19 +26,12 @@ MAX_TEMPERATURE = 2.0
 MIN_FPS, MAX_FPS = 0.1, 8.0
 DEFAULT_FPS = 1.0
 MAX_PIXELS_LIMIT = 100_000_000
-MAX_FAILURE_CHARS = 800
 IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
 VIDEO_SUFFIXES = (".mp4", ".mov", ".m4v")
-REFUSALS = ("not_vision_model", "video_unsupported")
 
 
-class DescribeError(RuntimeError):
+class DescribeError(InferenceError):
     """Classified vision-language failure safe to surface in a result envelope."""
-
-    def __init__(self, code, message, remediation):
-        super().__init__(message)
-        self.code = code
-        self.remediation = remediation
 
 
 def _invalid(message, remediation):
@@ -130,52 +120,27 @@ def plan_describe(model_path, prompt, image=None, video=None, max_tokens=256, te
     }
 
 
-def _failure(plan, completed=None, reason=None):
-    tail = reason
-    if tail is None:
-        tail = "\n".join((completed.stderr or "").strip().splitlines()[-6:]) or "no output"
-        tail = redact_secrets(tail)[-MAX_FAILURE_CHARS:]
-    return DescribeError(
-        "describe_failed", "The {0} backend could not describe the {1}: {2}".format(plan["backend"], plan["input"]["kind"], tail),
-        "Check that the directory is a complete converted vision-language model and that the media file decodes.",
-    )
+def _video_unsupported(plan, detail):
+    return ("The {0} backend cannot take video for model_type {1!r}: {2}".format(plan["backend"], plan["model_type"], detail),
+            "Describe a still image with --image, or use a model type that reads video.")
+
+
+def _not_vision_model(plan, detail):
+    return ("The {0} backend has no image path for model_type {1!r}.".format(plan["backend"], plan["model_type"]),
+            "Describing media applies to converted vision-language models such as Qwen2.5-VL.")
+
+
+CONTRACT = RunnerContract(
+    verb="describe", error=DescribeError, accept=lambda value, plan: isinstance(value.get("text"), str),
+    action="describe the {input[kind]}",
+    remediation="Check that the directory is a complete converted vision-language model and that the media file decodes.",
+    activity="Description", timeout_remediation="Use a shorter clip, fewer tokens, or a larger --timeout.",
+    refusals={"video_unsupported": _video_unsupported, "not_vision_model": _not_vision_model},
+)
 
 
 def run_describe(plan, manifests=None, root=None, timeout=DEFAULT_TIMEOUT_SECONDS, runner=subprocess.run):
-    manifests = load_manifests() if manifests is None else manifests
-    try:
-        sync_ports(manifests[plan["backend"]], root)
-    except BackendError as error:
-        raise DescribeError(error.code, str(error), error.remediation) from error
-    try:
-        completed = runner(
-            plan["argv"], stdin=subprocess.DEVNULL, capture_output=True, text=True,
-            timeout=timeout, env=backend_environment(), check=False,
-        )
-    except subprocess.TimeoutExpired as error:
-        raise _failure(plan, reason="description exceeded {0} s; use a shorter clip, fewer tokens, or a larger --timeout".format(timeout)) from error
-    result = None
-    for line in reversed((completed.stdout or "").splitlines()):
-        try:
-            value = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(value, dict) and (isinstance(value.get("text"), str) or value.get("error") in REFUSALS):
-            result = value
-            break
-    if result is not None and result.get("error") == "video_unsupported":
-        raise DescribeError(
-            "video_unsupported", "The {0} backend cannot take video for model_type {1!r}: {2}".format(
-                plan["backend"], plan["model_type"], redact_secrets(str(result.get("detail") or "no detail"))[-MAX_FAILURE_CHARS:]),
-            "Describe a still image with --image, or use a model type that reads video.",
-        )
-    if result is not None and result.get("error") == "not_vision_model":
-        raise DescribeError(
-            "not_vision_model", "The {0} backend has no image path for model_type {1!r}.".format(plan["backend"], plan["model_type"]),
-            "Describing media applies to converted vision-language models such as Qwen2.5-VL.",
-        )
-    if completed.returncode != 0 or result is None:
-        raise _failure(plan, completed)
+    result = invoke(plan, CONTRACT, manifests, root, timeout, runner)
     keys = ("text", "prompt_tokens", "generation_tokens", "prompt_tps", "generation_tps",
             "peak_memory_gb", "seconds", "load_seconds")
     return dict({"schema": DESCRIBE_SCHEMA, "backend": plan["backend"], "model": plan["model"]},

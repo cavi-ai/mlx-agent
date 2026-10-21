@@ -3,7 +3,9 @@
 import ctypes as C
 import errno
 import os
+import signal
 import socket
+import subprocess
 import sys
 import time
 from typing import Any, Dict, Sequence
@@ -114,6 +116,22 @@ def capture_process_identity(pid: int) -> ProcessIdentity:
         return {"pid": pid, "identity": command, "started_at": started}
     except (OSError, ValueError) as error:
         raise TaskError("capture_peer_unavailable", "Cannot establish the serving process identity.") from error
+
+
+def stop_owned(process, identity, grace=5):
+    """Stop an owned process group, signalling only while it still has its recorded identity."""
+    if process.poll() is not None:
+        return
+    if identity is None or capture_process_identity(process.pid) != identity:
+        raise TaskError("capture_ownership_lost", "Cannot prove the owned process identity.")
+    os.killpg(process.pid, signal.SIGTERM)
+    try:
+        process.wait(timeout=grace)
+    except subprocess.TimeoutExpired:
+        if capture_process_identity(process.pid) != identity:
+            raise TaskError("capture_ownership_lost", "Cannot prove the owned process identity.")
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait(timeout=grace)
 
 
 def _socket_connections(pid):

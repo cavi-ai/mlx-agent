@@ -20,6 +20,28 @@ except ModuleNotFoundError:
     process = None
 
 
+class identities:
+    """Patch the owned-process identity where commands start and where they are stopped."""
+
+    def __init__(self, side_effect):
+        self.patches = [patch(target + ".capture_process_identity", side_effect=side_effect)
+                        for target in ("mlx_agent.coding_capture_process", "mlx_agent.capture_platform")]
+
+    def start(self):
+        for item in self.patches:
+            item.start()
+
+    def stop(self):
+        for item in self.patches:
+            item.stop()
+
+    def __enter__(self):
+        self.start()
+
+    def __exit__(self, *_):
+        self.stop()
+
+
 class ArtifactStore:
     def __init__(self):
         self.content = {}
@@ -57,8 +79,7 @@ class OwnedCLIExecutionTests(unittest.TestCase):
                         "check_context": lambda: None,
                         "on_process": lambda role, identity: self.owned.append((role, identity)),
                         "cancelled": lambda: False}
-        self.identity = patch("mlx_agent.coding_capture_process.capture_process_identity",
-                              side_effect=lambda pid: {"pid": pid, "identity": "owned fixture", "started_at": [1, 0]})
+        self.identity = identities(lambda pid: {"pid": pid, "identity": "owned fixture", "started_at": [1, 0]})
         self.identity.start()
         self.addCleanup(self.identity.stop)
 
@@ -118,9 +139,8 @@ class OwnedCLIExecutionTests(unittest.TestCase):
             return child
         try:
             with patch("mlx_agent.coding_capture_process.subprocess.Popen", side_effect=create), \
-                    patch("mlx_agent.coding_capture_process.capture_process_identity",
-                          side_effect=lambda pid: {"pid": pid, "identity": "owned" if not self.owned else "changed", "started_at": [1, 0]}), \
-                    patch("mlx_agent.coding_capture_process.os.killpg") as signal:
+                    identities(lambda pid: {"pid": pid, "identity": "owned" if not self.owned else "changed", "started_at": [1, 0]}), \
+                    patch("mlx_agent.capture_platform.os.killpg") as signal:
                 result = process.run_client(self.profile, "fixture", lambda _: None)
                 self.assertTrue(result["execution_unresolved"])
                 self.assertEqual(result["error"]["code"], "capture_ownership_lost")

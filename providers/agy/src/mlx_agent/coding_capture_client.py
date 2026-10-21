@@ -17,7 +17,7 @@ def _require(condition, message):
         raise TaskError("invalid_capture_session", message, "Keep the retained client output; do not substitute another saved session.")
 
 
-def _identifier(value, prefix):
+def is_identifier(value, prefix):
     return isinstance(value, str) and value.startswith(prefix) and len(prefix) < len(value) <= 256 and not any(ord(c) < 33 for c in value)
 
 
@@ -69,7 +69,7 @@ class OpenCodeEvents:
             del self._buffer[:end + 1]
             value = _json(line)
             _require(isinstance(value, dict) and value.get("type") in EVENT_TYPES
-                     and _identifier(value.get("sessionID"), "ses") and _milliseconds(value.get("timestamp")),
+                     and is_identifier(value.get("sessionID"), "ses") and _milliseconds(value.get("timestamp")),
                      "Client events require a supported type, observed session ID and epoch-millisecond timestamp.")
             if self.session_id is not None:
                 _require(value["sessionID"] == self.session_id, "Client events changed the observed root session.")
@@ -86,17 +86,17 @@ class OpenCodeEvents:
 def validate_session_export(raw: bytes, session_id: str, model: str) -> Dict:
     """Validate identity-bearing v2 transfer fields and retain the original body."""
     _require(isinstance(raw, bytes) and len(raw) <= DEFAULT_LIMITS["artifact_bytes"], "Session export exceeds its byte limit.")
-    _require(_identifier(session_id, "ses") and isinstance(model, str) and "/" in model,
+    _require(is_identifier(session_id, "ses") and isinstance(model, str) and "/" in model,
              "An observed session and exact provider/model selection are required.")
     provider, selected_model = model.split("/", 1)
     _require(bool(provider) and bool(selected_model), "The selected model is incomplete.")
     value = _json(raw)
     _require(isinstance(value, dict) and set(value) == {"info", "messages"}, "Unsupported session-transfer shape.")
     info, messages = value["info"], value["messages"]
-    _require(isinstance(info, dict) and info.get("id") == session_id and _identifier(info.get("projectID"), ""),
+    _require(isinstance(info, dict) and info.get("id") == session_id and is_identifier(info.get("projectID"), ""),
              "Explicit session export does not match the observed session and project.")
     if "parentID" in info:
-        _require(_identifier(info["parentID"], "ses") and info["parentID"] != session_id, "Invalid exported parent relationship.")
+        _require(is_identifier(info["parentID"], "ses") and info["parentID"] != session_id, "Invalid exported parent relationship.")
     times = info.get("time")
     _require(isinstance(times, dict) and all(_milliseconds(times.get(key)) for key in ("created", "updated")),
              "Exported session time is not epoch milliseconds.")
@@ -110,7 +110,7 @@ def validate_session_export(raw: bytes, session_id: str, model: str) -> Dict:
     _require(isinstance(messages, list) and bool(messages), "Export has no retained messages.")
     identities, assistant = set(), False
     for message in messages:
-        _require(isinstance(message, dict) and _identifier(message.get("id"), "msg_"), "Export contains an invalid message identity.")
+        _require(isinstance(message, dict) and is_identifier(message.get("id"), "msg_"), "Export contains an invalid message identity.")
         _require(message["id"] not in identities, "Export contains duplicate message identities.")
         identities.add(message["id"])
         _require(message.get("type") in MESSAGE_TYPES, "Export contains an unsupported message type.")
@@ -126,13 +126,3 @@ def validate_session_export(raw: bytes, session_id: str, model: str) -> Dict:
             assistant = True
     _require(assistant, "Export has no model-attributable assistant message.")
     return value
-
-
-def run_client(profile: Dict, prompt: str, on_event: Callable) -> Dict:
-    from .coding_capture_process import run_client as execute
-    return execute(profile, prompt, on_event)
-
-
-def export_session(profile: Dict, session_id: str, storage) -> Dict:
-    from .coding_capture_process import export_session as execute
-    return execute(profile, session_id, storage)

@@ -466,7 +466,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "d2bf812c563d34b5ad52ef11213dee2c62aacb6485a746c70cce24da4c560f03"
+      "sha256": "dff3a285bb7523fa38c9e176ceea77a3d6928d3c12358ae09072b84993565a04"
     },
     {
       "path": "src/mlx_agent/coding_capture.py",

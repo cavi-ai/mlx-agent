@@ -82,8 +82,12 @@ class CodingCaptureStorageTests(unittest.TestCase):
                 self.assertIn(caught.exception.errno, (errno.ENOSPC, errno.EDQUOT))
             finally:
                 os.close(descriptor)
-            with self.assertRaises(TaskError):
-                self.storage.write_artifact("must-not-publish.json", b"new evidence")
+            # A failed large allocation can leave blocks that still fit a tiny file.
+            # Exercise the accepted artifact limit rather than assuming zero free bytes.
+            with self.assertRaises(TaskError) as caught:
+                self.storage.write_artifact("must-not-publish.json", b"x" * self.limits["artifact_bytes"])
+            self.assertEqual(caught.exception.code, "capture_budget_exhausted")
+            self.assertFalse((root / "artifacts/must-not-publish.json").exists())
         self.assertIsNone(self.store.get(self.identifier)["result"])
 
     def test_artifact_limit_is_33554432(self):

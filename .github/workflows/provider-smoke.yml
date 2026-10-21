@@ -17,12 +17,15 @@ on:
   schedule:
     - cron: "17 5 * * 1"
 
+permissions:
+  contents: read
+
 jobs:
   portable-evidence:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.9"
       - name: Run deterministic provider contracts
@@ -34,7 +37,7 @@ jobs:
           printf 'OpenCode equivalent no-shell argv/stdin fixture: passed\n' > smoke-results/opencode-equivalent-transport.txt
       - name: Upload non-secret smoke evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: provider-smoke-${{ github.run_id }}
           path: smoke-results
@@ -44,7 +47,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.run_live == true && inputs.provider != 'none'
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Record selected native smoke without installing a provider CLI
         run: |
           mkdir -p smoke-results
@@ -62,7 +65,7 @@ jobs:
           printf 'Agy isolated lifecycle: passed\n' > smoke-results/agy.txt
       - name: Upload non-secret smoke evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: opted-in-provider-smoke-${{ github.run_id }}
           path: smoke-results

@@ -6,6 +6,7 @@
 - Fix: the coding role probe checks a model's answer in a separate isolated interpreter with a 5-second limit instead of inside mlx-agent.
 - Inference timeouts report `<verb>_timeout` for every convert command and task kind; `describe`, `speak`, `video` and `music` reported `<verb>_failed`.
 - Music tasks reject truncated WAV output, and a changed music output reports `output_artifact_changed` like other media tasks.
+- CI and release workflows pin every action to a commit, and only the release and PyPI jobs receive write permissions.
 
 ## 0.9.0 - 2026-10-20
 

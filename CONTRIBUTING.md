@@ -38,7 +38,8 @@ pages instead. Build into a separate staging directory when checking a change.
 
 ## Pull requests
 
-Describe the behavior changed and the relevant validation. Include a regression
+`main` accepts signed commits whose four Test matrix jobs and experiment-engine
+job pass. Describe the behavior changed and the relevant validation. Include a regression
 test for behavior changes. Keep model weights, credentials, local receipts,
 generated research packs, and temporary outputs out of the change. Report bugs
 with the command, package/runtime versions, and a redacted error; inspect logs

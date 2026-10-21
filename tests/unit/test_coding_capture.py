@@ -10,8 +10,8 @@ from mlx_agent.coding_capture_plugins import file_identity
 from mlx_agent.task_contracts import TaskError
 
 CLIENT = r'''
-import base64, json, os, sys, threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import base64, json, os, socketserver, sys, threading
+from http.server import BaseHTTPRequestHandler
 args = sys.argv[1:]
 if args[0] == "serve":
     if os.environ.get("FIXTURE_NO_URL"):
@@ -30,9 +30,11 @@ if args[0] == "serve":
             self.send_header("Content-Length", str(len(raw)))
             self.end_headers()
             self.wfile.write(raw)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), API)
+    # HTTPServer resolves its own host name on bind, which can outlast the readiness deadline.
+    server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), API)
+    server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    print(json.dumps({"url": "http://127.0.0.1:" + str(server.server_port)}), flush=True)
+    print(json.dumps({"url": "http://127.0.0.1:" + str(server.server_address[1])}), flush=True)
     sys.stdin.read()
 elif args[0] == "run":
     assert sys.stdin.read() == "Reply with fixture text."
@@ -128,13 +130,15 @@ class OwnedSessionTests(unittest.TestCase):
         self.assertNotIn("client", self.processes)
 
     def test_an_inactive_extension_or_silent_server_fails_closed_and_cleans_up(self):
-        for environment in ({"FIXTURE_PLUGIN_STATUS": "failed"}, {"FIXTURE_NO_URL": "1"}):
+        for environment, message in (({"FIXTURE_PLUGIN_STATUS": "failed"}, "did not activate every frozen extension"),
+                                     ({"FIXTURE_NO_URL": "1"}, "did not report its address")):
             with self.subTest(environment=environment):
                 (self.profile / "server-stderr.log").unlink(missing_ok=True)
                 session, hosts = self.session(**environment)
                 with self.assertRaises(TaskError) as caught:
                     session.__enter__()
                 self.assertEqual(caught.exception.code, "capture_client_unavailable")
+                self.assertIn(message, str(caught.exception))
                 self.assertIsNotNone(session.server.poll())
                 self.assertTrue(hosts[0].exited)
 

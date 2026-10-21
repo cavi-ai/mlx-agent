@@ -542,7 +542,7 @@
     },
     {
       "path": "src/mlx_agent/discovery.py",
-      "sha256": "cc7154b69e6084ca1508c67e8e094b897fdd91c3540ad6dc2a0add95b62d6872"
+      "sha256": "cab26108d31ece8993becfff54cb98f42259e6d8d50fc93d20d28c9f7d7f7a2f"
     },
     {
       "path": "src/mlx_agent/fetch_runner.py",

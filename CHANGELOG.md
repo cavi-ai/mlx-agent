@@ -6,6 +6,7 @@
 - Fix: the coding role probe checks a model's answer in a separate isolated interpreter with a 5-second limit instead of inside mlx-agent.
 - Inference timeouts report `<verb>_timeout` for every convert command and task kind; `describe`, `speak`, `video` and `music` reported `<verb>_failed`.
 - Music tasks reject truncated WAV output, and a changed music output reports `output_artifact_changed` like other media tasks.
+- Discovery inspects up to six listed models on Hugging Face at a time instead of one after another.
 - CI and release workflows pin every action to a commit and only the release and PyPI jobs receive write permissions; a Coverage / Python 3.12 job runs the suite with the experiment runtime installed, so the lab tests run in CI, and fails when line coverage of the package drops below 84%.
 - Configuration transactions record each file in an append-only step journal instead of rewriting the whole receipt, so provider installs no longer slow down as files accumulate; rollback and recovery replay the journal of an unfinished transaction. Provider artifacts are listed with one directory scan, receipt loads and target locks check each folder once instead of once per file, previews are built only up to the preview limit, and provider CLI versions are checked in parallel.
 

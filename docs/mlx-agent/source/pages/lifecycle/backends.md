@@ -30,9 +30,27 @@ Confirmation starts an installation job using the shipped lock. Check installed
 state and its log before converting or running inference; a returned PID alone
 does not establish successful installation.
 
-These installs download dependencies from PyPI. They do not install the coding-agent
-host or fetch model weights. Existing targets are refused; removal is a separate
-reviewed action. Built-in backends are not managed by this installer.
+These installs download dependencies from PyPI. The audio backend also installs
+the hash-pinned English spaCy pipeline from its official GitHub release; those
+hosts and the build-tool lock digest appear in its preview. It includes Misaki's
+English phonemizer and checks that it produces phonemes before marking the
+installation successful. English Kokoro generation therefore needs no runtime
+language-pipeline download. Other Kokoro languages can require additional dependencies.
+Kokoro uses a private temporary alias for eSpeak data so deeply nested backend
+paths remain usable. The alias is removed when generation finishes.
+When a local Kokoro directory contains the requested voice under `voices/`,
+speech synthesis uses that safetensors file directly, including the default
+`af_heart` voice, without requiring a separate Hugging Face cache entry.
+
+The audio lock includes the source-only `docopt` dependency of `num2words`.
+Only that package may build from its hash-pinned source, using separately locked
+build tools without build isolation. All other dependencies remain binary-only.
+
+Backend installation does not install the coding-agent host or fetch speech-model
+weights. Existing targets are refused; removal is a separate reviewed action.
+An older audio environment missing Misaki needs removal and reinstallation to
+receive these dependencies; model directories are separate and are not removed.
+Built-in backends are not managed by this installer.
 
 ## Remove
 

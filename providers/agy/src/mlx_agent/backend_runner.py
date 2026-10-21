@@ -30,6 +30,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("--id", "--version", "--package", "--lock", "--target", "--python", "--trash", "--preview-hash"):
         parser.add_argument(name, required=True)
+    parser.add_argument("--build-lock")
     arguments = parser.parse_args(argv)
     target = Path(arguments.target)
     if target.exists() or target.is_symlink():
@@ -42,6 +43,15 @@ def main(argv=None):
          "--require-hashes", "--no-deps", "--only-binary=:all:", "-r", arguments.lock],
         [venv_python, "-c", "import {0}".format(arguments.package)],
     ]
+    if arguments.id == "mlx-audio":
+        # num2words depends on the source-only docopt package. Its build uses
+        # pinned, hashed tools with build isolation disabled; other packages
+        # and backends retain the binary-only install rule.
+        build_lock = arguments.build_lock or str(Path(arguments.lock).with_name("mlx-audio-build.lock"))
+        steps.insert(1, [venv_python, "-m", "pip", "install", "--disable-pip-version-check", "--no-input",
+                         "--require-hashes", "--no-deps", "--only-binary=:all:", "-r", build_lock])
+        steps[2] += ["--no-binary=docopt", "--no-build-isolation"]
+        steps.append([venv_python, str(Path(__file__).with_name("kokoro_runtime.py"))])
     for step in steps:
         print("$ " + " ".join(step), flush=True)
         completed = subprocess.run(step, stdin=subprocess.DEVNULL, check=False)

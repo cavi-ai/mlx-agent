@@ -121,7 +121,7 @@ def plan_install(backend_id, manifests=None, root=None, python=None, version_inf
     target = backend_target(manifest, root)
     python = str(python or sys.executable)
     trash = Path(trash_dir) if trash_dir is not None else default_trash_dir()
-    plan = _finalize({
+    plan = {
         "id": manifest["id"], "version": manifest["version"], "package": manifest["package"],
         "target": str(target), "lock": str(lock),
         "lock_sha256": hashlib.sha256(content).hexdigest(),
@@ -132,7 +132,15 @@ def plan_install(backend_id, manifests=None, root=None, python=None, version_inf
             "--package", manifest["package"], "--lock", str(lock), "--target", str(target),
             "--python", python, "--trash", str(trash),
         ],
-    })
+    }
+    if backend_id == "mlx-audio":
+        build_lock = BACKENDS_DIR / "mlx-audio-build.lock"
+        if not build_lock.is_file():
+            raise BackendError("lock_missing", "The audio build lock is missing.", "Reinstall mlx-agent; the lock ships with it.")
+        plan["build_lock_sha256"] = hashlib.sha256(build_lock.read_bytes()).hexdigest()
+        plan["argv"] += ["--build-lock", str(build_lock)]
+        plan["network"] += ["github.com", "release-assets.githubusercontent.com"]
+    plan = _finalize(plan)
     plan["argv"] = plan["argv"] + ["--preview-hash", plan["preview_hash"]]
     return plan
 

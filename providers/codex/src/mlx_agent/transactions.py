@@ -33,6 +33,8 @@ from .wiring import (
 
 
 RECEIPT_SCHEMA_VERSION = "2.1"
+# Per-target progress of a pending transaction; receipt.json is rewritten only at its start and end.
+STEP_JOURNAL_NAME = "steps.jsonl"
 MAX_PREVIEW_CHARS = 12000
 _STATUSES = {"pending", "applied", "failed", "rolled_back", "rollback_failed", "recovery_required"}
 _HASH = __import__("re").compile(r"^[0-9a-f]{64}$")
@@ -960,12 +962,12 @@ class Transaction:
                     _remove_target(path)
                     receipt.after_hashes[str(path)] = _sha256(b"")
                     receipt.after_modes[str(path)] = None
-                    self._persist(receipt)
+                    self._record_step(receipt, path)
                     self._fault("after_replace:{0}".format(index))
                     if _read_target(path)[1]:
                         raise ValueError("removal left the target in place")
                     receipt.validations[str(path)] = {"pre": True, "post": True, "passed": True}
-                    self._persist(receipt)
+                    self._record_step(receipt, path)
                     continue
                 self._replace_target(path, change["content"].encode("utf-8"), change["adapter"], receipt.target_modes[str(path)])
                 receipt.after_hashes[str(path)] = _sha256(change["content"].encode("utf-8"))
@@ -973,7 +975,7 @@ class Transaction:
                     receipt.target_modes[str(path)]
                     if receipt.target_modes[str(path)] is not None else 0o600
                 )
-                self._persist(receipt)
+                self._record_step(receipt, path)
                 self._fault("after_replace:{0}".format(index))
                 change["adapter"].validate(_read_regular(path).decode("utf-8"))
                 after, after_exists, after_mode = _read_target(path)
@@ -982,7 +984,7 @@ class Transaction:
                 receipt.after_hashes[str(path)] = _sha256(after)
                 receipt.after_modes[str(path)] = after_mode
                 receipt.validations[str(path)] = {"pre": True, "post": True, "passed": True}
-                self._persist(receipt)
+                self._record_step(receipt, path)
             receipt.validations["health_check"] = self._run_health_checks()
             if receipt.validations["health_check"]["passed"]:
                 receipt.status = "applied"
@@ -1086,7 +1088,18 @@ class Transaction:
         if self.receipt_writer is not None:
             self.receipt_writer(Path(receipt.receipt_path), receipt.to_dict())
             return
-        _atomic_in_directory(root, "receipt.json", (json.dumps(receipt.to_dict(), indent=2, sort_keys=True) + "\n").encode("utf-8"), 0o600)
+        _write_receipt(root, receipt)
+
+    def _record_step(self, receipt, path):
+        """Journal one target's progress without rewriting the whole receipt."""
+        if self.receipt_writer is not None:
+            self._persist(receipt)
+            return
+        target = str(path)
+        step = {"target": target, "after_hash": receipt.after_hashes[target], "after_mode": receipt.after_modes[target]}
+        if target in receipt.validations:
+            step["validation"] = receipt.validations[target]
+        _append_step(_assert_safe_directory(receipt.transaction_root), step)
 
     def _finish_restore(self, receipt):
         if _restore_receipt(receipt, expected_current=_receipt_after_state(receipt)):
@@ -1182,6 +1195,87 @@ def _remove_target(path):
 def _current_state(target_name):
     content, exists, mode = _read_target(target_name)
     return {"hash": _sha256(content), "exists": exists, "mode": mode}
+
+
+def _write_receipt(root, receipt):
+    """Replace receipt.json; a finished receipt supersedes its step journal."""
+    _atomic_in_directory(root, "receipt.json", (json.dumps(receipt.to_dict(), indent=2, sort_keys=True) + "\n").encode("utf-8"), 0o600)
+    if receipt.status == "pending":
+        return
+    directory = _open_directory(root)
+    try:
+        os.unlink(STEP_JOURNAL_NAME, dir_fd=directory)
+        os.fsync(directory)
+    except FileNotFoundError:
+        pass
+    finally:
+        os.close(directory)
+
+
+def _append_step(root, step):
+    """Append one fsynced record to a pending transaction's step journal."""
+    directory = _open_directory(root)
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        try:
+            descriptor = os.open(STEP_JOURNAL_NAME, flags | os.O_EXCL, 0o600, dir_fd=directory)
+            created = True
+        except FileExistsError:
+            descriptor = os.open(STEP_JOURNAL_NAME, flags, 0o600, dir_fd=directory)
+            created = False
+        try:
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                raise ValueError("receipt step journal is not a regular file")
+            _write_all(descriptor, (json.dumps(step, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8"))
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        if created:
+            os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
+def replay_step_journal(value, root):
+    """Apply the journaled steps of a pending transaction to its decoded receipt."""
+    if not isinstance(value, dict) or value.get("status") != "pending":
+        return value
+    content, exists, _mode = _read_target(Path(root) / STEP_JOURNAL_NAME)
+    if not exists:
+        return value
+    targets = value.get("targets")
+    maps = [value.get(name) for name in ("after_hashes", "after_modes", "validations")]
+    if not isinstance(targets, list) or not all(isinstance(item, dict) for item in maps):
+        raise ValueError("receipt fields are malformed or untrusted")
+    known = set(targets)
+    # The last segment is empty, or a record an interrupted append never finished.
+    for line in content.split(b"\n")[:-1]:
+        try:
+            step = json.loads(line.decode("utf-8"))
+        except ValueError:
+            raise ValueError("receipt step journal is malformed")
+        if (
+            not isinstance(step, dict)
+            or not {"target", "after_hash", "after_mode"} <= set(step) <= {"target", "after_hash", "after_mode", "validation"}
+            or step["target"] not in known
+            or not isinstance(step["after_hash"], str) or len(step["after_hash"]) != 64
+            or any(character not in "0123456789abcdef" for character in step["after_hash"])
+            or not (step["after_mode"] is None or type(step["after_mode"]) is int)
+            or not isinstance(step.get("validation", {}), dict)
+        ):
+            raise ValueError("receipt step journal is malformed")
+        maps[0][step["target"]] = step["after_hash"]
+        maps[1][step["target"]] = step["after_mode"]
+        if "validation" in step:
+            maps[2][step["target"]] = step["validation"]
+    return value
+
+
+def load_receipt(receipt_path):
+    """Read a receipt, replaying the step journal of a transaction that did not finish."""
+    location = _assert_safe_target(receipt_path)
+    value = json.loads(_read_regular(location).decode("utf-8"))
+    return Receipt.from_dict(replay_step_journal(value, location.parent), str(location))
 
 
 def _receipt_after_state(receipt):
@@ -1283,18 +1377,14 @@ def _rollback_preview_locked(receipt, location):
 def preview_rollback(receipt_path):
     """Return a hash-bound, non-secret snapshot of the current rollback targets."""
     location = _assert_safe_target(receipt_path)
-    initial = Receipt.from_dict(
-        json.loads(_read_regular(location).decode("utf-8")), str(location)
-    )
+    initial = load_receipt(location)
     lock_context = (
         _migrate_legacy_target_locks(initial.targets, initial.lock_root)
         if initial.lock_root is not None else nullcontext()
     )
     with lock_context:
         with _target_locks(initial.targets, lock_root=initial.lock_root):
-            receipt = Receipt.from_dict(
-                json.loads(_read_regular(location).decode("utf-8")), str(location)
-            )
+            receipt = load_receipt(location)
             return _rollback_preview_locked(receipt, location)
 
 
@@ -1306,14 +1396,14 @@ def rollback(
 ):
     """Restore a receipt through a user preview hash or installer-internal CAS."""
     location = _assert_safe_target(receipt_path)
-    initial = Receipt.from_dict(json.loads(_read_regular(location).decode("utf-8")), str(location))
+    initial = load_receipt(location)
     lock_context = (
         _migrate_legacy_target_locks(initial.targets, initial.lock_root)
         if initial.lock_root is not None else nullcontext()
     )
     with lock_context:
         with _target_locks(initial.targets, lock_root=initial.lock_root):
-            receipt = Receipt.from_dict(json.loads(_read_regular(location).decode("utf-8")), str(location))
+            receipt = load_receipt(location)
             if (
                 expected_receipt_hash is not None
                 and _rollback_receipt_hash(receipt) != expected_receipt_hash
@@ -1355,7 +1445,7 @@ def rollback(
             else:
                 receipt.status = "rollback_failed"
             try:
-                _atomic_in_directory(Path(receipt.transaction_root), "receipt.json", (json.dumps(receipt.to_dict(), indent=2, sort_keys=True) + "\n").encode("utf-8"), 0o600)
+                _write_receipt(Path(receipt.transaction_root), receipt)
             except Exception as error:
                 receipt.status = "recovery_required"
                 receipt.validations["receipt_write"] = {"passed": False, "message": redact_secrets(str(error))}

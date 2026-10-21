@@ -438,11 +438,11 @@
     },
     {
       "path": "src/mlx_agent/backend_install.py",
-      "sha256": "fa707be22b307f72a849628f26cbe32c9adc405d477be4fe6b02067e4b7fa98e"
+      "sha256": "2f8721a54663673a3ab50e23fbfb79a83fc0352e00a50d72d7f9c138af398896"
     },
     {
       "path": "src/mlx_agent/backend_runner.py",
-      "sha256": "4bc8018d76f26680bbd0928a23e0741f397a7c5289e2c81d590a23b7b99f41a9"
+      "sha256": "a0ac38b06e3f753f7e16d000a810f733639e5f9ff5d1f9f18431b424b97701ab"
     },
     {
       "path": "src/mlx_agent/backends.py",
@@ -586,7 +586,7 @@
     },
     {
       "path": "src/mlx_agent/installer.py",
-      "sha256": "0dd9b15853d33245cc19b17bc58a92ffcefefb5c2478573ab55a79c543607a32"
+      "sha256": "6c5805d480012db8cb3137074f8b7475d9923d734619663a37dad2c5a34bac89"
     },
     {
       "path": "src/mlx_agent/intake.py",
@@ -607,6 +607,10 @@
     {
       "path": "src/mlx_agent/jit_serve.py",
       "sha256": "4fd502110ead7aac1b900d413318744c1020682ca559cb4ff64564c2d30d4e56"
+    },
+    {
+      "path": "src/mlx_agent/kokoro_runtime.py",
+      "sha256": "51acff14c33b976849fc651546a034b120d4103e6aeb8a04d0fcda048c2f043f"
     },
     {
       "path": "src/mlx_agent/lab.py",
@@ -638,7 +642,7 @@
     },
     {
       "path": "src/mlx_agent/model_doctor.py",
-      "sha256": "7025db773ffdf2f5cea2450a779f78e6957ab3de514da012f6e5ece80d3639b8"
+      "sha256": "631c801e3d278d4955c7cdf6bd7d226568b764177cdb70977d1ce3cf8c335e81"
     },
     {
       "path": "src/mlx_agent/models.py",
@@ -701,12 +705,16 @@
       "sha256": "6b3400d8949007bb5fbd9cdae4a2b70628ad94b2ce8e68fa6ff868e22b055d58"
     },
     {
+      "path": "src/mlx_agent/resources/backends/mlx-audio-build.lock",
+      "sha256": "6e7910c87ddfeaefcae794df890eeeb6be8ad963297bf693b09fba962a24ce6f"
+    },
+    {
       "path": "src/mlx_agent/resources/backends/mlx-audio.json",
       "sha256": "a1834ce1adeea76beb9389236bbea32f06279f62f2dbf8442047beadcadb2a7a"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-audio.lock",
-      "sha256": "a22abcb86631c66d02e863a7707eb3cf808998fe5bc1b2ffb4058b57c6f2063d"
+      "sha256": "22550b7cbb8daba57fb3badf93f78fdc2a7b58333486ba7c6886ed8b53d2bdff"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-embeddings.json",
@@ -858,11 +866,11 @@
     },
     {
       "path": "src/mlx_agent/speak.py",
-      "sha256": "5da25d2738cc917ed0ef7a33c9dca644bbdc3c52ff7fb0c98c4efc673f7a5a08"
+      "sha256": "b3664ef341af1318b2ca30f9ba6f4a9b4b44a2baa849b7d0f8150ee8674255f0"
     },
     {
       "path": "src/mlx_agent/speak_runner.py",
-      "sha256": "5f0eb6f0a523ff9c3319d2478aa0f940b4805656538355958b28108e2c9e924a"
+      "sha256": "f3a11515e1ccb9c2a46f6bba9ea4dc3ab9dcc727f9f1bbecce64906614b1ac53"
     },
     {
       "path": "src/mlx_agent/strata_runtime.py",
@@ -930,7 +938,7 @@
     },
     {
       "path": "src/mlx_agent/transactions.py",
-      "sha256": "883630a1584b3f5c3994d39aeff1ffa6fa68ab7af5e10d12f4fbc042cf53796b"
+      "sha256": "e4baf461c0f91b818603374ba2a7c33bc6dc38bd0f9ee9b197d5b6cd8d9d8c30"
     },
     {
       "path": "src/mlx_agent/transcribe.py",

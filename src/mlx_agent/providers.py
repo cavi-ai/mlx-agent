@@ -94,6 +94,7 @@ class ProviderDetection:
     last_tested_version: str = None
     error: str = None
     install_mode: str = "direct"
+    warning: str = None
 
     def to_dict(self):
         return {
@@ -107,6 +108,7 @@ class ProviderDetection:
             "last_tested_version": self.last_tested_version,
             "error": self.error,
             "install_mode": self.install_mode,
+            "warning": self.warning,
         }
 
 
@@ -525,11 +527,11 @@ def _probe_detection(definition, command, command_path, environment, probe_runne
         if completed.returncode != 0 or match is None:
             raise ValueError("version probe did not return a SemVer core")
         version = match.group(1)
+        # A release newer than the last tested one is used with a warning; one below the minimum is refused.
         supported = definition.last_tested_version is not None and (
-            _version_tuple(definition.minimum_version)
-            <= _version_tuple(version)
-            <= _version_tuple(definition.last_tested_version)
+            _version_tuple(definition.minimum_version) <= _version_tuple(version)
         )
+        untested = supported and _version_tuple(version) > _version_tuple(definition.last_tested_version)
         state = "native-visible" if supported else "unsupported"
         return ProviderDetection(
             definition.id, supported, command, command_path, state=state,
@@ -537,6 +539,8 @@ def _probe_detection(definition, command, command_path, environment, probe_runne
             last_tested_version=definition.last_tested_version,
             error=None if supported else "provider version is outside the validated range",
             install_mode=definition.install_mode,
+            warning="provider version {0} is newer than the last tested {1}".format(
+                version, definition.last_tested_version) if untested else None,
         )
     except (OSError, subprocess.SubprocessError, ValueError) as error:
         return ProviderDetection(

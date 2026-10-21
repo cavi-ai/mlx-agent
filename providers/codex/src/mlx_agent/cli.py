@@ -2393,8 +2393,8 @@ def _installer_result(operation, data, as_json, status="ok", error=None):
                     details = "{0}: {1}".format(item["id"], item["state"])
                     if item.get("version"):
                         details += " (version {0})".format(item["version"])
-                    if item.get("error"):
-                        details += " - {0}".format(item["error"])
+                    if item.get("error") or item.get("warning"):
+                        details += " - {0}".format(item.get("error") or item["warning"])
                     print(details)
             print(data["preview"]["diff"])
             print("Confirmation required: rerun with --confirm --preview-hash PREVIEW_HASH.")

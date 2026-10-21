@@ -450,7 +450,7 @@ class Installer:
                     current = current.parent
 
     def _doctor(self, plan):
-        problems, checked, provider_states = [], [], []
+        problems, warnings, checked, provider_states = [], [], [], []
         definitions = self.registry.definitions()
         detections = {
             item.id: item for item in detect_providers(
@@ -492,6 +492,8 @@ class Installer:
                 })
             elif detection.state == "native-visible":
                 integration_state = "native-visible"
+                if detection.warning:
+                    warnings.append({"provider": provider_id, "code": "provider_untested", "message": detection.warning})
             else:
                 integration_state = "staged"
                 code = "provider_unsupported" if detection.state == "unsupported" else "provider_absent"
@@ -521,7 +523,7 @@ class Installer:
                 problems.append({"provider": provider_id, "code": "legacy_lock_invalid", "message": str(error)})
                 continue
             problems.extend({"provider": provider_id, **item} for item in legacy_problem)
-        return {"healthy": not problems, "problems": problems, "checked": checked,
+        return {"healthy": not problems, "problems": problems, "warnings": warnings, "checked": checked,
                 "providers": provider_states,
                 "cooperative_concurrency": "Transaction advisory locks protect cooperative writers."}
 

@@ -14,6 +14,10 @@ the artifact attached to a specific release when you need that version's docs.
 | OpenCode | 1.17.7 | 1.18.9 |
 | AgentSkills hosts | — | — |
 
+A provider release newer than its last tested version is used, and `doctor`
+reports a `provider_untested` warning for it; a release below the minimum is
+unsupported.
+
 Python 3.9+ for the core; macOS on Apple Silicon for host inspection and MLX
 execution. Optional backend dependency installation requires Python 3.12.
 

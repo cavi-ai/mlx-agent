@@ -209,7 +209,7 @@ class DescribeTests(unittest.TestCase):
             mock.patch("mlx_agent.describe.load_registries", return_value=self.registries),
             mock.patch("mlx_agent.describe.is_installed", return_value=True),
             mock.patch("mlx_agent.inference_runner.sync_ports", return_value=[]),
-            mock.patch("mlx_agent.cli.run_describe", run),
+            mock.patch("mlx_agent.describe.run_describe", run),
         )
         for patch in patches:
             patch.start()

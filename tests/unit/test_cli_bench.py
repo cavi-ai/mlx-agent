@@ -13,7 +13,7 @@ from mlx_agent.bench import BenchError
 
 def run(argv, inspect=None):
     output = io.StringIO()
-    with redirect_stdout(output), patch("mlx_agent.cli.HostInventory.inspect", side_effect=inspect,
+    with redirect_stdout(output), patch("mlx_agent.host.HostInventory.inspect", side_effect=inspect,
                                         return_value=types.SimpleNamespace(chip="Apple M4")):
         code = cli.main(argv)
     return code, output.getvalue()
@@ -48,7 +48,7 @@ class BenchCliTests(unittest.TestCase):
 
     def test_run_reports_measurement_and_evidence(self):
         measurement = _Measurement(ttft_ms=120, prefill_toks=900.0)
-        with patch("mlx_agent.cli.measure_runtime", return_value=measurement) as measure:
+        with patch("mlx_agent.bench.measure_runtime", return_value=measurement) as measure:
             code, text = run(["bench", "run", "--repo", "org/model", "--runtime", "mlx_lm", "--role", "coding", "--json"],
                              inspect=RuntimeError("no host"))
             self.assertEqual(0, code)
@@ -59,14 +59,14 @@ class BenchCliTests(unittest.TestCase):
             code, text = run(["bench", "run", "--repo", "org/model", "--runtime", "mlx_lm"])
         self.assertEqual(["Bench: org/model on mlx_lm (3 runs)", "  decode:  41.5 tok/s (spread 2.0%)",
                           "  ttft:    120 ms", "  prefill: 900.0 tok/s"], text.strip().splitlines())
-        with patch("mlx_agent.cli.measure_runtime", return_value=_Measurement()):
+        with patch("mlx_agent.bench.measure_runtime", return_value=_Measurement()):
             text = run(["bench", "run", "--repo", "org/model", "--runtime", "ollama"])[1]
         self.assertIn("  ttft:    n/a", text)
         self.assertIn("  prefill: n/a", text)
 
     def test_run_can_export_an_anonymized_record(self):
         with tempfile.TemporaryDirectory() as directory, \
-                patch("mlx_agent.cli.measure_runtime", return_value=_Measurement()), \
+                patch("mlx_agent.bench.measure_runtime", return_value=_Measurement()), \
                 patch("mlx_agent.bench.export_record", return_value={"row": 1}) as record, \
                 patch("mlx_agent.bench.append_export", return_value=Path(directory) / "bench.jsonl") as append:
             code, text = run(["bench", "run", "--repo", "org/model", "--runtime", "mlx_lm",
@@ -79,7 +79,7 @@ class BenchCliTests(unittest.TestCase):
     def test_run_failures_are_classified(self):
         for error, code in ((BenchError("runtime_unreachable", "no server", "Start it."), "runtime_unreachable"),
                             (ValueError("bad runs"), "invalid_arguments")):
-            with self.subTest(code=code), patch("mlx_agent.cli.measure_runtime", side_effect=error):
+            with self.subTest(code=code), patch("mlx_agent.bench.measure_runtime", side_effect=error):
                 status, text = run(["bench", "run", "--repo", "org/model", "--runtime", "mlx_lm", "--json"])
                 self.assertEqual((2, code), (status, json.loads(text)["error"]["code"]))
                 status, text = run(["bench", "run", "--repo", "org/model", "--runtime", "mlx_lm"])

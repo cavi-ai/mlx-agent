@@ -8,123 +8,9 @@ import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .adoption import ADOPTION_SCHEMA_VERSION, AdoptionRequest, AdoptionWorkflow
-from .backend_install import list_backends, plan_install, plan_remove, remove_backend, start_install
-from .backends import BackendError
-from .bench import (
-    BENCH_PROBE_ID,
-    GEN_TOKENS_DEFAULT,
-    RUNS_DEFAULT,
-    TIMEOUT_DEFAULT,
-    BenchError,
-    measure_runtime,
-)
 from .contracts import ErrorDetail, ResultEnvelope
-from .convert import (
-    Q_BITS_CHOICES,
-    ConvertError,
-    load_receipts,
-    plan_convert,
-    plan_gguf_convert,
-    start_convert,
-    status_convert,
-)
-from .discovery import DiscoveryRequest, DiscoveryService
-from .gguf import MAX_SCAN_FILES, GGUFError, default_gguf_roots, inventory
-from .fleet import (
-    FleetConfigAdapter,
-    FleetError,
-    assignments_from_adoption,
-    parse_assignments,
-    parse_port_map,
-    parse_runtime_map,
-)
-from .fuse import (
-    FuseError,
-    plan_fuse,
-    start_fuse,
-    status_fuse,
-)
-from .host import HostInventory
-from .huggingface import HuggingFaceClient
-from .installer import Installer, InstallerConflictError, InstallerPathError
-from .intake import resolve as intake_resolve
-from .intake_fetch import FetchError, plan_fetch, start_fetch, status_fetch
-from .intake_source import IntakeSourceError
-from .interview import build_intent, run_interview
-from .lora import (
-    BATCH_DEFAULT,
-    ITERS_DEFAULT,
-    LAYERS_DEFAULT,
-    LR_DEFAULT,
-    LoraError,
-    plan_lora,
-    start_lora,
-    status_lora,
-)
-from .modality import ALL_FACET_IDS, FOUNDATION_IDS, resolve_facets, resolve_modalities
-from .models import DISCOVERY_ROLES, render_md, wire
-from .port_analysis import PortAnalysisError, analyze as port_analyze
-from .inference_runner import InferenceError
-from .transcribe import plan_transcribe, run_transcribe
-from .decide import plan_decide, run_decide
-from .generate import plan_generate, run_generate
-from .speak import plan_speak, run_speak
-from .music import plan_music, run_music
-from .describe import plan_describe, run_describe
-from .video import plan_video, run_video
-from .port_plan import draft_port_plan
-from .project_blueprint import (
-    build_brief,
-    generate_design_pack,
-    render_design_pack,
-    write_design_pack,
-)
-from .providers import ProviderRegistry
-from .research import generate_pack, render_pack, write_pack
-from .serve import (
-    MAX_TOKENS_DEFAULT,
-    ServeError,
-    default_model_present,
-    load_recipes,
-    plan_start,
-    resolve_serve_runtime,
-    receipts_root,
-    start_serve,
-    status_serve,
-    stop_serve,
-    unload_serve,
-    configure_serve_memory,
-    wired_port_claim,
-)
-from .taxonomy import annotate_inventory
-from .transactions import (
-    COOPERATIVE_CONCURRENCY_NOTE,
-    ConcurrentTransactionError,
-    Receipt,
-    Transaction,
-    _assert_safe_target,
-    _read_regular,
-    preview_rollback,
-    rollback,
-)
-from .verification import (
-    LMStudioRuntimeClient,
-    MLXVLMRuntimeClient,
-    OllamaRuntimeClient,
-    OpenAICompatibleRuntimeClient,
-    Verifier,
-)
-from .watch import (
-    WatchError,
-    build_snapshot,
-    collect_owned,
-    diff_snapshots,
-    read_baseline,
-    snapshot_candidates,
-    write_snapshot,
-)
-from .wiring import ConfigAdapter
+
+# Each command imports its own modules when it runs, so one command never loads every other command.
 
 
 FIXTURE_WARNING = {
@@ -158,6 +44,9 @@ def _fixture_http_get(payload):
 
 
 def _discovery_service_from_environment(state_dir=None):
+    from .discovery import DiscoveryService
+    from .host import HostInventory
+    from .huggingface import HuggingFaceClient
     fixture = os.environ.get("MLX_AGENT_FIXTURE")
     if not fixture:
         return DiscoveryService(state_dir=state_dir), None, None
@@ -215,6 +104,7 @@ def _validate_fixture(payload):
 
 
 def _add_discovery_arguments(parser):
+    from .models import DISCOVERY_ROLES
     parser.add_argument("--role", choices=DISCOVERY_ROLES)
     parser.add_argument("--limit", type=int, default=6)
     parser.add_argument("--memory-gb", type=float, help="maximum host memory budget in GB (keeps 20%% runtime headroom)")
@@ -238,6 +128,9 @@ def _add_discovery_arguments(parser):
 
 
 def _run_discovery(arguments, legacy):
+    from .discovery import DiscoveryRequest
+    from .host import HostInventory
+    from .models import render_md, wire
     if arguments.wire:
         print(wire(arguments.wire, arguments.target, arguments.port))
         return 0
@@ -289,6 +182,8 @@ def _run_discovery(arguments, legacy):
 
 
 def _run_inspect_host(arguments):
+    from .host import HostInventory
+    from .huggingface import HuggingFaceClient
     host, warnings = HostInventory.inspect(HuggingFaceClient()._http_get)
     result = ResultEnvelope.ok("inspect-host", host.to_dict(), warnings=warnings)
     if arguments.json:
@@ -337,6 +232,9 @@ def _emit_adoption_result(result, as_json):
 
 
 def _run_adoption(arguments):
+    from .adoption import ADOPTION_SCHEMA_VERSION, AdoptionRequest, AdoptionWorkflow
+    from .discovery import DiscoveryService
+    from .verification import Verifier
     operation = "adopt-{0}".format(arguments.adopt_command)
     state_path = _adoption_state_path(arguments)
     if not state_path:
@@ -411,6 +309,7 @@ def _run_adoption(arguments):
 
 
 def _add_adoption_arguments(parser):
+    from .models import DISCOVERY_ROLES
     actions = parser.add_subparsers(dest="adopt_command", required=True)
     start = actions.add_parser("start", help="start and durably run a model adoption workflow")
     start.add_argument("--state", help="adoption handoff path")
@@ -429,6 +328,8 @@ def _add_adoption_arguments(parser):
 
 
 def _add_research_arguments(parser):
+    from .modality import ALL_FACET_IDS, FOUNDATION_IDS
+    from .models import DISCOVERY_ROLES
     parser.add_argument("--domain", help="one-line domain description (required unless --interview)")
     parser.add_argument("--role", dest="roles", action="append", choices=DISCOVERY_ROLES, help="model role to research (repeatable)")
     parser.add_argument("--keyword", dest="keywords", action="append", help="domain keyword to prioritize (repeatable)")
@@ -481,6 +382,10 @@ def _emit_research(result, arguments, markdown=None):
 
 
 def _run_research(arguments):
+    from .huggingface import HuggingFaceClient
+    from .interview import build_intent, run_interview
+    from .modality import resolve_facets, resolve_modalities
+    from .research import generate_pack, render_pack, write_pack
     operation = "research"
     try:
         cli_modalities = tuple(arguments.modalities or ())
@@ -562,6 +467,7 @@ def _run_research(arguments):
 
 
 def _add_blueprint_arguments(parser):
+    from .modality import FOUNDATION_IDS
     parser.add_argument("--goal", help="one-line project goal (required)")
     parser.add_argument(
         "--modality",
@@ -605,6 +511,7 @@ def _emit_blueprint(result, arguments, markdown=None):
 
 
 def _run_blueprint(arguments):
+    from .project_blueprint import build_brief, generate_design_pack, render_design_pack, write_design_pack
     operation = "blueprint"
     try:
         if not arguments.goal:
@@ -665,6 +572,7 @@ def _receipt_data(receipt):
 
 
 def _wire_failure(operation, code, message, remediation, data=None):
+    from .transactions import COOPERATIVE_CONCURRENCY_NOTE
     return ResultEnvelope(
         operation=operation, status="error", data=data or {},
         warnings=[{"code": "cooperative_concurrency", "message": COOPERATIVE_CONCURRENCY_NOTE}],
@@ -673,12 +581,15 @@ def _wire_failure(operation, code, message, remediation, data=None):
 
 
 def _wire_ok(operation, data):
+    from .transactions import COOPERATIVE_CONCURRENCY_NOTE
     return ResultEnvelope.ok(operation, data, warnings=[{
         "code": "cooperative_concurrency", "message": COOPERATIVE_CONCURRENCY_NOTE,
     }])
 
 
 def _wire_render(arguments):
+    from .transactions import _assert_safe_target, _read_regular
+    from .wiring import ConfigAdapter
     path = _assert_safe_target(arguments.path)
     existing = _read_regular(path).decode("utf-8")
     adapter = ConfigAdapter.detect(path, runtime=arguments.target)
@@ -688,6 +599,9 @@ def _wire_render(arguments):
 
 
 def _run_wire(arguments):
+    from .transactions import (
+        ConcurrentTransactionError, Receipt, Transaction, _assert_safe_target, _read_regular, preview_rollback, rollback,
+    )
     operation = "wire-{0}".format(arguments.wire_command)
     try:
         if arguments.wire_command == "status":
@@ -774,6 +688,7 @@ _BENCH_RUNTIMES = ("ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm")
 
 
 def _bench_runtime_client(name):
+    from .verification import LMStudioRuntimeClient, MLXVLMRuntimeClient, OllamaRuntimeClient, OpenAICompatibleRuntimeClient
     if name == "ollama":
         return OllamaRuntimeClient()
     if name == "lmstudio":
@@ -788,6 +703,8 @@ def _bench_runtime_client(name):
 
 
 def _add_bench_arguments(parser):
+    from .bench import GEN_TOKENS_DEFAULT, RUNS_DEFAULT, TIMEOUT_DEFAULT
+    from .models import DISCOVERY_ROLES
     actions = parser.add_subparsers(dest="bench_command", required=True)
     run = actions.add_parser(
         "run",
@@ -811,6 +728,8 @@ def _add_bench_arguments(parser):
 
 
 def _run_bench(arguments):
+    from .bench import BenchError, measure_runtime
+    from .host import HostInventory
     operation = "bench-{0}".format(arguments.bench_command)
     try:
         if arguments.bench_command == "aggregate":
@@ -903,6 +822,7 @@ def _run_bench(arguments):
 
 
 def _add_serve_arguments(parser):
+    from .serve import MAX_TOKENS_DEFAULT
     actions = parser.add_subparsers(dest="serve_command", required=True)
     start = actions.add_parser(
         "start",
@@ -961,6 +881,10 @@ def _memory_arguments(arguments):
 
 
 def _run_serve(arguments):
+    from .serve import (
+        ServeError, configure_serve_memory, default_model_present, load_recipes, plan_start, resolve_serve_runtime,
+        start_serve, status_serve, stop_serve, unload_serve, wired_port_claim,
+    )
     operation = "serve-{0}".format(arguments.serve_command)
     try:
         if arguments.serve_command == "status":
@@ -1071,6 +995,8 @@ def _run_serve(arguments):
 
 def _run_serve_launchd(arguments, plan, operation):
     """Preview-confirm installation of a launchd agent for a serve plan."""
+    from .serve import default_model_present, receipts_root
+    from .transactions import Transaction
     from .serve import LaunchdPlistAdapter, launchd_label, render_launchd_plist
 
     launchd_dir = Path(arguments.launchd_dir) if arguments.launchd_dir else (
@@ -1211,6 +1137,7 @@ def _add_fleet_arguments(parser):
 
 
 def _fleet_inputs(arguments):
+    from .fleet import FleetError, assignments_from_adoption, parse_assignments, parse_port_map, parse_runtime_map
     if arguments.assign and arguments.from_adoption:
         raise FleetError(
             "invalid_arguments",
@@ -1227,6 +1154,7 @@ def _fleet_inputs(arguments):
 
 
 def _fleet_missing_models(assignments):
+    from .verification import LMStudioRuntimeClient, MLXVLMRuntimeClient, OllamaRuntimeClient, OpenAICompatibleRuntimeClient
     from .model_doctor import (
         collect_runtime_inventory,
         default_hf_cache,
@@ -1249,6 +1177,8 @@ def _fleet_missing_models(assignments):
 
 
 def _run_fleet(arguments):
+    from .fleet import FleetConfigAdapter, FleetError
+    from .transactions import ConcurrentTransactionError, Transaction, _assert_safe_target, _read_regular
     operation = "fleet-{0}".format(arguments.fleet_command)
     try:
         assignments, runtime_map, port_map = _fleet_inputs(arguments)
@@ -1326,6 +1256,7 @@ def _run_fleet(arguments):
 
 
 def _watch_runtime_clients():
+    from .verification import LMStudioRuntimeClient, MLXVLMRuntimeClient, OllamaRuntimeClient, OpenAICompatibleRuntimeClient
     return [
         OllamaRuntimeClient(),
         LMStudioRuntimeClient(),
@@ -1350,6 +1281,10 @@ def _add_watch_arguments(parser):
 
 
 def _run_watch(arguments):
+    from .discovery import DiscoveryRequest
+    from .watch import (
+        WatchError, build_snapshot, collect_owned, diff_snapshots, read_baseline, snapshot_candidates, write_snapshot,
+    )
     operation = "watch-{0}".format(arguments.watch_command)
     try:
         service, fixture_warning, fixture_error = _discovery_service_from_environment()
@@ -1493,6 +1428,11 @@ def _intake_resolve_human(payload):
 
 
 def _run_intake(arguments):
+    from .intake import resolve as intake_resolve
+    from .intake_fetch import FetchError, plan_fetch, start_fetch, status_fetch
+    from .intake_source import IntakeSourceError
+    from .port_analysis import PortAnalysisError, analyze as port_analyze
+    from .port_plan import draft_port_plan
     operation = "intake-{0}".format(arguments.intake_command)
     try:
         if arguments.intake_command == "resolve":
@@ -1584,6 +1524,8 @@ def _backend_list_human(report):
 
 
 def _run_backend(arguments):
+    from .backend_install import list_backends, plan_install, plan_remove, remove_backend, start_install
+    from .backends import BackendError
     operation = "backend-{0}".format(arguments.backend_command)
     try:
         if arguments.backend_command == "list":
@@ -1626,6 +1568,7 @@ def _run_backend(arguments):
 
 
 def _add_convert_arguments(parser):
+    from .convert import Q_BITS_CHOICES
     actions = parser.add_subparsers(dest="convert_command", required=True)
     start = actions.add_parser(
         "start",
@@ -1759,6 +1702,17 @@ def _add_convert_arguments(parser):
 
 def _run_convert(arguments):
     from .compute import ComputeBusy
+    from .convert import ConvertError, plan_convert, plan_gguf_convert, start_convert, status_convert
+    from .decide import plan_decide, run_decide
+    from .describe import plan_describe, run_describe
+    from .generate import plan_generate, run_generate
+    from .gguf import GGUFError
+    from .inference_runner import InferenceError
+    from .music import plan_music, run_music
+    from .serve import default_model_present
+    from .speak import plan_speak, run_speak
+    from .transcribe import plan_transcribe, run_transcribe
+    from .video import plan_video, run_video
     operation = "convert-{0}".format(arguments.convert_command)
     try:
         if arguments.convert_command == "status":
@@ -1900,6 +1854,9 @@ def _run_convert(arguments):
 
 
 def _convert_scan(arguments):
+    from .convert import ConvertError, load_receipts
+    from .gguf import MAX_SCAN_FILES, default_gguf_roots, inventory
+    from .taxonomy import annotate_inventory
     roots = arguments.gguf_roots or default_gguf_roots()
     if not roots and not arguments.mlx_roots:
         raise ConvertError(
@@ -1982,6 +1939,7 @@ def _convert_status_human(entries):
 
 
 def _add_lora_arguments(parser):
+    from .lora import BATCH_DEFAULT, ITERS_DEFAULT, LAYERS_DEFAULT, LR_DEFAULT
     actions = parser.add_subparsers(dest="lora_command", required=True)
     inspect = actions.add_parser("inspect", help="check local training prerequisites and dataset splits without starting work")
     inspect.add_argument("--repo", default=None)
@@ -2017,6 +1975,8 @@ def _add_lora_arguments(parser):
 
 def _run_lora(arguments):
     from .compute import ComputeBusy
+    from .lora import LoraError, plan_lora, start_lora, status_lora
+    from .serve import default_model_present
     operation = "lora-{0}".format(arguments.lora_command)
     try:
         if arguments.lora_command == "inspect":
@@ -2127,6 +2087,8 @@ def _add_fuse_arguments(parser):
 
 def _run_fuse(arguments):
     from .compute import ComputeBusy
+    from .fuse import FuseError, plan_fuse, start_fuse, status_fuse
+    from .serve import default_model_present
     operation = "fuse-{0}".format(arguments.fuse_command)
     try:
         if arguments.fuse_command == "status":
@@ -2226,6 +2188,7 @@ def _plugin_manifest():
 
 
 def _installer_registry():
+    from .providers import ProviderRegistry
     home = os.environ.get("MLX_AGENT_HOME")
     config_root = os.environ.get("MLX_AGENT_CONFIG_ROOT") or os.environ.get("XDG_STATE_HOME")
     xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
@@ -2269,6 +2232,7 @@ def _add_doctor_arguments(parser):
 
 
 def _run_model_doctor(arguments):
+    from .verification import LMStudioRuntimeClient, MLXVLMRuntimeClient, OllamaRuntimeClient, OpenAICompatibleRuntimeClient
     from .model_doctor import (
         PruneError,
         default_hf_cache,
@@ -2406,6 +2370,7 @@ def _installer_result(operation, data, as_json, status="ok", error=None):
 
 
 def _run_installer(arguments):
+    from .installer import Installer, InstallerConflictError, InstallerPathError
     operation = arguments.command
     if operation == "doctor" and "models" in (getattr(arguments, "providers", None) or []):
         return _run_model_doctor(arguments)
@@ -2474,57 +2439,48 @@ def converter_main(argv=None):
     return _run_convert(parser.parse_args(argv))
 
 
-def build_parser():
-    from . import task_cli
+def build_parser(command=None):
+    """Build the parser; given a command name, only that command's arguments are defined."""
+    def wanted(name):
+        return command is None or command == name
+
     parser = argparse.ArgumentParser(description="MLX agent command-line core.")
     subcommands = parser.add_subparsers(dest="command", required=True)
-    task_cli.add_arguments(subcommands.add_parser("task", help="durable local inference tasks"))
+    task = subcommands.add_parser("task", help="durable local inference tasks")
+    if wanted("task"):
+        from . import task_cli
+        task_cli.add_arguments(task)
     subcommands.add_parser("lab", help="experiments, studies, datasets and training")
-    discover = subcommands.add_parser("discover", help="discover MLX models for this host")
-    _add_discovery_arguments(discover)
-    inspect_host = subcommands.add_parser("inspect-host", help="inspect local Apple Silicon and runtime inventory without model discovery")
-    inspect_host.add_argument("--json", action="store_true")
-    adopt = subcommands.add_parser("adopt", help="run or inspect resumable model adoption")
-    _add_adoption_arguments(adopt)
-    research = subcommands.add_parser("research", help="build a read-only domain research pack (markdown)")
-    _add_research_arguments(research)
-    blueprint = subcommands.add_parser(
-        "blueprint",
-        help="emit a read-only MLX project design pack (quant/train guidance; no scaffolding)",
+    builders = (
+        ("discover", "discover MLX models for this host", _add_discovery_arguments),
+        ("inspect-host", "inspect local Apple Silicon and runtime inventory without model discovery",
+         lambda parser: parser.add_argument("--json", action="store_true")),
+        ("adopt", "run or inspect resumable model adoption", _add_adoption_arguments),
+        ("research", "build a read-only domain research pack (markdown)", _add_research_arguments),
+        ("blueprint", "emit a read-only MLX project design pack (quant/train guidance; no scaffolding)",
+         _add_blueprint_arguments),
+        ("wire", "render, apply, inspect, or roll back runtime wiring", _add_wire_arguments),
+        ("bench", "measure a locally served model without downloading it", _add_bench_arguments),
+        ("serve", "preview and launch a local MLX server (confirmation-gated)", _add_serve_arguments),
+        ("fleet", "render or apply a one-shot per-role router configuration", _add_fleet_arguments),
+        ("watch", "snapshot and diff owned models against Hugging Face", _add_watch_arguments),
+        ("convert", "preview and quantize a cached model (confirmation-gated)", _add_convert_arguments),
+        ("lora", "preview and run LoRA training on a cached model (confirmation-gated)", _add_lora_arguments),
+        ("fuse", "preview and fuse a LoRA adapter into its base (confirmation-gated)", _add_fuse_arguments),
+        ("intake", "resolve, download, and analyze pasted Hugging Face models", _add_intake_arguments),
+        ("backend", "list, install, or remove optional MLX converter backends (confirmation-gated)",
+         _add_backend_arguments),
+        ("providers", "list detected supported provider CLIs",
+         lambda parser: _add_installer_arguments(parser, include_providers=False)),
+        ("install", "install declared provider artifacts safely", _add_installer_arguments),
+        ("update", "update declared provider artifacts safely", _add_installer_arguments),
+        ("uninstall", "uninstall declared provider artifacts safely", _add_installer_arguments),
+        ("doctor", "doctor declared provider artifacts safely", _add_doctor_arguments),
     )
-    _add_blueprint_arguments(blueprint)
-    wire_command = subcommands.add_parser("wire", help="render, apply, inspect, or roll back runtime wiring")
-    _add_wire_arguments(wire_command)
-    bench_command = subcommands.add_parser("bench", help="measure a locally served model without downloading it")
-    _add_bench_arguments(bench_command)
-    serve_command = subcommands.add_parser("serve", help="preview and launch a local MLX server (confirmation-gated)")
-    _add_serve_arguments(serve_command)
-    fleet_command = subcommands.add_parser("fleet", help="render or apply a one-shot per-role router configuration")
-    _add_fleet_arguments(fleet_command)
-    watch_command = subcommands.add_parser("watch", help="snapshot and diff owned models against Hugging Face")
-    _add_watch_arguments(watch_command)
-    convert_command = subcommands.add_parser("convert", help="preview and quantize a cached model (confirmation-gated)")
-    _add_convert_arguments(convert_command)
-    lora_command = subcommands.add_parser("lora", help="preview and run LoRA training on a cached model (confirmation-gated)")
-    _add_lora_arguments(lora_command)
-    fuse_command = subcommands.add_parser("fuse", help="preview and fuse a LoRA adapter into its base (confirmation-gated)")
-    _add_fuse_arguments(fuse_command)
-    intake_command = subcommands.add_parser(
-        "intake", help="resolve, download, and analyze pasted Hugging Face models"
-    )
-    _add_intake_arguments(intake_command)
-    backend_command = subcommands.add_parser(
-        "backend", help="list, install, or remove optional MLX converter backends (confirmation-gated)"
-    )
-    _add_backend_arguments(backend_command)
-    providers_command = subcommands.add_parser("providers", help="list detected supported provider CLIs")
-    _add_installer_arguments(providers_command, include_providers=False)
-    for name in ("install", "update", "uninstall", "doctor"):
-        installer_command = subcommands.add_parser(name, help="{0} declared provider artifacts safely".format(name))
-        if name == "doctor":
-            _add_doctor_arguments(installer_command)
-        else:
-            _add_installer_arguments(installer_command)
+    for name, help_text, add_arguments in builders:
+        subparser = subcommands.add_parser(name, help=help_text)
+        if wanted(name):
+            add_arguments(subparser)
     return parser
 
 
@@ -2533,7 +2489,7 @@ def main(argv=None):
     if raw and raw[0] == "lab":
         from .lab import run
         return run(raw[1:])
-    parser = build_parser()
+    parser = build_parser(raw[0] if raw and not raw[0].startswith("-") else None)
     arguments = parser.parse_args(argv)
     if arguments.command == "task":
         from .task_cli import run

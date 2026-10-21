@@ -48,7 +48,7 @@ def _type_candidates(config, model):
 
 def plan_speak(model_path, text, out, voice=None, speed=1.0, lang_code=None,
                manifests=None, registries=None, root=None):
-    """Pick the speech backend for a converted model directory; pure apart from reading config.json."""
+    """Pick the speech backend, reading the local config and voice availability."""
     model = Path(model_path).expanduser()
     try:
         config = json.loads((model / "config.json").read_text(encoding="utf-8"))
@@ -101,8 +101,14 @@ def plan_speak(model_path, text, out, voice=None, speed=1.0, lang_code=None,
         str(backend_python(manifest, root)), str(SPEAK_RUNNER), "--model", str(model), "--model-type", model_type,
         "--text=" + text, "--out", str(target), "--speed", repr(float(speed)),
     ]
-    if voice is not None:
-        argv += ["--voice", voice]
+    selected_voice = voice
+    if model_type == "kokoro":
+        name = (voice or "af_heart").removesuffix(".safetensors")
+        local_voice = model / "voices" / (name + ".safetensors")
+        if local_voice.is_file():
+            selected_voice = str(local_voice.absolute())
+    if selected_voice is not None:
+        argv += ["--voice", selected_voice]
     if lang_code is not None:
         argv += ["--lang-code", lang_code]
     return {

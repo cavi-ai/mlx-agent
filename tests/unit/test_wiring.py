@@ -47,6 +47,25 @@ class WireRenderingTests(unittest.TestCase):
         self.assertNotIn("fragment-secret", redacted)
         self.assertIn('"safe": "ok"', redacted)
 
+    def test_redaction_removes_scheme_tokens_and_prefixed_tokens(self):
+        tokens = ("sk-live-abc123def456ghi789", "hf_" + "a" * 34, "ghp_" + "b" * 36,
+                  "github_pat_" + "c" * 40, "xoxb-1234567890-abcdef")
+        content = "\n".join((
+            "Authorization: Bearer " + tokens[0],
+            'curl -H "authorization: basic {0}"'.format(tokens[0]),
+            "loaded {0} and {1}".format(tokens[1], tokens[2]),
+            "pat {0} slack {1}".format(tokens[3], tokens[4]),
+        ))
+        redacted = redact_secrets(content)
+        for token in tokens:
+            self.assertNotIn(token, redacted)
+        self.assertIn("Authorization: Bearer <redacted>", redacted)
+        nested = redact_secrets(json.dumps({"error": "backend said token=bare-secret with " + tokens[1]}))
+        self.assertNotIn("bare-secret", nested)
+        self.assertNotIn(tokens[1], nested)
+        self.assertEqual(redact_secrets("task-0123456789abcdefghijklmnop and disk-usage"),
+                         "task-0123456789abcdefghijklmnop and disk-usage")
+
     def test_render_fails_closed_on_resolved_secrets_but_allows_environment_references(self):
         adapter = ConfigAdapter.detect("providers.json", runtime="mlx_lm")
         for existing in (

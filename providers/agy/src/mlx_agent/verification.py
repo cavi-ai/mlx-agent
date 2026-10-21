@@ -7,6 +7,9 @@ import http.client
 import ipaddress
 import json
 import math
+import subprocess
+import sys
+import tempfile
 import threading
 import time
 from copy import deepcopy
@@ -74,6 +77,23 @@ _CODING_PROBE_BLOCKED_TOKENS = (
     "globals", "locals", "compile", "breakpoint", "exit", "quit",
     "getattr", "setattr", "delattr", "vars", "help", "print",
 )
+CODING_PROBE_TIMEOUT_SECONDS = 5
+_CODING_PROBE_CHECK = (
+    "import json, sys\n"
+    "namespace = {'__builtins__': {}}\n"
+    "try:\n"
+    "    exec(compile(sys.stdin.read(), '<coding-probe>', 'exec'), namespace)\n"
+    "    add = namespace.get('add')\n"
+    "    if not callable(add):\n"
+    "        reason = 'missing_function'\n"
+    "    elif add(2, 3) != 5 or add(-1, 1) != 0:\n"
+    "        reason = 'wrong_answer'\n"
+    "    else:\n"
+    "        reason = 'valid'\n"
+    "except Exception:\n"
+    "    reason = 'wrong_answer'\n"
+    "sys.stdout.write(json.dumps(reason))\n"
+)
 REASONING_PROBE_PROMPT = (
     "A farmer has 17 sheep. All but 9 run away. "
     "How many sheep does the farmer have left? Reply with only the number."
@@ -97,7 +117,7 @@ def _role_probe_outcome(reason):
     return {"valid": reason == "valid", "reason": reason}
 
 
-def validate_coding_response(response):
+def validate_coding_response(response, runner=subprocess.run):
     """Validate the fixed coding probe without retaining raw model output."""
     try:
         content, _hidden = _generation_text(response)
@@ -119,19 +139,29 @@ def validate_coding_response(response):
         ]
         if not function_defs:
             return _role_probe_outcome("missing_function")
-        namespace = {"__builtins__": {}}
-        try:
-            exec(compile(tree, "<coding-probe>", "exec"), namespace)
-            add = namespace.get("add")
-            if not callable(add):
-                return _role_probe_outcome("missing_function")
-            if add(2, 3) != 5 or add(-1, 1) != 0:
-                return _role_probe_outcome("wrong_answer")
-        except Exception:
-            return _role_probe_outcome("wrong_answer")
-        return _role_probe_outcome("valid")
+        return _role_probe_outcome(_check_probe_code(code, runner))
     except Exception:
         return _role_probe_outcome("invalid_response")
+
+
+def _check_probe_code(code, runner):
+    """Run the answer in an isolated interpreter with no environment and a wall-clock limit."""
+    with tempfile.TemporaryDirectory() as directory:
+        try:
+            completed = runner(
+                [sys.executable, "-I", "-S", "-c", _CODING_PROBE_CHECK],
+                input=code, capture_output=True, text=True, cwd=directory, env={},
+                timeout=CODING_PROBE_TIMEOUT_SECONDS, start_new_session=True,
+            )
+        except subprocess.TimeoutExpired:
+            return "wrong_answer"
+    try:
+        reason = json.loads(completed.stdout)
+    except ValueError:
+        return "wrong_answer"
+    if completed.returncode != 0 or reason not in ("valid", "wrong_answer", "missing_function"):
+        return "wrong_answer"
+    return reason
 
 
 def _extract_probe_code(content):

@@ -12,7 +12,7 @@ from unittest.mock import patch
 from mlx_agent.cli import main
 from mlx_agent.transactions import (
     ConcurrentTransactionError, Receipt, Transaction, _filesystem_target_lock_digest,
-    _target_lock_digest, _target_lock_name, legacy_lock_problem, preview_rollback,
+    _target_lock_digest, _target_lock_name, legacy_lock_problem, load_receipt, preview_rollback,
     rollback,
 )
 
@@ -735,11 +735,39 @@ class TransactionTests(unittest.TestCase):
             journals = list((root / "receipts").glob("*/receipt.json"))
             self.assertEqual(1, len(journals))
             self.assertEqual("pending", json.loads(journals[0].read_text())["status"])
-            pending = Receipt.from_dict(json.loads(journals[0].read_text()), str(journals[0]))
+            self.assertTrue((journals[0].parent / "steps.jsonl").is_file())
+            pending = load_receipt(journals[0])
+            self.assertIn(hashlib.sha256(first.read_bytes()).hexdigest(), pending.after_hashes.values())
             receipt = rollback(journals[0], expected_after_hashes=pending.after_hashes)
             self.assertEqual("rolled_back", receipt.status)
             self.assertEqual('{"before": 1}\n', first.read_text())
             self.assertEqual('{"before": 2}\n', second.read_text())
+            self.assertFalse((journals[0].parent / "steps.jsonl").exists())
+
+    def test_receipt_is_rewritten_a_fixed_number_of_times_however_many_targets_change(self):
+        from mlx_agent import transactions
+        original, writes, counts = transactions._atomic_in_directory, [], []
+
+        def counting(directory, name, *args, **kwargs):
+            if name == "receipt.json":
+                writes.append(name)
+            return original(directory, name, *args, **kwargs)
+
+        for size in (2, 6):
+            with tempfile.TemporaryDirectory() as directory, patch.object(transactions, "_atomic_in_directory", counting):
+                root = Path(directory)
+                changes = []
+                for index in range(size):
+                    target = root / "target-{0}.json".format(index)
+                    target.write_text('{{"before": {0}}}\n'.format(index))
+                    changes.append(self._change(target, '{{"after": {0}}}\n'.format(index)))
+                transaction = Transaction(receipts_dir=root / "receipts")
+                transaction.preview(changes)
+                del writes[:]
+                self.assertEqual("applied", transaction.apply(True).status)
+                counts.append(len(writes))
+                self.assertEqual([], list((root / "receipts").glob("*/steps.jsonl")))
+        self.assertEqual(counts[0], counts[1])
 
     def test_pending_receipt_write_failure_changes_no_target(self):
         with tempfile.TemporaryDirectory() as directory:

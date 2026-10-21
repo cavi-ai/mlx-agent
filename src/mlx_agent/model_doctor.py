@@ -17,6 +17,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from .transactions import replay_step_journal
 from .verification import _safe_error, installed_model_ids
 from .wiring import (
     _OLLAMA,
@@ -258,6 +259,10 @@ def scan_receipt_after_hashes(roots):
                     value = json.loads(receipt.read_text(encoding="utf-8"))
                 except (OSError, ValueError, json.JSONDecodeError):
                     continue
+                try:
+                    value = replay_step_journal(value, receipt.parent)
+                except (OSError, ValueError):
+                    pass
                 after_hashes = value.get("after_hashes")
                 if not isinstance(after_hashes, dict):
                     continue

@@ -586,7 +586,7 @@
     },
     {
       "path": "src/mlx_agent/installer.py",
-      "sha256": "0dd9b15853d33245cc19b17bc58a92ffcefefb5c2478573ab55a79c543607a32"
+      "sha256": "6c5805d480012db8cb3137074f8b7475d9923d734619663a37dad2c5a34bac89"
     },
     {
       "path": "src/mlx_agent/intake.py",
@@ -642,7 +642,7 @@
     },
     {
       "path": "src/mlx_agent/model_doctor.py",
-      "sha256": "7025db773ffdf2f5cea2450a779f78e6957ab3de514da012f6e5ece80d3639b8"
+      "sha256": "631c801e3d278d4955c7cdf6bd7d226568b764177cdb70977d1ce3cf8c335e81"
     },
     {
       "path": "src/mlx_agent/models.py",
@@ -938,7 +938,7 @@
     },
     {
       "path": "src/mlx_agent/transactions.py",
-      "sha256": "883630a1584b3f5c3994d39aeff1ffa6fa68ab7af5e10d12f4fbc042cf53796b"
+      "sha256": "e4baf461c0f91b818603374ba2a7c33bc6dc38bd0f9ee9b197d5b6cd8d9d8c30"
     },
     {
       "path": "src/mlx_agent/transcribe.py",

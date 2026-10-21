@@ -7,7 +7,6 @@ from pathlib import Path
 import stat
 import subprocess
 import socket
-import signal
 
 from .task_contracts import TaskError, encoded
 
@@ -20,7 +19,8 @@ def _unavailable(message):
                      "Use existing absolute local extensions with supported hooks and fully resolved imports.")
 
 
-def _file(path):
+def file_identity(path):
+    """Path, inode identity and SHA-256 of one existing regular file."""
     info = path.lstat()
     if not stat.S_ISREG(info.st_mode):
         raise _unavailable("Extension inputs must be existing regular local files.")
@@ -38,7 +38,7 @@ def verify_extensions(manifest):
         if str(Path(manifest["client_alias"]).resolve(strict=True)) != manifest["client_path"]:
             raise ValueError("changed client alias")
         for item in manifest["inputs"] + manifest["bundles"]:
-            current = _file(Path(item["path"]))
+            current = file_identity(Path(item["path"]))
             if any(current[key] != item[key] for key in ("identity", "sha256")):
                 raise ValueError("changed input")
     except (OSError, ValueError, KeyError, TaskError) as error:
@@ -57,7 +57,7 @@ def freeze_extensions(client_path: Path, targets, output_root: Path):
             if not isinstance(target, str) or not Path(target).is_absolute():
                 raise _unavailable("Package and relative extension operations cannot bootstrap a capture.")
             source = Path(target)
-            _file(source)
+            file_identity(source)
             if source.suffix not in (".ts", ".js", ".mjs", ".mts", ".tsx", ".jsx"):
                 raise _unavailable("Unsupported local extension source format.")
             sources.append(str(source))
@@ -70,7 +70,7 @@ def freeze_extensions(client_path: Path, targets, output_root: Path):
         raise _unavailable("Select an absolute installed client executable.")
     try:
         client = alias.resolve(strict=True)
-        _file(client)
+        file_identity(client)
     except OSError as error:
         raise _unavailable("The selected client executable is missing.") from error
     output_root = Path(output_root)
@@ -88,9 +88,9 @@ def freeze_extensions(client_path: Path, targets, output_root: Path):
             raise _unavailable("Local extension imports could not be frozen without installation.")
         result = json.loads(run.stdout)
         result.update(client_path=str(client), client_alias=str(alias))
-        result["inputs"].append(_file(client))
-        result["inputs"].append(_file(_COMPILER))
-        result["inputs"].extend(_file(Path(source)) for source in sources)
+        result["inputs"].append(file_identity(client))
+        result["inputs"].append(file_identity(_COMPILER))
+        result["inputs"].extend(file_identity(Path(source)) for source in sources)
         verify_extensions(result)
         return result
     except (OSError, subprocess.SubprocessError, ValueError, KeyError) as error:
@@ -238,19 +238,10 @@ class ExtensionHost:
         return (self.channel.fileno(),)
 
     def close(self):
-        from .capture_platform import capture_process_identity
+        from .capture_platform import stop_owned
         try:
-            if self.process is not None and self.process.poll() is None:
-                if self.identity is None or capture_process_identity(self.process.pid) != self.identity:
-                    raise TaskError("capture_ownership_lost", "Owned extension process identity changed.")
-                os.killpg(self.process.pid, signal.SIGTERM)
-                try:
-                    self.process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    if capture_process_identity(self.process.pid) != self.identity:
-                        raise TaskError("capture_ownership_lost", "Cannot prove extension process ownership.")
-                    os.killpg(self.process.pid, signal.SIGKILL)
-                    self.process.wait(timeout=5)
+            if self.process is not None:
+                stop_owned(self.process, self.identity)
         finally:
             if self.process is not None and self.process.stdin is not None:
                 self.process.stdin.close()

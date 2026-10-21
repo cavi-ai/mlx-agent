@@ -7,15 +7,13 @@ import subprocess
 from pathlib import Path
 
 from .backends import (
-    BackendError,
-    backend_environment,
     backend_python,
     is_installed,
     load_manifests,
     load_registries,
     lookup,
-    sync_ports,
 )
+from .inference_runner import InferenceError, RunnerContract, invoke
 
 DECIDE_SCHEMA = "decide/1"
 DECIDE_RUNNER = Path(__file__).resolve().with_name("decide_runner.py")
@@ -24,13 +22,8 @@ MAX_REQUEST_BYTES = 1024 * 1024
 QUESTION_TYPES = ("choice", "score", "noul")
 
 
-class DecideError(RuntimeError):
+class DecideError(InferenceError):
     """Classified decision failure safe to surface in a result envelope."""
-
-    def __init__(self, code, message, remediation):
-        super().__init__(message)
-        self.code = code
-        self.remediation = remediation
 
 
 def _invalid(message):
@@ -107,37 +100,16 @@ def plan_decide(model_path, request_path, manifests=None, registries=None, root=
     return {"backend": manifest["id"], "model": str(model), "request": str(request), "argv": argv}
 
 
+CONTRACT = RunnerContract(
+    verb="decide", error=DecideError, accept=lambda value, plan: isinstance(value.get("answers"), dict),
+    action="answer the request",
+    remediation="Check the request's questions and that the directory is a complete converted model.",
+    activity="The decision", timeout_remediation="Use a shorter state or a larger --timeout.",
+)
+
+
 def run_decide(plan, manifests=None, root=None, timeout=DEFAULT_TIMEOUT_SECONDS, runner=subprocess.run):
-    manifests = load_manifests() if manifests is None else manifests
-    try:
-        sync_ports(manifests[plan["backend"]], root)
-    except BackendError as error:
-        raise DecideError(error.code, str(error), error.remediation) from error
-    try:
-        completed = runner(
-            plan["argv"], stdin=subprocess.DEVNULL, capture_output=True, text=True,
-            timeout=timeout, env=backend_environment(), check=False,
-        )
-    except subprocess.TimeoutExpired as error:
-        raise DecideError(
-            "decide_timeout", "The decision exceeded {0} s.".format(timeout),
-            "Use a shorter state or a larger --timeout.",
-        ) from error
-    result = None
-    for line in reversed((completed.stdout or "").splitlines()):
-        try:
-            value = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(value, dict) and isinstance(value.get("answers"), dict):
-            result = value
-            break
-    if completed.returncode != 0 or result is None:
-        tail = "\n".join((completed.stderr or "").strip().splitlines()[-6:])
-        raise DecideError(
-            "decide_failed", "The {0} backend could not answer the request: {1}".format(plan["backend"], tail or "no output"),
-            "Check the request's questions and that the directory is a complete converted model.",
-        )
+    result = invoke(plan, CONTRACT, manifests, root, timeout, runner)
     return {
         "schema": DECIDE_SCHEMA, "backend": plan["backend"], "model": plan["model"], "request": plan["request"],
         "answers": result["answers"], "usage": result.get("usage"),

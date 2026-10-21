@@ -128,7 +128,7 @@ class VideoTests(unittest.TestCase):
         plan = self.plan(self.model())
         line = json.dumps(dict(RESULT, path=self.out))
         seen = []
-        with mock.patch("mlx_agent.video.sync_ports", return_value=[]) as sync:
+        with mock.patch("mlx_agent.inference_runner.sync_ports", return_value=[]) as sync:
             result = run_video(plan, manifests=self.manifests, root=self.root / "backends",
                                runner=lambda argv, **kw: seen.append(kw) or Completed(stdout="Diffusion 1/4\n" + line + "\n"))
             self.assertEqual(sync.call_args.args[0]["id"], "mlx-video")
@@ -151,7 +151,7 @@ class VideoTests(unittest.TestCase):
 
             with self.assertRaises(VideoError) as caught:
                 run_video(plan, manifests=self.manifests, root=self.root / "backends", runner=slow, timeout=5)
-            self.assertEqual(caught.exception.code, "video_failed")
+            self.assertEqual(caught.exception.code, "video_timeout")
             self.assertIn("exceeded 5 s", str(caught.exception))
 
     def test_cli_renders_through_the_plan_and_emits_the_envelope(self):
@@ -170,7 +170,7 @@ class VideoTests(unittest.TestCase):
         with mock.patch("mlx_agent.video.load_manifests", return_value=self.manifests), \
                 mock.patch("mlx_agent.video.load_registries", return_value=self.registries), \
                 mock.patch("mlx_agent.video.is_installed", return_value=True), \
-                mock.patch("mlx_agent.video.sync_ports", return_value=[]), \
+                mock.patch("mlx_agent.inference_runner.sync_ports", return_value=[]), \
                 mock.patch("mlx_agent.cli.run_video", run):
             buffer = io.StringIO()
             with redirect_stdout(buffer):

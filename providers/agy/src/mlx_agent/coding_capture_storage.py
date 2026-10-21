@@ -18,7 +18,7 @@ from .capture_platform import CaptureVolume, capture_process_identity
 from .coding_capture_contracts import (DEFAULT_LIMITS, KIND, METADATA_RESERVE, validate_capture_request,
                                        validate_capture_result, validate_limits, validate_reference)
 from .task_contracts import MAX_REQUEST_BYTES, TERMINAL, TaskError, encoded, task_id as validate_task_id
-from .task_store import TaskStore, _now, _private
+from .task_store import TaskStore, ensure_private, utc_now
 
 
 def _hash(raw):
@@ -26,7 +26,7 @@ def _hash(raw):
 
 
 def _private_file(path):
-    _private(path, directory=False)
+    ensure_private(path, directory=False)
     if path.stat().st_nlink != 1:
         raise TaskError("unsafe_capture_storage", "Capture artifacts cannot share a hard link.")
 
@@ -54,7 +54,7 @@ class CaptureStorage:
             if self._lock_descriptor is not None:
                 yield
                 return
-            _private(self.root.parent)
+            ensure_private(self.root.parent)
             descriptor = os.open(self.root.parent / (self.identifier + ".lock"),
                                  os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
             try:
@@ -81,9 +81,9 @@ class CaptureStorage:
             if path.is_symlink():
                 raise TaskError("unsafe_capture_storage", "Capture storage cannot traverse a link.")
         store.root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        _private(store.root)
+        ensure_private(store.root)
         storage.root.parent.mkdir(mode=0o700, exist_ok=True)
-        _private(storage.root.parent)
+        ensure_private(storage.root.parent)
         if storage.tombstone.exists() or storage.tombstone.is_symlink():
             raise TaskError("task_exists", "Removed capture identities cannot be reused.")
         CaptureVolume.create(storage.root, task_id, limits["total_bytes"] - METADATA_RESERVE)
@@ -98,7 +98,7 @@ class CaptureStorage:
     def active(self, readonly=False):
         """Internal scoped mount. Mounted paths never enter a CLI/MCP result."""
         with self._exclusive():
-            _private(self.root.parent)
+            ensure_private(self.root.parent)
             if self._mounted is not None:
                 if self._readonly and not readonly:
                     raise TaskError("capture_readonly", "Capture is mounted for reading only.")
@@ -117,7 +117,7 @@ class CaptureStorage:
     def _path(self, mounted, name):
         validate_reference({"name": name, "sha256": "0" * 64, "bytes": 0})
         directory = mounted / "artifacts"
-        _private(directory)
+        ensure_private(directory)
         path = directory / name
         if path.is_symlink():
             raise TaskError("unsafe_capture_storage", "Capture artifacts cannot be links.")
@@ -185,7 +185,7 @@ class CaptureStorage:
             # Atomic publication refuses a destination created after the check.
             os.link(temporary, target, follow_symlinks=False)
             temporary.unlink()
-            TaskStore._fsync_directory(target.parent)
+            TaskStore.fsync_directory(target.parent)
         finally:
             temporary.unlink(missing_ok=True)
         return {"name": name, "sha256": _hash(raw), "bytes": len(raw)}
@@ -246,12 +246,12 @@ class CaptureStorage:
         for name in ("profile", "tmp"):
             directory = mounted / name
             if directory.exists() or directory.is_symlink():
-                _private(directory)
+                ensure_private(directory)
                 for item in directory.rglob("*"):
                     if item.is_symlink():
                         raise TaskError("unsafe_capture_storage", "Capture profile cleanup cannot traverse a link.")
                 shutil.rmtree(directory)
-        TaskStore._fsync_directory(mounted)
+        TaskStore.fsync_directory(mounted)
 
     def publish(self, manifest: Dict) -> Dict:
         manifest = validate_capture_result(manifest)
@@ -331,7 +331,7 @@ class CaptureStorage:
                     os.fsync(stream.fileno())
                 os.link(temporary, destination, follow_symlinks=False)
                 temporary.unlink()
-                TaskStore._fsync_directory(destination.parent)
+                TaskStore.fsync_directory(destination.parent)
             except OSError as error:
                 raise TaskError("capture_export_failed", "Cannot publish the chosen export file.") from error
             finally:
@@ -366,7 +366,7 @@ class CaptureStorage:
             for path in sorted(mounted.rglob("*")):
                 if path.is_symlink():
                     raise TaskError("unsafe_capture_storage", "Capture removal cannot traverse a symbolic link.")
-                _private(path, directory=path.is_dir())
+                ensure_private(path, directory=path.is_dir())
                 if path.is_file():
                     _private_file(path)
                     info = path.lstat()
@@ -402,8 +402,7 @@ class CaptureStorage:
     def _remove_locked(self, preview_hash):
         # The database transaction fences lifecycle changes and competing removals.
         # The bounded tombstone bridges volume deletion and the row commit.
-        with self.store._connection(write=True) as connection:
-            record = self.store._load(connection, self.identifier)
+        with self.store.updating(self.identifier) as record:
             self._removable(record)
             if not self.root.exists():
                 _private_file(self.tombstone)
@@ -419,7 +418,7 @@ class CaptureStorage:
                     raise TaskError("capture_removal_changed", "Capture contents changed after removal preview.")
                 saved = {"schema": "coding-capture-removal/1", "task_id": self.identifier,
                          "preview_hash": preview_hash, "request_sha256": record["request"]["sha256"],
-                         "removed_at": _now()}
+                         "removed_at": utc_now()}
                 raw = encoded(saved)
                 if len(raw) > 2048:
                     raise TaskError("capture_metadata_limit", "Removal metadata exceeds its limit.")
@@ -437,8 +436,7 @@ class CaptureStorage:
                         stream.write(raw)
                         stream.flush()
                         os.fsync(stream.fileno())
-                    TaskStore._fsync_directory(self.root.parent)
+                    TaskStore.fsync_directory(self.root.parent)
                 CaptureVolume.remove(self.root)
             record["artifacts_removed_at"] = saved["removed_at"]
-            self.store._save(connection, record)
             return {"task_id": self.identifier, "artifacts_removed_at": saved["removed_at"]}

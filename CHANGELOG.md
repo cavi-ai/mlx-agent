@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Fix: `convert transcribe`, `convert generate` and `convert decide` redact credentials in backend failure messages.
+- Inference timeouts report `<verb>_timeout` for every convert command and task kind; `describe`, `speak`, `video` and `music` reported `<verb>_failed`.
+- Music tasks reject truncated WAV output, and a changed music output reports `output_artifact_changed` like other media tasks.
+
 ## 0.9.0 - 2026-10-20
 
 - Add `openclaw` and `hermes` providers: the installer places the seven skills, each with its launcher and runtime, in `$OPENCLAW_STATE_DIR/skills` or `<workspace>/skills`, and `$HERMES_HOME/skills` or `<project>/.hermes/skills`.

@@ -65,13 +65,14 @@ from .lora import (
 from .modality import ALL_FACET_IDS, FOUNDATION_IDS, resolve_facets, resolve_modalities
 from .models import DISCOVERY_ROLES, render_md, wire
 from .port_analysis import PortAnalysisError, analyze as port_analyze
-from .transcribe import TranscribeError, plan_transcribe, run_transcribe
-from .decide import DecideError, plan_decide, run_decide
-from .generate import GenerateError, plan_generate, run_generate
-from .speak import SpeakError, plan_speak, run_speak
-from .music import MusicError, plan_music, run_music
-from .describe import DescribeError, plan_describe, run_describe
-from .video import VideoError, plan_video, run_video
+from .inference_runner import InferenceError
+from .transcribe import plan_transcribe, run_transcribe
+from .decide import plan_decide, run_decide
+from .generate import plan_generate, run_generate
+from .speak import plan_speak, run_speak
+from .music import plan_music, run_music
+from .describe import plan_describe, run_describe
+from .video import plan_video, run_video
 from .port_plan import draft_port_plan
 from .project_blueprint import (
     build_brief,
@@ -1879,7 +1880,7 @@ def _run_convert(arguments):
         )
     except ComputeBusy as error:
         result = ResultEnvelope.fail(operation, "compute_busy", str(error), "Stop the owning model operation before retrying.")
-    except (ConvertError, GGUFError, TranscribeError, DecideError, GenerateError, SpeakError, MusicError, DescribeError, VideoError) as error:
+    except (ConvertError, GGUFError, InferenceError) as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         result = ResultEnvelope.fail(

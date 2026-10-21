@@ -7,15 +7,13 @@ import subprocess
 from pathlib import Path
 
 from .backends import (
-    BackendError,
-    backend_environment,
     backend_python,
     is_installed,
     load_manifests,
     load_registries,
     lookup,
-    sync_ports,
 )
+from .inference_runner import InferenceError, RunnerContract, invoke
 
 GENERATE_SCHEMA = "generate/1"
 GENERATE_RUNNER = Path(__file__).resolve().with_name("generate_runner.py")
@@ -24,13 +22,8 @@ MAX_PROMPT_CHARS = 2000
 SIDES = range(256, 2049)
 
 
-class GenerateError(RuntimeError):
+class GenerateError(InferenceError):
     """Classified image-generation failure safe to surface in a result envelope."""
-
-    def __init__(self, code, message, remediation):
-        super().__init__(message)
-        self.code = code
-        self.remediation = remediation
 
 
 def _invalid(message, remediation):
@@ -88,37 +81,15 @@ def plan_generate(model_path, prompt, out, width=1024, height=1024, steps=40, se
     return {"backend": manifest["id"], "model": str(model), "out": str(target), "argv": argv}
 
 
+CONTRACT = RunnerContract(
+    verb="generate", error=GenerateError, accept=lambda value, plan: isinstance(value.get("path"), str),
+    action="render the prompt", remediation="Check that the directory is a complete converted image model.",
+    activity="Image generation", timeout_remediation="Use fewer steps, a smaller size, or a larger --timeout.",
+)
+
+
 def run_generate(plan, manifests=None, root=None, timeout=DEFAULT_TIMEOUT_SECONDS, runner=subprocess.run):
-    manifests = load_manifests() if manifests is None else manifests
-    try:
-        sync_ports(manifests[plan["backend"]], root)
-    except BackendError as error:
-        raise GenerateError(error.code, str(error), error.remediation) from error
-    try:
-        completed = runner(
-            plan["argv"], stdin=subprocess.DEVNULL, capture_output=True, text=True,
-            timeout=timeout, env=backend_environment(), check=False,
-        )
-    except subprocess.TimeoutExpired as error:
-        raise GenerateError(
-            "generate_timeout", "Image generation exceeded {0} s.".format(timeout),
-            "Use fewer steps, a smaller size, or a larger --timeout.",
-        ) from error
-    result = None
-    for line in reversed((completed.stdout or "").splitlines()):
-        try:
-            value = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(value, dict) and isinstance(value.get("path"), str):
-            result = value
-            break
-    if completed.returncode != 0 or result is None:
-        tail = "\n".join((completed.stderr or "").strip().splitlines()[-6:])
-        raise GenerateError(
-            "generate_failed", "The {0} backend could not render the prompt: {1}".format(plan["backend"], tail or "no output"),
-            "Check that the directory is a complete converted image model.",
-        )
+    result = invoke(plan, CONTRACT, manifests, root, timeout, runner)
     keys = ("path", "width", "height", "steps", "seed", "seconds", "load_seconds", "pixel_std")
     return dict({"schema": GENERATE_SCHEMA, "backend": plan["backend"], "model": plan["model"]},
                 **{key: result.get(key) for key in keys})

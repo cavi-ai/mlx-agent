@@ -34,6 +34,9 @@ class MusicTests(unittest.TestCase):
         (backend / "bin/python").touch()
         (backend / INSTALL_MARKER).write_text(json.dumps({"id": "mlx-audio", "version": self.manifests["mlx-audio"]["version"]}))
         self.out = self.root / "music.wav"
+        sync = mock.patch("mlx_agent.inference_runner.sync_ports", return_value=[])
+        self.sync = sync.start()
+        self.addCleanup(sync.stop)
 
     def plan(self, **kwargs):
         return plan_music(kwargs.pop("model_path", str(self.model)), kwargs.pop("caption", "-warm piano"),
@@ -103,8 +106,9 @@ class MusicTests(unittest.TestCase):
             self.assertEqual(kwargs["env"]["TRANSFORMERS_OFFLINE"], "1")
             self.out.write_bytes(b"audio")
             return subprocess.CompletedProcess(argv, 0, json.dumps({"path": str(self.out), "seconds": 2, "audio_seconds": 5, "real_time_factor": .4}), "")
-        result = run_music(plan, runner=runner)
+        result = run_music(plan, manifests=self.manifests, root=self.root, runner=runner)
         self.assertEqual((result["duration"], result["steps"], result["seed"], result["real_time_factor"]), (5, 12, 7, .4))
+        self.assertEqual((self.sync.call_args.args[0]["id"], self.sync.call_args.args[1]), ("mlx-audio", self.root))
 
     def test_refuses_invalid_parameters_existing_outputs_and_non_music(self):
         for args in ({"duration": float("nan")}, {"duration": 0}, {"duration": 361}, {"steps": 31}, {"seed": -1}, {"lyrics": ""}, {"caption": "bad\x00"}, {"out": "relative.wav"}):
@@ -124,10 +128,13 @@ class MusicTests(unittest.TestCase):
         for result in (subprocess.CompletedProcess([], 0, json.dumps({"path": str(self.out)}), ""),
                        subprocess.CompletedProcess([], 0, '{"path":"/wrong.wav"}', ""),
                        subprocess.CompletedProcess([], 1, "", "failed")):
-            with self.assertRaises(MusicError):
-                run_music(plan, runner=lambda *a, **k: result)
-        with self.assertRaises(MusicError):
-            run_music(plan, runner=mock.Mock(side_effect=subprocess.TimeoutExpired([], 1)))
+            with self.assertRaises(MusicError) as caught:
+                run_music(plan, manifests=self.manifests, root=self.root, runner=lambda *a, **k: result)
+            self.assertEqual(caught.exception.code, "music_failed")
+        with self.assertRaises(MusicError) as caught:
+            run_music(plan, manifests=self.manifests, root=self.root,
+                      runner=mock.Mock(side_effect=subprocess.TimeoutExpired([], 1)))
+        self.assertEqual(caught.exception.code, "music_timeout")
 
     def test_cli_routes_music_arguments(self):
         output = io.StringIO()

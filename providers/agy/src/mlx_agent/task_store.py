@@ -12,7 +12,8 @@ from pathlib import Path
 from uuid import uuid4
 from typing import Dict, Optional, Sequence
 
-from .task_contracts import (INPUT_MEDIA_KINDS, MAX_REQUEST_BYTES, MEDIA_RUN_SCHEMA, RUN_SCHEMA, TERMINAL, TaskError, encoded,
+from . import task_kinds
+from .task_contracts import (MAX_REQUEST_BYTES, MEDIA_RUN_SCHEMA, MEDIA_SUFFIXES, RUN_SCHEMA, TERMINAL, TaskError, encoded,
                              _artifact_reference, task_id, validate_record, validate_request)
 
 
@@ -22,11 +23,11 @@ def default_root():
     return Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "mlx-agent/tasks"
 
 
-def _now():
+def utc_now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def _private(path, directory=True):
+def ensure_private(path, directory=True):
     for item in (path, *path.parents):
         if item.is_symlink():
             raise TaskError("unsafe_task_storage", "Task storage cannot traverse symbolic links.")
@@ -56,7 +57,7 @@ class TaskStore:
                     if item.is_symlink():
                         raise TaskError("unsafe_task_storage", "Task storage cannot traverse symbolic links.")
                 self.root.mkdir(parents=True, mode=0o700, exist_ok=True)
-            _private(self.root)
+            ensure_private(self.root)
             if not self.database.exists() and not self.database.is_symlink():
                 if not write:
                     yield None
@@ -66,7 +67,7 @@ class TaskStore:
                     os.close(descriptor)
                 except FileExistsError:
                     pass
-            _private(self.database, directory=False)
+            ensure_private(self.database, directory=False)
             uri = self.database.as_uri() + ("?mode=rw" if write else "?mode=ro")
             connection = sqlite3.connect(uri, uri=True, timeout=5)
             if write:
@@ -111,19 +112,27 @@ class TaskStore:
         validate_record(record)
         connection.execute("UPDATE tasks SET record = ? WHERE id = ?", (encoded(record).decode(), record["id"]))
 
+    @contextmanager
+    def updating(self, identifier):
+        """Hold the write transaction over one record; changes to the yielded record are saved if the block succeeds."""
+        with self._connection(write=True) as connection:
+            record = self._load(connection, identifier)
+            yield record
+            self._save(connection, record)
+
     def _ensure_artifact_root(self):
         for item in (self.root, *self.root.parents):
             if item.is_symlink():
                 raise TaskError("unsafe_task_storage", "Task storage cannot traverse symbolic links.")
         self.root.mkdir(parents=True, mode=0o700, exist_ok=True)
-        _private(self.root)
+        ensure_private(self.root)
         artifacts = self.root / "artifacts"
         artifacts.mkdir(mode=0o700, exist_ok=True)
-        _private(artifacts)
+        ensure_private(artifacts)
         return artifacts
 
     @staticmethod
-    def _fsync_directory(path):
+    def fsync_directory(path):
         descriptor = os.open(path, os.O_RDONLY)
         try:
             os.fsync(descriptor)
@@ -134,9 +143,7 @@ class TaskStore:
         """Copy a supported media input into a private, unaccepted staging directory."""
         source = Path(source).expanduser()
         suffix = source.suffix.lower()
-        extensions = {"audio": (".wav", ".flac", ".mp3"), "image": (".png", ".jpg", ".jpeg", ".webp"),
-                      "video": (".mp4", ".mov", ".m4v")}
-        if media_kind not in extensions or not source.is_absolute() or suffix not in extensions[media_kind]:
+        if media_kind not in MEDIA_SUFFIXES or not source.is_absolute() or suffix not in MEDIA_SUFFIXES[media_kind]:
             description = {"audio": "WAV, FLAC or MP3", "image": "PNG, JPEG or WebP",
                            "video": "MP4, MOV or M4V"}.get(media_kind, "supported media")
             raise TaskError("invalid_input", "Media input must be an absolute {0} path.".format(description))
@@ -145,7 +152,7 @@ class TaskStore:
         staging = artifacts / (".staging-" + identifier)
         try:
             staging.mkdir(mode=0o700)
-            _private(staging)
+            ensure_private(staging)
             if source.is_symlink():
                 raise TaskError("invalid_input", "Media input must be a regular file, not a symbolic link.")
             source_descriptor = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
@@ -175,8 +182,8 @@ class TaskStore:
                 if (identity(before) != identity(after) or identity(before) != identity(current)
                         or size != before.st_size):
                     raise TaskError("input_changed", "Transcription input changed while it was being copied.")
-                _private(output_path, directory=False)
-                self._fsync_directory(staging)
+                ensure_private(output_path, directory=False)
+                self.fsync_directory(staging)
                 final = artifacts / identifier / output_path.name
                 return {"id": identifier, "staging_path": str(output_path), "staging_directory": str(staging),
                         "reference": {"path": str(final), "sha256": digest.hexdigest(), "bytes": size}}
@@ -199,7 +206,7 @@ class TaskStore:
         if Path(staged_input.get("staging_directory", "")) != expected or expected.is_symlink():
             raise TaskError("invalid_input", "The staged input does not belong to this submission.")
         if expected.exists():
-            _private(expected)
+            ensure_private(expected)
             for child in expected.iterdir():
                 if child.is_symlink() or not child.is_file():
                     raise TaskError("unsafe_task_storage", "Staged input contains unexpected filesystem entries.")
@@ -243,7 +250,7 @@ class TaskStore:
         """Index an accepted in-volume request without copying its body outside the volume."""
         from .coding_capture_contracts import KIND, RUN_SCHEMA as CAPTURE_RUN_SCHEMA
         record = {"schema": CAPTURE_RUN_SCHEMA, "id": task_id, "kind": KIND, "state": "starting",
-                  "created_at": _now(), "started_at": None, "completed_at": None, "cancel_requested": False,
+                  "created_at": utc_now(), "started_at": None, "completed_at": None, "cancel_requested": False,
                   "request": request_ref, "preview_hash": preview_hash, "context": identity, "processes": {},
                   "client_outcome": "pending", "attribution": "pending", "result": None, "error": None,
                   "execution_unresolved": False, "artifacts_removed_at": None}
@@ -261,12 +268,12 @@ class TaskStore:
             raise TaskError("invalid_artifact", "Artifact names must be plain file names.")
         try:
             for directory in (self.root, self.root / "artifacts", self.root / "artifacts" / identifier):
-                _private(directory)
+                ensure_private(directory)
             path = self.root / "artifacts" / identifier / name
             if path.is_symlink():
                 raise TaskError("unsafe_task_storage", "Task artifacts cannot be symbolic links.")
             if path.exists():
-                _private(path, directory=False)
+                ensure_private(path, directory=False)
             return path
         except OSError as error:
             raise TaskError("task_storage_failed", "Cannot access the task artifact directory.") from error
@@ -300,9 +307,10 @@ class TaskStore:
         media = request["schema"] == "task-request/2"
         if not media and (staged_input is not None or input_artifact is not None):
             raise TaskError("invalid_task", "Legacy tasks cannot carry a media input snapshot.")
-        if request["kind"] in INPUT_MEDIA_KINDS and (staged_input is None or input_artifact is None):
+        takes_input = task_kinds.get(request["kind"]).input_media is not None
+        if takes_input and (staged_input is None or input_artifact is None):
             raise TaskError("invalid_task", "This task kind requires a retained input snapshot.")
-        if request["kind"] not in INPUT_MEDIA_KINDS and (staged_input is not None or input_artifact is not None):
+        if not takes_input and (staged_input is not None or input_artifact is not None):
             raise TaskError("invalid_task", "This task kind does not accept an input snapshot.")
         identifier = staged_input["id"] if staged_input is not None else str(uuid4())
         if staged_input is not None:
@@ -311,8 +319,8 @@ class TaskStore:
             if (Path(staged_input.get("staging_directory", "")) != staged_directory
                     or staged_path.parent != staged_directory or staged_path.is_symlink()):
                 raise TaskError("invalid_input", "The staged input does not match this task submission.")
-            _private(staged_directory)
-            _private(staged_path, directory=False)
+            ensure_private(staged_directory)
+            ensure_private(staged_path, directory=False)
             digest, size = hashlib.sha256(), 0
             try:
                 with staged_path.open("rb") as stream:
@@ -338,15 +346,15 @@ class TaskStore:
                         raise TaskError("invalid_input", "The staged input does not match this task submission.")
                     os.replace(expected_stage, final_directory)
                     moved = True
-                    self._fsync_directory(artifacts)
-                    _private(final_directory)
+                    self.fsync_directory(artifacts)
+                    ensure_private(final_directory)
                 else:
                     final_directory.mkdir(mode=0o700, exist_ok=True)
-                    _private(final_directory)
+                    ensure_private(final_directory)
                 reference = self._write_artifact(identifier, "request.json", request)
                 record = {"schema": MEDIA_RUN_SCHEMA if media else RUN_SCHEMA, "id": identifier,
                           "kind": request["kind"], "state": "starting", "model_path": request["model_path"],
-                          "created_at": _now(), "started_at": None, "completed_at": None,
+                          "created_at": utc_now(), "started_at": None, "completed_at": None,
                           "cancel_requested": False, "identity": identity, "request": reference, "result": None,
                           "error": None, "supervisor": None, "execution": None, "execution_unresolved": False}
                 if media:
@@ -372,7 +380,7 @@ class TaskStore:
     def _remove_unaccepted_directory(directory):
         if not directory.exists() or directory.is_symlink():
             return
-        _private(directory)
+        ensure_private(directory)
         for child in directory.iterdir():
             if child.is_symlink() or not child.is_file():
                 raise TaskError("unsafe_task_storage", "Unaccepted task directory contains unexpected entries.")
@@ -380,12 +388,9 @@ class TaskStore:
         directory.rmdir()
 
     def verify_input_artifact(self, identifier, reference, media_kind="audio"):
-        names_by_kind = {"audio": ("input.wav", "input.flac", "input.mp3"),
-                         "image": ("input.png", "input.jpg", "input.jpeg", "input.webp"),
-                         "video": ("input.mp4", "input.mov", "input.m4v")}
-        if media_kind not in names_by_kind:
+        if media_kind not in MEDIA_SUFFIXES:
             raise TaskError("invalid_input", "The retained input media kind is unsupported.")
-        names = names_by_kind[media_kind]
+        names = tuple("input" + suffix for suffix in MEDIA_SUFFIXES[media_kind])
         return self.verify_artifact(identifier, reference, allowed_names=names,
                                     code="input_artifact")
 
@@ -437,9 +442,9 @@ class TaskStore:
                 raise TaskError("invalid_transition", "Running tasks cannot restart under the same identity.")
             record.update(changes)
             if next_state == "running" and record["started_at"] is None:
-                record["started_at"] = _now()
+                record["started_at"] = utc_now()
             if next_state in TERMINAL:
-                record["completed_at"] = _now()
+                record["completed_at"] = utc_now()
             self._save(connection, record)
             return record
 

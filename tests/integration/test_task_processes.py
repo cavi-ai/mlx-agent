@@ -501,8 +501,9 @@ class TaskProcessTests(unittest.TestCase):
         self.assertEqual(result["state"], "succeeded", result)
         evidence = task_result(task["id"], self.state)
         Path(evidence["result"]["path"]).write_bytes(b"changed")
-        with self.assertRaises(TaskError):
+        with self.assertRaises(TaskError) as caught:
             task_result(task["id"], self.state)
+        self.assertEqual(caught.exception.code, "output_artifact_changed")
 
     def test_cancel_while_execution_identity_is_being_bound(self):
         from mlx_agent import task_runtime

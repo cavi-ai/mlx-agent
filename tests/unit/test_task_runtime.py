@@ -6,11 +6,15 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from mlx_agent.task_contracts import TaskError
-from mlx_agent.task_runtime import (_plan, _validate_mp4_output, _validate_png_output, cancel_task,
-                                    start_task, supervise, task_result, task_status)
+from mlx_agent.task_kinds import KINDS, check_mp4, check_png
+from mlx_agent.task_runtime import cancel_task, start_task, supervise, task_result, task_status
 from mlx_agent.task_mp4_validator import valid_mp4
 from mlx_agent.task_store import TaskStore
 from tests.task_fixtures import identity_evidence
+
+
+def _plan(request, directory, input_path=None):
+    return KINDS[request["kind"]].plan(request, directory, input_path)
 
 
 class TaskRuntimeTests(unittest.TestCase):
@@ -23,8 +27,8 @@ class TaskRuntimeTests(unittest.TestCase):
         self.request = {"schema": "task-request/1", "kind": "classification", "model_path": str(self.root / "missing-model"), "parameters": {"state": "refund", "questions": {"route": {"type": "choice", "instructions": "Which team should handle this request?", "criteria": ["billing", "other"]}}}}
 
     def test_speech_planners_receive_only_supplied_optional_values(self):
-        with patch("mlx_agent.task_runtime.plan_transcribe", return_value={}) as transcribe, patch(
-                "mlx_agent.task_runtime.plan_speak", return_value={}) as speak:
+        with patch("mlx_agent.task_kinds.plan_transcribe", return_value={}) as transcribe, patch(
+                "mlx_agent.task_kinds.plan_speak", return_value={}) as speak:
             _plan({"kind": "transcribe", "model_path": "/model", "parameters": {"audio_path": "/audio.wav"}},
                   self.root, "/owned/input.wav")
             transcribe.assert_called_once_with("/model", "/owned/input.wav")
@@ -32,8 +36,8 @@ class TaskRuntimeTests(unittest.TestCase):
             speak.assert_called_once_with("/model", "Hello.", str(self.root / "output.wav"))
 
     def test_image_planners_receive_snapshots_and_only_supplied_optional_values(self):
-        with patch("mlx_agent.task_runtime.plan_generate", return_value={}) as generate, patch(
-                "mlx_agent.task_runtime.plan_describe", return_value={}) as describe:
+        with patch("mlx_agent.task_kinds.plan_generate", return_value={}) as generate, patch(
+                "mlx_agent.task_kinds.plan_describe", return_value={}) as describe:
             _plan({"kind": "image_generation", "model_path": "/model",
                    "parameters": {"prompt": "A quiet forest"}}, self.root)
             generate.assert_called_once_with("/model", "A quiet forest", str(self.root / "output.png"))
@@ -43,8 +47,8 @@ class TaskRuntimeTests(unittest.TestCase):
             describe.assert_called_once_with("/vision", "Describe.", image="/owned/input.jpeg")
 
     def test_video_planners_receive_snapshots_and_only_supplied_optional_values(self):
-        with patch("mlx_agent.task_runtime.plan_video", return_value={}) as generate, patch(
-                "mlx_agent.task_runtime.plan_describe", return_value={}) as describe:
+        with patch("mlx_agent.task_kinds.plan_video", return_value={}) as generate, patch(
+                "mlx_agent.task_kinds.plan_describe", return_value={}) as describe:
             _plan({"kind": "video_generation", "model_path": "/video",
                    "parameters": {"prompt": "A slow camera pan."}}, self.root)
             generate.assert_called_once_with("/video", "A slow camera pan.", str(self.root / "output.mp4"))
@@ -65,15 +69,16 @@ class TaskRuntimeTests(unittest.TestCase):
                                         fps=2, max_tokens=32, temperature=.25, max_pixels=4096)
 
     def test_mp4_validation_runs_in_selected_backend_and_fails_closed(self):
-        with patch("mlx_agent.task_runtime.backend_environment", return_value={}) as environment:
+        plan = {"argv": ["/backend/python"]}
+        with patch("mlx_agent.task_kinds.backend_environment", return_value={}) as environment:
             runner = unittest.mock.Mock(return_value=unittest.mock.Mock(returncode=0))
-            _validate_mp4_output(self.root / "output.mp4", "/backend/python", runner=runner)
+            check_mp4(self.root / "output.mp4", plan, runner=runner)
             self.assertEqual(runner.call_args.args[0][0:2], [
                 "/backend/python", str(Path(__file__).resolve().parents[2] / "src/mlx_agent/task_mp4_validator.py")])
             environment.assert_called_once_with()
             with self.assertRaises(TaskError) as caught:
-                _validate_mp4_output(self.root / "bad.mp4", "/backend/python",
-                                     runner=unittest.mock.Mock(return_value=unittest.mock.Mock(returncode=1)))
+                check_mp4(self.root / "bad.mp4", plan,
+                          runner=unittest.mock.Mock(return_value=unittest.mock.Mock(returncode=1)))
             self.assertEqual(caught.exception.code, "invalid_video_output")
 
     def test_mp4_validator_rejects_truncated_frame_stream(self):
@@ -102,14 +107,15 @@ class TaskRuntimeTests(unittest.TestCase):
             self.assertFalse(valid_mp4(path))
 
     def test_png_validation_runs_in_the_selected_backend_and_fails_closed(self):
-        with patch("mlx_agent.task_runtime.backend_environment", return_value={}) as environment:
+        plan = {"argv": ["/backend/python"]}
+        with patch("mlx_agent.task_kinds.backend_environment", return_value={}) as environment:
             runner = unittest.mock.Mock(return_value=unittest.mock.Mock(returncode=0))
-            _validate_png_output(self.root / "output.png", "/backend/python", runner=runner)
+            check_png(self.root / "output.png", plan, runner=runner)
             self.assertEqual(runner.call_args.args[0][0:2], ["/backend/python", str(Path(__file__).resolve().parents[2] / "src/mlx_agent/task_png_validator.py")])
             environment.assert_called_once_with()
             with self.assertRaises(TaskError) as caught:
-                _validate_png_output(self.root / "bad.png", "/backend/python",
-                                     runner=unittest.mock.Mock(return_value=unittest.mock.Mock(returncode=1)))
+                check_png(self.root / "bad.png", plan,
+                          runner=unittest.mock.Mock(return_value=unittest.mock.Mock(returncode=1)))
             self.assertEqual(caught.exception.code, "invalid_image_output")
 
     def create(self):

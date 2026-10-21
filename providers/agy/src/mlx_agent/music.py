@@ -5,17 +5,15 @@ import math
 import subprocess
 from pathlib import Path
 
-from .backends import backend_environment, backend_python, is_installed, load_manifests, load_registries, lookup
-from .wiring import redact_secrets
+from .backends import backend_python, is_installed, load_manifests, load_registries, lookup
+from .inference_runner import InferenceError, RunnerContract, invoke
 from .music_runner import tokenizer_directory
 
 MUSIC_RUNNER = Path(__file__).with_name("music_runner.py")
 
 
-class MusicError(RuntimeError):
-    def __init__(self, code, message, remediation):
-        super().__init__(message)
-        self.code, self.remediation = code, remediation
+class MusicError(InferenceError):
+    """Classified music-generation failure safe to surface in a result envelope."""
 
 
 def validate_parameters(caption, lyrics, duration=15.0, steps=30, seed=42):
@@ -63,27 +61,22 @@ def plan_music(model_path, caption, lyrics, out, duration=15.0, steps=30, seed=4
                      "--duration", str(duration), "--steps", str(steps), "--seed", str(seed)]}
 
 
-def run_music(plan, timeout=3600, runner=subprocess.run):
-    environment = backend_environment()
+def _wrote_output(value, plan):
+    target = Path(plan["out"])
+    return value.get("path") == plan["out"] and target.is_file() and not target.is_symlink()
+
+
+CONTRACT = RunnerContract(
+    verb="music", error=MusicError, accept=_wrote_output, action="generate the music",
+    remediation="Check local model completeness and the audio backend.",
+    activity="Music generation", timeout_remediation="Use a shorter duration or a larger timeout.",
     # Generation never resolves or downloads missing weights or tokenizer files.
-    environment.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1")
-    try:
-        completed = runner(plan["argv"], stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                           timeout=timeout, env=environment, check=False)
-    except subprocess.TimeoutExpired as error:
-        raise MusicError("music_failed", "Music generation timed out.", "Use a shorter duration or a larger timeout.") from error
-    result = None
-    for line in reversed((completed.stdout or "").splitlines()):
-        try:
-            value = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(value, dict) and value.get("path") == plan["out"]:
-            result = value
-            break
-    if completed.returncode != 0 or result is None or not Path(plan["out"]).is_file() or Path(plan["out"]).is_symlink():
-        reason = redact_secrets(completed.stderr or "no audio output")[-800:]
-        raise MusicError("music_failed", reason, "Check local model completeness and the audio backend.")
+    environment={"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"},
+)
+
+
+def run_music(plan, manifests=None, root=None, timeout=3600, runner=subprocess.run):
+    result = invoke(plan, CONTRACT, manifests, root, timeout, runner)
     keys = ("path", "sample_rate", "audio_seconds", "seconds", "load_seconds", "real_time_factor", "peak_memory_gb")
     return dict({"schema": "music/1", "backend": plan["backend"], "model": plan["model"],
                  "duration": plan["duration"], "steps": plan["steps"], "seed": plan["seed"]},

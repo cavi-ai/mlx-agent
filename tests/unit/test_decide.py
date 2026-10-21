@@ -97,7 +97,7 @@ class DecideTests(unittest.TestCase):
             seen.append((argv, kwargs))
             return Completed(stdout="loading\n" + json.dumps({"answers": answer, "usage": {"input_tokens": 30}, "seconds": 0.05}) + "\n")
 
-        with mock.patch("mlx_agent.decide.sync_ports", return_value=[]) as sync:
+        with mock.patch("mlx_agent.inference_runner.sync_ports", return_value=[]) as sync:
             result = run_decide(plan, manifests=self.manifests, root=self.root / "backends", runner=runner)
         self.assertEqual(sync.call_args.args[0]["id"], "mlx-embeddings")
         self.assertEqual((result["schema"], result["answers"], result["seconds"]), ("decide/1", answer, 0.05))
@@ -106,7 +106,7 @@ class DecideTests(unittest.TestCase):
         self.assertNotIn("HF_TOKEN", seen[0][1]["env"])
 
     def test_run_failures_are_classified(self):
-        patcher = mock.patch("mlx_agent.decide.sync_ports", return_value=[])
+        patcher = mock.patch("mlx_agent.inference_runner.sync_ports", return_value=[])
         patcher.start()
         self.addCleanup(patcher.stop)
         plan = self.plan(self.model("laya"))

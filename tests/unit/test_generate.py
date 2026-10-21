@@ -84,7 +84,7 @@ class GenerateTests(unittest.TestCase):
         plan = self.plan(self.model("qwen_image_21"))
         line = json.dumps({"path": self.out, "width": 1024, "height": 1024, "steps": 40, "seed": 42, "seconds": 70.1, "pixel_std": 61.2})
         seen = []
-        with mock.patch("mlx_agent.generate.sync_ports", return_value=[]) as sync:
+        with mock.patch("mlx_agent.inference_runner.sync_ports", return_value=[]) as sync:
             result = run_generate(plan, manifests=self.manifests, root=self.root / "backends",
                                   runner=lambda argv, **kw: seen.append(kw) or Completed(stdout="step 1/40\n" + line + "\n"))
             self.assertEqual(sync.call_args.args[0]["id"], "mflux")

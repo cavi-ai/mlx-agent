@@ -148,7 +148,7 @@ class SpeakTests(unittest.TestCase):
         plan = self.plan(self.model(), voice="af_heart")
         line = json.dumps(dict(RESULT, path=self.out))
         seen = []
-        with mock.patch("mlx_agent.speak.sync_ports", return_value=[]) as sync:
+        with mock.patch("mlx_agent.inference_runner.sync_ports", return_value=[]) as sync:
             result = run_speak(plan, manifests=self.manifests, root=self.root / "backends",
                                runner=lambda argv, **kw: seen.append((argv, kw)) or Completed(stdout="loading\n" + line + "\n"))
             self.assertEqual(sync.call_args.args[0]["id"], "mlx-audio")
@@ -177,7 +177,7 @@ class SpeakTests(unittest.TestCase):
 
             with self.assertRaises(SpeakError) as caught:
                 run_speak(plan, manifests=self.manifests, root=self.root / "backends", runner=slow, timeout=5)
-            self.assertEqual(caught.exception.code, "speak_failed")
+            self.assertEqual(caught.exception.code, "speak_timeout")
             self.assertIn("exceeded 5 s", str(caught.exception))
 
     def test_cli_speaks_through_the_plan_and_emits_the_envelope(self):
@@ -195,7 +195,7 @@ class SpeakTests(unittest.TestCase):
         with mock.patch("mlx_agent.speak.load_manifests", return_value=self.manifests), \
                 mock.patch("mlx_agent.speak.load_registries", return_value=self.registries), \
                 mock.patch("mlx_agent.speak.is_installed", return_value=True), \
-                mock.patch("mlx_agent.speak.sync_ports", return_value=[]), \
+                mock.patch("mlx_agent.inference_runner.sync_ports", return_value=[]), \
                 mock.patch("mlx_agent.cli.run_speak", run):
             buffer = io.StringIO()
             with redirect_stdout(buffer):

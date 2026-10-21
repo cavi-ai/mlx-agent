@@ -13,7 +13,7 @@ from .providers import detect_providers
 from .transactions import (
     LegacyLockError, Receipt, Transaction, _assert_safe_directory, _assert_safe_target,
     _atomic_in_directory, _physical_absolute, _read_regular, _read_target, _walk_directory,
-    _rollback_receipt_hash, legacy_lock_problem, rollback,
+    _rollback_receipt_hash, legacy_lock_problem, load_receipt, rollback,
 )
 from .wiring import contains_resolved_secrets, redact_secrets
 
@@ -677,7 +677,7 @@ class Installer:
         location = _assert_safe_target(path)
         if location.parent.parent != receipts_dir:
             raise ValueError("installer receipt escapes its scoped receipt directory")
-        return Receipt.from_dict(json.loads(_read_regular(location).decode("utf-8")), str(location))
+        return load_receipt(location)
 
     @staticmethod
     def _receipt_identity(receipt):

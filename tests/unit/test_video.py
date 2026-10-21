@@ -171,7 +171,7 @@ class VideoTests(unittest.TestCase):
                 mock.patch("mlx_agent.video.load_registries", return_value=self.registries), \
                 mock.patch("mlx_agent.video.is_installed", return_value=True), \
                 mock.patch("mlx_agent.inference_runner.sync_ports", return_value=[]), \
-                mock.patch("mlx_agent.cli.run_video", run):
+                mock.patch("mlx_agent.video.run_video", run):
             buffer = io.StringIO()
             with redirect_stdout(buffer):
                 code = cli.main(argv)

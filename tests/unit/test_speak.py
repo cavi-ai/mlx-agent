@@ -196,7 +196,7 @@ class SpeakTests(unittest.TestCase):
                 mock.patch("mlx_agent.speak.load_registries", return_value=self.registries), \
                 mock.patch("mlx_agent.speak.is_installed", return_value=True), \
                 mock.patch("mlx_agent.inference_runner.sync_ports", return_value=[]), \
-                mock.patch("mlx_agent.cli.run_speak", run):
+                mock.patch("mlx_agent.speak.run_speak", run):
             buffer = io.StringIO()
             with redirect_stdout(buffer):
                 code = cli.main(argv)

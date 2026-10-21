@@ -138,6 +138,6 @@ class MusicTests(unittest.TestCase):
 
     def test_cli_routes_music_arguments(self):
         output = io.StringIO()
-        with mock.patch("mlx_agent.cli.plan_music", return_value={}) as plan, mock.patch("mlx_agent.cli.run_music", return_value={"path": str(self.out)}), redirect_stdout(output):
+        with mock.patch("mlx_agent.music.plan_music", return_value={}) as plan, mock.patch("mlx_agent.music.run_music", return_value={"path": str(self.out)}), redirect_stdout(output):
             self.assertEqual(cli.main(["convert", "music", "--path", str(self.model), "--caption=-warm piano", "--out", str(self.out), "--json"]), 0)
         self.assertEqual(plan.call_args.args[1:3], ("-warm piano", "[instrumental]"))

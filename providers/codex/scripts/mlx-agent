@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Run the bundled MLX agent core relative to this bootstrap, never the CWD."""
 
+import os
 import sys
 from pathlib import Path
 
 
-sys.dont_write_bytecode = True
+if sys.pycache_prefix is None:
+    # Compiled bytecode goes to the user cache, never into the installed plugin.
+    sys.pycache_prefix = str(Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache").expanduser()
+                             / "mlx-agent" / "pycache")
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent / "src"))
 

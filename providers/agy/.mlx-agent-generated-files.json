@@ -866,7 +866,7 @@
     },
     {
       "path": "src/mlx_agent/speak.py",
-      "sha256": "5da25d2738cc917ed0ef7a33c9dca644bbdc3c52ff7fb0c98c4efc673f7a5a08"
+      "sha256": "b3664ef341af1318b2ca30f9ba6f4a9b4b44a2baa849b7d0f8150ee8674255f0"
     },
     {
       "path": "src/mlx_agent/speak_runner.py",

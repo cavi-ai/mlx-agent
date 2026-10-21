@@ -153,17 +153,25 @@ def _filesystem_parent_digest(directory_fd):
 def _legacy_parent_scopes(targets, create=False):
     """Open and deduplicate physical target parents without following aliases."""
     scopes = {}
+    walked = {}
     try:
         for target in sorted({_physical_absolute(item) for item in targets}, key=str):
+            if target.parent in walked:
+                # The parent was opened for an earlier target; a missing one stays skipped.
+                if walked[target.parent] is not None:
+                    scopes[walked[target.parent]]["targets"].append(target)
+                continue
             try:
                 _parent, directory_fd = _walk_directory(target.parent, create=create)
             except ValueError as error:
                 if str(error).startswith("path component does not exist:"):
+                    walked[target.parent] = None
                     continue
                 raise
             try:
                 item = os.fstat(directory_fd)
                 identity = (item.st_dev, item.st_ino)
+                walked[target.parent] = identity
                 if identity in scopes:
                     os.close(directory_fd)
                     scopes[identity]["targets"].append(target)
@@ -552,18 +560,21 @@ def _target_locks(targets, create_parents=False, lock_root=None):
     identities = {}
     held = []
     try:
-        for target in canonical:
-            _parent, target_parent_fd = _walk_directory(
-                target.parent, create=create_parents
-            )
-            digest = _filesystem_target_lock_digest(target, target_parent_fd)
-            if digest in identities:
-                os.close(target_parent_fd)
-                continue
-            identities[digest] = {
-                "target": target,
-                "target_parent_fd": target_parent_fd,
-            }
+        # Targets sharing a parent are bound to one walk of that parent.
+        parents = {}
+        try:
+            for target in canonical:
+                if target.parent not in parents:
+                    parents[target.parent] = _walk_directory(target.parent, create=create_parents)[1]
+                digest = _filesystem_target_lock_digest(target, parents[target.parent])
+                if digest not in identities:
+                    identities[digest] = {
+                        "target": target,
+                        "target_parent_fd": os.dup(parents[target.parent]),
+                    }
+        finally:
+            for parent_fd in parents.values():
+                os.close(parent_fd)
         for digest in sorted(identities):
             identity = identities[digest]
             target = identity["target"]
@@ -614,8 +625,41 @@ def _target_locks(targets, create_parents=False, lock_root=None):
 
 
 def _assert_safe_target(path):
+    """Require a link-free parent and an absent or regular leaf, without opening or reading the leaf."""
     value = _absolute(path)
-    _read_target(value)
+    _parent, directory = _walk_directory(value.parent)
+    try:
+        return _check_safe_leaf(value, directory)
+    finally:
+        os.close(directory)
+
+
+def _assert_safe_targets(paths):
+    """Check many targets as _assert_safe_target does, walking each distinct parent once."""
+    checked, parents = {}, {}
+    try:
+        for name in paths:
+            value = _absolute(name)
+            if value.parent not in parents:
+                parents[value.parent] = _walk_directory(value.parent)[1]
+            checked[name] = _check_safe_leaf(value, parents[value.parent])
+    finally:
+        for directory in parents.values():
+            os.close(directory)
+    return checked
+
+
+def _check_safe_leaf(value, directory):
+    try:
+        item = os.stat(value.name, dir_fd=directory, follow_symlinks=False)
+    except FileNotFoundError:
+        return value
+    except OSError as error:
+        raise ValueError("refusing unsafe target leaf {0}: {1}".format(value, error))
+    if stat.S_ISLNK(item.st_mode):
+        raise ValueError("refusing unsafe target leaf {0}: symbolic link".format(value))
+    if not stat.S_ISREG(item.st_mode):
+        raise ValueError("target is not a regular file: {0}".format(value))
     return value
 
 
@@ -642,8 +686,7 @@ def _write_all(descriptor, content):
 
 def _atomic_in_directory(directory, name, content, mode, validator=None):
     """Write and fsync a stage file before atomically replacing ``name``."""
-    directory = _assert_safe_directory(directory)
-    dir_fd = _open_directory(directory)
+    _directory, dir_fd = _walk_directory(directory)
     stage_name = ".mlx-agent-stage-{0}".format(uuid.uuid4().hex)
     stage_fd = None
     try:
@@ -790,8 +833,9 @@ class Receipt:
             raise ValueError("receipt targets are malformed")
         if any(set(targets) != set(item) for item in maps):
             raise ValueError("receipt target maps do not match")
+        safe_targets = _assert_safe_targets(targets)
         for index, target_name in enumerate(targets):
-            target = _assert_safe_target(target_name)
+            target = safe_targets[target_name]
             if str(target) != target_name or value["target_roots"][target_name] != str(target.parent):
                 raise ValueError("receipt target is not rooted safely")
             mode = value["target_modes"][target_name]
@@ -847,12 +891,13 @@ class Transaction:
         self._preview = ""
         self._preview_hash = ""
         self._expected_current = None
+        self._journal_fd = None
 
     def preview(self, changes, expected_current=None):
         if not isinstance(changes, (list, tuple)) or not changes:
             raise ValueError("changes must be a non-empty list")
         prepared, diffs, binding = [], [], []
-        seen = set()
+        seen, diff_chars = set(), 0
         for change in changes:
             remove = isinstance(change, dict) and change.get("remove") is True
             if not isinstance(change, dict) or "path" not in change or (remove == ("content" in change)):
@@ -883,10 +928,13 @@ class Transaction:
             if not remove:
                 adapter.validate(content)
             after = content.encode("utf-8")
-            diffs.append("".join(difflib.unified_diff(
-                redact_secrets(before_text).splitlines(True), redact_secrets(content).splitlines(True),
-                fromfile=str(path), tofile=str(path), lineterm="",
-            )))
+            # Diffs past the preview bound are cut by _bounded; they are not built at all.
+            if diff_chars <= MAX_PREVIEW_CHARS:
+                diffs.append("".join(difflib.unified_diff(
+                    redact_secrets(before_text).splitlines(True), redact_secrets(content).splitlines(True),
+                    fromfile=str(path), tofile=str(path), lineterm="",
+                )))
+                diff_chars += len(diffs[-1]) + (len(diffs) > 1)
             entry = {"path": str(path), "before": _sha256(before), "after": _sha256(after), "exists": existed, "mode": mode, "endpoint": _sha256(str(endpoint or "").encode("utf-8"))}
             if remove:
                 entry["remove"] = True
@@ -977,8 +1025,8 @@ class Transaction:
                 )
                 self._record_step(receipt, path)
                 self._fault("after_replace:{0}".format(index))
-                change["adapter"].validate(_read_regular(path).decode("utf-8"))
                 after, after_exists, after_mode = _read_target(path)
+                change["adapter"].validate(after.decode("utf-8"))
                 if not after_exists or (receipt.target_modes[str(path)] is not None and after_mode != receipt.target_modes[str(path)]):
                     raise ValueError("replacement mode does not match the reviewed target mode")
                 receipt.after_hashes[str(path)] = _sha256(after)
@@ -997,6 +1045,10 @@ class Transaction:
                 receipt.status = "failed"
                 return receipt
             self._finish_restore(receipt)
+        finally:
+            if self._journal_fd is not None:
+                os.close(self._journal_fd)
+                self._journal_fd = None
         return receipt
 
     def _normalize_expected_current(self, expected_current):
@@ -1099,7 +1151,9 @@ class Transaction:
         step = {"target": target, "after_hash": receipt.after_hashes[target], "after_mode": receipt.after_modes[target]}
         if target in receipt.validations:
             step["validation"] = receipt.validations[target]
-        _append_step(_assert_safe_directory(receipt.transaction_root), step)
+        if self._journal_fd is None:
+            self._journal_fd = _open_directory(receipt.transaction_root)
+        _append_step(self._journal_fd, step)
 
     def _finish_restore(self, receipt):
         if _restore_receipt(receipt, expected_current=_receipt_after_state(receipt)):
@@ -1212,28 +1266,24 @@ def _write_receipt(root, receipt):
         os.close(directory)
 
 
-def _append_step(root, step):
-    """Append one fsynced record to a pending transaction's step journal."""
-    directory = _open_directory(root)
+def _append_step(directory, step):
+    """Append one fsynced record to a pending transaction's step journal through its open root."""
     flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
     try:
-        try:
-            descriptor = os.open(STEP_JOURNAL_NAME, flags | os.O_EXCL, 0o600, dir_fd=directory)
-            created = True
-        except FileExistsError:
-            descriptor = os.open(STEP_JOURNAL_NAME, flags, 0o600, dir_fd=directory)
-            created = False
-        try:
-            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-                raise ValueError("receipt step journal is not a regular file")
-            _write_all(descriptor, (json.dumps(step, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8"))
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
-        if created:
-            os.fsync(directory)
+        descriptor = os.open(STEP_JOURNAL_NAME, flags | os.O_EXCL, 0o600, dir_fd=directory)
+        created = True
+    except FileExistsError:
+        descriptor = os.open(STEP_JOURNAL_NAME, flags, 0o600, dir_fd=directory)
+        created = False
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise ValueError("receipt step journal is not a regular file")
+        _write_all(descriptor, (json.dumps(step, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8"))
+        os.fsync(descriptor)
     finally:
-        os.close(directory)
+        os.close(descriptor)
+    if created:
+        os.fsync(directory)
 
 
 def replay_step_journal(value, root):

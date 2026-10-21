@@ -769,6 +769,43 @@ class TransactionTests(unittest.TestCase):
                 self.assertEqual([], list((root / "receipts").glob("*/steps.jsonl")))
         self.assertEqual(counts[0], counts[1])
 
+    def test_directory_walks_and_preview_redaction_stay_bounded_as_targets_grow(self):
+        from mlx_agent import transactions
+        walk, redact, counts = transactions._walk_directory, transactions.redact_secrets, {}
+
+        def counting(name, function):
+            def wrapper(*args, **kwargs):
+                counts[name] = counts.get(name, 0) + 1
+                return function(*args, **kwargs)
+            return wrapper
+
+        measured = {}
+        for size in (4, 12):
+            with tempfile.TemporaryDirectory() as directory, \
+                    patch.object(transactions, "_walk_directory", counting("walk", walk)), \
+                    patch.object(transactions, "redact_secrets", counting("redact", redact)):
+                root = Path(directory)
+                changes = []
+                for index in range(size):
+                    target = root / "target-{0}.json".format(index)
+                    target.write_text('{{"before": {0}}}\n'.format(index))
+                    changes.append(self._change(target, '{{"after": {0}, "pad": "{1}"}}\n'.format(index, "x" * 4000)))
+                transaction = Transaction(receipts_dir=root / "receipts")
+                counts.clear()
+                transaction.preview(changes)
+                measured[size, "redact"] = counts.get("redact", 0)
+                counts.clear()
+                receipt = transaction.apply(True)
+                self.assertEqual("applied", receipt.status)
+                measured[size, "apply"] = counts["walk"]
+                counts.clear()
+                load_receipt(receipt.receipt_path)
+                measured[size, "load"] = counts["walk"]
+        # Previews past the bound are not built; receipts check targets per parent; applying adds at most eight walks per target.
+        self.assertEqual(measured[4, "redact"], measured[12, "redact"])
+        self.assertEqual(measured[4, "load"], measured[12, "load"])
+        self.assertLessEqual((measured[12, "apply"] - measured[4, "apply"]) / 8, 8)
+
     def test_pending_receipt_write_failure_changes_no_target(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

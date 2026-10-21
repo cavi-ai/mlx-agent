@@ -678,7 +678,7 @@
     },
     {
       "path": "src/mlx_agent/providers.py",
-      "sha256": "8a8793790dee2a1d87ed6067ff7178548463b8695513b3f43a0d4715c4213538"
+      "sha256": "2cf98d1703bf1f2a418df35870ea79bea2288774f2fa39fc0592ea3ac99e1723"
     },
     {
       "path": "src/mlx_agent/queue_bridge.py",
@@ -938,7 +938,7 @@
     },
     {
       "path": "src/mlx_agent/transactions.py",
-      "sha256": "e4baf461c0f91b818603374ba2a7c33bc6dc38bd0f9ee9b197d5b6cd8d9d8c30"
+      "sha256": "edda46012ebc14c626b133e6194811c2456c3d972639af28484d0d8766b7743a"
     },
     {
       "path": "src/mlx_agent/transcribe.py",

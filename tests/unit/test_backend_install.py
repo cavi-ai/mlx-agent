@@ -1,6 +1,8 @@
+import hashlib
 import json
 import sys
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -62,6 +64,18 @@ class BackendInstallTests(unittest.TestCase):
         with self.assertRaises(BackendError) as caught:
             plan_install("mlx-audio", root=self.root, version_info=(3, 13, 0))
         self.assertEqual(caught.exception.code, "python_mismatch")
+
+    def test_audio_preview_covers_english_pipeline_build_inputs(self):
+        plan = self.plan()
+        self.assertIn("--build-lock", plan["argv"])
+        build_lock = Path(plan["argv"][plan["argv"].index("--build-lock") + 1])
+        self.assertTrue(build_lock.is_file())
+        self.assertEqual(plan["build_lock_sha256"], hashlib.sha256(build_lock.read_bytes()).hexdigest())
+        self.assertIn("github.com", plan["network"])
+        self.assertIn("release-assets.githubusercontent.com", plan["network"])
+        other = self.plan("mlx-vlm")
+        self.assertNotIn("--build-lock", other["argv"])
+        self.assertNotIn("github.com", other["network"])
 
     def test_start_requires_matching_hash_and_spawns_with_allowlisted_env(self):
         plan = self.plan()
@@ -143,6 +157,40 @@ class BackendInstallTests(unittest.TestCase):
 
 
 class BackendRunnerTests(unittest.TestCase):
+    def test_missing_english_pipeline_cannot_publish_audio_install_marker(self):
+        from mlx_agent import backend_runner
+        from subprocess import CompletedProcess
+
+        with TemporaryDirectory() as directory:
+            target = Path(directory, "mlx-audio")
+            trash = Path(directory, "Trash")
+            commands = []
+
+            def run(command, **kwargs):
+                commands.append(command)
+                target.mkdir(exist_ok=True)
+                failed = command[-1].endswith("kokoro_runtime.py")
+                return CompletedProcess(command, 1 if failed else 0)
+
+            with patch.object(backend_runner.subprocess, "run", side_effect=run):
+                code = backend_runner.main([
+                    "--id", "mlx-audio", "--version", "0.5.7", "--package", "mlx_audio",
+                    "--lock", "/audio.lock", "--target", str(target), "--python", sys.executable,
+                    "--trash", str(trash), "--preview-hash", "h",
+                ])
+            self.assertNotEqual(code, 0)
+            self.assertFalse(target.exists())
+            self.assertTrue(trash.is_dir())
+            self.assertFalse(list(trash.rglob(INSTALL_MARKER)))
+            self.assertTrue(any(c[-1].endswith("kokoro_runtime.py") for c in commands))
+            installs = [c for c in commands if "install" in c]
+            self.assertEqual(len(installs), 2)
+            self.assertIn("--require-hashes", installs[0])
+            self.assertIn("--only-binary=:all:", installs[0])
+            self.assertIn("--require-hashes", installs[1])
+            self.assertIn("--no-build-isolation", installs[1])
+            self.assertGreater(installs[1].index("--no-binary=docopt"), installs[1].index("--only-binary=:all:"))
+
     def test_runner_refuses_existing_target(self):
         from mlx_agent import backend_runner
 

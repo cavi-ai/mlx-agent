@@ -1,6 +1,7 @@
 """Run inside a speech backend's environment: load one converted TTS model, synthesize one text to a WAV, print JSON."""
 
 import argparse
+from contextlib import ExitStack
 import json
 import sys
 import time
@@ -17,6 +18,18 @@ def main(argv=None):
     parser.add_argument("--voice", default=None)
     parser.add_argument("--lang-code", default=None)
     arguments = parser.parse_args(argv)
+
+    with ExitStack() as stack:
+        if arguments.model_type == "kokoro":
+            if __package__:
+                from .kokoro_runtime import kokoro_data_directory
+            else:
+                from kokoro_runtime import kokoro_data_directory
+            stack.enter_context(kokoro_data_directory())
+        return _synthesize(arguments)
+
+
+def _synthesize(arguments):
 
     import mlx.core as mx
     import numpy as np

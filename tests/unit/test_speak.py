@@ -76,6 +76,20 @@ class SpeakTests(unittest.TestCase):
         self.assertNotIn("--lang-code", argv)
         self.assertEqual(argv[argv.index("--speed") + 1], "1.0")
 
+    def test_kokoro_uses_voice_assets_from_the_selected_local_model(self):
+        model = self.model()
+        (model / "voices").mkdir()
+        for name in ("af_heart", "bf_emma"):
+            (model / "voices" / (name + ".safetensors")).write_bytes(b"voice")
+        for voice in (None, "bf_emma", "bf_emma.safetensors"):
+            with self.subTest(voice=voice):
+                plan = self.plan(model, voice=voice)
+                filename = "af_heart.safetensors" if voice is None else voice.removesuffix(".safetensors") + ".safetensors"
+                argv = plan["argv"]
+                self.assertIn("--voice", argv)
+                self.assertEqual(argv[argv.index("--voice") + 1], str(model / "voices" / filename))
+                self.assertEqual(plan["voice"], voice)
+
     def test_plan_names_the_architecture_from_the_directory_when_config_has_no_model_type(self):
         snapshot = self.model(model_type=None, name="models--mlx-community--Kokoro-82M-bf16/snapshots/abc123")
         argv = self.plan(snapshot)["argv"]

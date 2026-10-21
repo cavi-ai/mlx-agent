@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- Fix: `convert transcribe`, `convert generate` and `convert decide` redact credentials in backend failure messages.
+- Fix: credential redaction covers `convert transcribe`, `convert generate` and `convert decide` failure messages, the token after an `Authorization` scheme such as `Bearer`, prefixed Hugging Face, GitHub, OpenAI-style and Slack tokens, and text inside JSON values.
+- Fix: the coding role probe checks a model's answer in a separate isolated interpreter with a 5-second limit instead of inside mlx-agent.
 - Inference timeouts report `<verb>_timeout` for every convert command and task kind; `describe`, `speak`, `video` and `music` reported `<verb>_failed`.
 - Music tasks reject truncated WAV output, and a changed music output reports `output_artifact_changed` like other media tasks.
 

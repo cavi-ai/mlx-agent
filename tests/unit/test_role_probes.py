@@ -1,5 +1,9 @@
+import subprocess
+import time
 import unittest
+from unittest import mock
 
+from mlx_agent import verification
 from mlx_agent.adoption import (
     ROLE_PROBE_BONUS,
     AdoptionState,
@@ -91,6 +95,28 @@ class CodingProbeValidatorTests(unittest.TestCase):
 
     def test_non_dict_response_is_not_valid(self):
         self.assertFalse(validate_coding_response(42)["valid"])
+
+    def test_answer_runs_in_an_isolated_interpreter(self):
+        calls = []
+
+        def runner(argv, **options):
+            calls.append((argv, options))
+            return subprocess.run(argv, **options)
+
+        code = "def add(a, b):\n    return a + b"
+        response = {"message": {"content": code}}
+        self.assertEqual(validate_coding_response(response, runner=runner)["reason"], "valid")
+        argv, options = calls[0]
+        self.assertEqual(argv[1:3], ["-I", "-S"])
+        self.assertEqual((options["input"], options["env"], options["timeout"]),
+                         (code, {}, verification.CODING_PROBE_TIMEOUT_SECONDS))
+
+    def test_answer_that_never_finishes_is_wrong_answer_within_the_limit(self):
+        response = {"message": {"content": "def add(a, b):\n    return 10 ** 10 ** 10"}}
+        with mock.patch.object(verification, "CODING_PROBE_TIMEOUT_SECONDS", 1):
+            started = time.monotonic()
+            self.assertEqual(validate_coding_response(response)["reason"], "wrong_answer")
+        self.assertLess(time.monotonic() - started, 10)
 
 
 class ReasoningProbeValidatorTests(unittest.TestCase):

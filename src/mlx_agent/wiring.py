@@ -22,8 +22,13 @@ _ASSIGNMENT_SECRET = re.compile(
     r"(?im)(^|[\s,{&?;])([\"']?(?:"
     r"[a-z0-9_-]*(?:token|secret|passw(?:or)?d|authorization|credentials?|auth)|"
     r"[a-z0-9_-]*(?:api|access|private)[_-]?key"
-    r")[\"']?\s*[:=]\s*)"
+    r")[\"']?\s*[:=]\s*(?:(?:bearer|basic|digest|token)\s+(?=[^\s,}\]\r\n]))?)"
     r"([^\s,}\]\r\n]+|\"(?:\\.|[^\"])*\"|'(?:\\.|[^'])*')"
+)
+# Provider tokens recognizable without a key: Hugging Face, GitHub, OpenAI-style and Slack.
+_PREFIXED_TOKEN = re.compile(
+    r"\b(?:hf_[A-Za-z0-9]{30,}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}"
+    r"|sk-[A-Za-z0-9_-]{20,}|xox[abprs]-[A-Za-z0-9-]{10,})"
 )
 _URL_USERINFO = re.compile(r"(https?://)([^/@\s]+@)", re.I)
 _OLLAMA = re.compile(r"\A# MLX_AGENT_WIRE v1\nFROM (" + _MODEL.pattern[1:-1] + r")\n\Z")
@@ -120,8 +125,19 @@ def _redact_json(value):
     if isinstance(value, list):
         return [_redact_json(item) for item in value]
     if isinstance(value, str):
-        return re.sub(r"https?://[^\s\"']+", lambda match: redact_endpoint(match.group(0)), value)
+        return _redact_text(value)
     return value
+
+
+def _redact_text(text):
+    text = _URL_USERINFO.sub(r"\1<redacted>@", text)
+    def redact_assignment(match):
+        value = match.group(3)
+        replacement = value if "<redacted>" in value else "<redacted>"
+        return match.group(1) + match.group(2) + replacement
+    text = _ASSIGNMENT_SECRET.sub(redact_assignment, text)
+    text = _PREFIXED_TOKEN.sub("<redacted>", text)
+    return re.sub(r"https?://[^\s\"']+", lambda match: redact_endpoint(match.group(0)), text)
 
 
 def redact_endpoint(endpoint):
@@ -150,16 +166,7 @@ def redact_secrets(content):
         parsed = None
     if parsed is not None:
         return json.dumps(_redact_json(parsed), sort_keys=True, separators=(",", ": "))
-    text = _URL_USERINFO.sub(r"\1<redacted>@", text)
-    def redact_assignment(match):
-        value = match.group(3)
-        replacement = value if "<redacted>" in value else "<redacted>"
-        return match.group(1) + match.group(2) + replacement
-    text = _ASSIGNMENT_SECRET.sub(redact_assignment, text)
-    def redact_url(match):
-        return redact_endpoint(match.group(0))
-    text = re.sub(r"https?://[^\s\"']+", redact_url, text)
-    return text
+    return _redact_text(text)
 
 
 def validate_health_endpoint(endpoint):

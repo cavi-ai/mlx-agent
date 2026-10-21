@@ -950,7 +950,7 @@
     },
     {
       "path": "src/mlx_agent/verification.py",
-      "sha256": "c66c471871c23c6b732c4d0adc683a3039f46cd0b8188067fb1be53b4c1f4b17"
+      "sha256": "d265d9aad3575e91534bf38ba184c8b8d619dbf4e1d1458d36d6cb5f22037af8"
     },
     {
       "path": "src/mlx_agent/video.py",
@@ -966,7 +966,7 @@
     },
     {
       "path": "src/mlx_agent/wiring.py",
-      "sha256": "aa1f9e3342fc1b3d9ebed3ef749934b096db08eac437a063cab68f37be2ef974"
+      "sha256": "87ec5a957b420ccc37f8f48e31f18c8b221cdb589cf5e5378656a488946f6bc5"
     }
   ],
   "schema_version": 2,

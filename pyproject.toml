@@ -40,3 +40,12 @@ only-include = ["src/mlx_agent", "README.md", "LICENSE", "pyproject.toml"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mlx_agent"]
+
+[tool.coverage.run]
+data_file = ".run/.coverage"
+source = ["mlx_agent"]
+omit = ["*/mlx_agent/_lab/*", "*/mlx_agent/resources/*"]
+
+[tool.coverage.report]
+fail_under = 84
+skip_empty = true

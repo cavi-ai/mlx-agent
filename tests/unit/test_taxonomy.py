@@ -169,7 +169,7 @@ class ScanTaskCliTests(unittest.TestCase):
                 '{"model_type":"qwen2","quantization":{"bits":4,"group_size":64}}', encoding="utf-8")
             (model / "model.safetensors").write_bytes(b"fixture weights; never loaded")
             out = io.StringIO()
-            with patch("mlx_agent.cli.default_gguf_roots", return_value=[]), redirect_stdout(out):
+            with patch("mlx_agent.gguf.default_gguf_roots", return_value=[]), redirect_stdout(out):
                 code = cli.main(["convert", "scan", "--mlx-root", directory,
                                  "--receipts-dir", directory, "--no-signature", "--json"])
             envelope = json.loads(out.getvalue())
@@ -180,7 +180,7 @@ class ScanTaskCliTests(unittest.TestCase):
 
     def test_scan_still_requires_at_least_one_root(self):
         out = io.StringIO()
-        with patch("mlx_agent.cli.default_gguf_roots", return_value=[]), redirect_stdout(out):
+        with patch("mlx_agent.gguf.default_gguf_roots", return_value=[]), redirect_stdout(out):
             code = cli.main(["convert", "scan", "--json"])
         self.assertEqual(code, 2)
         self.assertEqual(json.loads(out.getvalue())["error"]["code"], "no_scan_roots")

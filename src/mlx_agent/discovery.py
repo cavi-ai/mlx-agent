@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +29,8 @@ from .models import (
 
 
 CACHE_SCHEMA_VERSION = "2.0"
+# Concurrent Hugging Face model inspections during one discovery.
+INSPECTION_WORKERS = 6
 CACHE_TTL_SECONDS = 24 * 60 * 60
 
 
@@ -196,11 +199,19 @@ class DiscoveryService:
         self._write_cache(request, data)
         return ResultEnvelope.ok("discover", self._response_data(request, data, "refreshed" if request.refresh else "miss"))
 
+    def _inspect_all(self, repos):
+        """Inspect listed repositories concurrently; results keep the listing order."""
+        if not repos:
+            return {}
+        with ThreadPoolExecutor(max_workers=min(INSPECTION_WORKERS, len(repos))) as pool:
+            return dict(zip(repos, pool.map(self._huggingface.inspect_model, repos)))
+
     def _build_response(self, request, raw, host_data, list_url=None):
         buckets = {role: [] for role in DISCOVERY_ROLES}
         rejected = {}
         seen_repo, seen_base = set(), {}
         rejection_limit = max(1, int(request.limit or 1)) * 3
+        listed = []
         for model in raw:
             repo = model.get("id") or model.get("modelId")
             if not repo or repo in seen_repo:
@@ -212,7 +223,10 @@ class DiscoveryService:
                 and classify(repo) != request.role
             ):
                 continue
-            enrichment = {} if request.fast else self._huggingface.inspect_model(repo)
+            listed.append((repo, model))
+        enrichments = {} if request.fast else self._inspect_all([repo for repo, _model in listed])
+        for repo, model in listed:
+            enrichment = {} if request.fast else enrichments[repo]
             roles, tool_use = classify_roles(repo, enrichment)
             selected_roles = (
                 (request.role,) if request.role in roles else ()

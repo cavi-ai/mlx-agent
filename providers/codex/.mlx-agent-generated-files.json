@@ -14,11 +14,11 @@
     },
     {
       "path": "scripts/mlx-agent",
-      "sha256": "ab779456cac163b4b0c925031596c9f2dff03a3380fe9d75b2329c27869be6df"
+      "sha256": "41f870263d295c256368906b658f6545f687b16ef9d03dfaf4632ee416327ddf"
     },
     {
       "path": "scripts/mlx-agent-mcp",
-      "sha256": "ba53da1e0664fe5e748d6803c318fa7f1a449d4675d23d7f6013a976a7e122b9"
+      "sha256": "e1b977726608babe950d9a668f1d6638f4448218bbbf828cd9356165b48bd719"
     },
     {
       "path": "skills/mlx-adopt/SKILL.md",
@@ -466,7 +466,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "08ce77b65bed90e82225d203bb4e91f6831c6648cb8b666c6642281f67ee80ab"
+      "sha256": "d2bf812c563d34b5ad52ef11213dee2c62aacb6485a746c70cce24da4c560f03"
     },
     {
       "path": "src/mlx_agent/coding_capture.py",
@@ -542,7 +542,7 @@
     },
     {
       "path": "src/mlx_agent/discovery.py",
-      "sha256": "cc7154b69e6084ca1508c67e8e094b897fdd91c3540ad6dc2a0add95b62d6872"
+      "sha256": "cab26108d31ece8993becfff54cb98f42259e6d8d50fc93d20d28c9f7d7f7a2f"
     },
     {
       "path": "src/mlx_agent/fetch_runner.py",

@@ -86,7 +86,7 @@ class ServeCliTests(unittest.TestCase):
             self.assertEqual(json.loads(output)['error']['code'], 'invalid_arguments')
 
     def test_policy_command_passes_full_policy_and_requires_expected_pid(self):
-        with mock.patch('mlx_agent.cli.configure_serve_memory', return_value={'status': 'configured'}) as configure:
+        with mock.patch('mlx_agent.serve.configure_serve_memory', return_value={'status': 'configured'}) as configure:
             code, _ = self._run(['serve', 'policy', '--port', '8080', '--expected-pid', '123', '--idle-timeout', '300', '--keep-loaded', '--json'])
             self.assertEqual(code, 0)
             configure.assert_called_once_with(8080, {'idle_timeout_seconds': 300, 'keep_loaded': True, 'minimum_headroom_gb': None}, None, 123)

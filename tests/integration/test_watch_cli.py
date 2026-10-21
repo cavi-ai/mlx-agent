@@ -16,7 +16,7 @@ FIXTURE = ROOT / "tests" / "fixtures" / "scout_responses.json"
 
 class WatchCliTests(unittest.TestCase):
     def setUp(self):
-        owned = patch("mlx_agent.cli.collect_owned", return_value=[])
+        owned = patch("mlx_agent.watch.collect_owned", return_value=[])
         owned.start()
         self.addCleanup(owned.stop)
         os.environ["MLX_AGENT_FIXTURE"] = str(FIXTURE)

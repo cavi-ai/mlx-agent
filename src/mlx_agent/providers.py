@@ -9,12 +9,33 @@ import selectors
 import shutil
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
 
 _AGY_USER_PLUGIN_SUFFIX = Path(".gemini") / "config" / "plugins" / "mlx-agent"
 _AGY_PROJECT_PLUGIN_SUFFIX = Path(".agents") / "plugins" / "mlx-agent"
+
+
+def _tree_files(location):
+    """Regular files under a resolved directory, relative and in path order; any symbolic link is refused."""
+    found, pending = [], [()]
+    while pending:
+        parts = pending.pop()
+        with os.scandir(location.joinpath(*parts)) as entries:
+            for entry in entries:
+                child = parts + (entry.name,)
+                if entry.is_symlink():
+                    raise ValueError(
+                        "provider artifact source must not contain symlinks: {0}".format(location.joinpath(*child))
+                    )
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append(child)
+                elif ("__pycache__" not in child and os.path.splitext(entry.name)[1] != ".pyc"
+                      and entry.is_file(follow_symlinks=False)):
+                    found.append(child)
+    return [Path(*parts) for parts in sorted(found)]
 
 
 @dataclass(frozen=True)
@@ -277,18 +298,9 @@ class ProviderRegistry:
             if location.is_file():
                 artifacts.append(ProviderArtifact(location, destination, project_destination, scopes))
             else:
-                for child in sorted(location.rglob("*")):
-                    if child.is_symlink():
-                        raise ValueError(
-                            "provider artifact source must not contain symlinks: {0}".format(child)
-                        )
-                    resolved = child.resolve()
-                    relative = child.relative_to(location)
-                    if "__pycache__" in relative.parts or child.suffix == ".pyc":
-                        continue
-                    if child.is_file() and location in resolved.parents:
-                        project_child = project_destination / child.relative_to(location) if project_destination else None
-                        artifacts.append(ProviderArtifact(resolved, destination / child.relative_to(location), project_child, scopes))
+                for relative in _tree_files(location):
+                    project_child = project_destination / relative if project_destination else None
+                    artifacts.append(ProviderArtifact(location / relative, destination / relative, project_child, scopes))
         config_paths = value["config_paths"]
         if not isinstance(config_paths, list) or not all(isinstance(item, str) for item in config_paths):
             raise ValueError("provider {0}.config_paths is invalid".format(provider_id))
@@ -450,7 +462,7 @@ def detect_providers(definitions, env=None, path=None, executable_lookup=None, p
     environment = dict(os.environ if env is None else env)
     search_path = path if path is not None else environment.get("PATH", "")
     lookup = executable_lookup or shutil.which
-    detections = []
+    detections, probes = [], []
     for definition in definitions:
         if definition.install_mode == "portable":
             detections.append(ProviderDetection(
@@ -473,51 +485,63 @@ def detect_providers(definitions, env=None, path=None, executable_lookup=None, p
                 install_mode=definition.install_mode,
             ))
             continue
-        try:
-            argv = [command_path] + list(definition.version_probe_args)
-            if probe_runner is None:
-                completed = _run_bounded_probe(
-                    argv,
-                    timeout=definition.version_probe_timeout,
-                    env=environment,
-                )
-            else:
-                completed = probe_runner(
-                    argv,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    timeout=definition.version_probe_timeout,
-                    check=False,
-                    shell=False,
-                    env=environment,
-                )
-            raw = completed.stdout or b""
-            if isinstance(raw, bytes):
-                output = raw[:_MAX_VERSION_OUTPUT].decode("utf-8", errors="replace")
-            else:
-                output = str(raw)[:_MAX_VERSION_OUTPUT]
-            match = _SEMVER.search(output)
-            if completed.returncode != 0 or match is None:
-                raise ValueError("version probe did not return a SemVer core")
-            version = match.group(1)
-            supported = definition.last_tested_version is not None and (
-                _version_tuple(definition.minimum_version)
-                <= _version_tuple(version)
-                <= _version_tuple(definition.last_tested_version)
-            )
-            state = "native-visible" if supported else "unsupported"
-            detections.append(ProviderDetection(
-                definition.id, supported, command, command_path, state=state,
-                version=version, minimum_version=definition.minimum_version,
-                last_tested_version=definition.last_tested_version,
-                error=None if supported else "provider version is outside the validated range",
-                install_mode=definition.install_mode,
-            ))
-        except (OSError, subprocess.SubprocessError, ValueError) as error:
-            detections.append(ProviderDetection(
-                definition.id, False, command, command_path, state="unsupported",
-                minimum_version=definition.minimum_version,
-                last_tested_version=definition.last_tested_version,
-                error=str(error), install_mode=definition.install_mode,
-            ))
+        detections.append(None)
+        probes.append((len(detections) - 1, definition, command, command_path))
+    if probes:
+        # Version probes are independent processes; run them together so detection waits for the slowest one only.
+        with ThreadPoolExecutor(max_workers=len(probes)) as pool:
+            pending = [(index, pool.submit(_probe_detection, definition, command, command_path, environment, probe_runner))
+                       for index, definition, command, command_path in probes]
+            for index, future in pending:
+                detections[index] = future.result()
     return detections
+
+
+def _probe_detection(definition, command, command_path, environment, probe_runner):
+    try:
+        argv = [command_path] + list(definition.version_probe_args)
+        if probe_runner is None:
+            completed = _run_bounded_probe(
+                argv,
+                timeout=definition.version_probe_timeout,
+                env=environment,
+            )
+        else:
+            completed = probe_runner(
+                argv,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=definition.version_probe_timeout,
+                check=False,
+                shell=False,
+                env=environment,
+            )
+        raw = completed.stdout or b""
+        if isinstance(raw, bytes):
+            output = raw[:_MAX_VERSION_OUTPUT].decode("utf-8", errors="replace")
+        else:
+            output = str(raw)[:_MAX_VERSION_OUTPUT]
+        match = _SEMVER.search(output)
+        if completed.returncode != 0 or match is None:
+            raise ValueError("version probe did not return a SemVer core")
+        version = match.group(1)
+        supported = definition.last_tested_version is not None and (
+            _version_tuple(definition.minimum_version)
+            <= _version_tuple(version)
+            <= _version_tuple(definition.last_tested_version)
+        )
+        state = "native-visible" if supported else "unsupported"
+        return ProviderDetection(
+            definition.id, supported, command, command_path, state=state,
+            version=version, minimum_version=definition.minimum_version,
+            last_tested_version=definition.last_tested_version,
+            error=None if supported else "provider version is outside the validated range",
+            install_mode=definition.install_mode,
+        )
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
+        return ProviderDetection(
+            definition.id, False, command, command_path, state="unsupported",
+            minimum_version=definition.minimum_version,
+            last_tested_version=definition.last_tested_version,
+            error=str(error), install_mode=definition.install_mode,
+        )

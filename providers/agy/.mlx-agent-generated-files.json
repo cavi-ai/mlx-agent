@@ -722,7 +722,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-embeddings.lock",
-      "sha256": "e768b31f9cc64ff0460ddbf51f2f1eccade530771da89681b784c0d23c21f1aa"
+      "sha256": "63d810c4b3baf66e7ef3ce20aed40422a182c422e4b256a4fe795a3546582175"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-lm.json",
@@ -734,7 +734,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-video.lock",
-      "sha256": "bde79bb0300bdb850f92b1e733119031c5d92a519188d9e6d58daee83a0f0048"
+      "sha256": "dcfd9e0e361cf8a3d95b3dabd703bba1b1d23a0b21e1753a04909464c398373a"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-vlm.json",
@@ -742,7 +742,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-vlm.lock",
-      "sha256": "50d91519e592c89a246f2b09ca6d73e9158daf92f65a65c3d2a1c1759ded3ef5"
+      "sha256": "50355dd68ab79b1883ffe77015ef76510076dbf205bd2f6e466d751d9dad0d49"
     },
     {
       "path": "src/mlx_agent/resources/bench-community.json",

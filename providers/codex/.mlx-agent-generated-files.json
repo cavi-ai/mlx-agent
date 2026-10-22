@@ -2,7 +2,7 @@
   "files": [
     {
       "path": ".codex-plugin/plugin.json",
-      "sha256": "879add9f47d00777990f5a77471f7259cf122920a1cd1b9c40c268e634ee5188"
+      "sha256": "cb9a4406f8be6d555f7137c353d7a2ec3998c2077a4c191c6130fdabf82788cb"
     },
     {
       "path": "requirements-lab-inference.txt",
@@ -50,7 +50,7 @@
     },
     {
       "path": "src/mlx_agent/__init__.py",
-      "sha256": "e18f553bf363ef49f8cd54cd683fb23ca2a15c4601ba7b1695dc379573daa7ef"
+      "sha256": "be3754b26a3dc1a73bcce9ded8d873f31f2189e4d1d7ee97fcb273dd452019ff"
     },
     {
       "path": "src/mlx_agent/__main__.py",

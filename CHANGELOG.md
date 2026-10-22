@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Releases also notify `cavi-ai/plugins`, which vendors the tagged Codex package into the plugin catalog.
+
 ## 0.10.0 - 2026-10-22
 
 - Fix: credential redaction covers `convert transcribe`, `convert generate` and `convert decide` failure messages, the token after an `Authorization` scheme such as `Bearer`, prefixed Hugging Face, GitHub, OpenAI-style and Slack tokens, and text inside JSON values.

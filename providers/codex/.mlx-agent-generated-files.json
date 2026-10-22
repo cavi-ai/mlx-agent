@@ -462,7 +462,7 @@
     },
     {
       "path": "src/mlx_agent/capture_volume.py",
-      "sha256": "a591a1f0cea635921cca0216d484c830ed47fffab6240676e7c7a88ec34d09f0"
+      "sha256": "258ce8d48261a7bd2e7bdc9e07f13912cb8dd36baa2fe98afc77e3c73c1107ee"
     },
     {
       "path": "src/mlx_agent/cli.py",
@@ -494,7 +494,7 @@
     },
     {
       "path": "src/mlx_agent/coding_capture_storage.py",
-      "sha256": "1eea97c92297616c7e38d559d7be941d7773e393880ac79cf27f5e7da73e6c1e"
+      "sha256": "0aa32d15b75e736adfac4c7f95da7427b24819d8c7b4c9c87854048ac2f1d6cb"
     },
     {
       "path": "src/mlx_agent/command_args.py",

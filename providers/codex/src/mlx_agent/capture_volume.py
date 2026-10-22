@@ -10,12 +10,14 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 from uuid import UUID
 
 from .task_contracts import TaskError, encoded
 
 HDIUTIL = "/usr/bin/hdiutil"
 DISKUTIL = "/usr/sbin/diskutil"
+LISTING_DELAYS = (0, 0.05, 0.1, 0.2, 0.4, 0.8)
 
 
 def _run(arguments):
@@ -114,7 +116,8 @@ def _locked(root):
         os.close(descriptor)
 
 
-def _attached(root):
+def _listing(root):
+    """This root's image in one hdiutil listing: None, its one mounted entity, or False when inconsistent."""
     image, mounted = root / "capture.sparsebundle", root / "mounted"
     matches = [entry for entry in _run([HDIUTIL, "info", "-plist"]).get("images", [])
                if entry.get("image-path") == str(image)]
@@ -122,8 +125,24 @@ def _attached(root):
         return None
     entities = [entry for image in matches for entry in image.get("system-entities", []) if entry.get("mount-point")]
     if len(matches) != 1 or len(entities) != 1 or entities[0]["mount-point"] != str(mounted):
+        return False
+    return entities[0]
+
+
+def _attached(root, expect_mount=False):
+    # The hdiutil listing can lag an attach or half-list an image while other images attach or detach,
+    # so an inconsistent listing, or an empty one when a mount is expected, is read again before it is trusted.
+    for delay in LISTING_DELAYS:
+        time.sleep(delay)
+        entity = _listing(root)
+        if entity or (entity is None and not expect_mount):
+            break
+    if entity is None:
+        return None
+    if entity is False:
         raise TaskError("unsafe_capture_volume", "The capture image has an unexpected mount.")
-    device = entities[0].get("dev-entry", "")
+    mounted = root / "mounted"
+    device = entity.get("dev-entry", "")
     if not device.startswith("/dev/disk") or "/" in device[len("/dev/"):]:
         raise TaskError("unsafe_capture_volume", "The capture device identity is invalid.")
     info = _run([DISKUTIL, "info", "-plist", device])
@@ -133,7 +152,7 @@ def _attached(root):
 
 
 def _detach(root, expected):
-    observed = _attached(root)
+    observed = _attached(root, expect_mount=True)
     if observed != expected:
         raise TaskError("unsafe_capture_volume", "The capture mount changed before detach.")
     try:
@@ -166,7 +185,7 @@ def _mounted(root, record, readonly):
         if attached is not None:
             _detach(root, attached)
         raise
-    observed = _attached(root)
+    observed = _attached(root, expect_mount=True)
     if observed is None:
         raise TaskError("capture_volume_unavailable", "The capture image did not mount at its owned path.")
     try:

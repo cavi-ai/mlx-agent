@@ -4,6 +4,7 @@
 
 - Fix: credential redaction covers `convert transcribe`, `convert generate` and `convert decide` failure messages, the token after an `Authorization` scheme such as `Bearer`, prefixed Hugging Face, GitHub, OpenAI-style and Slack tokens, and text inside JSON values.
 - Fix: the coding role probe checks a model's answer in a separate isolated interpreter with a 5-second limit instead of inside mlx-agent.
+- Fix: capture volumes work while other disk images attach or detach. The mount check reads the `hdiutil` listing again instead of failing and leaving the image attached, and a removal preview no longer changes when the capture remounts on another device.
 - The `mlx-agent` and `mlx-agent-mcp` launchers cache compiled bytecode under `$XDG_CACHE_HOME/mlx-agent/pycache` (default `~/.cache/mlx-agent/pycache`) instead of recompiling the package on every run, and each command loads only its own modules, so `mlx-agent` starts in less than half the time.
 - Inference timeouts report `<verb>_timeout` for every convert command and task kind; `describe`, `speak`, `video` and `music` reported `<verb>_failed`.
 - Music tasks reject truncated WAV output, and a changed music output reports `output_artifact_changed` like other media tasks.

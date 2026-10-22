@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Releases also notify `cavi-ai/plugins`, which vendors the tagged Codex package into the plugin catalog.
+- Releases also notify `cavi-ai/plugins`, which points every host in the plugin catalog at the release.
 
 ## 0.10.0 - 2026-10-22
 

@@ -229,6 +229,21 @@ class InstallerRoundTripTests(unittest.TestCase):
         self.assertIn("artifact_invalid", codes)
         self.assertNotIn("provider_absent", codes)
 
+    def test_doctor_warns_when_a_provider_is_newer_than_its_last_tested_version(self):
+        installer = Installer(
+            self.registry,
+            project_root=self.project,
+            executable_lookup=lambda command, path=None: "/fake/bin/agy" if command == "agy" else None,
+            probe_runner=lambda argv, **kwargs: subprocess.CompletedProcess(argv, 0, b"agy 99.0.0\n"),
+        )
+        plan = installer.plan("install", ["agy"], "user", self.project)
+        installer.execute(plan, confirmed=plan.preview["preview_hash"])
+
+        result = installer.execute(installer.plan("doctor", ["agy"], "user", self.project))
+        self.assertTrue(result["healthy"], result["problems"])
+        self.assertEqual("native-visible", result["providers"][0]["integration_state"])
+        self.assertEqual(["provider_untested"], [item["code"] for item in result["warnings"]])
+
     def test_agentskills_uninstall_removes_empty_owned_skill_directories_in_both_scopes(self):
         for scope in ("user", "project"):
             with self.subTest(scope=scope):

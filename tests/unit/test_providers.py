@@ -75,12 +75,12 @@ class ProviderRegistryTests(unittest.TestCase):
         self.assertEqual("portable", states["agentskills"])
         self.assertEqual("absent", states["agy"])
 
-    def test_detection_rejects_out_of_range_versions_with_a_bounded_no_shell_probe(self):
+    def test_detection_refuses_old_versions_and_warns_on_untested_ones_with_a_bounded_no_shell_probe(self):
         calls = []
 
         def runner(argv, **kwargs):
             calls.append((argv, kwargs))
-            return subprocess.CompletedProcess(argv, 0, b"agy 99.0.0\n")
+            return subprocess.CompletedProcess(argv, 0, "agy {0}\n".format(version).encode())
 
         with tempfile.TemporaryDirectory() as directory:
             registry = ProviderRegistry(
@@ -89,15 +89,21 @@ class ProviderRegistryTests(unittest.TestCase):
                 config_root=Path(directory) / "config",
             )
             definition = registry.definitions()["agy"]
-        detection = detect_providers(
-            [definition],
-            env={"PATH": "/fake/bin"},
-            executable_lookup=lambda command, path=None: "/fake/bin/agy",
-            probe_runner=runner,
-        )[0]
-        self.assertFalse(detection.available)
-        self.assertEqual("unsupported", detection.state)
-        self.assertEqual("99.0.0", detection.version)
+        detections = {}
+        for version in ("0.1.0", definition.last_tested_version, "99.0.0"):
+            detections[version] = detect_providers(
+                [definition],
+                env={"PATH": "/fake/bin"},
+                executable_lookup=lambda command, path=None: "/fake/bin/agy",
+                probe_runner=runner,
+            )[0]
+        old, tested, newer = detections["0.1.0"], detections[definition.last_tested_version], detections["99.0.0"]
+        self.assertEqual((False, "unsupported", None), (old.available, old.state, old.warning))
+        self.assertEqual((True, "native-visible", None), (tested.available, tested.state, tested.warning))
+        self.assertEqual((True, "native-visible", None), (newer.available, newer.state, newer.error))
+        self.assertEqual("99.0.0", newer.version)
+        self.assertEqual("provider version 99.0.0 is newer than the last tested {0}".format(definition.last_tested_version),
+                         newer.to_dict()["warning"])
         self.assertEqual(["/fake/bin/agy", "--version"], calls[0][0])
         self.assertFalse(calls[0][1]["shell"])
         self.assertLessEqual(calls[0][1]["timeout"], 5)

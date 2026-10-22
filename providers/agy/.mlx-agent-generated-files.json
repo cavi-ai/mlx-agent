@@ -466,7 +466,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "d2bf812c563d34b5ad52ef11213dee2c62aacb6485a746c70cce24da4c560f03"
+      "sha256": "dff3a285bb7523fa38c9e176ceea77a3d6928d3c12358ae09072b84993565a04"
     },
     {
       "path": "src/mlx_agent/coding_capture.py",
@@ -586,7 +586,7 @@
     },
     {
       "path": "src/mlx_agent/installer.py",
-      "sha256": "6c5805d480012db8cb3137074f8b7475d9923d734619663a37dad2c5a34bac89"
+      "sha256": "d1179d91ac0f5223f3f8cfc2e3eaceaf51cd79ae0b86f91b24b5d21bcce4c4c3"
     },
     {
       "path": "src/mlx_agent/intake.py",
@@ -678,7 +678,7 @@
     },
     {
       "path": "src/mlx_agent/providers.py",
-      "sha256": "2cf98d1703bf1f2a418df35870ea79bea2288774f2fa39fc0592ea3ac99e1723"
+      "sha256": "9a901139eadf926258819e7718a6b717a875420669e6b72428b824ac28c9bc33"
     },
     {
       "path": "src/mlx_agent/queue_bridge.py",

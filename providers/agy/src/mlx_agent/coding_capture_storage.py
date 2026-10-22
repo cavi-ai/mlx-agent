@@ -375,7 +375,8 @@ class CaptureStorage:
                     with path.open("rb") as stream:
                         for chunk in iter(lambda: stream.read(65536), b""):
                             digest.update(chunk)
-                    tree.update(encoded([relative, info.st_dev, info.st_ino, info.st_size, digest.hexdigest()]))
+                    # The volume's device number changes with each attach; the inode identifies a file within it.
+                    tree.update(encoded([relative, info.st_ino, info.st_size, digest.hexdigest()]))
                     count += 1
                     owned_bytes += info.st_size
                     if path.relative_to(mounted).parts[0] in ("profile", "tmp"):

@@ -249,6 +249,15 @@ class CodingCaptureStorageTests(unittest.TestCase):
                 self.storage.remove(preview["preview_hash"])
         self.assertTrue(self.storage.root.exists())
 
+    def test_removal_preview_survives_a_remount_on_another_device(self):
+        self.fail_capture()
+        preview = self.storage.remove_preview()
+        other = storage_module.CaptureStorage.create(self.store, str(uuid4()), self.limits)
+        self.addCleanup(storage_module.CaptureVolume.remove, other.root)
+        with other.active():
+            self.storage.remove(preview["preview_hash"])
+        self.assertFalse(self.storage.root.exists())
+
     def test_failed_remove_retains_recovery_metadata(self):
         self.fail_capture()
         preview = self.storage.remove_preview()

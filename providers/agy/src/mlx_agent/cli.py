@@ -842,6 +842,8 @@ def _add_serve_arguments(parser):
                        help="off asks the chat template to skip reasoning (mlx_lm); other runtimes report unsupported")
     start.add_argument("--m5-prefill", action="store_true",
                        help="opt-in M5 affine Q4 prompt kernel; unsupported hardware/models use native MLX")
+    start.add_argument("--prompt-lookup", action="store_true",
+                       help="opt-in code-edit decoding; plain greedy requests run one at a time")
     start.add_argument("--jit", action="store_true", help="keep endpoint reachable; load local weights on inference requests")
     _add_memory_arguments(start)
     start.add_argument("--launchd", action="store_true", help="install a launchd agent plist instead of spawning now")
@@ -939,6 +941,7 @@ def _run_serve(arguments):
             memory_policy=_memory_arguments(arguments) if (arguments.idle_timeout is not None or arguments.keep_loaded or arguments.min_headroom_gb is not None) else None,
             thinking=arguments.thinking,
             m5_prefill=arguments.m5_prefill,
+            prompt_lookup=arguments.prompt_lookup,
         )
         if arguments.launchd:
             if arguments.jit:

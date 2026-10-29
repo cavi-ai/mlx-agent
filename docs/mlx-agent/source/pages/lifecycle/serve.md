@@ -79,6 +79,29 @@ environment is selected. Other serving runtimes reject this MLX-LM-only option.
 Changed source or dependencies require a fresh preview; each JIT worker checks the
 same fingerprint before loading. No runtime source or model code is downloaded.
 
+## Code-edit acceleration
+
+Add `--prompt-lookup` to both preview and confirmation for code edits that reuse
+source text from the prompt. With client temperature zero, the server proposes up
+to eight tokens from repeated prompt sequences and verifies them with the target
+model before emitting them. It indexes only the last 8192 prompt tokens. No draft
+model or new weights are required. Native batching remains the default when the
+option is omitted.
+
+In this mode, plain greedy requests run one at a time. Sampling, logit penalties or
+biases, seeds, logprobs, adapters and draft models retain native generation. Only
+ordinary KVCache states use lookup; rotating, quantized and hybrid caches retain
+native generation. Prompt cache reuse, stop tokens and cancellation retain the
+server's token alignment. Performance depends on copied text; ordinary chat may
+be slower. Keep this option off for concurrent chat workloads.
+
+The supported runtime is macOS with MLX and mlx-metal 0.31.1 and mlx-lm 0.29.1.
+Other dependency versions use native MLX. Like `--m5-prefill`, this option wraps
+only the current interpreter's own entrypoint, records source and dependency
+hashes (`decode_profile`) and requires a fresh preview if they change. A foreign
+entrypoint retains its native arguments and records `adapter_enabled: false`.
+Other serving runtimes reject the option. It can be combined with `--m5-prefill`.
+
 ## Load on request
 
 JIT keeps an endpoint reachable without retaining a loaded model worker:

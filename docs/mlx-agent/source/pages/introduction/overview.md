@@ -7,7 +7,7 @@ provider-neutral Python core.
 
 ## Requirements and boundaries
 
-The core requires Python 3.9+ and uses the standard library. MLX execution
+The core requires Python 3.11+ and uses the standard library. MLX execution
 requires Apple Silicon and the appropriate runtime. Optional backend installation
 uses Python 3.12 dependency locks; provider CLIs are installed separately.
 

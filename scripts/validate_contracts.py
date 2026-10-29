@@ -474,8 +474,8 @@ def validate_manifest(path: Path) -> List[str]:
     else:
         _require_keys(requirements, ("python3",), "requirements", errors)
         _unexpected_keys(requirements, ("python3",), "requirements", errors)
-        if requirements.get("python3") != ">=3.9":
-            errors.append("requirements.python3 must equal '>=3.9'")
+        if requirements.get("python3") != ">=3.11":
+            errors.append("requirements.python3 must equal '>=3.11'")
 
     safety = value.get("safety")
     safety_keys = ("auto_install_provider_cli", "auto_download_model", "persist_secrets")

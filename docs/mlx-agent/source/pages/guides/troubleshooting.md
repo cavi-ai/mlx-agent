@@ -52,7 +52,7 @@ manage their own loading. Tool-use checks do not execute real tools, and
 
 Use `python3 scripts/mlx-agent backend list --json` to see installed state and
 log paths. Optional backend installation requires Python 3.12; the dependency-free
-core's Python 3.9 minimum does not apply to those locks. Review and confirm the
+core's Python 3.11 minimum does not apply to those locks. Review and confirm the
 [backend installation](../lifecycle/backends.md) instead of installing dependencies
 into an unrelated Python interpreter.
 

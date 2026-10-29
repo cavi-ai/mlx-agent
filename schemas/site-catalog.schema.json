@@ -57,7 +57,7 @@
       "additionalProperties": false,
       "required": ["python", "platform", "provider_clis", "model_runtimes"],
       "properties": {
-        "python": {"const": ">=3.9"},
+        "python": {"const": ">=3.11"},
         "platform": {"type": "string", "minLength": 1},
         "provider_clis": {"type": "string", "minLength": 1},
         "model_runtimes": {"type": "string", "minLength": 1}

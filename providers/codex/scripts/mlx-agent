@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 
 
+if sys.version_info < (3, 11):
+    sys.exit("mlx-agent requires Python 3.11 or later; {0} is Python {1}.{2}.".format(sys.executable, *sys.version_info[:2]))
 if sys.pycache_prefix is None:
     # Compiled bytecode goes to the user cache, never into the installed plugin.
     sys.pycache_prefix = str(Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache").expanduser()

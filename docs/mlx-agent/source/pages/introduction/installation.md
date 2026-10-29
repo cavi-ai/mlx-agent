@@ -1,7 +1,8 @@
 # Installation
 
-The core requires Python 3.9+ and uses the standard library. MLX execution and
-macOS host inspection require Apple Silicon. Install the coding-agent host CLI
+The core requires Python 3.11+ and uses the standard library; the `python3`
+bundled with macOS is older, and the launchers exit with a message on it. MLX
+execution and macOS host inspection require Apple Silicon. Install the coding-agent host CLI
 separately. Optional model runtimes have their own dependencies; managed optional
 backend installation uses Python 3.12 locks.
 

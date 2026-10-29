@@ -257,6 +257,7 @@ class OpenCodeAdapterContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             environment = dict(os.environ)
             environment["PATH"] = "/usr/bin:/bin"
+            environment["PYTHON"] = sys.executable
             result = subprocess.run(
                 ["/bin/bash", str(smoke)], cwd=str(ROOT), env=environment, text=True,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,

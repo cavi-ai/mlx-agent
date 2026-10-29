@@ -5,6 +5,8 @@ from pathlib import Path
 import sys
 
 
+if sys.version_info < (3, 11):
+    sys.exit("mlx-agent requires Python 3.11 or later; {0} is Python {1}.{2}.".format(sys.executable, *sys.version_info[:2]))
 ROOT = Path(__file__).resolve().parents[3]
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:

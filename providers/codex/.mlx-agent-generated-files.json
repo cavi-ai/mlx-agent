@@ -710,7 +710,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mflux.lock",
-      "sha256": "f95c03cb27de6b5da0bf49e9d8b758077d5990d312292fa0a96731ff2753990f"
+      "sha256": "93b67b55b2ad54be22251cc305779b600fb6469d680b583863e2fb3b99eaba0c"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-audio-build.lock",
@@ -722,7 +722,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-audio.lock",
-      "sha256": "209e60c917a2bf540b1ba87a9db2794793bd9e96d0bdfec3dab799884293dd48"
+      "sha256": "3f5935dc7ee1ca287d33ba199848d35318174e33ca2750883b791e58ca5a76bd"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-embeddings.json",
@@ -730,7 +730,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-embeddings.lock",
-      "sha256": "f466098fa5869e699d9adf3872fa8cd12c5691417db4f53e5c6f5c7ae09664fc"
+      "sha256": "787e723c4e6ae09e176c8113ccc64140a52d871cc0e837bcf9547084590d566a"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-lm.json",
@@ -742,7 +742,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-video.lock",
-      "sha256": "8fab91da9e2a0d60f00e9377c70ff44f983a0a22eab67e99e5cbc2acd451abc7"
+      "sha256": "a4316854cd3d6bd0ca9e37c40c90b6841cea7451a7061ad5a3297269e3bb41d6"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-vlm.json",
@@ -750,7 +750,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-vlm.lock",
-      "sha256": "b53ecbc0ddbed13a75626c915e002885c48ca98d93d1a253cd390fe138c78a81"
+      "sha256": "55a448d45d76651eae0960f96773241e6c995fe95e9ed23b906c84d0ae8777b9"
     },
     {
       "path": "src/mlx_agent/resources/bench-community.json",

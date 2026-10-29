@@ -208,13 +208,28 @@ def _require_training_binding(plan):
                      "Review a fresh serving preview for the completed training receipt.")
 
 
+def _require_prefill_identity(plan):
+    if "prefill_kernel" in plan:
+        from .prefill_runtime import can_wrap_runtime, identity
+        configured = plan["prefill_kernel"]
+        facts = {k: v for k, v in configured.items() if k not in ("adapter_enabled", "runtime_executable")}
+        if (facts != identity() or (configured.get("adapter_enabled")
+                and not can_wrap_runtime(configured["runtime_executable"]))):
+            raise ServeError("prefill_kernel_changed", "Prompt kernel source or dependencies changed.",
+                             "Review a fresh serving preview.")
+
+
 def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                adapter_path=None, path=None, jit=False, receipts_dir=None, hf_cache=None, memory_policy=None,
                runtime_executable=None, strata_speculation=False,
-               strata_expert_memory_gb=None, strata_context_tokens=None, training_receipt=None, thinking="default"):
+               strata_expert_memory_gb=None, strata_context_tokens=None, training_receipt=None, thinking="default",
+               m5_prefill=False):
     """Render the start plan and local file identities without side effects."""
     if thinking not in ("default", "off"):
         raise ServeError("invalid_arguments", "thinking must be default or off.", "Pass --thinking off or omit it.")
+    if type(m5_prefill) is not bool or (m5_prefill and runtime != "mlx_lm"):
+        raise ServeError("invalid_arguments", "M5 prompt acceleration requires MLX-LM.",
+                         "Use --runtime auto or mlx_lm, or omit --m5-prefill.")
     binding = None
     if training_receipt is not None:
         if repo is not None or path is not None or adapter_path is not None:
@@ -336,6 +351,15 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
     if thinking == "off" and recipe.get("thinking_off_argv"):
         # Literal arguments: the chat-template JSON is not a format template.
         argv.extend(recipe["thinking_off_argv"])
+    prefill_kernel = None
+    if m5_prefill:
+        from .prefill_runtime import can_wrap_runtime, identity
+        prefill_kernel = identity()
+        prefill_kernel.update(adapter_enabled=can_wrap_runtime(values["executable"]),
+                              runtime_executable=values["executable"])
+        if prefill_kernel["adapter_enabled"]:
+            argv = [sys.executable, str(Path(__file__).with_name("prefill_runtime.py").resolve()),
+                    "--expected-kernel-fingerprint", prefill_kernel["fingerprint"]] + argv[1:]
     plan = {
         "repo": repo.strip() if has_repo else None,
         "path": local_path,
@@ -356,6 +380,8 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                     readiness_deadline=900)
     elif has_path:
         plan.update(_local_weight_evidence(local_path))
+    if prefill_kernel is not None:
+        plan["prefill_kernel"] = prefill_kernel
     if adapter_path is not None:
         plan["adapter_identity"] = adapter_identity
     if thinking == "off":
@@ -498,6 +524,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         )
     _require_training_binding(plan)
     _require_adapter_identity(plan)
+    _require_prefill_identity(plan)
 
     if plan["runtime"] == "strata" and not plan.get("jit"):
         from .jit_serve import available_memory_bytes
@@ -596,6 +623,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
     try:
         _require_training_binding(plan)
         _require_adapter_identity(plan)
+        _require_prefill_identity(plan)
     except ServeError:
         _terminate_pid(pid)
         raise
@@ -620,6 +648,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         receipt.update(adapter_path=plan["adapter_path"], adapter_identity=plan["adapter_identity"])
     if plan.get("training_binding") is not None:
         receipt["training_binding"] = plan["training_binding"]
+    if "prefill_kernel" in plan:
+        receipt["prefill_kernel"] = plan["prefill_kernel"]
     content = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     _atomic_in_directory(root, receipt_path.name, content, 0o600)
     return {"status": "started", "receipt": receipt}
@@ -668,6 +698,8 @@ def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_comma
         entries[-1].update(_adapter_metadata(receipt, root))
         if receipt.get("training_binding") is not None:
             entries[-1]["training_binding"] = receipt["training_binding"]
+        if "prefill_kernel" in receipt:
+            entries[-1]["prefill_kernel"] = receipt["prefill_kernel"]
         if receipt.get("jit"):
             entries[-1]["jit"] = True
             if alive and entries[-1]["argv_match"]:

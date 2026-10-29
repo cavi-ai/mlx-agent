@@ -54,6 +54,31 @@ quality verdict. New training previews record absolute adapter destinations;
 relative paths in older receipts resolve from the invocation's working directory
 and still have to match the recorded content hashes.
 
+## M5 prompt acceleration
+
+Add `--m5-prefill` to both the preview and confirmation to try the experimental
+Q4 prompt kernel with MLX-LM. The default remains native MLX. The kernel applies
+to inference-only Qwen2 MLP projections with FP16 activations, affine 4-bit weights,
+group size 64 and dimensions divisible by 64, when a batch has at least 128 rows.
+It retains the original quantized weight storage. Inputs with fewer than 128
+rows use native MLX.
+
+This path requires an M5 GPU (`applegpu_g17s`), macOS 26, MLX and mlx-metal 0.31.1,
+and mlx-lm 0.29.1. Unsupported hardware, dependencies, models and input layouts
+retain native execution. A compiler failure during model preparation also retains
+the original model. LoRA adapters are excluded. The first load compiles the selected
+matrix shapes; it can take longer. Performance depends on prompt and model shape.
+
+The preview and receipt record `prefill_kernel`: the requested profile, dependency
+versions and bundled source hashes. This records configuration, not proof that a
+particular request used the kernel. The serve log reports the adapted layer count.
+The adapter wraps only an MLX-LM entrypoint installed alongside the current Python
+with a matching interpreter. Other or unavailable entrypoints retain their exact
+native launch arguments and record `adapter_enabled: false`; no alternate Python
+environment is selected. Other serving runtimes reject this MLX-LM-only option.
+Changed source or dependencies require a fresh preview; each JIT worker checks the
+same fingerprint before loading. No runtime source or model code is downloaded.
+
 ## Load on request
 
 JIT keeps an endpoint reachable without retaining a loaded model worker:

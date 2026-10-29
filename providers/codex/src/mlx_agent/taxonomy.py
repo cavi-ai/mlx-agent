@@ -141,9 +141,10 @@ def _type_from_name(haystack):
     return None
 
 
-def _task_type(haystack, pipeline_tag, model_type, config_keys, gguf_architecture, manifests, registries, local):
+def _task_type(haystack, pipeline_tag, model_type, config_keys, gguf_architecture, manifests, registries, local,
+               draft=False):
     # A drafter is tagged like its target (text-generation) but cannot run alone.
-    if gguf_architecture and squash_type(gguf_architecture) in DRAFT_ARCHITECTURES:
+    if draft or gguf_architecture and squash_type(gguf_architecture) in DRAFT_ARCHITECTURES:
         return "speculative_draft", "gguf_architecture", "confirmed"
     if any(key in config_keys for key in _DRAFT_CONFIG_KEYS):
         return "speculative_draft", "config", "confirmed"
@@ -177,13 +178,13 @@ def _task_type(haystack, pipeline_tag, model_type, config_keys, gguf_architectur
 
 
 def classify(name, tags=(), pipeline_tag=None, model_type=None, config_keys=(),
-             gguf_architecture=None, manifests=None, registries=None, local=False):
+             gguf_architecture=None, manifests=None, registries=None, local=False, draft=False):
     haystack = " ".join([str(name or "")] + [str(tag) for tag in tags or ()]).lower()
     manifests = manifests or {}
     registries = registries or {}
     task_type, source, confidence = _task_type(
         haystack, pipeline_tag, model_type, tuple(config_keys), gguf_architecture,
-        manifests, registries, local,
+        manifests, registries, local, draft,
     )
     return {
         "type": task_type,
@@ -219,7 +220,7 @@ def annotate_inventory(report, manifests=None, registries=None):
     for item in report.get("models", []):
         item["task"] = classify(
             item.get("name"), gguf_architecture=item.get("architecture"),
-            manifests=manifests, registries=registries, local=True,
+            manifests=manifests, registries=registries, local=True, draft=item.get("draft") is not None,
         )
     for output in report.get("outputs", []):
         model_type, keys = read_config_type(output.get("path", ""))

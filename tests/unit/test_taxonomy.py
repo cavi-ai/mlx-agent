@@ -101,11 +101,14 @@ class AnnotateInventoryTests(unittest.TestCase):
             whisper.mkdir()
             (whisper / "config.json").write_text(json.dumps({"model_type": "whisper"}), encoding="utf-8")
             report = {
-                "models": [{"name": "Qwen3-30B-A3B-Q4_K_M.gguf", "architecture": "qwen3moe"}],
+                "models": [{"name": "Qwen3-30B-A3B-Q4_K_M.gguf", "architecture": "qwen3moe"},
+                           {"name": "Qwen3.8-27B-FastMTP-32K.gguf", "architecture": "qwen35",
+                            "draft": {"port": None, "target": "Qwen3.8-27B", "block_size": None}}],
                 "outputs": [{"name": vl.name, "path": str(vl)}, {"name": whisper.name, "path": str(whisper)}],
             }
             annotate_inventory(report, manifests=manifests, registries=registries)
         self.assertEqual(report["models"][0]["task"]["type"], "text_llm")
+        self.assertEqual(report["models"][1]["task"]["type"], "speculative_draft")
         self.assertEqual(report["outputs"][0]["task"]["type"], "vision_language")
         self.assertEqual(report["outputs"][1]["task"]["type"], "speech_to_text")
 

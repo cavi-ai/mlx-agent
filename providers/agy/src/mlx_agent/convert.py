@@ -21,7 +21,7 @@ from .backends import (
     spawn_with_env,
     sync_ports,
 )
-from .gguf import GGUFError, describe_gguf
+from .gguf import GGUFError, describe_gguf, find_projector
 from .intake_source import validate_subfolder
 from .serve import (
     _argv_matches,
@@ -316,8 +316,14 @@ def plan_gguf_convert(gguf_path, q_bits=4, out=None, runner=None, describe=descr
         plan["argv"].extend(["--signature", entry["signature"]])
     if draft is not None:
         plan["draft"] = dict(draft)
-        plan["port_converter"] = draft["port"]
-        plan["argv"].extend(["--port", draft["port"]])
+    port = draft["port"] if draft is not None else entry.get("port")
+    if port is not None:
+        plan["port_converter"] = port
+        plan["argv"].extend(["--port", port])
+        projector = find_projector(location, port)
+        if projector is not None:
+            plan["projector"] = projector
+            plan["argv"].extend(["--projector", projector["path"]])
     return _finalize_plan(plan)
 
 
@@ -419,12 +425,13 @@ def start_convert(plan, receipts_dir=None, confirm=False, preview_hash=None,
                 ),
                 "Install them yourself (for example: uv pip install {0}); convert never installs runtimes.".format(" ".join(required)),
             )
-        if not Path(plan["source"]["path"]).is_file():
-            raise ConvertError(
-                "source_not_found",
-                "The source GGUF is no longer at {0}.".format(plan["source"]["path"]),
-                "Re-run convert scan and preview a fresh plan.",
-            )
+        for label, path in (("source GGUF", plan["source"]["path"]), ("vision projector", (plan.get("projector") or {}).get("path"))):
+            if path is not None and not Path(path).is_file():
+                raise ConvertError(
+                    "source_not_found",
+                    "The {0} is no longer at {1}.".format(label, path),
+                    "Re-run convert scan and preview a fresh plan.",
+                )
     elif plan.get("source", {}).get("path") is not None:
         if not Path(plan["source"]["path"]).is_dir():
             raise ConvertError("source_not_found", "The reviewed local source is no longer present.", "Preview the conversion again.")

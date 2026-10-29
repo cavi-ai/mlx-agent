@@ -26,6 +26,8 @@ from pathlib import Path
 
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from mlx_agent.messages_api import (MessagesRequestError, StreamTranslator, WorkerResponseError, error_body,
+                                    from_chat_response, sse, to_chat_request)
 from mlx_agent.transactions import _atomic_in_directory
 
 MAX_BODY = 16 * 1024 * 1024
@@ -449,7 +451,65 @@ class GatewayHandler(BaseHTTPRequestHandler):
         self.wfile.write(encoded)
 
     def _error(self, error):
-        self._json(error.status, {"error": {"code": error.code, "message": str(error)}})
+        if self.path == "/v1/messages":
+            self._json(error.status, error_body(error.status, str(error)))
+        else:
+            self._json(error.status, {"error": {"code": error.code, "message": str(error)}})
+
+    @staticmethod
+    def _worker_failure(response):
+        detail = response.read(4096)
+        try:
+            reason = json.loads(detail).get("error")
+        except (ValueError, AttributeError):
+            reason = None
+        message = "Model worker returned HTTP {}".format(response.status)
+        return GatewayError(502, "worker_error", message + (": {}".format(reason) if isinstance(reason, str) else "."))
+
+    def _relay_messages(self, response, model):
+        """Answer a non-streamed Messages request from the worker's chat completion."""
+        if response.status != 200:
+            raise self._worker_failure(response)
+        payload = response.read(MAX_BODY + 1)
+        try:
+            if len(payload) > MAX_BODY:
+                raise WorkerResponseError("Model worker response exceeds 16 MiB.")
+            message = from_chat_response(json.loads(payload), model)
+        except WorkerResponseError as error:
+            raise GatewayError(502, "invalid_worker_response", str(error))
+        except (ValueError, TypeError, KeyError, IndexError, AttributeError):
+            raise GatewayError(502, "invalid_worker_response", "Model worker returned an invalid response.")
+        self._json(200, message)
+
+    def _stream_messages(self, response, model):
+        """Translate the worker's chat-completion chunks into Messages events as they arrive."""
+        if response.status != 200:
+            raise self._worker_failure(response)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+        translator = StreamTranslator(model)
+        self.wfile.write(b"".join(translator.start()))
+        try:
+            while line := response.readline(MAX_BODY):
+                if not line.startswith(b"data: "):
+                    continue
+                data = line[len(b"data: "):].strip()
+                if data == b"[DONE]":
+                    self.wfile.write(b"".join(translator.finish()))
+                    break
+                self.wfile.write(b"".join(translator.chunk(json.loads(data))))
+                self.wfile.flush()
+            else:
+                raise WorkerResponseError("Model worker stream ended early.")
+        except WorkerResponseError as error:
+            self.wfile.write(sse("error", error_body(502, str(error))))
+        except (ValueError, TypeError, AttributeError):
+            self.wfile.write(sse("error", error_body(502, "Model worker returned an invalid streamed response.")))
+        self.wfile.flush()
 
     def do_GET(self):
         try:
@@ -491,7 +551,13 @@ class GatewayHandler(BaseHTTPRequestHandler):
             if self.path == "/_mlx/policy":
                 self._json(200, self.server.controller.configure(body))
                 return
-            if self.path not in ("/v1/chat/completions", "/v1/completions"):
+            messages = self.path == "/v1/messages"
+            if messages:
+                try:
+                    body = to_chat_request(body)
+                except MessagesRequestError as error:
+                    raise GatewayError(400, "invalid_request", str(error))
+            elif self.path not in ("/v1/chat/completions", "/v1/completions"):
                 raise GatewayError(404, "not_found", "Unknown inference endpoint.")
             aliases = {self.server.config["model"], self.server.config["local_path"], "default_model"}
             local = Path(self.server.config["local_path"])
@@ -511,8 +577,16 @@ class GatewayHandler(BaseHTTPRequestHandler):
             port = self.server.controller.acquire()
             leased = True
             connection = http.client.HTTPConnection("127.0.0.1", port, timeout=120)
-            connection.request("POST", self.path, json.dumps(body), {"Content-Type": "application/json"})
+            connection.request("POST", "/v1/chat/completions" if messages else self.path, json.dumps(body),
+                               {"Content-Type": "application/json"})
             response = connection.getresponse()
+            if messages and body.get("stream"):
+                response_started = True
+                self._stream_messages(response, requested)
+                return
+            if messages:
+                self._relay_messages(response, requested)
+                return
             self.send_response(response.status)
             self.send_header("Content-Type", response.getheader("Content-Type", "application/json"))
             self.send_header("Connection", "close")

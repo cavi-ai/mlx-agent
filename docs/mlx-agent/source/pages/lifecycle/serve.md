@@ -127,6 +127,19 @@ JIT rechecks the adapter before and after each worker load, including after
 unloading. Older adapter gateways without a recorded content identity require
 a fresh serve preview before loading another worker.
 
+### Anthropic Messages API
+
+The JIT gateway also answers `POST /v1/messages` in the Anthropic Messages
+format, streamed and unstreamed, by translating to the worker's
+`/v1/chat/completions`. Text, system prompts, custom tools (`tool_use` and
+`tool_result`), `max_tokens`, `temperature`, `top_p`, `top_k` and
+`stop_sequences` are carried over; usage reports input, output and cached
+prompt tokens when the worker provides them. Requests the local runtime cannot
+honor are refused with an `invalid_request_error`: image or document content,
+non-custom tools, forced `tool_choice` (`any`, `tool`) and other parameters.
+`tool_choice: none` sends no tools. Tool-use ids come from the worker, or are
+generated when it gives none. The model name must be the gateway's model.
+
 ## Memory policy
 
 Include policy flags in the initial JIT preview and confirmation:

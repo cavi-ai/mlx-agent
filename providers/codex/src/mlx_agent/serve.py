@@ -219,17 +219,31 @@ def _require_prefill_identity(plan):
                              "Review a fresh serving preview.")
 
 
+def _require_decode_identity(plan):
+    if "decode_profile" in plan:
+        from .prompt_lookup_runtime import can_wrap_runtime, identity
+        configured = plan["decode_profile"]
+        facts = {k: v for k, v in configured.items() if k not in ("adapter_enabled", "runtime_executable")}
+        if (facts != identity() or (configured.get("adapter_enabled")
+                and not can_wrap_runtime(configured["runtime_executable"]))):
+            raise ServeError("decode_profile_changed", "Code-edit runtime source or dependencies changed.",
+                             "Review a fresh serving preview.")
+
+
 def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                adapter_path=None, path=None, jit=False, receipts_dir=None, hf_cache=None, memory_policy=None,
                runtime_executable=None, strata_speculation=False,
                strata_expert_memory_gb=None, strata_context_tokens=None, training_receipt=None, thinking="default",
-               m5_prefill=False):
+               m5_prefill=False, prompt_lookup=False):
     """Render the start plan and local file identities without side effects."""
     if thinking not in ("default", "off"):
         raise ServeError("invalid_arguments", "thinking must be default or off.", "Pass --thinking off or omit it.")
     if type(m5_prefill) is not bool or (m5_prefill and runtime != "mlx_lm"):
         raise ServeError("invalid_arguments", "M5 prompt acceleration requires MLX-LM.",
                          "Use --runtime auto or mlx_lm, or omit --m5-prefill.")
+    if type(prompt_lookup) is not bool or (prompt_lookup and runtime != "mlx_lm"):
+        raise ServeError("invalid_arguments", "Code-edit acceleration requires MLX-LM.",
+                         "Use --runtime auto or mlx_lm, or omit --prompt-lookup.")
     binding = None
     if training_receipt is not None:
         if repo is not None or path is not None or adapter_path is not None:
@@ -351,6 +365,7 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
     if thinking == "off" and recipe.get("thinking_off_argv"):
         # Literal arguments: the chat-template JSON is not a format template.
         argv.extend(recipe["thinking_off_argv"])
+    native_argv = argv[:]
     prefill_kernel = None
     if m5_prefill:
         from .prefill_runtime import can_wrap_runtime, identity
@@ -360,6 +375,18 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         if prefill_kernel["adapter_enabled"]:
             argv = [sys.executable, str(Path(__file__).with_name("prefill_runtime.py").resolve()),
                     "--expected-kernel-fingerprint", prefill_kernel["fingerprint"]] + argv[1:]
+    decode_profile = None
+    if prompt_lookup:
+        from .prompt_lookup_runtime import can_wrap_runtime, identity
+        decode_profile = identity()
+        decode_profile.update(adapter_enabled=can_wrap_runtime(values["executable"]),
+                              runtime_executable=values["executable"])
+        if decode_profile["adapter_enabled"]:
+            argv = [sys.executable, str(Path(__file__).with_name("prompt_lookup_runtime.py").resolve()),
+                    "--expected-decode-fingerprint", decode_profile["fingerprint"]]
+            if prefill_kernel is not None and prefill_kernel["adapter_enabled"]:
+                argv += ["--m5-prefill-fingerprint", prefill_kernel["fingerprint"]]
+            argv += native_argv[1:]
     plan = {
         "repo": repo.strip() if has_repo else None,
         "path": local_path,
@@ -382,6 +409,8 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         plan.update(_local_weight_evidence(local_path))
     if prefill_kernel is not None:
         plan["prefill_kernel"] = prefill_kernel
+    if decode_profile is not None:
+        plan["decode_profile"] = decode_profile
     if adapter_path is not None:
         plan["adapter_identity"] = adapter_identity
     if thinking == "off":
@@ -525,6 +554,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
     _require_training_binding(plan)
     _require_adapter_identity(plan)
     _require_prefill_identity(plan)
+    _require_decode_identity(plan)
 
     if plan["runtime"] == "strata" and not plan.get("jit"):
         from .jit_serve import available_memory_bytes
@@ -624,6 +654,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         _require_training_binding(plan)
         _require_adapter_identity(plan)
         _require_prefill_identity(plan)
+        _require_decode_identity(plan)
     except ServeError:
         _terminate_pid(pid)
         raise
@@ -650,6 +681,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         receipt["training_binding"] = plan["training_binding"]
     if "prefill_kernel" in plan:
         receipt["prefill_kernel"] = plan["prefill_kernel"]
+    if "decode_profile" in plan:
+        receipt["decode_profile"] = plan["decode_profile"]
     content = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     _atomic_in_directory(root, receipt_path.name, content, 0o600)
     return {"status": "started", "receipt": receipt}
@@ -700,6 +733,8 @@ def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_comma
             entries[-1]["training_binding"] = receipt["training_binding"]
         if "prefill_kernel" in receipt:
             entries[-1]["prefill_kernel"] = receipt["prefill_kernel"]
+        if "decode_profile" in receipt:
+            entries[-1]["decode_profile"] = receipt["decode_profile"]
         if receipt.get("jit"):
             entries[-1]["jit"] = True
             if alive and entries[-1]["argv_match"]:

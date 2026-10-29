@@ -26,6 +26,50 @@
     "readiness": { "type": "string", "minLength": 1 },
     "started_at": { "type": "string", "format": "date-time" },
     "preview_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "decode_profile": {
+      "type": "object",
+      "required": [
+        "name",
+        "fingerprint",
+        "versions",
+        "sources",
+        "adapter_enabled",
+        "runtime_executable"
+      ],
+      "properties": {
+        "name": {
+          "const": "prompt-lookup-v1"
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "adapter_enabled": {
+          "type": "boolean"
+        },
+        "runtime_executable": {
+          "type": "string",
+          "minLength": 1
+        },
+        "versions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "sources": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "prefill_kernel": {
       "type": "object",
       "required": ["name", "fingerprint", "versions", "sources", "adapter_enabled", "runtime_executable"],

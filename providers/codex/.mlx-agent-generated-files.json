@@ -614,7 +614,7 @@
     },
     {
       "path": "src/mlx_agent/jit_serve.py",
-      "sha256": "4fd502110ead7aac1b900d413318744c1020682ca559cb4ff64564c2d30d4e56"
+      "sha256": "d3fef2163638b2d97eccdd283ff363214295a53ea9607445609c567394804126"
     },
     {
       "path": "src/mlx_agent/kokoro_runtime.py",
@@ -643,6 +643,10 @@
     {
       "path": "src/mlx_agent/mcp_server.py",
       "sha256": "0c5ecf17c72b99dbbb0841b686c0b12738efdb9b132e1422ad03802fb1a8ac38"
+    },
+    {
+      "path": "src/mlx_agent/messages_api.py",
+      "sha256": "fa026c7362d383e81cbc02f842984933fdef01c8bcf192299ed7e9be032be98a"
     },
     {
       "path": "src/mlx_agent/modality.py",

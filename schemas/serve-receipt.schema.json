@@ -25,7 +25,20 @@
     "log_path": { "type": "string", "minLength": 1 },
     "readiness": { "type": "string", "minLength": 1 },
     "started_at": { "type": "string", "format": "date-time" },
-    "preview_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+    "preview_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "prefill_kernel": {
+      "type": "object",
+      "required": ["name", "fingerprint", "versions", "sources", "adapter_enabled", "runtime_executable"],
+      "properties": {
+        "name": { "const": "m5-q4-prefill-v1" },
+        "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "adapter_enabled": { "type": "boolean" },
+        "runtime_executable": { "type": "string", "minLength": 1 },
+        "versions": { "type": "object", "additionalProperties": { "type": ["string", "null"] } },
+        "sources": { "type": "object", "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }
+      },
+      "additionalProperties": false
+    }
   },
   "oneOf": [
     { "properties": { "repo": { "type": "string" } } },

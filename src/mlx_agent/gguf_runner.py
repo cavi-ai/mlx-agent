@@ -9,8 +9,8 @@ nothing from :mod:`mlx_agent`. Two bounded steps, in order:
 
 The intermediate fp16 checkpoint is large and temporary; it is removed unless
 ``--keep-intermediate`` is passed. ``--port`` instead hands the GGUF to a
-bundled port that writes the MLX weights itself, for architectures
-``transformers`` cannot load (llama.cpp's DSpark drafters). The worker writes a
+bundled port that maps its tensors straight into MLX shards, for architectures
+``transformers`` cannot load (llama.cpp's DSpark drafters, Qwen3.5). The worker writes a
 provenance marker into the output so a later scan can tell which GGUF produced
 it.
 """
@@ -74,7 +74,8 @@ REQUIRED_MODULES = ("torch", "transformers", "gguf")
 PORT_REQUIRED_MODULES = ("gguf", "mlx")
 PORTS_DIR = Path(__file__).resolve().parent / "resources" / "ports"
 # --port name to its converter under resources/ports/<backend>/<name>/convert.py.
-GGUF_PORTS = {"deepseek_v4_dspark": "mlx-lm"}
+GGUF_PORTS = {"deepseek_v4_dspark": "mlx-lm", "qwen35": "mlx-vlm"}
+SHARD_BYTES = 5 << 30
 
 
 def _log(message):
@@ -145,14 +146,55 @@ def load_port(name):
     return module
 
 
-def convert_with_port(name, gguf_path, out_dir, q_bits):
+class ShardWriter:
+    """Writes ``model-0000k-of-0000n.safetensors`` shards of at most ``limit`` bytes, then the index."""
+
+    def __init__(self, directory, limit=SHARD_BYTES):
+        self.directory = Path(directory)
+        self.limit = limit
+        self.pending = {}
+        self.pending_bytes = 0
+        self.shards = []
+        self.weight_map = {}
+        self.total = 0
+
+    def add(self, name, array):
+        if self.pending and self.pending_bytes + array.nbytes > self.limit:
+            self._flush()
+        self.pending[name] = array
+        self.pending_bytes += array.nbytes
+        self.total += array.nbytes
+
+    def _flush(self):
+        import mlx.core as mx
+
+        path = self.directory / "model-{0:05d}.partial.safetensors".format(len(self.shards) + 1)
+        mx.save_safetensors(str(path), self.pending, metadata={"format": "mlx"})
+        self.shards.append((path, sorted(self.pending)))
+        self.pending, self.pending_bytes = {}, 0
+
+    def finish(self):
+        if self.pending:
+            self._flush()
+        count = len(self.shards)
+        for index, (path, names) in enumerate(self.shards, start=1):
+            final = "model-{0:05d}-of-{1:05d}.safetensors".format(index, count)
+            path.rename(self.directory / final)
+            self.weight_map.update({name: final for name in names})
+        index = {"metadata": {"total_size": self.total}, "weight_map": dict(sorted(self.weight_map.items()))}
+        (self.directory / "model.safetensors.index.json").write_text(json.dumps(index, indent=2) + "\n", encoding="utf-8")
+        return count
+
+
+def convert_with_port(name, gguf_path, out_dir, q_bits, projector=None):
     """Run a bundled port into a fresh ``out_dir``; returns the port's summary."""
     out_dir.mkdir(parents=True)
     _log("converting {0} with the {1} port".format(gguf_path.name, name))
-    return load_port(name).convert(gguf_path, out_dir, q_bits, log=_log)
+    extra = {} if projector is None else {"projector": projector}
+    return load_port(name).convert(gguf_path, out_dir, q_bits, ShardWriter(out_dir), log=_log, **extra)
 
 
-def write_provenance(out_dir, gguf_path, q_bits, signature, port=None):
+def write_provenance(out_dir, gguf_path, q_bits, signature, port=None, projector=None):
     marker = {
         "schema_version": "1.0",
         "tool": "mlx-agent.gguf",
@@ -168,6 +210,8 @@ def write_provenance(out_dir, gguf_path, q_bits, signature, port=None):
     }
     if port is not None:
         marker["port"] = port
+    if projector is not None:
+        marker["projector"] = {"path": str(projector), "name": projector.name, "bytes": projector.stat().st_size}
     target = Path(out_dir) / PROVENANCE_NAME
     target.write_text(
         json.dumps(marker, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -183,12 +227,17 @@ def main(argv=None):
     parser.add_argument("--signature", default=None)
     parser.add_argument("--keep-intermediate", action="store_true")
     parser.add_argument("--port", choices=sorted(GGUF_PORTS), default=None)
+    parser.add_argument("--projector", default=None, help="the model's vision projector GGUF, read by --port")
     arguments = parser.parse_args(argv)
 
     gguf_path = Path(arguments.gguf).expanduser()
     out_dir = Path(arguments.out).expanduser()
+    projector = Path(arguments.projector).expanduser() if arguments.projector else None
     if not gguf_path.is_file():
         _log("source GGUF not found: {0}".format(gguf_path))
+        return 2
+    if projector is not None and (arguments.port is None or not projector.is_file()):
+        _log("--projector needs --port and an existing file: {0}".format(projector))
         return 2
     if out_dir.exists():
         _log("output already exists: {0}".format(out_dir))
@@ -199,10 +248,10 @@ def main(argv=None):
         return 2
     if arguments.port:
         try:
-            convert_with_port(arguments.port, gguf_path, out_dir, arguments.q_bits)
+            convert_with_port(arguments.port, gguf_path, out_dir, arguments.q_bits, projector=projector)
             write_provenance(
                 out_dir, gguf_path, arguments.q_bits,
-                arguments.signature or _signature(gguf_path), port=arguments.port,
+                arguments.signature or _signature(gguf_path), port=arguments.port, projector=projector,
             )
         except (OSError, RuntimeError, ValueError, ImportError, KeyError) as error:
             _log("conversion failed: {0}".format(error))

@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Releases also notify `cavi-ai/plugins`, which points every host in the plugin catalog at the release.
+- `convert start --gguf` converts Qwen3.5-family GGUFs (`qwen35`) through a bundled port to MLX-VLM's `qwen3_5_text`, or `qwen3_5` with the matching `mmproj` projector from the same folder; GGUFs holding only a multi-token-prediction block are classified as speculative drafters and refused.
 
 ## 0.10.0 - 2026-10-22
 

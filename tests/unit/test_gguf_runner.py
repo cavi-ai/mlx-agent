@@ -72,7 +72,7 @@ class PortDispatchTests(unittest.TestCase):
         return code
 
     def test_port_writes_into_a_fresh_output_with_provenance(self):
-        def convert(gguf_path, out_dir, q_bits, log):
+        def convert(gguf_path, out_dir, q_bits, writer, log):
             (out_dir / "config.json").write_text("{}", encoding="utf-8")
 
         self.assertEqual(self.run_port(convert), 0)
@@ -81,7 +81,7 @@ class PortDispatchTests(unittest.TestCase):
         self.assertFalse(self.out.with_name(self.out.name + ".hf-intermediate").exists())
 
     def test_a_failed_port_leaves_no_output(self):
-        def convert(gguf_path, out_dir, q_bits, log):
+        def convert(gguf_path, out_dir, q_bits, writer, log):
             (out_dir / "model-00001.partial.safetensors").write_bytes(b"x")
             raise ValueError("does not match the DeepSeek-V4 DSpark tensor layout")
 
@@ -89,8 +89,8 @@ class PortDispatchTests(unittest.TestCase):
         self.assertFalse(self.out.exists())
 
     def test_ports_resolve_inside_the_package(self):
-        location = gguf_runner.PORTS_DIR / gguf_runner.GGUF_PORTS["deepseek_v4_dspark"] / "deepseek_v4_dspark" / "convert.py"
-        self.assertTrue(location.is_file())
+        for name, backend in gguf_runner.GGUF_PORTS.items():
+            self.assertTrue((gguf_runner.PORTS_DIR / backend / name / "convert.py").is_file(), name)
 
 
 class GGUFRunnerScriptTests(unittest.TestCase):

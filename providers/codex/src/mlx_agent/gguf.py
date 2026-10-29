@@ -44,9 +44,13 @@ _COMPANION_ARCHITECTURES = ("clip", "mmproj")
 # llama.cpp speculative-decoding drafters: they borrow the target's embeddings
 # and head, share its general.name, and run only beside it.
 DRAFT_ARCHITECTURES = ("dflash", "eagle3")
-_DRAFT_SUFFIXES = (".block_size", ".hyper_connection.count")
+_DRAFT_SUFFIXES = (".block_size", ".hyper_connection.count", ".nextn_predict_layers")
 # Drafter families a bundled port converts, keyed by what marks them in the header.
 _DRAFT_PORTS = (("deepseek_v4_dspark", "dflash", "dflash.hyper_connection.count"),)
+# Model architectures transformers cannot load from GGUF, converted by a bundled port of the same name.
+ARCHITECTURE_PORTS = {"qwen35": "qwen35"}
+# The llama.cpp vision projector type each port attaches from the model's folder.
+PORT_PROJECTORS = {"qwen35": "qwen3vl_merger"}
 _MIN_NAME_MATCH = 6
 # Trailing MLX quantization labels in folder names: Foo-MLX-4bit, Foo-4.4bpw, Foo-bf16, Foo-mxfp8.
 _MLX_QUANT_SUFFIX = re.compile(
@@ -72,6 +76,8 @@ _INTERESTING_KEYS = (
     "general.file_type",
     "general.quantization_version",
     "general.parameter_count",
+    "clip.projector_type",
+    "clip.vision.projection_dim",
 )
 _STRUCTURE_SUFFIXES = (
     ".block_count",
@@ -330,9 +336,17 @@ def _structure(metadata, tensor_count):
     return hashlib.sha256("|".join(fields).encode("utf-8")).hexdigest()[:16]
 
 
-def _draft(metadata, architecture):
+def _prediction_only(metadata, architecture, tensor_count):
+    """A multi-token-prediction export: llama.cpp's nextn block without the layers it predicts from."""
+    layers = metadata.get("{0}.nextn_predict_layers".format(architecture))
+    blocks = metadata.get("{0}.block_count".format(architecture))
+    counts = [value for value in (layers, blocks) if isinstance(value, int) and not isinstance(value, bool)]
+    return len(counts) == 2 and layers > 0 and tensor_count < blocks
+
+
+def _draft(metadata, architecture, tensor_count):
     """Drafter facts for a speculative-decoding GGUF, else None; ``port`` is set when one converts it."""
-    if str(architecture).lower() not in DRAFT_ARCHITECTURES:
+    if str(architecture).lower() not in DRAFT_ARCHITECTURES and not _prediction_only(metadata, architecture, tensor_count):
         return None
     port = next((name for name, arch, key in _DRAFT_PORTS if arch == str(architecture).lower() and key in metadata), None)
     block_size = metadata.get("{0}.block_size".format(architecture))
@@ -373,6 +387,7 @@ def describe_gguf(path, signature=True):
         "signature": None,
         "companion": any(token in stem.lower() for token in _COMPANION_NAMES),
         "draft": None,
+        "port": None,
         "readable": True,
         "error": None,
     }
@@ -397,16 +412,50 @@ def describe_gguf(path, signature=True):
         entry["parameters"] = parameters
     if isinstance(name, str) and name:
         entry["model_key"] = _normalize_stem(name)
-    entry["draft"] = _draft(metadata, entry["architecture"])
+    entry["draft"] = _draft(metadata, entry["architecture"], header["tensor_count"])
     if entry["draft"] is not None:
         # A drafter carries its target's name; keep it out of the target's duplicate group.
         entry["model_key"] += "-draft"
+    elif not entry["companion"]:
+        entry["port"] = ARCHITECTURE_PORTS.get(str(entry["architecture"]).lower())
     if signature:
         try:
             entry["signature"] = file_signature(location)
         except OSError:
             entry["signature"] = None
     return entry
+
+
+def find_projector(path, port):
+    """The single vision projector beside ``path`` that ``port`` attaches, else None.
+
+    It must be the projector type the port reads and project to the model's
+    embedding width; none or several candidates leave the model text-only.
+    """
+    projector_type = PORT_PROJECTORS.get(port)
+    location = Path(path)
+    if projector_type is None:
+        return None
+    try:
+        metadata = read_gguf_header(location)["metadata"]
+        siblings = sorted(location.parent.iterdir())
+    except (GGUFError, OSError):
+        return None
+    width = metadata.get("{0}.embedding_length".format(metadata.get("general.architecture")))
+    matches = []
+    for sibling in siblings:
+        if sibling == location or sibling.suffix.lower() != GGUF_SUFFIX or not sibling.is_file():
+            continue
+        try:
+            candidate = read_gguf_header(sibling)["metadata"]
+        except (GGUFError, OSError):
+            continue
+        if (candidate.get("general.architecture") == "clip" and candidate.get("clip.projector_type") == projector_type
+                and candidate.get("clip.vision.projection_dim") == width):
+            matches.append(sibling)
+    if len(matches) != 1:
+        return None
+    return {"path": str(matches[0]), "name": matches[0].name, "bytes": matches[0].stat().st_size}
 
 
 def _iter_files(roots, suffix, limit=MAX_SCAN_FILES):

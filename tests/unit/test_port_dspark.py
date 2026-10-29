@@ -9,6 +9,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from mlx_agent.backends import PORTS_DIR
+from mlx_agent.gguf_runner import ShardWriter
 
 HAS_RUNTIME = all(importlib.util.find_spec(name) is not None for name in ("gguf", "numpy", "mlx"))
 STAGES, HIDDEN, HEADS, HEAD_DIM, Q_LORA, O_GROUPS, O_LORA = 2, 64, 2, 64, 64, 2, 64
@@ -178,7 +179,7 @@ class DSparkPortTests(unittest.TestCase):
         sources = write_dspark(source, self.rng, **kwargs)
         out = self.root / "out"
         out.mkdir()
-        summary = self.port.convert(source, out, q_bits, log=lambda message: None)
+        summary = self.port.convert(source, out, q_bits, ShardWriter(out), log=lambda message: None)
         return sources, out, summary
 
     def load(self, out):
@@ -283,7 +284,7 @@ class DSparkPortTests(unittest.TestCase):
         write_dspark(source, self.rng)
         out = self.root / "sharded"
         out.mkdir()
-        self.port.convert(source, out, 4, log=lambda message: None, shard_bytes=64 * 1024)
+        self.port.convert(source, out, 4, ShardWriter(out, 64 * 1024), log=lambda message: None)
         shards = sorted(path.name for path in out.glob("*.safetensors"))
         self.assertGreater(len(shards), 1)
         self.assertEqual(shards[-1], "model-{0:05d}-of-{0:05d}.safetensors".format(len(shards)))

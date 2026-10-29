@@ -522,7 +522,7 @@
     },
     {
       "path": "src/mlx_agent/convert.py",
-      "sha256": "912328ba9b575b35cce57aae405772172d80c190ca8a96a8d5a57e3bb74e608b"
+      "sha256": "eeec71a53b38cf77a24c1ea817fbe374c980098045b13236ba749d6e5fa195d7"
     },
     {
       "path": "src/mlx_agent/convert_queue.py",
@@ -570,11 +570,11 @@
     },
     {
       "path": "src/mlx_agent/gguf.py",
-      "sha256": "04c180f7bd85143b2cbb77efea0c21d522acb6702ceed3a7948636bd00b68f7d"
+      "sha256": "8428adf1a1815f6ea159c763940a49bb99ad4ce518b848742b5d4d2176dd971f"
     },
     {
       "path": "src/mlx_agent/gguf_runner.py",
-      "sha256": "c6239da35f94bfda895959ef13a45086347f778e5caddb6216124028143d8093"
+      "sha256": "6f35baa415d20ade3904da940175f445cd75b5e4b28a0028c454628c10b50908"
     },
     {
       "path": "src/mlx_agent/host.py",
@@ -826,7 +826,7 @@
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-lm/deepseek_v4_dspark/convert.py",
-      "sha256": "6714bdeccd626ac3c90ae464e7b1c4999419ef9b0cd7e42f0cd6cc6e60f1efd7"
+      "sha256": "3f3d703f71d544b8db8005c556bb82749d4ac0001261f3fc67cd11cbbda1bc38"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-video/t2v/__init__.py",
@@ -847,6 +847,14 @@
     {
       "path": "src/mlx_agent/resources/ports/mlx-video/t2v/training_inputs.py",
       "sha256": "9d901483823ebc15a5130438e879c2011090bd3f27189b02f3fb2dbf2e8769dc"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-vlm/qwen35/__init__.py",
+      "sha256": "1df923c0d53cea80cd9ea72f8e1739b5d75a57be631c0c385c841492a42aa2e1"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-vlm/qwen35/convert.py",
+      "sha256": "3444c3f7772abf88351ece300fa0ef9d31d367f94be7b3c85be836f828b05958"
     },
     {
       "path": "src/mlx_agent/resources/references/model-families.md",
@@ -930,7 +938,7 @@
     },
     {
       "path": "src/mlx_agent/taxonomy.py",
-      "sha256": "720f70cb72e3146114bdea26686a6205160ca0727ffe7c3ac4fa08c1a2837021"
+      "sha256": "fa0c5a281ee44f415107708c5e8ca15925d20b8804a310da6561a3613fb90354"
     },
     {
       "path": "src/mlx_agent/training_artifacts.py",

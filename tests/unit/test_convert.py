@@ -14,7 +14,7 @@ from mlx_agent.convert import (
 
 from jsonschema import Draft202012Validator
 
-from .test_gguf import _UINT32, _kv, write_gguf
+from .test_gguf import _STRING, _UINT32, _kv, write_gguf
 
 RECEIPT_SCHEMA = Draft202012Validator(json.loads(
     (Path(__file__).resolve().parents[2] / "schemas" / "convert-receipt.schema.json").read_text(encoding="utf-8")
@@ -469,6 +469,46 @@ class PlanGGUFConvertTests(unittest.TestCase):
             plan_gguf_convert(source, runner=self.runner)
         self.assertEqual(caught.exception.code, "unsupported_draft")
         self.assertIn("Llama 3.1 8B", str(caught.exception))
+
+    def write_qwen35(self, folder="qwen"):
+        return write_gguf(self.root / folder / "Qwen3.8-27B-Q6_K.gguf", architecture="qwen35", name="Qwen3.8 27B",
+                          block_count=65, tensor_count=866, extra=(_kv("qwen35.nextn_predict_layers", _UINT32, 1),
+                                                                   _kv("qwen35.embedding_length", _UINT32, 5120)))
+
+    def write_projector(self, name, width=5120, projector_type="qwen3vl_merger", folder="qwen"):
+        return write_gguf(self.root / folder / name, architecture="clip", name="Qwen3.8 27B", block_count=None,
+                          tensor_count=334, extra=(_kv("clip.projector_type", _STRING, projector_type),
+                                                   _kv("clip.vision.projection_dim", _UINT32, width)))
+
+    def test_qwen35_model_runs_its_port(self):
+        source = self.write_qwen35()
+        plan = plan_gguf_convert(source, runner=self.runner)
+        self.assertEqual(plan["argv"][-2:], ["--port", "qwen35"])
+        self.assertEqual(plan["port_converter"], "qwen35")
+        self.assertNotIn("draft", plan)
+        self.assertNotIn("projector", plan)
+
+    def test_qwen35_model_attaches_its_vision_projector(self):
+        source = self.write_qwen35()
+        projector = self.write_projector("mmproj-F32.gguf")
+        self.write_projector("mmproj-narrow.gguf", width=4096)
+        self.write_projector("mmproj-other.gguf", projector_type="gemma3")
+        plan = plan_gguf_convert(source, runner=self.runner)
+        self.assertEqual(plan["projector"]["path"], str(projector))
+        self.assertEqual(plan["argv"][-4:], ["--port", "qwen35", "--projector", str(projector)])
+
+    def test_two_matching_projectors_leave_the_model_text_only(self):
+        source = self.write_qwen35()
+        self.write_projector("mmproj-F32.gguf")
+        self.write_projector("mmproj-BF16.gguf")
+        self.assertNotIn("projector", plan_gguf_convert(source, runner=self.runner))
+
+    def test_rejects_a_multi_token_prediction_export(self):
+        source = write_gguf(self.root / "Qwen3.8-27B-FastMTP-32K.gguf", architecture="qwen35", name="Qwen3.8 27B FastMTP",
+                            block_count=65, tensor_count=19, extra=(_kv("qwen35.nextn_predict_layers", _UINT32, 1),))
+        with self.assertRaises(ConvertError) as caught:
+            plan_gguf_convert(source, runner=self.runner)
+        self.assertEqual(caught.exception.code, "unsupported_draft")
 
     def test_rejects_bad_q_bits(self):
         source = write_gguf(self.root / "gamma-Q4_K_M.gguf", name="Gamma")

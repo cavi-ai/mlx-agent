@@ -22,7 +22,6 @@ TARGET_MODEL_TYPE = "deepseek_v4"
 GROUP_SIZE = 64
 MXFP4 = {"group_size": 32, "bits": 4, "mode": "mxfp4"}
 MXFP4_BLOCK_BYTES = 17
-SHARD_BYTES = 5 << 30
 _KEY = ARCHITECTURE + "."
 
 # llama.cpp's DeepseekV4DSparkModel tensor map (conversion/deepseek.py), reversed.
@@ -208,48 +207,8 @@ def drafter_config(metadata: dict, stages: int, vocab_size: int, markov_rank: in
     }
 
 
-class ShardWriter:
-    """Writes ``model-0000k-of-0000n.safetensors`` shards of at most ``limit`` bytes, then the index."""
-
-    def __init__(self, directory: Path, limit: int = SHARD_BYTES):
-        self.directory = Path(directory)
-        self.limit = limit
-        self.pending = {}
-        self.pending_bytes = 0
-        self.shards = []
-        self.weight_map = {}
-        self.total = 0
-
-    def add(self, name: str, array) -> None:
-        if self.pending and self.pending_bytes + array.nbytes > self.limit:
-            self._flush()
-        self.pending[name] = array
-        self.pending_bytes += array.nbytes
-        self.total += array.nbytes
-
-    def _flush(self) -> None:
-        import mlx.core as mx
-
-        path = self.directory / "model-{0:05d}.partial.safetensors".format(len(self.shards) + 1)
-        mx.save_safetensors(str(path), self.pending, metadata={"format": "mlx"})
-        self.shards.append((path, sorted(self.pending)))
-        self.pending, self.pending_bytes = {}, 0
-
-    def finish(self) -> int:
-        if self.pending:
-            self._flush()
-        count = len(self.shards)
-        for index, (path, names) in enumerate(self.shards, start=1):
-            final = "model-{0:05d}-of-{1:05d}.safetensors".format(index, count)
-            path.rename(self.directory / final)
-            self.weight_map.update({name: final for name in names})
-        index = {"metadata": {"total_size": self.total}, "weight_map": dict(sorted(self.weight_map.items()))}
-        (self.directory / "model.safetensors.index.json").write_text(json.dumps(index, indent=2) + "\n", encoding="utf-8")
-        return count
-
-
-def convert(gguf_path, out_dir, q_bits: int, log=print, shard_bytes: int = SHARD_BYTES) -> dict:
-    """Write the MLX drafter into ``out_dir`` (which must exist and be empty); ``config.json`` lands last."""
+def convert(gguf_path, out_dir, q_bits: int, writer, log=print) -> dict:
+    """Write the MLX drafter into ``out_dir`` (which must exist and be empty) through ``writer``; ``config.json`` lands last."""
     import gguf
     import mlx.core as mx
     from gguf import quants
@@ -268,7 +227,6 @@ def convert(gguf_path, out_dir, q_bits: int, log=print, shard_bytes: int = SHARD
     }
     expert_count = int(metadata[_KEY + "expert_count"])
     quantization = {"group_size": GROUP_SIZE, "bits": q_bits, "mode": "affine"}
-    writer = ShardWriter(out_dir, shard_bytes)
     for tensor in reader.tensors:
         if tensor.name in experts:
             stage, projection = experts[tensor.name]

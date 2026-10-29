@@ -14,11 +14,11 @@
     },
     {
       "path": "scripts/mlx-agent",
-      "sha256": "41f870263d295c256368906b658f6545f687b16ef9d03dfaf4632ee416327ddf"
+      "sha256": "0742b3b812e7ac0b7f2c9de957626e32c7d7cc39fa1844156bacbb1e0454d0a9"
     },
     {
       "path": "scripts/mlx-agent-mcp",
-      "sha256": "e1b977726608babe950d9a668f1d6638f4448218bbbf828cd9356165b48bd719"
+      "sha256": "92d0802ce3da0ce78809d8b18d744c6370d142457e1570ce8da11721a1930c8f"
     },
     {
       "path": "skills/mlx-adopt/SKILL.md",

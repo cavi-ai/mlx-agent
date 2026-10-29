@@ -214,7 +214,7 @@
       ],
       "properties": {
         "python3": {
-          "const": ">=3.9"
+          "const": ">=3.11"
         }
       }
     },

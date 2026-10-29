@@ -17,7 +17,7 @@
     "documentation": "README.md"
   },
   "requirements": {
-    "python": ">=3.9",
+    "python": ">=3.11",
     "platform": "macOS on Apple Silicon for host inspection and MLX execution",
     "provider_clis": "Optional and never installed automatically",
     "model_runtimes": "Optional and never installed automatically"

@@ -17,7 +17,7 @@ assuming a model is supported by a package name.
 ## Install
 
 Use Python 3.12 for optional backend installation: the shipped dependency locks
-target that interpreter, even though the core supports Python 3.9+.
+target that interpreter, even though the core supports Python 3.11+.
 
 ```bash
 python3 scripts/mlx-agent backend install mlx-audio --json

@@ -9,7 +9,7 @@ description = "Discover, verify and wire local MLX models on Apple Silicon"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 authors = [{ name = "Sasan Sotoodehfar" }]
 maintainers = [{ name = "CAVI AI" }]
 keywords = ["mlx", "apple-silicon", "mcp", "local-models", "huggingface"]

@@ -1,7 +1,7 @@
 # Your first local model
 
 Run these commands from a checkout after [installation](installation.md).
-Have Python 3.9+ and a text-model runtime available. Replace `<repo>` with a
+Have Python 3.11+ and a text-model runtime available. Replace `<repo>` with a
 selected MLX repository. Duration depends on model size and cached weights.
 
 ## 1. Discover

@@ -18,7 +18,7 @@ A provider release newer than its last tested version is used, and `doctor`
 reports a `provider_untested` warning for it; a release below the minimum is
 unsupported.
 
-Python 3.9+ for the core; macOS on Apple Silicon for host inspection and MLX
+Python 3.11+ for the core; macOS on Apple Silicon for host inspection and MLX
 execution. Optional backend dependency installation requires Python 3.12.
 
 ## Support

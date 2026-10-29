@@ -3,6 +3,7 @@
 set -euo pipefail
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+PYTHON="${PYTHON:-python3}"
 SMOKE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/mlx-agent-opencode-smoke.XXXXXX")"
 cleanup() {
   rm -rf "$SMOKE_ROOT"
@@ -21,17 +22,17 @@ printf '{"model":"unowned-global"}\n' > "$HOME/.config/opencode/opencode.json"
 install_scope() {
   scope="$1"
   project="$2"
-  plan="$(python3 "$ROOT/scripts/mlx-agent" install opencode --scope "$scope" --project "$project" --dry-run --json)"
-  preview_hash="$(printf '%s' "$plan" | python3 -c 'import json, sys; print(json.loads(sys.stdin.read())["data"]["preview"]["preview_hash"])')"
-  python3 "$ROOT/scripts/mlx-agent" install opencode --scope "$scope" --project "$project" --confirm --preview-hash "$preview_hash" --json >/dev/null
+  plan="$("$PYTHON" "$ROOT/scripts/mlx-agent" install opencode --scope "$scope" --project "$project" --dry-run --json)"
+  preview_hash="$(printf '%s' "$plan" | "$PYTHON" -c 'import json, sys; print(json.loads(sys.stdin.read())["data"]["preview"]["preview_hash"])')"
+  "$PYTHON" "$ROOT/scripts/mlx-agent" install opencode --scope "$scope" --project "$project" --confirm --preview-hash "$preview_hash" --json >/dev/null
 }
 
 uninstall_scope() {
   scope="$1"
   project="$2"
-  plan="$(python3 "$ROOT/scripts/mlx-agent" uninstall opencode --scope "$scope" --project "$project" --dry-run --json)"
-  preview_hash="$(printf '%s' "$plan" | python3 -c 'import json, sys; print(json.loads(sys.stdin.read())["data"]["preview"]["preview_hash"])')"
-  python3 "$ROOT/scripts/mlx-agent" uninstall opencode --scope "$scope" --project "$project" --confirm --preview-hash "$preview_hash" --json >/dev/null
+  plan="$("$PYTHON" "$ROOT/scripts/mlx-agent" uninstall opencode --scope "$scope" --project "$project" --dry-run --json)"
+  preview_hash="$(printf '%s' "$plan" | "$PYTHON" -c 'import json, sys; print(json.loads(sys.stdin.read())["data"]["preview"]["preview_hash"])')"
+  "$PYTHON" "$ROOT/scripts/mlx-agent" uninstall opencode --scope "$scope" --project "$project" --confirm --preview-hash "$preview_hash" --json >/dev/null
 }
 
 assert_package() {
@@ -57,10 +58,10 @@ if command -v node >/dev/null 2>&1; then
   # This validates an equivalent no-shell argv/stdin transport contract. It
   # does not load or execute the shipped TypeScript plugin with Bun.
   TRANSPORT="$(MLX_AGENT_FIXTURE="$ROOT/tests/fixtures/scout_responses.json" node "$ROOT/tests/fixtures/opencode_argv_stdin_contract.mjs" "$USER_ROOT/src" scout '--limit 1 --json')"
-  printf '%s' "$TRANSPORT" | python3 -c 'import json, sys; value=json.load(sys.stdin); assert value["status"] == "ok" and "discover" in value["stdout"]["text"]'
+  printf '%s' "$TRANSPORT" | "$PYTHON" -c 'import json, sys; value=json.load(sys.stdin); assert value["status"] == "ok" and "discover" in value["stdout"]["text"]'
 else
   printf '%s' '--limit 1 --json' | MLX_AGENT_FIXTURE="$ROOT/tests/fixtures/scout_responses.json" \
-    PYTHONPATH="$USER_ROOT/src" python3 -m mlx_agent.command_executor --provider opencode --capability scout >/dev/null
+    PYTHONPATH="$USER_ROOT/src" "$PYTHON" -m mlx_agent.command_executor --provider opencode --capability scout >/dev/null
 fi
 
 install_scope project "$PROJECT"

@@ -1,6 +1,6 @@
 # Development
 
-The core runs from a checkout with Python 3.9+ and the standard library. Execute
+The core runs from a checkout with Python 3.11+ and the standard library. Execute
 it with `python3 scripts/mlx-agent`; a model runtime is needed only for commands
 that run models. Development validators require `requirements-dev.txt`.
 
@@ -24,7 +24,7 @@ provider package root.
 ## Local checks
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements-dev.txt
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests
 PYTHONPATH=src .venv/bin/python scripts/validate_contracts.py
@@ -36,7 +36,7 @@ git diff --check
 ```
 
 CI also compiles core Python sources, excluding the optional `_lab` engine,
-and tests on Linux and macOS with Python 3.9 and 3.12. The separate optional
+and tests on Linux and macOS with Python 3.11 and 3.12. The separate optional
 engine job uses Python 3.12 and its own dependency/test setup. See
 [Experiments and training](../lifecycle/laboratory.md). Fixture tests establish contracts; they do
 not establish model behavior on a real host.
@@ -62,7 +62,7 @@ structured results, parallel calls, pagination, bounded latency, repeated
 calls, read-only workflows, and recovery after invalid input. It calls
 only task capability discovery and rejected inputs; it does not run models or
 change task state. A failed case or incomplete evaluation exits nonzero. CI
-pins the evaluator and runs this gate on Linux and macOS with Python 3.9 and
+pins the evaluator and runs this gate on Linux and macOS with Python 3.11 and
 3.12, retaining JSON and Markdown reports even when a probe fails.
 
 It also checks optional cancellation, rejection of a 1 MB request, retryability

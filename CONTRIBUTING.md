@@ -1,6 +1,6 @@
 # Contributing
 
-Use Python 3.9 or later for the provider-neutral core. Model execution requires
+Use Python 3.11 or later for the provider-neutral core. Model execution requires
 Apple Silicon and the appropriate runtime; optional backend locks target Python
 3.12. See [Development](docs/mlx-agent/source/pages/guides/development.md) for the
 repository layout and documentation workflow.

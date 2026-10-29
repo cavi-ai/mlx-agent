@@ -6,12 +6,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
-
-try:
-    import tomllib
-except ModuleNotFoundError:
-    tomllib = None
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -49,6 +45,20 @@ class LauncherTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertTrue(list((cache / "mlx-agent/pycache").rglob("*.pyc")))
                 self.assertEqual([], list(plugin.rglob("*.pyc")))
+
+    def test_launchers_refuse_an_interpreter_below_the_floor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            plugin = _launcher_copy(directory)
+            for launcher in (plugin / "scripts/mlx-agent", plugin / "scripts/mlx-agent-mcp",
+                             ROOT / "skills/mlx-scout/scripts/scout.py"):
+                with self.subTest(launcher=launcher.name):
+                    probe = ("import runpy, sys; sys.version_info = (3, 10, 14, 'final', 0); "
+                             f"sys.argv = [{str(launcher)!r}, '--help']; "
+                             f"runpy.run_path({str(launcher)!r}, run_name='__main__')")
+                    result = subprocess.run([sys.executable, "-c", probe], cwd=directory, input="",
+                                            capture_output=True, text=True, timeout=60)
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn("mlx-agent requires Python 3.11 or later", result.stderr)
 
     def test_launchers_respect_disabled_bytecode(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -102,7 +112,6 @@ class InstalledPackageTests(unittest.TestCase):
             self.assertFalse(observed["unrelated"])
             self.assertEqual(Path(observed["gguf"]).resolve(), (site / "mlx_agent/gguf.py").resolve())
 
-    @unittest.skipIf(tomllib is None, "tomllib requires Python 3.11")
     def test_console_scripts_resolve_to_callables(self):
         project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
         self.assertEqual(set(project["scripts"]), {"mlx-agent", "mlx-agent-mcp"})

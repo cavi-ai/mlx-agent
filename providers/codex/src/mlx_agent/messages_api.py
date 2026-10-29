@@ -109,7 +109,8 @@ def to_chat_request(body):
     return request
 
 
-def _tool_use(call):
+def tool_call(call):
+    """Return a worker tool call's id (None when absent), name and parsed arguments."""
     function = call.get("function") if isinstance(call, dict) else None
     arguments = function.get("arguments") if isinstance(function, dict) else None
     try:
@@ -118,8 +119,13 @@ def _tool_use(call):
         arguments = None
     if not isinstance(arguments, dict) or not isinstance(function.get("name"), str):
         raise WorkerResponseError("The model produced an invalid tool call.")
-    identifier = call.get("id") if isinstance(call.get("id"), str) and call.get("id") else "toolu_" + secrets.token_hex(12)
-    return {"type": "tool_use", "id": identifier, "name": function["name"], "input": arguments}
+    identifier = call.get("id") if isinstance(call.get("id"), str) and call.get("id") else None
+    return identifier, function["name"], arguments
+
+
+def _tool_use(call):
+    identifier, name, arguments = tool_call(call)
+    return {"type": "tool_use", "id": identifier or "toolu_" + secrets.token_hex(12), "name": name, "input": arguments}
 
 
 def _usage(usage):
@@ -201,3 +207,6 @@ class StreamTranslator:
             sse("message_delta", {"type": "message_delta", "usage": _usage(self.usage),
                                   "delta": {"stop_reason": _stop_reason(self.finish_reason, self.tool_used), "stop_sequence": None}}),
             sse("message_stop", {"type": "message_stop"})]
+
+    def fail(self, message):
+        return [sse("error", error_body(502, message))]

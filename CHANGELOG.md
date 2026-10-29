@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- JIT serve gateways answer the Anthropic Messages API (`POST /v1/messages`), streamed and unstreamed, with text, system prompts and custom tool use translated to the model worker's chat completions; unsupported content and parameters return an `invalid_request_error`.
+- JIT serve gateways answer the Anthropic Messages API (`POST /v1/messages`) and the OpenAI Responses API (`POST /v1/responses`), streamed and unstreamed, with text, system prompts and tool calls translated to the model worker's chat completions; unsupported content and parameters return an `invalid_request_error`.
 - The core requires Python 3.11 or later; the `mlx-agent` and `mlx-agent-mcp` launchers exit with a message on older interpreters, including the `python3` bundled with macOS.
 - Releases also notify `cavi-ai/plugins`, which points every host in the plugin catalog at the release.
 - `convert start --gguf` converts Qwen3.5-family GGUFs (`qwen35`) through a bundled port to MLX-VLM's `qwen3_5_text`, or `qwen3_5` with the matching `mmproj` projector from the same folder; GGUFs holding only a multi-token-prediction block are classified as speculative drafters and refused.

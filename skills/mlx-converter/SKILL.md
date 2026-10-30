@@ -35,8 +35,9 @@ deletes.
 - Poll jobs: `python3 scripts/mlx_converter.py status`
 
 `scan` needs nothing but Python. Conversion needs `mlx-lm` on PATH plus
-`torch`, `transformers`, and `gguf` importable by the same interpreter; the
-skill reports what is missing and never installs it for you.
+`torch`, `transformers`, and `gguf` importable by the same interpreter, or
+`gguf` and `mlx` for a GGUF a bundled port converts; the skill reports what
+is missing and never installs it for you.
 
 ## Reading the scan
 
@@ -48,7 +49,8 @@ Each GGUF gets a status:
   receipt), or `name` (a name match — weaker, confirm before deleting anything).
 - `shard` — a non-first shard of a split model; convert the `-00001-of-` file.
 - `companion` — a projector (`mmproj`) or similar sidecar. Not convertible on
-  its own; it belongs to a base model.
+  its own; it belongs to a base model, and the Qwen3.5 port attaches it to
+  the conversion of that model.
 
 Duplicate groups come in two kinds:
 
@@ -68,6 +70,11 @@ Hugging Face weights, then `mlx_lm.convert` quantizes those to MLX. The
 intermediate checkpoint is temporary and removed afterwards, but it is
 full-precision — budget roughly 2x the original model's fp16 size in free disk
 while the job runs.
+
+Qwen3.5-family GGUFs (`qwen35`) and DeepSeek-V4 DSpark drafters convert through
+bundled ports instead, with no intermediate checkpoint. A Qwen3.5 GGUF whose
+folder holds one matching `mmproj` projector converts to the vision-language
+model. Other speculative-decoding drafters are refused (`unsupported_draft`).
 
 Quality is capped by the GGUF's own quantization: a Q4 GGUF converted to MLX
 4bit has been quantized twice. When the original fp16 weights are available,

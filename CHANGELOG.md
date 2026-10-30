@@ -1,11 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 - 2026-10-30
 
+- Add `serve start --m5-prefill`: an opt-in MLX-LM prompt kernel for affine 4-bit Qwen2 MLP projections on M5 GPUs with macOS 26; other hardware, dependencies, models and inputs keep native MLX, and the plan and receipt record `prefill_kernel`.
+- Add `serve start --prompt-lookup`: opt-in MLX-LM decoding for code edits that drafts up to eight tokens from repeated prompt text and verifies them with the model; plain greedy requests run one at a time, other requests keep native generation, and the plan and receipt record `decode_profile`.
 - JIT serve gateways answer the Anthropic Messages API (`POST /v1/messages`) and the OpenAI Responses API (`POST /v1/responses`), streamed and unstreamed, with text, system prompts and tool calls translated to the model worker's chat completions; unsupported content and parameters return an `invalid_request_error`.
 - The core requires Python 3.11 or later; the `mlx-agent` and `mlx-agent-mcp` launchers exit with a message on older interpreters, including the `python3` bundled with macOS.
 - Releases also notify `cavi-ai/plugins`, which points every host in the plugin catalog at the release.
 - `convert start --gguf` converts Qwen3.5-family GGUFs (`qwen35`) through a bundled port to MLX-VLM's `qwen3_5_text`, or `qwen3_5` with the matching `mmproj` projector from the same folder; GGUFs holding only a multi-token-prediction block are classified as speculative drafters and refused.
+- Update filelock to 4.2.4 and setuptools to 84.2.1 in backend locks.
 
 ## 0.10.0 - 2026-10-22
 

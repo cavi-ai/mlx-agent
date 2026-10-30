@@ -70,6 +70,8 @@ Conversion runs two steps in one job: `transformers` dequantizes the GGUF back t
 
 Qwen3.5-family GGUFs (`qwen35`, including Qwen3.6 and Qwen3.8 checkpoints) convert through a bundled port instead, which needs only `gguf` and `mlx` and writes no intermediate checkpoint. The port writes the MLX-VLM `qwen3_5_text` layout, drops the multi-token-prediction block and rebuilds the tokenizer from the GGUF vocabulary. When the GGUF's folder holds exactly one Qwen3-VL projector (`mmproj`) that matches the model's width, the plan names it and the output becomes the `qwen3_5` vision-language model. These outputs are served through the `mlx-vlm` backend. A GGUF holding only a multi-token-prediction block is a speculative-decoding drafter and is refused at plan time.
 
+`convert scan` labels speculative-decoding drafters (`dflash` and `eagle3` GGUFs, multi-token-prediction-only GGUFs, configs with `dspark_target_layer_ids`) `speculative_draft` and reports their `draft` target. A DeepSeek-V4 DSpark `dflash` GGUF converts through the bundled `deepseek_v4_dspark` port to an MLX drafter that runs only beside its target; other drafters are refused at plan time (`unsupported_draft`).
+
 Quality is capped by the source: a Q4 GGUF converted to MLX 4bit has been quantized twice. Convert the original fp16 weights when you have them.
 
 The output carries `mlx-converter.json` recording its GGUF source, so later

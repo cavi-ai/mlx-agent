@@ -2,7 +2,7 @@
   "files": [
     {
       "path": "plugin.json",
-      "sha256": "a02e7c4d692fe544076d8fc95166e1b394bd011f18477b3d0e4b53df9cd95e57"
+      "sha256": "bc50316f3ace3dd2c06721da0561916fead743ef951706f56784214b7b2f41dd"
     },
     {
       "path": "requirements-lab-inference.txt",
@@ -50,7 +50,7 @@
     },
     {
       "path": "src/mlx_agent/__init__.py",
-      "sha256": "be3754b26a3dc1a73bcce9ded8d873f31f2189e4d1d7ee97fcb273dd452019ff"
+      "sha256": "24d959fed4e813adab86252514ea6775618dd99acd4800e830aff06366930706"
     },
     {
       "path": "src/mlx_agent/__main__.py",

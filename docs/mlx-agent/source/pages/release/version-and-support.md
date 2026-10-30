@@ -1,6 +1,6 @@
 # Version and support
 
-Package version in this checkout: **0.10.0** (release tag `v0.10.0`).
+Package version in this checkout: **0.11.0** (release tag `v0.11.0`).
 Source documentation can include changes made after a published release. Use
 the artifact attached to a specific release when you need that version's docs.
 

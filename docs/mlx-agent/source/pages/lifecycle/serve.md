@@ -140,6 +140,27 @@ non-custom tools, forced `tool_choice` (`any`, `tool`) and other parameters.
 `tool_choice: none` sends no tools. Tool-use ids come from the worker, or are
 generated when it gives none. The model name must be the gateway's model.
 
+### OpenAI Responses API
+
+The JIT gateway also answers `POST /v1/responses`, streamed and unstreamed, by
+translating to the worker's `/v1/chat/completions`. `instructions`, text
+message items (`developer` messages become system messages), `function` tools,
+`function_call` and `function_call_output` items, `max_output_tokens`,
+`temperature` and `top_p` are carried over. Streams emit `response.created`,
+output item, content part, text and function-call argument events, then
+`response.completed`, or `response.incomplete` when the token limit stops the
+answer. `parallel_tool_calls`, `prompt_cache_key` and `client_metadata` are
+accepted without changing generation; an empty `reasoning` object and
+`include: ["reasoning.encrypted_content"]` are accepted because no reasoning
+items are produced. Image or file content, other tool types, `strict`
+function schemas, reasoning controls, structured text formats, forced
+`tool_choice` and other parameters, including `previous_response_id`, are
+refused with an `invalid_request_error`.
+
+Background requests complete before the response returns. Responses created
+with `store` (the default) are kept in gateway memory, the most recent 64, and
+`GET /v1/responses/<id>` returns them until the gateway stops.
+
 ## Memory policy
 
 Include policy flags in the initial JIT preview and confirmation:

@@ -65,7 +65,10 @@ def receipts_root(root=None, kind="convert"):
 
 
 def cached_snapshot(repo, hf_cache=None, revision=None):
-    """``<cache>/models--org--name/snapshots/<revision or refs/main>`` when that snapshot is cached, else None."""
+    """``<cache>/models--org--name/snapshots/<revision or refs/main>`` when that snapshot is cached, else None.
+
+    A revision-pinned download writes no ``refs/main``; its only snapshot is then the cached one.
+    """
     from .model_doctor import default_hf_cache
 
     entry = (Path(hf_cache) if hf_cache else default_hf_cache()) / "models--{0}".format(repo.replace("/", "--"))
@@ -73,7 +76,11 @@ def cached_snapshot(repo, hf_cache=None, revision=None):
         try:
             revision = (entry / "refs" / "main").read_text(encoding="utf-8").strip()
         except OSError:
-            return None
+            try:
+                snapshots = [path for path in (entry / "snapshots").iterdir() if path.is_dir()]
+            except OSError:
+                return None
+            return snapshots[0] if len(snapshots) == 1 else None
     if not revision or "/" in revision or revision in (".", ".."):
         return None
     snapshot = entry / "snapshots" / revision

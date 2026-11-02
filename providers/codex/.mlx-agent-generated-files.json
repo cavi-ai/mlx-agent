@@ -526,7 +526,7 @@
     },
     {
       "path": "src/mlx_agent/convert.py",
-      "sha256": "eeec71a53b38cf77a24c1ea817fbe374c980098045b13236ba749d6e5fa195d7"
+      "sha256": "433f3c16fa60406e9040002dbc776832d2adaf3e56fc324a8ece226d6d0e95a3"
     },
     {
       "path": "src/mlx_agent/convert_queue.py",

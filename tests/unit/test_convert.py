@@ -35,6 +35,18 @@ class PlanConvertTests(unittest.TestCase):
             self.assertEqual(plan["argv"][2], str(snapshot))
             self.assertEqual(plan["source"]["path"], str(snapshot))
 
+    def test_a_revision_pinned_download_without_refs_main_is_passed_as_local_path(self):
+        with TemporaryDirectory() as directory:
+            cache = Path(directory)
+            snapshot = cache / "models--pub--model" / "snapshots" / "abc"
+            snapshot.mkdir(parents=True)
+            (snapshot / "config.json").write_text('{"model_type":"qwen2"}')
+            plan = plan_convert("pub/model", hf_cache=cache)
+            self.assertEqual(plan["argv"][2], str(snapshot))
+            # Two pinned snapshots leave no single answer: convert from the hub id.
+            (cache / "models--pub--model" / "snapshots" / "def").mkdir()
+            self.assertEqual(plan_convert("pub/model", hf_cache=cache)["argv"][2], "pub/model")
+
     def test_explicit_download_directory_is_reused_and_changes_invalidate_preview(self):
         with TemporaryDirectory() as directory:
             source = Path(directory) / "download"

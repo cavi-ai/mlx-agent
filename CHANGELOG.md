@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.1 - 2026-11-02
+
+- Fix: `convert start --repo` converts a model downloaded with `intake fetch --revision` from its cached snapshot instead of downloading it again.
+
 ## 0.11.0 - 2026-10-30
 
 - Add `serve start --m5-prefill`: an opt-in MLX-LM prompt kernel for affine 4-bit Qwen2 MLP projections on M5 GPUs with macOS 26; other hardware, dependencies, models and inputs keep native MLX, and the plan and receipt record `prefill_kernel`.

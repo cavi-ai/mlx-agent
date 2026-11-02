@@ -204,7 +204,8 @@ class DiscoveryFilterTests(unittest.TestCase):
 
         service.discover(DiscoveryRequest(role="coding"))
 
-        self.assertEqual(
+        # Inspection runs on a thread pool, so calls arrive in any order.
+        self.assertCountEqual(
             hub.inspected,
             [
                 "allowed/Open-Coder-7B-4bit",

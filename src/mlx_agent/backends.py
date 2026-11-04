@@ -23,6 +23,8 @@ CATEGORIES = ("text_llm", "vision_language", "speech_to_text", "text_to_speech",
               "video_generation", "music_generation", "mesh_generation")
 MAX_PROBE_FILES = 4000
 MAX_PROBE_FILE_BYTES = 1024 * 1024
+QUANTIZED_BITS = (4, 5, 6, 8)
+UNQUANTIZED_BITS = 32  # full-precision weights; only ports that declare it in port_bits accept it
 TYPE_PREFERENCE = {
     "speech_to_text": ("mlx-audio",),
     "text_to_speech": ("mlx-audio",),
@@ -122,10 +124,11 @@ def _validate_manifest(value, path):
             raise _invalid(path, "port_quantize group_size must be 32, 64, or 128")
     bits = value.get("port_bits", {})
     if not isinstance(bits, dict) or not set(bits) <= ported or not all(
-        isinstance(widths, list) and widths and all(width in (4, 8, 32) and not isinstance(width, bool) for width in widths)
-        for widths in bits.values()
+        _valid_widths(widths, QUANTIZED_BITS + (UNQUANTIZED_BITS,)) for widths in bits.values()
     ):
-        raise _invalid(path, "port_bits map declared ports to the bit widths (4, 8, or 32 for unquantized) their conversions keep accurate")
+        raise _invalid(path, "port_bits map declared ports to the bit widths (4, 5, 6, 8, or 32 for unquantized) their conversions keep accurate")
+    if "q_bits" in value and not _valid_widths(value["q_bits"], QUANTIZED_BITS):
+        raise _invalid(path, "q_bits lists the bit widths (4, 5, 6 or 8) the backend's converter accepts")
     converters = value.get("port_convert", {})
     if not isinstance(converters, dict) or not set(converters) <= ported or not all(
         isinstance(module, str) and _PORT.fullmatch(module) for module in converters.values()
@@ -147,6 +150,12 @@ def _validate_manifest(value, path):
         for files in signatures.values()
     ):
         raise _invalid(path, "port_signatures map declared ports to the relative files that identify them")
+
+
+def _valid_widths(widths, allowed):
+    return isinstance(widths, list) and bool(widths) and all(
+        isinstance(width, int) and not isinstance(width, bool) and width in allowed for width in widths
+    ) and len(set(widths)) == len(widths)
 
 
 def _valid_recipe(repo, recipe, ported):
@@ -216,6 +225,15 @@ def port_bits(model_type, backend_id, manifests):
     manifest = manifests.get(backend_id) or {}
     widths = (manifest.get("port_bits") or {}).get(normalize_type(model_type or ""))
     return sorted(widths) if widths else None
+
+
+def conversion_bits(model_type, backend_id, manifests):
+    """The bit widths a conversion offers: the port's, else the backend converter's, else every quantized width."""
+    widths = port_bits(model_type, backend_id, manifests)
+    if widths:
+        return widths
+    declared = (manifests.get(backend_id) or {}).get("q_bits")
+    return sorted(declared) if declared else list(QUANTIZED_BITS)
 
 
 def port_files(model_type, backend_id, manifests):

@@ -75,6 +75,8 @@ PORT_REQUIRED_MODULES = ("gguf", "mlx")
 PORTS_DIR = Path(__file__).resolve().parent / "resources" / "ports"
 # --port name to its converter under resources/ports/<backend>/<name>/convert.py.
 GGUF_PORTS = {"deepseek_v4_dspark": "mlx-lm", "qwen35": "mlx-vlm"}
+Q_BITS = (4, 5, 6, 8)
+PORT_Q_BITS = (4, 8)
 SHARD_BYTES = 5 << 30
 
 
@@ -222,7 +224,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gguf", required=True)
     parser.add_argument("--out", required=True)
-    parser.add_argument("--q-bits", type=int, required=True, choices=(4, 8))
+    parser.add_argument("--q-bits", type=int, required=True, choices=Q_BITS)
     parser.add_argument("--work-dir", default=None)
     parser.add_argument("--signature", default=None)
     parser.add_argument("--keep-intermediate", action="store_true")
@@ -238,6 +240,9 @@ def main(argv=None):
         return 2
     if projector is not None and (arguments.port is None or not projector.is_file()):
         _log("--projector needs --port and an existing file: {0}".format(projector))
+        return 2
+    if arguments.port and arguments.q_bits not in PORT_Q_BITS:
+        _log("--port converts at {0} bits only".format(" or ".join(str(bits) for bits in PORT_Q_BITS)))
         return 2
     if out_dir.exists():
         _log("output already exists: {0}".format(out_dir))

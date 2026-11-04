@@ -14,6 +14,8 @@ import re
 import struct
 from pathlib import Path
 
+from .backends import QUANTIZED_BITS
+
 
 MAX_SCAN_FILES = 4000
 MAX_METADATA_PAIRS = 512
@@ -51,6 +53,9 @@ _DRAFT_PORTS = (("deepseek_v4_dspark", "dflash", "dflash.hyper_connection.count"
 ARCHITECTURE_PORTS = {"qwen35": "qwen35"}
 # The llama.cpp vision projector type each port attaches from the model's folder.
 PORT_PROJECTORS = {"qwen35": "qwen3vl_merger"}
+# Ports converted from GGUF quantize through their own tensor maps, checked at these widths only;
+# other GGUFs convert at every quantized width.
+GGUF_PORT_BITS = (4, 8)
 _MIN_NAME_MATCH = 6
 # Trailing MLX quantization labels in folder names: Foo-MLX-4bit, Foo-4.4bpw, Foo-bf16, Foo-mxfp8.
 _MLX_QUANT_SUFFIX = re.compile(
@@ -357,6 +362,17 @@ def _draft(metadata, architecture, tensor_count):
     }
 
 
+def conversion_bits(entry):
+    """The bit widths a GGUF entry converts at; none for companions and drafters no port converts."""
+    draft = entry.get("draft")
+    port = draft.get("port") if draft is not None else entry.get("port")
+    if port is not None:
+        return list(GGUF_PORT_BITS)
+    if draft is not None or entry.get("companion") or not entry.get("readable"):
+        return []
+    return list(QUANTIZED_BITS)
+
+
 def describe_gguf(path, signature=True):
     """Build one inventory entry for a GGUF file. Never raises for bad headers."""
     location = Path(path)
@@ -388,6 +404,7 @@ def describe_gguf(path, signature=True):
         "companion": any(token in stem.lower() for token in _COMPANION_NAMES),
         "draft": None,
         "port": None,
+        "q_bits": [],
         "readable": True,
         "error": None,
     }
@@ -418,6 +435,7 @@ def describe_gguf(path, signature=True):
         entry["model_key"] += "-draft"
     elif not entry["companion"]:
         entry["port"] = ARCHITECTURE_PORTS.get(str(entry["architecture"]).lower())
+    entry["q_bits"] = conversion_bits(entry)
     if signature:
         try:
             entry["signature"] = file_signature(location)

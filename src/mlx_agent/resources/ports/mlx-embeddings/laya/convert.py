@@ -84,7 +84,7 @@ def main(argv=None) -> int:
     parser.add_argument("--mlx-path", required=True, help="destination directory")
     parser.add_argument("--revision", default=None)
     parser.add_argument("-q", "--quantize", action="store_true")
-    parser.add_argument("--q-bits", type=int, default=4, choices=(4, 8))
+    parser.add_argument("--q-bits", type=int, default=4, choices=(4, 5, 6, 8))
     arguments = parser.parse_args(argv)
     convert(arguments.hf_path, arguments.mlx_path, arguments.quantize, arguments.q_bits, arguments.revision)
     return 0

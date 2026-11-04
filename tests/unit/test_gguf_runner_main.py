@@ -53,6 +53,23 @@ class GgufRunnerMainTests(unittest.TestCase):
         self.assertFalse((self.root / "converted.hf-intermediate").exists())
         self.assertIn("removed intermediate", log)
 
+    def test_six_bits_convert_without_a_port_and_ported_conversions_refuse_them(self):
+        def quantize(work_dir, out_dir, q_bits):
+            out_dir.mkdir()
+
+        with patch.object(gguf_runner, "_missing_modules", return_value=[]), \
+                patch.object(gguf_runner, "dequantize"), patch.object(gguf_runner, "quantize", side_effect=quantize), \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(0, gguf_runner.main(["--gguf", str(self.gguf), "--out", str(self.out), "--q-bits", "6"]))
+        self.assertEqual(6, json.loads((self.out / gguf_runner.PROVENANCE_NAME).read_text())["q_bits"])
+        ported = self.root / "ported"
+        log = io.StringIO()
+        with redirect_stdout(log):
+            code = gguf_runner.main(["--gguf", str(self.gguf), "--out", str(ported), "--q-bits", "6", "--port", "qwen35"])
+        self.assertEqual(2, code)
+        self.assertIn("--port converts at 4 or 8 bits only", log.getvalue())
+        self.assertFalse(ported.exists())
+
     def test_failures_return_one_and_intermediate_can_be_kept(self):
         code, log = self.main(quantize=RuntimeError("mlx_lm.convert exited 1"))
         self.assertEqual(1, code)

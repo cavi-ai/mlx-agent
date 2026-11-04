@@ -176,6 +176,19 @@ class DescribeTests(unittest.TestCase):
     def test_regular_models_are_not_drafters(self):
         self.assertIsNone(describe_gguf(write_gguf(self.root / "plain.gguf", name="Plain"))["draft"])
 
+    def test_entries_report_the_widths_they_convert_at(self):
+        def bits(filename, **fields):
+            return describe_gguf(write_gguf(self.root / filename, **fields))["q_bits"]
+        self.assertEqual(bits("plain.gguf", name="Plain"), [4, 5, 6, 8])
+        self.assertEqual(bits("Qwen3.5-9B-Q4_K_M.gguf", architecture="qwen35", name="Qwen3.5 9B"), [4, 8])
+        self.assertEqual(bits("dspark.gguf", architecture="dflash", name="DeepSeek-V4-Flash-0731",
+                              extra=(_kv("dflash.hyper_connection.count", _UINT32, 4),)), [4, 8])
+        self.assertEqual(bits("eagle3-Llama.gguf", architecture="eagle3", name="Llama 3.1 8B"), [])
+        self.assertEqual(bits("mmproj-F32.gguf", architecture="clip", name="Base"), [])
+        broken = self.root / "broken.gguf"
+        broken.write_bytes(b"GGUF" + b"\x00" * 8)
+        self.assertEqual(describe_gguf(broken)["q_bits"], [])
+
     def test_companion_projector(self):
         entry = describe_gguf(
             write_gguf(self.root / "mmproj-F32.gguf", architecture="clip", name="Base")

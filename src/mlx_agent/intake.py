@@ -8,8 +8,8 @@ import json
 import math
 
 from .backends import (
-    choose_backend, component_matches, load_manifests, load_registries, lookup, port_bits, port_files,
-    port_for_files, port_for_pipeline, quantize_rule, recipe_for, snapshot_files,
+    QUANTIZED_BITS, choose_backend, component_matches, conversion_bits, load_manifests, load_registries, lookup,
+    port_files, port_for_files, port_for_pipeline, quantize_rule, recipe_for, snapshot_files,
 )
 from .huggingface import HuggingFaceClient, HuggingFaceHTTPError
 from .intake_fetch import FETCH_IGNORE_PATTERNS
@@ -19,7 +19,7 @@ from .taxonomy import classify
 INTAKE_SCHEMA = "intake/1"
 TRANSPORT_ERRORS = (OSError, TimeoutError, http.client.HTTPException, ValueError)
 _BLOCKING_STATUSES = (401, 403, 404, 410)
-ESTIMATE_BITS = (4, 8)
+ESTIMATE_BITS = QUANTIZED_BITS
 ESTIMATE_MAX_SHARDS = 16
 QUANT_GROUP_SIZE = 64
 _DTYPE_BYTES = {
@@ -375,7 +375,7 @@ def resolve(text, revision=None, client=None, manifests=None, registries=None):
     if verdict != "already_mlx" and not subfolder:
         payload["mlx_conversions"] = list_mlx_conversions(client, source["repo"], payload["warnings"])
     if verdict in ("convertible", "convertible_after_install"):
-        payload["q_bits"] = port_bits(payload["model_type"], backend, manifests) or list(ESTIMATE_BITS)
+        payload["q_bits"] = conversion_bits(payload["model_type"], backend, manifests)
     # A recipe's weights come from its base repository and a pipeline's from component folders,
     # whose quantization the header estimate does not model: no estimate rather than a wrong one.
     if verdict in ("convertible", "convertible_after_install") and not recipe and not pipeline:

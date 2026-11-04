@@ -22,6 +22,8 @@
   "cached": false,
   "estimated_output_bytes": {
     "4": 339744590,
+    "5": 385783630,
+    "6": 431822670,
     "8": 523900750
   },
   "files": {
@@ -38,6 +40,7 @@
   "model_type": "laya",
   "pipeline_tag": "text-classification",
   "q_bits": [
+    6,
     8
   ],
   "reasons": [],

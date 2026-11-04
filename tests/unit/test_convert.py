@@ -82,9 +82,17 @@ class PlanConvertTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "invalid_repo")
 
     def test_invalid_q_bits(self):
-        with self.assertRaises(ConvertError) as caught:
-            plan_convert("pub/model", q_bits=5)
-        self.assertEqual(caught.exception.code, "invalid_arguments")
+        for bits in (3, 7, True):
+            with self.assertRaises(ConvertError) as caught:
+                plan_convert("pub/model", q_bits=bits)
+            self.assertEqual(caught.exception.code, "invalid_arguments")
+            self.assertEqual(caught.exception.remediation, "Pass --q-bits 4, 5, 6 or 8.")
+
+    def test_five_and_six_bit_plans_quantize_at_that_width(self):
+        for bits in (5, 6):
+            plan = plan_convert("pub/model", q_bits=bits)
+            self.assertEqual(plan["argv"][-3:], ["--quantize", "--q-bits", str(bits)])
+            self.assertEqual((plan["out"], plan["slug"], plan["q_bits"]), ("model-MLX-{0}bit".format(bits), "model-{0}bit".format(bits), bits))
 
 
 class BackendConvertTests(unittest.TestCase):
@@ -127,6 +135,37 @@ class BackendConvertTests(unittest.TestCase):
             plan_convert("pub/model", backend="nope")
         self.assertEqual(caught.exception.code, "unknown_backend")
 
+    def test_five_and_six_bits_reach_converters_that_accept_them_and_only_those(self):
+        for backend in ("mlx-vlm", "mlx-audio"):
+            plan = plan_convert("pub/model", q_bits=6, backend=backend, backends_root_dir=self.root)
+            self.assertEqual(plan["argv"][-2:], ["--q-bits", "6"])
+        laya = plan_convert("convaiinnovations/laya", q_bits=6, backend="mlx-embeddings", model_type="laya", backends_root_dir=self.root)
+        self.assertEqual(laya["argv"][-2:], ["--q-bits", "6"])
+        refused = (
+            ("mlx-video", None, 5, "The mlx-video converter converts at 4 or 8 bits only.", "Pass --q-bits 4 or 8."),
+            ("mlx-embeddings", "laya", 5, "The laya port converts at 6 or 8 bits only.", "Pass --q-bits 6 or 8."),
+            ("mlx-audio", "audio8_asr_infinite", 6, "The audio8_asr_infinite port converts at 4 or 8 bits only.", "Pass --q-bits 4 or 8."),
+        )
+        for backend, model_type, bits, message, remediation in refused:
+            with self.subTest(backend=backend, model_type=model_type, bits=bits):
+                with self.assertRaises(ConvertError) as caught:
+                    plan_convert("pub/model", q_bits=bits, backend=backend, model_type=model_type, backends_root_dir=self.root)
+                self.assertEqual((caught.exception.code, str(caught.exception), caught.exception.remediation),
+                                 ("invalid_arguments", message, remediation))
+
+    def test_exported_music_requantizes_at_four_or_eight_bits_only(self):
+        source = self.root / "music"
+        source.mkdir()
+        (source / "config.json").write_text(json.dumps({"model_type": "minimax_music3", "quantization": {"bits": 8, "group_size": 64}}))
+        with self.assertRaises(ConvertError) as caught:
+            plan_convert("pub/model", q_bits=6, backend="mlx-audio", source_path=str(source), backends_root_dir=self.root)
+        self.assertEqual(caught.exception.remediation, "Pass --q-bits 4 or 8.")
+        raw = self.root / "raw"
+        raw.mkdir()
+        (raw / "config.json").write_text(json.dumps({"model_type": "minimax_music3"}))
+        plan = plan_convert("pub/model", q_bits=6, backend="mlx-audio", source_path=str(raw), backends_root_dir=self.root)
+        self.assertEqual(plan["argv"][1:3], ["-m", "mlx_audio.convert"])
+
     def test_start_refuses_uninstalled_backend(self):
         plan = plan_convert("openai/whisper-tiny", backend="mlx-audio", backends_root_dir=self.root)
         with self.assertRaises(ConvertError) as caught:
@@ -161,7 +200,7 @@ class BackendConvertTests(unittest.TestCase):
         with self.assertRaises(ConvertError) as caught:
             plan_convert("convaiinnovations/laya", q_bits=4, backend="mlx-embeddings", model_type="laya", backends_root_dir=self.root)
         self.assertEqual(caught.exception.code, "invalid_arguments")
-        self.assertIn("--q-bits 8", caught.exception.remediation)
+        self.assertEqual(caught.exception.remediation, "Pass --q-bits 6 or 8.")
         self.assertEqual(plan_convert("pub/model", q_bits=4, backend="mlx-embeddings", backends_root_dir=self.root)["q_bits"], 4)
 
     def test_triposg_converts_unquantized_at_32_bits_and_no_other_conversion_does(self):
@@ -544,8 +583,18 @@ class PlanGGUFConvertTests(unittest.TestCase):
     def test_rejects_bad_q_bits(self):
         source = write_gguf(self.root / "gamma-Q4_K_M.gguf", name="Gamma")
         with self.assertRaises(ConvertError) as caught:
-            plan_gguf_convert(source, q_bits=6, runner=self.runner)
+            plan_gguf_convert(source, q_bits=3, runner=self.runner)
         self.assertEqual(caught.exception.code, "invalid_arguments")
+
+    def test_gguf_requantizes_at_five_and_six_bits_but_its_ports_keep_four_and_eight(self):
+        source = write_gguf(self.root / "gamma-Q4_K_M.gguf", name="Gamma")
+        plan = plan_gguf_convert(source, q_bits=6, runner=self.runner)
+        self.assertEqual(plan["argv"][plan["argv"].index("--q-bits") + 1], "6")
+        self.assertEqual(plan["out"], "gamma-Q4_K_M-MLX-6bit")
+        with self.assertRaises(ConvertError) as caught:
+            plan_gguf_convert(self.write_qwen35(), q_bits=6, runner=self.runner)
+        self.assertEqual((str(caught.exception), caught.exception.remediation),
+                         ("The qwen35 port converts GGUF files at 4 or 8 bits only.", "Pass --q-bits 4 or 8."))
 
 
 class StartGGUFConvertTests(unittest.TestCase):

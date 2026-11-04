@@ -21,6 +21,9 @@
       ]
     }
   },
+  "port_bits": {
+    "audio8_asr_infinite": [4, 8]
+  },
   "categories": {
     "speech_to_text": "stt/models",
     "text_to_speech": "tts/models",

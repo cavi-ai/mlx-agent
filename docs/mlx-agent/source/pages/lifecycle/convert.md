@@ -1,6 +1,6 @@
 # Convert
 
-Convert quantizes a model to MLX (4bit or 8bit) as a receipt-tracked batch job, from a cached Hugging Face repo or from a GGUF file already on disk.
+Convert quantizes a model to MLX (4, 5, 6 or 8 bits) as a receipt-tracked batch job, from a cached Hugging Face repo or from a GGUF file already on disk.
 
 ```bash
 python3 scripts/mlx-agent convert start --repo <repo> --q-bits 4
@@ -16,6 +16,13 @@ python3 scripts/mlx-agent convert status
 - Conversion receipt checks and a shared compute lease prevent conflicting heavy jobs.
 
 The preview renders the exact `mlx_lm.convert` argv before anything runs. `convert status` cross-checks the receipt against the live process and records the exit once (`done` when the output directory exists, `failed` otherwise).
+
+MLX-LM, MLX-VLM, MLX-Audio and MLX-Embeddings conversions and GGUF files without a port accept 4, 5, 6 and 8 bits.
+MLX-Video and mflux converters, exported music checkpoints and the GGUF ports
+(DeepSeek-V4 DSpark, Qwen3.5) accept 4 and 8. Ports convert at the widths they were
+checked at: Audio8 at 4 and 8, Laya at 6 and 8, TripoSG at 8 and 32 (unquantized).
+`intake resolve` reports the offered widths as `q_bits`, and `convert scan` reports each GGUF's
+widths the same way; a vision projector or a drafter no port converts reports none.
 
 Result lands at `<model>-MLX-<bits>bit` under the current directory by default.
 Use `--out` to choose a persistent model folder. Inference commands take the

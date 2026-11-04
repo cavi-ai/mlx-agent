@@ -1689,6 +1689,16 @@ def _add_convert_arguments(parser):
     describe.add_argument("--max-pixels", type=int, default=None, help="shrink the media to at most this many pixels")
     describe.add_argument("--timeout", type=int, default=900, help="seconds before the backend run is stopped")
     describe.add_argument("--json", action="store_true")
+    mesh = actions.add_parser("mesh", help="generate a GLB mesh from an image using a converted MLX model")
+    mesh.add_argument("--path", required=True)
+    mesh.add_argument("--image", required=True)
+    mesh.add_argument("--out", required=True)
+    mesh.add_argument("--steps", type=int, default=50)
+    mesh.add_argument("--seed", type=int, default=42)
+    mesh.add_argument("--resolution", type=int, default=128, choices=(32, 64, 128, 256))
+    mesh.add_argument("--guidance", type=float, default=7.0)
+    mesh.add_argument("--timeout", type=int, default=3600)
+    mesh.add_argument("--json", action="store_true")
     video = actions.add_parser(
         "video",
         help="render one prompt with a converted text-to-video model to a new MP4 (verification canary)",
@@ -1719,6 +1729,7 @@ def _run_convert(arguments):
     from .speak import plan_speak, run_speak
     from .transcribe import plan_transcribe, run_transcribe
     from .video import plan_video, run_video
+    from .mesh import plan_mesh, run_mesh
     operation = "convert-{0}".format(arguments.convert_command)
     try:
         if arguments.convert_command == "status":
@@ -1777,6 +1788,14 @@ def _run_convert(arguments):
             from .compute import guarded_start
             result = guarded_start("describe", run_describe, plan, timeout=arguments.timeout)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["text"])
+        if arguments.convert_command == "mesh":
+            if not 1 <= arguments.timeout <= 14400:
+                raise ValueError("--timeout must be 1..14400 seconds")
+            plan = plan_mesh(arguments.path, arguments.image, arguments.out, steps=arguments.steps,
+                             seed=arguments.seed, resolution=arguments.resolution, guidance=arguments.guidance)
+            from .compute import guarded_start
+            result = guarded_start("mesh", run_mesh, plan, timeout=arguments.timeout)
+            return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
         if arguments.convert_command == "video":
             if not 1 <= arguments.timeout <= 14400:
                 raise ValueError("--timeout must be 1..14400 seconds")

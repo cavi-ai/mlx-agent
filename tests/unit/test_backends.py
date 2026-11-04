@@ -190,7 +190,7 @@ class InstallStateTests(unittest.TestCase):
 class ManifestTests(unittest.TestCase):
     def test_declared_manifests_load(self):
         manifests = load_manifests()
-        self.assertEqual(sorted(manifests), ["mflux", "mlx-audio", "mlx-embeddings", "mlx-lm", "mlx-video", "mlx-vlm"])
+        self.assertEqual(sorted(manifests), ["mflux", "mlx-3d", "mlx-audio", "mlx-embeddings", "mlx-lm", "mlx-video", "mlx-vlm"])
         self.assertTrue(manifests["mlx-lm"]["builtin"])
         self.assertEqual(manifests["mlx-audio"]["version"], "0.5.7")
         self.assertEqual(manifests["mlx-vlm"]["version"], "0.7.4")

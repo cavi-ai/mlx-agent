@@ -20,7 +20,7 @@ MANIFEST_SCHEMA = "backend/1"
 INSTALL_MARKER = ".mlx-agent-backend.json"
 PORT_MARKER = ".mlx-agent-port.json"
 CATEGORIES = ("text_llm", "vision_language", "speech_to_text", "text_to_speech", "classification", "image_generation",
-              "video_generation", "music_generation")
+              "video_generation", "music_generation", "mesh_generation")
 MAX_PROBE_FILES = 4000
 MAX_PROBE_FILE_BYTES = 1024 * 1024
 TYPE_PREFERENCE = {
@@ -32,6 +32,7 @@ TYPE_PREFERENCE = {
     "classification": ("mlx-embeddings",),
     "image_generation": ("mflux",),
     "video_generation": ("mlx-video",),
+    "mesh_generation": ("mlx-3d",),
 }
 DEFAULT_PREFERENCE = ("mlx-lm", "mlx-vlm", "mlx-audio")
 _ID = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")

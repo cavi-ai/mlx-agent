@@ -18,12 +18,12 @@ DRAFT_TIMEOUT_SECONDS = 900.0
 DRAFT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 SYSTEM_PROMPT = "You write precise engineering plans. You only state facts present in the provided material."
 INSTRUCTIONS = (
-    "Write an implementation plan for porting the Hugging Face model below to MLX (Apple's array "
+    "Write an implementation plan for porting the model or source directory below to MLX (Apple's array "
     "framework), reusing the existing MLX modules listed. Sections: 1. Summary. 2. Reused modules "
     "(exact module paths). 3. Modules to write, each naming the PyTorch class it mirrors and the "
     "weight prefixes it loads. 4. Weight conversion (prefix renames, dtypes, sharding). "
     "5. Pre- and post-processing (feature extractor, tokenizer). 6. Validation against the "
-    "transformers reference (same inputs, compare outputs). 7. Risks and unknowns. Only claim facts "
+    "reference implementation (same inputs, compare outputs). 7. Risks and unknowns. Only claim facts "
     "present in the analysis or the source; label anything else as an assumption."
 )
 

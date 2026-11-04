@@ -15,7 +15,7 @@ from .modality import detect_facets, detect_modalities
 
 TASK_TYPES = (
     "text_llm", "vision_language", "speech_to_text", "text_to_speech",
-    "embedding", "classification", "image_generation", "video_generation", "music_generation", "speculative_draft", "other",
+    "embedding", "classification", "image_generation", "video_generation", "mesh_generation", "music_generation", "speculative_draft", "other",
 )
 # Ordered specific-first; the last entry is the type's default use case.
 USE_CASES = {
@@ -27,6 +27,7 @@ USE_CASES = {
     "classification": ("moderation", "routing", "classification"),
     "image_generation": ("image_generation",),
     "video_generation": ("video_generation",),
+    "mesh_generation": ("mesh_generation",),
     "music_generation": ("music_generation",),
     "speculative_draft": ("speculative_decoding",),
     "other": (),
@@ -52,6 +53,7 @@ PIPELINE_TYPES = {
     "text-to-image": "image_generation",
     "image-to-image": "image_generation",
     "text-to-video": "video_generation",
+    "image-to-3d": "mesh_generation",
 }
 _SPECIFIC_TOKENS = (
     ("coding", ("code", "coder", "coding", "starcoder", "codestral", "devstral")),
@@ -112,6 +114,8 @@ def _type_from_hits(hits, config_keys, haystack, vision_module=False, allow_visi
         return "classification"
     if "image_generation" in categories:
         return "image_generation"
+    if "mesh_generation" in categories:
+        return "mesh_generation"
     if "video_generation" in categories:
         return "video_generation"
     if allow_vision and "vision_language" in categories and (

@@ -1,0 +1,16 @@
+{
+  "schema": "backend/1",
+  "id": "mlx-3d",
+  "version": "0.31.1",
+  "builtin": false,
+  "package": "mlx",
+  "convert": "mlx.mlx_agent_ports.triposg.convert",
+  "lock": "mlx-3d.lock",
+  "categories": {"mesh_generation": "mlx_agent_ports"},
+  "remap_files": {},
+  "registry": {"mesh_generation": {"model_types": [], "remapping": {}}},
+  "ports": {"mesh_generation": ["triposg"]},
+  "port_convert": {"triposg": "convert"},
+  "port_bits": {"triposg": [8]},
+  "port_pipelines": {"TripoSGPipeline": "triposg"}
+}

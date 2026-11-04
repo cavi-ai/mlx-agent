@@ -66,6 +66,18 @@ python3 scripts/mlx-agent intake port-plan <repo> --endpoint http://127.0.0.1:80
 ```
 
 `port-analysis` reports deterministic metadata facts without downloading weights.
+It accepts Hugging Face repositories and local checkpoint or source directories.
+Diffusers repositories are inspected through `model_index.json` and their component
+configs, so a root Transformers `config.json` is not required. Local Python files
+are parsed as text and never imported. Source-only directories report unknown
+architecture and weight support; analysis is bounded to 4,000 files and 512 KiB
+of Python source. `--revision` applies only to Hugging Face sources.
+
+```bash
+python3 scripts/mlx-agent intake port-analysis VAST-AI/TripoSG --json
+python3 scripts/mlx-agent intake port-analysis /path/to/TripoSG --json
+```
+
 `port-plan` sends architecture context to an already-running local model and
 writes a Markdown proposal. Review this generated guidance before implementing
 a port; it does not add a backend or establish architecture support.

@@ -454,7 +454,7 @@
     },
     {
       "path": "src/mlx_agent/backends.py",
-      "sha256": "9b160eba4d20041ab7d71bdd173b871de2a9e91838499f1dece3f60e5f956b22"
+      "sha256": "b2a6adaf17f0f9ec13a7521daf88b2812a3ecb3b25e59b1e1243e4c8a35ec86f"
     },
     {
       "path": "src/mlx_agent/bench.py",
@@ -474,7 +474,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "1b2f23bfb1b8c9b2aaf06dbf7f45389dc8f75117d3cfc27ad2088f69fbcbc804"
+      "sha256": "83c9ca5d2eae4e1ac35fdaf57a65cb4f6577713a3021e702de41a4ad20b9217a"
     },
     {
       "path": "src/mlx_agent/coding_capture.py",
@@ -645,6 +645,14 @@
       "sha256": "0c5ecf17c72b99dbbb0841b686c0b12738efdb9b132e1422ad03802fb1a8ac38"
     },
     {
+      "path": "src/mlx_agent/mesh.py",
+      "sha256": "4c2c36993d5e7221208fdb9712a3cbdcc5730af37676ba14f35e6b3af244d6aa"
+    },
+    {
+      "path": "src/mlx_agent/mesh_runner.py",
+      "sha256": "5542eb536de43457f86ed7e48dd1acd60c68683e2a1756b0976b1c11d8385bcb"
+    },
+    {
       "path": "src/mlx_agent/messages_api.py",
       "sha256": "5b5438f9991717225e1683df0e54fead84eaeb539bef9a78e73e986d63f8011c"
     },
@@ -674,11 +682,11 @@
     },
     {
       "path": "src/mlx_agent/port_analysis.py",
-      "sha256": "072a5e64323130ec3f28dc23a1f7cc73ccdf7cba00c6bfe27b18fc12ff11fd4d"
+      "sha256": "e350afa08bc784f80f48f5a1bd8139cbbbedf4e9fe061d237599b66d3de8acad"
     },
     {
       "path": "src/mlx_agent/port_plan.py",
-      "sha256": "424dab3653a9f65400cb141e980ff72dc16e50ac53c5136df3d56f80cc6a4480"
+      "sha256": "3ad79d53693adb83472df47b06df196682cf2894ef1022c44734fc58d11f158b"
     },
     {
       "path": "src/mlx_agent/prefill_runtime.py",
@@ -723,6 +731,14 @@
     {
       "path": "src/mlx_agent/resources/backends/mflux.lock",
       "sha256": "93b67b55b2ad54be22251cc305779b600fb6469d680b583863e2fb3b99eaba0c"
+    },
+    {
+      "path": "src/mlx_agent/resources/backends/mlx-3d.json",
+      "sha256": "33385dafc9882cf35f55c11da09fb13053e1f66e1344b91c9a21714c3e599ea0"
+    },
+    {
+      "path": "src/mlx_agent/resources/backends/mlx-3d.lock",
+      "sha256": "40868f425814a5939dbbd760fef83574c50be0a4f45310643b843d44af90c1fe"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-audio-build.lock",
@@ -803,6 +819,42 @@
     {
       "path": "src/mlx_agent/resources/ports/mflux/qwen_image_21/qwen_image_21.py",
       "sha256": "49ee886e968c1856e0bafb14db5767332d690742eeaa979064fb9ab5d68758d3"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/LICENSE",
+      "sha256": "d6ee0be05753b9078358b9a5a2ff2e343ea94565749ddc44324f346050d9255c"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/NOTICE",
+      "sha256": "db3979279b085db27ea54c2bc08419689c09d0f66aa86b7cd7db0d7080dfe386"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/__init__.py",
+      "sha256": "6c4c9cd0ad687de97e226183ef9a328bad29b157bb2c162eaf3e166a0a88d7b4"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/convert.py",
+      "sha256": "3bf52a2cbe5ebda4cb42e6ac11b48cfc93a1365670a5f64ea55bd68d6df3aad4"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/dinov2.py",
+      "sha256": "77698eae355eb1083578cb8874ac1437ce908e33b0fa5c750ff323357cb55a21"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/geometry.py",
+      "sha256": "348353792dea7bce641952cd4f911eb2766362951101f7d9ed0c3427f18fe5b8"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/pipeline.py",
+      "sha256": "b73a6e8d9657937b0e6ef7fbe61eedf99b76620e41df63db51f9b2ed503f9f34"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/transformer.py",
+      "sha256": "5129b561c5e371a92f656291461ce10ac251d5dfedc5635551076b4f6d81567c"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/weights.py",
+      "sha256": "3a350aaaf0e9f5e2577d40e4a14758dfa7d65bd01d59995ab538f1fc7002225a"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/__init__.py",
@@ -954,7 +1006,7 @@
     },
     {
       "path": "src/mlx_agent/taxonomy.py",
-      "sha256": "fa0c5a281ee44f415107708c5e8ca15925d20b8804a310da6561a3613fb90354"
+      "sha256": "c764f4ec4e7902e505ece28dbae30b43058d219a18efbe961bfd6cc4396365ae"
     },
     {
       "path": "src/mlx_agent/training_artifacts.py",

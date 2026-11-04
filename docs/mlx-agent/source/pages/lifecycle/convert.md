@@ -17,7 +17,29 @@ python3 scripts/mlx-agent convert status
 
 The preview renders the exact `mlx_lm.convert` argv before anything runs. `convert status` cross-checks the receipt against the live process and records the exit once (`done` when the output directory exists, `failed` otherwise).
 
-Result lands at `<model>-MLX-<bits>bit` by default, ready to serve or wire.
+Result lands at `<model>-MLX-<bits>bit` under the current directory by default.
+Use `--out` to choose a persistent model folder. Inference commands take the
+converted directory explicitly; serving and wiring apply only to compatible tasks.
+
+## TripoSG image-to-3D
+
+Install the `mlx-3d` backend, then download or select the original `VAST-AI/TripoSG`
+Diffusers checkpoint. Its transformer, VAE and DINOv2 weights must all be present.
+Conversion supports 8-bit quantization and runs locally without importing model
+repository code:
+
+```bash
+python3 scripts/mlx-agent convert start --repo VAST-AI/TripoSG --source-path /path/to/TripoSG --backend mlx-3d --model-type triposg --q-bits 8 --out /path/to/models/TripoSG-MLX-8bit --json
+# Review the plan, then repeat with --confirm --preview-hash <hash>.
+python3 scripts/mlx-agent convert mesh --path /path/to/models/TripoSG-MLX-8bit --image /path/to/object.png --out /path/to/output.glb --steps 50 --seed 42 --resolution 128 --json
+```
+
+Use a foreground object on a white or transparent background. Background removal
+is not performed. The output is an untextured GLB mesh, with generation time,
+loading time, vertex/face counts and peak MLX memory reported separately. The
+output path must be new. Resolution accepts 32, 64, 128 or 256; higher resolutions
+increase surface-extraction cost. Geometry uses adaptive field sampling; it does
+not reproduce the upstream CUDA flash decoder. TripoSG is not a chat server.
 
 ## GGUF sources
 

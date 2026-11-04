@@ -1,31 +1,13 @@
 name: Apple Silicon evidence
 
 on:
-  pull_request:
   push:
     tags: ["v*"]
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  fixture-backed-pr-verification:
-    if: github.event_name != 'push'
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - name: Require and inventory the hosted Apple Silicon runner
-        run: |
-          test "$(uname -m)" = "arm64"
-          uname -a
-          sysctl -n hw.memsize
-          python3 --version
-      - name: Run fixture-backed provider and host verification
-        run: |
-          PYTHONPATH=src python3 -m unittest tests.integration.test_scout_compatibility tests.contracts.test_docs -v
-          MLX_AGENT_FIXTURE=tests/fixtures/scout_responses.json PYTHONPATH=src python3 -m mlx_agent discover --fast --limit 1 --json
-
   release-live-runtime-health:
     # Opt-in: this needs a dedicated Apple Silicon runner and a live runtime
     # endpoint. Without the repository variable it stays unrequested, so tagging

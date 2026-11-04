@@ -834,7 +834,7 @@
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/convert.py",
-      "sha256": "3bf52a2cbe5ebda4cb42e6ac11b48cfc93a1365670a5f64ea55bd68d6df3aad4"
+      "sha256": "c7a2443d5c1f1b78593f893c0e2a018d5fcb5bdf103a64f7ddde7472a1531466"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/dinov2.py",

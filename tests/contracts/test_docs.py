@@ -19,6 +19,7 @@ RELEASE_EVIDENCE_PATH = ROOT / "compatibility" / "release-evidence.json"
 README_PATH = ROOT / "README.md"
 RENDERER_PATH = ROOT / "scripts" / "render_compatibility.py"
 APPLE_SILICON_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "apple-silicon.yml"
+TEST_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "test.yml"
 TOOL_USE_DOC_PATHS = (
     ROOT / "README.md",
     ROOT / "docs" / "guides" / "scout.md",
@@ -206,11 +207,14 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertNotIn(internal_phrase, content)
 
     def test_pull_requests_use_the_hosted_apple_silicon_runner(self):
+        tests = TEST_WORKFLOW_PATH.read_text(encoding="utf-8")
+        self.assertIn("- os: macos-latest", tests)
+        self.assertIn('test "$(uname -m)" = "arm64"', tests)
+        self.assertIn("MLX_AGENT_FIXTURE=tests/fixtures/scout_responses.json", tests)
+        self.assertNotIn("self-hosted", tests)
         workflow = APPLE_SILICON_WORKFLOW_PATH.read_text(encoding="utf-8")
-        fixture_job, release_job = workflow.split("  release-live-runtime-health:", 1)
-        self.assertIn("runs-on: macos-15", fixture_job)
-        self.assertIn('test "$(uname -m)" = "arm64"', fixture_job)
-        self.assertNotIn("self-hosted", fixture_job)
+        self.assertNotIn("pull_request", workflow)
+        release_job = workflow.split("  release-live-runtime-health:", 1)[1]
         self.assertIn("runs-on: [self-hosted, macOS, ARM64, apple-silicon]", release_job)
         self.assertIn("vars.MLX_AGENT_LIVE_TOOL_USE == '1'", release_job)
         self.assertIn("MLX_AGENT_LIVE_TOOL_USE: 1", release_job)

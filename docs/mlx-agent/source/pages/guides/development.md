@@ -36,7 +36,8 @@ git diff --check
 ```
 
 CI also compiles core Python sources, excluding the optional `_lab` engine,
-and tests on Linux and macOS with Python 3.11 and 3.12. The separate optional
+and tests on Linux with Python 3.11 and 3.12 and on Apple Silicon macOS with
+Python 3.12, which also runs discovery from recorded provider responses. The separate optional
 engine job uses Python 3.12 and its own dependency/test setup. See
 [Experiments and training](../lifecycle/laboratory.md). Fixture tests establish contracts; they do
 not establish model behavior on a real host.
@@ -62,8 +63,8 @@ structured results, parallel calls, pagination, bounded latency, repeated
 calls, read-only workflows, and recovery after invalid input. It calls
 only task capability discovery and rejected inputs; it does not run models or
 change task state. A failed case or incomplete evaluation exits nonzero. CI
-pins the evaluator and runs this gate on Linux and macOS with Python 3.11 and
-3.12, retaining JSON and Markdown reports even when a probe fails.
+pins the evaluator and runs this gate in every test job, retaining JSON and
+Markdown reports even when a probe fails.
 
 It also checks optional cancellation, rejection of a 1 MB request, retryability
 hints, compatibility with sampling and elicitation clients, and optional MCP surfaces.

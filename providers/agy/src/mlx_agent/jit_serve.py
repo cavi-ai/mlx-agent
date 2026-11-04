@@ -27,7 +27,7 @@ from pathlib import Path
 
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from mlx_agent import responses_api
+from mlx_agent import chat_completions, responses_api
 from mlx_agent.messages_api import (MessagesRequestError, StreamTranslator, WorkerResponseError, error_body,
                                     from_chat_response, to_chat_request)
 from mlx_agent.transactions import _atomic_in_directory
@@ -378,6 +378,7 @@ class GatewayServer(ThreadingHTTPServer):
         self.slots = threading.BoundedSemaphore(MAX_REQUESTS + 4)
         self.responses = collections.OrderedDict()
         self.responses_lock = threading.Lock()
+        self.end_text = chat_completions.end_of_sequence(config["local_path"])
         super().__init__(address, GatewayHandler)
 
     def remember(self, response):
@@ -608,12 +609,17 @@ class GatewayHandler(BaseHTTPRequestHandler):
             connection.request("POST", "/v1/chat/completions" if translated else self.path, json.dumps(body),
                                {"Content-Type": "application/json"})
             response = connection.getresponse()
+
+            def trimmed(value):
+                chat_completions.trim_end(value, self.server.end_text)
+                return value
+
             if self.path == "/v1/messages" and body.get("stream"):
                 response_started = True
                 self._stream(response, StreamTranslator(requested))
                 return
             if self.path == "/v1/messages":
-                self._relay(response, lambda value: from_chat_response(value, requested))
+                self._relay(response, lambda value: from_chat_response(trimmed(value), requested))
                 return
             if self.path == "/v1/responses":
                 if body.get("stream"):
@@ -622,7 +628,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
                     self._stream(response, stream)
                     result = stream.response
                 else:
-                    result = self._relay(response, lambda value: responses_api.from_chat_response(value, requested, fields))
+                    result = self._relay(response, lambda value: responses_api.from_chat_response(trimmed(value), requested, fields))
                 if fields["store"]:
                     self.server.remember(result)
                 return
@@ -632,6 +638,16 @@ class GatewayHandler(BaseHTTPRequestHandler):
             self.end_headers()
             response_started = True
             self.close_connection = True
+            if response.status == 200 and body.get("stream") and self.path == "/v1/chat/completions":
+                stream = chat_completions.ChunkStream()
+                while line := response.readline(MAX_BODY):
+                    self.wfile.write(stream.line(line))
+                    self.wfile.flush()
+                return
+            if response.status == 200 and not body.get("stream"):
+                payload = response.read(MAX_BODY + 1)
+                self.wfile.write(chat_completions.complete_body(payload, self.server.end_text)
+                                 if len(payload) <= MAX_BODY else payload)
             while chunk := response.read1(65536):
                 self.wfile.write(chunk)
                 self.wfile.flush()

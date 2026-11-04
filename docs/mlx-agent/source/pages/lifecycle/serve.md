@@ -127,6 +127,15 @@ JIT rechecks the adapter before and after each worker load, including after
 unloading. Older adapter gateways without a recorded content identity require
 a fresh serve preview before loading another worker.
 
+### OpenAI Chat Completions
+
+The JIT gateway forwards `POST /v1/chat/completions` and `POST /v1/completions`
+to the worker and returns answers in the OpenAI shape: every tool call has an
+id, and an `index` when streamed; a turn that calls tools ends with the
+`tool_calls` finish reason; and unstreamed answers do not end with the model's
+end-of-sequence token, which `mlx_lm` 0.29.1 leaves in place. Worker errors
+pass through unchanged.
+
 ### Anthropic Messages API
 
 The JIT gateway also answers `POST /v1/messages` in the Anthropic Messages

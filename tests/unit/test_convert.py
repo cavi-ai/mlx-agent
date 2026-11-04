@@ -164,6 +164,25 @@ class BackendConvertTests(unittest.TestCase):
         self.assertIn("--q-bits 8", caught.exception.remediation)
         self.assertEqual(plan_convert("pub/model", q_bits=4, backend="mlx-embeddings", backends_root_dir=self.root)["q_bits"], 4)
 
+    def test_triposg_converts_unquantized_at_32_bits_and_no_other_conversion_does(self):
+        full = plan_convert("VAST-AI/TripoSG", q_bits=32, backend="mlx-3d", model_type="triposg", backends_root_dir=self.root)
+        self.assertEqual(full["q_bits"], 32)
+        self.assertEqual(full["argv"][1:3], ["-m", "mlx.mlx_agent_ports.triposg.convert"])
+        self.assertNotIn("--quantize", full["argv"])
+        self.assertNotIn("--q-bits", full["argv"])
+        eight = plan_convert("VAST-AI/TripoSG", q_bits=8, backend="mlx-3d", model_type="triposg", backends_root_dir=self.root)
+        self.assertEqual(eight["argv"][-3:], ["--quantize", "--q-bits", "8"])
+        self.assertNotEqual(full["preview_hash"], eight["preview_hash"])
+        for settings in ({"q_bits": 16}, {"q_bits": 32, "backend": "mlx-lm"}, {"q_bits": 32},
+                         {"q_bits": 32, "backend": "mlx-embeddings", "model_type": "laya"},
+                         {"q_bits": 32, "backend": "mlx-embeddings"}):
+            with self.subTest(settings=settings), self.assertRaises(ConvertError) as caught:
+                plan_convert("pub/model", backends_root_dir=self.root, **settings)
+            self.assertEqual(caught.exception.code, "invalid_arguments")
+        with self.assertRaises(ConvertError) as caught:
+            plan_gguf_convert("model.gguf", q_bits=32)
+        self.assertEqual(caught.exception.code, "invalid_arguments")
+
     def cache(self, repo, subfolder):
         entry = self.root / "hub" / "models--{0}".format(repo.replace("/", "--"))
         (entry / "refs").mkdir(parents=True)

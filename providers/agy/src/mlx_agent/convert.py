@@ -36,6 +36,7 @@ from .wiring import _MODEL
 CONVERT_RECEIPT_SCHEMA_VERSION = "1.0"
 CONVERT_RECEIPT_KIND = "convert"
 Q_BITS_CHOICES = (4, 8)
+UNQUANTIZED_BITS = 32  # full-precision weights; only ports that declare it in port_bits accept it
 EXECUTABLE = "mlx_lm.convert"
 GGUF_RUNNER = Path(__file__).resolve().with_name("gguf_runner.py")
 MUSIC_REQUANTIZE_RUNNER = Path(__file__).resolve().with_name("music_requantize_runner.py")
@@ -114,7 +115,7 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
             "invalid_arguments", "model_type must be a config model_type such as qwen2 or laya.",
             "Pass --model-type exactly as intake resolve reports it.",
         )
-    _validate_q_bits(q_bits)
+    _validate_q_bits(q_bits, (UNQUANTIZED_BITS,))
     if subfolder is not None:
         try:
             validate_subfolder(subfolder)
@@ -136,7 +137,9 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
                 "Download it first: mlx-agent intake fetch {0}/{1}.".format(repo, subfolder),
             )
         hf_path = str(folder)
-    flags = ["--hf-path", hf_path, "--mlx-path", str(out), "--quantize", "--q-bits", str(q_bits)]
+    flags = ["--hf-path", hf_path, "--mlx-path", str(out)]
+    if q_bits != UNQUANTIZED_BITS:
+        flags += ["--quantize", "--q-bits", str(q_bits)]
     plan = {
         "repo": repo,
         "source": dict({"kind": "hf-cache", "repo": repo}, **({"subfolder": subfolder} if subfolder else {})),
@@ -156,6 +159,8 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
                 entries.append([str(item.relative_to(source)), stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, content])
         plan["source"]["path"] = str(source)
         plan["source"]["fingerprint"] = hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest()
+    if q_bits == UNQUANTIZED_BITS and backend in (None, "mlx-lm"):
+        raise ConvertError("invalid_arguments", "This conversion has no unquantized recipe.", "Pass --q-bits 4 or --q-bits 8.")
     if backend in (None, "mlx-lm"):
         plan["argv"] = [EXECUTABLE] + flags
         return _finalize_plan(plan)
@@ -171,6 +176,8 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
             "Run mlx-agent backend list to see the declared backends.",
         )
     widths = port_bits(model_type, backend, manifests)
+    if q_bits == UNQUANTIZED_BITS and not (widths and q_bits in widths):
+        raise ConvertError("invalid_arguments", "This conversion has no unquantized recipe.", "Pass --q-bits 4 or --q-bits 8.")
     if widths and q_bits not in widths:
         raise ConvertError(
             "invalid_arguments",
@@ -230,16 +237,16 @@ def _finalize_plan(plan):
     return plan
 
 
-def _validate_q_bits(q_bits):
+def _validate_q_bits(q_bits, extra=()):
     if not isinstance(q_bits, int) or isinstance(q_bits, bool):
         raise ConvertError(
             "invalid_arguments", "q_bits must be an integer.",
             "Pass --q-bits 4 or --q-bits 8.",
         )
-    if q_bits not in Q_BITS_CHOICES:
+    if q_bits not in Q_BITS_CHOICES + tuple(extra):
         raise ConvertError(
             "invalid_arguments",
-            "q_bits must be one of {0}.".format(list(Q_BITS_CHOICES)),
+            "q_bits must be one of {0}.".format(list(Q_BITS_CHOICES + tuple(extra))),
             "Only bounded 4bit and 8bit recipes are supported in v1.",
         )
 

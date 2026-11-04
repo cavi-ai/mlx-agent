@@ -1,49 +1,49 @@
-"""Bounded field extraction and a self-contained binary glTF mesh writer."""
+"""Iso-surface extraction, triangle-cap decimation and a self-contained binary glTF mesh writer."""
 
 import json
 import struct
+import time
 
 import numpy as np
 
+from .octree import DEFAULT_BOUNDS, extract_grid
 
-def extract_mesh(decoder, resolution=128, chunk_size=2048):
-    import mlx.core as mx
-    from scipy.ndimage import binary_dilation, zoom
-    from skimage.measure import marching_cubes
 
-    low, high = -1.005, 1.005
+def marching_cubes(grid, bounds, depth):
+    """Lewiner marching cubes at level 0, vertices mapped from grid units into `bounds`."""
+    from skimage.measure import marching_cubes as march
 
-    def evaluate(indices, size):
-        results = []
-        for start in range(0, len(indices), chunk_size):
-            points = indices[start:start + chunk_size].astype(np.float32) * ((high - low) / (size - 1)) + low
-            values = decoder(mx.array(points[None]))
-            mx.eval(values)
-            results.append(np.array(values, dtype=np.float32).reshape(-1))
-        return np.concatenate(results)
+    vertices, faces, _, _ = march(np.asarray(grid, dtype=np.float32), 0, method="lewiner")
+    low = np.asarray(bounds[:3], dtype=np.float32)
+    size = np.asarray(bounds[3:], dtype=np.float32) - low
+    return (vertices / (2 ** depth) * size + low).astype(np.float32), np.ascontiguousarray(faces)
 
-    size = min(32, resolution)
-    indices = np.stack(np.meshgrid(*([np.arange(size)] * 3), indexing="ij"), axis=-1).reshape(-1, 3)
-    field = evaluate(indices, size).reshape(size, size, size)
-    while size < resolution:
-        next_size = min(2 * (size - 1) + 1, resolution)
-        field = zoom(field, (next_size / size,) * 3, order=1)
-        surface = np.zeros(field.shape, dtype=bool)
-        for axis in range(3):
-            left, right = [slice(None)] * 3, [slice(None)] * 3
-            left[axis], right[axis] = slice(None, -1), slice(1, None)
-            crossings = np.signbit(field[tuple(left)]) != np.signbit(field[tuple(right)])
-            surface[tuple(left)] |= crossings
-            surface[tuple(right)] |= crossings
-        indices = np.argwhere(binary_dilation(surface, iterations=2))
-        if not len(indices):
-            raise ValueError("The decoded field contains no surface; try another image or seed.")
-        field[tuple(indices.T)] = evaluate(indices, next_size)
-        size = next_size
-    if not np.isfinite(field).all() or not field.min() < 0 < field.max():
+
+def extract_mesh(query, depth=9, bounds=DEFAULT_BOUNDS, seconds=None):
+    """Mesh the zero level of `query` on a (2^depth)^3 octree grid; returns vertices, faces and the points queried per pass.
+
+    `query` maps float16 points (N, 3) to logits (N,). A dict passed as `seconds` receives the dense, refinement and
+    marching-cubes times.
+    """
+    grid, counts = extract_grid(query, bounds, depth - 1, depth, seconds)
+    if not np.isfinite(grid).all() or not grid.min() < 0 < grid.max():
         raise ValueError("The decoded field contains no finite zero crossing.")
-    vertices, faces, _, _ = marching_cubes(field, level=0, spacing=((high - low) / (size - 1),) * 3)
-    return vertices + low, faces
+    started = time.perf_counter()
+    vertices, faces = marching_cubes(grid, bounds, depth)
+    if seconds is not None:
+        seconds["marching_cubes"] = time.perf_counter() - started
+    return vertices, faces, counts
+
+
+def decimate(vertices, faces, max_faces):
+    """Quadric edge collapse down to `max_faces` triangles; meshes at or under the cap pass through."""
+    if len(faces) <= max_faces:
+        return vertices, faces
+    from fast_simplification import simplify
+
+    points, triangles = simplify(np.ascontiguousarray(vertices, dtype=np.float32),
+                                 np.ascontiguousarray(faces, dtype=np.int32), target_count=max_faces)
+    return points.astype(np.float32), triangles
 
 
 def write_glb(path, vertices, faces):

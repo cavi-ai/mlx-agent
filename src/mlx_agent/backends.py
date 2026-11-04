@@ -122,10 +122,10 @@ def _validate_manifest(value, path):
             raise _invalid(path, "port_quantize group_size must be 32, 64, or 128")
     bits = value.get("port_bits", {})
     if not isinstance(bits, dict) or not set(bits) <= ported or not all(
-        isinstance(widths, list) and widths and all(width in (4, 8) and not isinstance(width, bool) for width in widths)
+        isinstance(widths, list) and widths and all(width in (4, 8, 32) and not isinstance(width, bool) for width in widths)
         for widths in bits.values()
     ):
-        raise _invalid(path, "port_bits map declared ports to the bit widths (4, 8) their conversions keep accurate")
+        raise _invalid(path, "port_bits map declared ports to the bit widths (4, 8, or 32 for unquantized) their conversions keep accurate")
     converters = value.get("port_convert", {})
     if not isinstance(converters, dict) or not set(converters) <= ported or not all(
         isinstance(module, str) and _PORT.fullmatch(module) for module in converters.values()

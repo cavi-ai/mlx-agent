@@ -1574,7 +1574,7 @@ def _run_backend(arguments):
 
 
 def _add_convert_arguments(parser):
-    from .convert import Q_BITS_CHOICES
+    from .convert import Q_BITS_CHOICES, UNQUANTIZED_BITS
     actions = parser.add_subparsers(dest="convert_command", required=True)
     start = actions.add_parser(
         "start",
@@ -1592,7 +1592,7 @@ def _add_convert_arguments(parser):
         help="model_type from intake resolve; selects a port's own converter when it ships one",
     )
     start.add_argument("--subfolder", default=None, help="checkpoint folder inside the repository (converts from the cache)")
-    start.add_argument("--q-bits", type=int, default=4, choices=Q_BITS_CHOICES)
+    start.add_argument("--q-bits", type=int, default=4, choices=Q_BITS_CHOICES + (UNQUANTIZED_BITS,))
     start.add_argument("--out", default=None, help="output directory (default <model>-MLX-<bits>bit)")
     start.add_argument("--confirm", action="store_true", help="authorize this reviewed conversion")
     start.add_argument("--preview-hash", help="hash returned by the separately reviewed convert preview")
@@ -1695,8 +1695,9 @@ def _add_convert_arguments(parser):
     mesh.add_argument("--out", required=True)
     mesh.add_argument("--steps", type=int, default=50)
     mesh.add_argument("--seed", type=int, default=42)
-    mesh.add_argument("--resolution", type=int, default=128, choices=(32, 64, 128, 256))
+    mesh.add_argument("--resolution", type=int, default=512, choices=(32, 64, 128, 256, 512))
     mesh.add_argument("--guidance", type=float, default=7.0)
+    mesh.add_argument("--max-faces", type=int, default=500000)
     mesh.add_argument("--timeout", type=int, default=3600)
     mesh.add_argument("--json", action="store_true")
     video = actions.add_parser(
@@ -1792,7 +1793,8 @@ def _run_convert(arguments):
             if not 1 <= arguments.timeout <= 14400:
                 raise ValueError("--timeout must be 1..14400 seconds")
             plan = plan_mesh(arguments.path, arguments.image, arguments.out, steps=arguments.steps,
-                             seed=arguments.seed, resolution=arguments.resolution, guidance=arguments.guidance)
+                             seed=arguments.seed, resolution=arguments.resolution, guidance=arguments.guidance,
+                             max_faces=arguments.max_faces)
             from .compute import guarded_start
             result = guarded_start("mesh", run_mesh, plan, timeout=arguments.timeout)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])

@@ -17,7 +17,11 @@ class MeshError(InferenceError):
     """A mesh failure safe to surface in a result envelope."""
 
 
-def plan_mesh(model_path, image, out, steps=50, seed=42, resolution=128, guidance=7.0,
+RESOLUTIONS = (32, 64, 128, 256, 512)
+MAX_FACES_RANGE = (1000, 10_000_000)
+
+
+def plan_mesh(model_path, image, out, steps=50, seed=42, resolution=512, guidance=7.0, max_faces=500_000,
               manifests=None, registries=None, root=None):
     model, image, target = (Path(value).expanduser().absolute() for value in (model_path, image, out))
     try:
@@ -32,8 +36,10 @@ def plan_mesh(model_path, image, out, steps=50, seed=42, resolution=128, guidanc
         raise MeshError("invalid_arguments", "--out must be a new .glb path in an existing directory.", "Choose a new output path.")
     if type(steps) is not int or not 1 <= steps <= 100 or type(seed) is not int or not 0 <= seed < 2**32:
         raise MeshError("invalid_arguments", "Steps must be 1..100 and seed 0..4294967295.", "Use --steps 50 --seed 42.")
-    if type(resolution) is not int or resolution not in (32, 64, 128, 256):
-        raise MeshError("invalid_arguments", "Resolution must be 32, 64, 128 or 256.", "Use --resolution 128.")
+    if type(resolution) is not int or resolution not in RESOLUTIONS:
+        raise MeshError("invalid_arguments", "Resolution must be 32, 64, 128, 256 or 512.", "Use --resolution 512.")
+    if type(max_faces) is not int or not MAX_FACES_RANGE[0] <= max_faces <= MAX_FACES_RANGE[1]:
+        raise MeshError("invalid_arguments", "Max faces must be 1000..10000000.", "Use --max-faces 500000.")
     if type(guidance) not in (int, float) or not math.isfinite(guidance) or not 1 <= guidance <= 20:
         raise MeshError("invalid_arguments", "Guidance must be finite and between 1 and 20.", "Use --guidance 7.")
     manifests = load_manifests() if manifests is None else manifests
@@ -46,7 +52,8 @@ def plan_mesh(model_path, image, out, steps=50, seed=42, resolution=128, guidanc
         raise MeshError("backend_not_installed", "The mesh backend is not installed.", "Install it with mlx-agent backend install " + manifest["id"] + ".")
     argv = [str(backend_python(manifest, root)), str(MESH_RUNNER), "--module", hits[0]["module"],
             "--model", str(model), "--image", str(image), "--out", str(target), "--steps", str(steps),
-            "--seed", str(seed), "--resolution", str(resolution), "--guidance", str(guidance)]
+            "--seed", str(seed), "--resolution", str(resolution), "--guidance", str(guidance),
+            "--max-faces", str(max_faces)]
     return {"backend": manifest["id"], "model": str(model), "out": str(target), "argv": argv}
 
 

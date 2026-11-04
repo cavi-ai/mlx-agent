@@ -454,7 +454,7 @@
     },
     {
       "path": "src/mlx_agent/backends.py",
-      "sha256": "b2a6adaf17f0f9ec13a7521daf88b2812a3ecb3b25e59b1e1243e4c8a35ec86f"
+      "sha256": "fd8984c497581c295bd4f51fc4acd76ca4b85a8c42a09f69fa87d2c8e70ff62a"
     },
     {
       "path": "src/mlx_agent/bench.py",
@@ -474,7 +474,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "83c9ca5d2eae4e1ac35fdaf57a65cb4f6577713a3021e702de41a4ad20b9217a"
+      "sha256": "059ca2dea9b2d42b47fac1d57df1d0580cade0303eab510d3379fa69b4061ec3"
     },
     {
       "path": "src/mlx_agent/coding_capture.py",
@@ -526,7 +526,7 @@
     },
     {
       "path": "src/mlx_agent/convert.py",
-      "sha256": "433f3c16fa60406e9040002dbc776832d2adaf3e56fc324a8ece226d6d0e95a3"
+      "sha256": "75661c625a6a2a0a23fff6f3eca511507e7d06c8aa6557dd855c5c69018a6759"
     },
     {
       "path": "src/mlx_agent/convert_queue.py",
@@ -646,11 +646,11 @@
     },
     {
       "path": "src/mlx_agent/mesh.py",
-      "sha256": "4c2c36993d5e7221208fdb9712a3cbdcc5730af37676ba14f35e6b3af244d6aa"
+      "sha256": "c9f2a2da2d41526787869773d30cb59eff23ecd57edfb99e195fa0690de2bcec"
     },
     {
       "path": "src/mlx_agent/mesh_runner.py",
-      "sha256": "5542eb536de43457f86ed7e48dd1acd60c68683e2a1756b0976b1c11d8385bcb"
+      "sha256": "5dd95b2bf684582d368cac80ff184491f10458f1373aedec22d4e2008ec931a9"
     },
     {
       "path": "src/mlx_agent/messages_api.py",
@@ -734,11 +734,11 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-3d.json",
-      "sha256": "33385dafc9882cf35f55c11da09fb13053e1f66e1344b91c9a21714c3e599ea0"
+      "sha256": "174c70cbea15d8544add38f3fb020046a2a41bbd907a1b6be64f7ed8121637d7"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-3d.lock",
-      "sha256": "40868f425814a5939dbbd760fef83574c50be0a4f45310643b843d44af90c1fe"
+      "sha256": "13c75f8e538c283f3ce227160ac6058256a948ff929e0ed4e2c02fe63e031927"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-audio-build.lock",
@@ -842,11 +842,15 @@
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/geometry.py",
-      "sha256": "348353792dea7bce641952cd4f911eb2766362951101f7d9ed0c3427f18fe5b8"
+      "sha256": "d3bf887a57c76b1171b86a4ac67d499d4100e4655e5a34d0f936b7ac7f800570"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/octree.py",
+      "sha256": "8863a94793a93899582999b62a72b02f55034b089c5868edb256a57dbc9f80c6"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/pipeline.py",
-      "sha256": "b73a6e8d9657937b0e6ef7fbe61eedf99b76620e41df63db51f9b2ed503f9f34"
+      "sha256": "6206efa522c7e34f415fa24b2ce85a3561c6d5ecc78b73e3a055f86f2bd6d3c3"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/transformer.py",

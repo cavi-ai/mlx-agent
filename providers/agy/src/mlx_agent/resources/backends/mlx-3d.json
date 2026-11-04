@@ -11,6 +11,6 @@
   "registry": {"mesh_generation": {"model_types": [], "remapping": {}}},
   "ports": {"mesh_generation": ["triposg"]},
   "port_convert": {"triposg": "convert"},
-  "port_bits": {"triposg": [8]},
+  "port_bits": {"triposg": [8, 32]},
   "port_pipelines": {"TripoSGPipeline": "triposg"}
 }

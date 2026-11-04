@@ -25,21 +25,32 @@ converted directory explicitly; serving and wiring apply only to compatible task
 
 Install the `mlx-3d` backend, then download or select the original `VAST-AI/TripoSG`
 Diffusers checkpoint. Its transformer, VAE and DINOv2 weights must all be present.
-Conversion supports 8-bit quantization and runs locally without importing model
-repository code:
+Conversion runs locally without importing model repository code. `--q-bits 32`
+keeps full-precision weights and reproduces the PyTorch reference geometry;
+`--q-bits 8` is smaller, but its meshes can contain stray surface fragments.
 
 ```bash
-python3 scripts/mlx-agent convert start --repo VAST-AI/TripoSG --source-path /path/to/TripoSG --backend mlx-3d --model-type triposg --q-bits 8 --out /path/to/models/TripoSG-MLX-8bit --json
+python3 scripts/mlx-agent convert start --repo VAST-AI/TripoSG --source-path /path/to/TripoSG --backend mlx-3d --model-type triposg --q-bits 32 --out /path/to/models/TripoSG-MLX-32bit --json
 # Review the plan, then repeat with --confirm --preview-hash <hash>.
-python3 scripts/mlx-agent convert mesh --path /path/to/models/TripoSG-MLX-8bit --image /path/to/object.png --out /path/to/output.glb --steps 50 --seed 42 --resolution 128 --json
+python3 scripts/mlx-agent convert mesh --path /path/to/models/TripoSG-MLX-32bit --image /path/to/object.png --out /path/to/output.glb --steps 50 --seed 42 --resolution 512 --max-faces 500000 --json
 ```
 
 Use a foreground object on a white or transparent background. Background removal
-is not performed. The output is an untextured GLB mesh, with generation time,
-loading time, vertex/face counts and peak MLX memory reported separately. The
-output path must be new. Resolution accepts 32, 64, 128 or 256; higher resolutions
-increase surface-extraction cost. Geometry uses adaptive field sampling; it does
-not reproduce the upstream CUDA flash decoder. TripoSG is not a chat server.
+is not performed. The output is an untextured GLB mesh. The result reports
+generation time, loading time, vertex/face counts and peak MLX memory, plus
+`stage_seconds` (`load`, `conditioning`, `sampling`, `decode_dense`,
+`decode_refine`, `marching_cubes`, `decimation`, `export`) and `queries`, the
+number of field points queried in the dense pass and in the refinement. The
+output path must be new.
+
+`--resolution` is the side of the final grid: 32, 64, 128, 256 or 512 (default
+512). Geometry follows the upstream TripoSG octree extraction: a dense pass at
+half the final side, then one refinement of the cells near the surface, so
+higher resolutions query more points. `--max-faces` (default 500000, 1000 to
+10000000) reduces a larger mesh with quadric edge collapse. The initial latent
+noise is `numpy.random.default_rng(seed).standard_normal`, so a seed
+reproduces the PyTorch reference noise. The upstream CUDA flash decoder is not
+reproduced. TripoSG is not a chat server.
 
 ## GGUF sources
 

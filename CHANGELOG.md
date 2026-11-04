@@ -4,6 +4,7 @@
 
 - `convert mesh` extracts TripoSG surfaces on the upstream octree grid with `--resolution` up to 512 (default), seeds the latent noise from NumPy's default generator, caps the mesh with `--max-faces` (default 500000), and reports `stage_seconds` and `queries`; `convert start --q-bits 32` converts TripoSG without quantization, and `convert scan` lists that output.
 - CI tests macOS with Python 3.12 only, in the job that also runs the recorded-response discovery check on Apple Silicon; Linux still tests Python 3.11 and 3.12.
+- Fix: with `mlx_lm` 0.29.1 workers, JIT gateways give every Chat Completions tool call an id, a stream `index` and the `tool_calls` finish reason, and unstreamed Chat Completions, Messages and Responses answers no longer end with the model's end-of-sequence token.
 
 ## 0.11.1 - 2026-11-02
 

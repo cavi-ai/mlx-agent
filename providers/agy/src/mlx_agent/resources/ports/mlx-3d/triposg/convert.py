@@ -4,8 +4,11 @@ import argparse
 import json
 import shutil
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
+PROVENANCE_NAME = "mlx-converter.json"
+UNQUANTIZED_BITS = 32
 FILES = {
     "transformer": "diffusion_pytorch_model.safetensors",
     "vae": "diffusion_pytorch_model.safetensors",
@@ -65,6 +68,12 @@ def convert(hf_path, mlx_path, quantize=False, q_bits=8):
         if quantize:
             config["quantization"] = {"bits": q_bits, "group_size": 64}
         (staging / "config.json").write_text(json.dumps(config, indent=2) + "\n")
+        # The marker lets scans list unquantized outputs, whose config carries no quantization block.
+        provenance = {"schema_version": "1.0", "tool": "mlx-agent.triposg",
+                      "created_at": datetime.now(timezone.utc).isoformat(),
+                      "q_bits": q_bits if quantize else UNQUANTIZED_BITS,
+                      "source": {"kind": "diffusers", "path": str(base), "pipeline": "TripoSGPipeline"}}
+        (staging / PROVENANCE_NAME).write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n")
         # mkdir is the no-replace claim; rename alone can replace an empty folder.
         out.mkdir()
         # Publish the config last, so scans cannot treat a partial copy as ready.

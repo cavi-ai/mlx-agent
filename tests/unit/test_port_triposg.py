@@ -48,6 +48,30 @@ class TripoSGNativeTests(unittest.TestCase):
         self.assertAlmostEqual(schedule[0][1], -.999)
         self.assertAlmostEqual(schedule[1][1], -.001)
 
+    def test_scans_list_unquantized_and_quantized_conversions(self):
+        import mlx.core as mx
+        from mlx_agent.gguf import scan_mlx_outputs
+        from triposg.convert import convert
+        with TemporaryDirectory() as folder:
+            source, models = Path(folder) / 'source', Path(folder) / 'models'
+            for component, filename in (('transformer', 'diffusion_pytorch_model.safetensors'),
+                                        ('vae', 'diffusion_pytorch_model.safetensors'),
+                                        ('image_encoder_dinov2', 'model.safetensors')):
+                (source / component).mkdir(parents=True)
+                mx.save_safetensors(str(source / component / filename), {'proj.weight': mx.zeros((4, 64))})
+                (source / component / 'config.json').write_text('{}')
+            for name, config in (('model_index.json', {'_class_name': 'TripoSGPipeline'}),
+                                 ('feature_extractor_dinov2/preprocessor_config.json', {}),
+                                 ('scheduler/scheduler_config.json', {'_class_name': 'RectifiedFlowScheduler'})):
+                (source / name).parent.mkdir(exist_ok=True)
+                (source / name).write_text(json.dumps(config))
+            convert(source, models / 'TripoSG-MLX-32bit')
+            convert(source, models / 'TripoSG-MLX-8bit', quantize=True)
+            listed = {item['name']: item for item in scan_mlx_outputs([models])}
+        self.assertEqual(sorted(listed), ['TripoSG-MLX-32bit', 'TripoSG-MLX-8bit'])
+        self.assertEqual(listed['TripoSG-MLX-32bit']['provenance']['q_bits'], 32)
+        self.assertEqual(listed['TripoSG-MLX-32bit']['provenance']['source']['path'], str(source))
+
     def test_native_components_match_reference_outputs(self):
         import mlx.core as mx
         import numpy as np

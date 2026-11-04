@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- `convert mesh` extracts TripoSG surfaces on the upstream octree grid with `--resolution` up to 512 (default), seeds the latent noise from NumPy's default generator, caps the mesh with `--max-faces` (default 500000), and reports `stage_seconds` and `queries`; `convert start --q-bits 32` converts TripoSG without quantization.
+- `convert mesh` extracts TripoSG surfaces on the upstream octree grid with `--resolution` up to 512 (default), seeds the latent noise from NumPy's default generator, caps the mesh with `--max-faces` (default 500000), and reports `stage_seconds` and `queries`; `convert start --q-bits 32` converts TripoSG without quantization, and `convert scan` lists that output.
 
 ## 0.11.1 - 2026-11-02
 

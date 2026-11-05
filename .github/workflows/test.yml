@@ -83,11 +83,10 @@ jobs:
           MLX_AGENT_FIXTURE=tests/fixtures/scout_responses.json PYTHONPATH=src python -m mlx_agent discover --fast --limit 1 --json
       - name: Evaluate the MCP server
         id: mcp-eval
-        uses: cavi-ai/mcp-eval@154cbaa943bb19e1dc94b5028240f8c1359d8c2b # v0.8.0
+        uses: cavi-ai/mcp-eval@main
         env:
           MCPEVAL_HOME: ${{ runner.temp }}/mlx-agent-mcpeval
         with:
-          version: 0.8.0
           server: mlx-agent
           manifest: mcp-eval.manifest.json
           command: python scripts/mlx-agent-mcp

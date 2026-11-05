@@ -5,6 +5,7 @@
   "builtin": false,
   "package": "mflux",
   "convert": "mflux.models.common.cli.save",
+  "q_bits": [4, 8],
   "lock": "mflux.lock",
   "ports": {
     "image_generation": [

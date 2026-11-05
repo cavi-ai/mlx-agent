@@ -454,7 +454,7 @@
     },
     {
       "path": "src/mlx_agent/backends.py",
-      "sha256": "fd8984c497581c295bd4f51fc4acd76ca4b85a8c42a09f69fa87d2c8e70ff62a"
+      "sha256": "f863ec469fb1edd82f03b3b7deee422ab5b837e2acdc92672bd570153bc51d4d"
     },
     {
       "path": "src/mlx_agent/bench.py",
@@ -530,11 +530,11 @@
     },
     {
       "path": "src/mlx_agent/convert.py",
-      "sha256": "75661c625a6a2a0a23fff6f3eca511507e7d06c8aa6557dd855c5c69018a6759"
+      "sha256": "bed51d561d5f60f5ca7aa8a3abe2c742dbb01daf1f35c6a6319d36e0f0766928"
     },
     {
       "path": "src/mlx_agent/convert_queue.py",
-      "sha256": "0cbae526341fb701e2aba32f2d62d82d910e74743303f687e2e10de8ef4ffa44"
+      "sha256": "bec0a5d16cb036ecf31345213718295d9fcdaec32df073076695f9c835206fd7"
     },
     {
       "path": "src/mlx_agent/decide.py",
@@ -578,11 +578,11 @@
     },
     {
       "path": "src/mlx_agent/gguf.py",
-      "sha256": "8428adf1a1815f6ea159c763940a49bb99ad4ce518b848742b5d4d2176dd971f"
+      "sha256": "a223562b73e60f66f710205d480fc4a63c545e10b948ec372b803c611be825e7"
     },
     {
       "path": "src/mlx_agent/gguf_runner.py",
-      "sha256": "6f35baa415d20ade3904da940175f445cd75b5e4b28a0028c454628c10b50908"
+      "sha256": "bb356fcdb0b66c0f4b1ef63fcd3ab1ad59ff9d34418c0d8b6971430ff85e7a1e"
     },
     {
       "path": "src/mlx_agent/host.py",
@@ -602,7 +602,7 @@
     },
     {
       "path": "src/mlx_agent/intake.py",
-      "sha256": "11eb7970ff8595de2b6576dc67f1249c49ae53af5673f106cdf561c425ab2302"
+      "sha256": "084c8ca6039cd18a3e49082230c7ea26fb629ad32c0a8f268476e5afa900cf02"
     },
     {
       "path": "src/mlx_agent/intake_fetch.py",
@@ -730,7 +730,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mflux.json",
-      "sha256": "0c0cf03645dc6075d3c3480dfce4539eb8b81c7a77c6e1579948cafde207ee4a"
+      "sha256": "72ffac358644345420d87ee64217272aada890c9c752773b8b1f6e13213879fa"
     },
     {
       "path": "src/mlx_agent/resources/backends/mflux.lock",
@@ -750,7 +750,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-audio.json",
-      "sha256": "a1834ce1adeea76beb9389236bbea32f06279f62f2dbf8442047beadcadb2a7a"
+      "sha256": "1848a7e0ca7ff9ddd84e6ad324e355f5332cfb2afd4f2e8ed088d5a0d261bd0f"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-audio.lock",
@@ -758,7 +758,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-embeddings.json",
-      "sha256": "7507c9b4571ad1b1de34a811bd95b4ae480979ba16959f5d1f24336f93d0edc4"
+      "sha256": "e8afb641cd4784b094bf56fb731140616b9939b559935169a2ed0c673463a47d"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-embeddings.lock",
@@ -770,7 +770,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-video.json",
-      "sha256": "fae5abb6119a447618c661ae7706158608e87afcff7b6fefe758100943868b5d"
+      "sha256": "a17d9a9b20bfc352600dd53ec4ece1034652fa8305b9bd7b896676a7a0a50e47"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-video.lock",
@@ -886,7 +886,7 @@
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-embeddings/laya/convert.py",
-      "sha256": "a1c65082343acd060c00a947d17923ffd6c09c9b56ee74363ece0c485a38d52e"
+      "sha256": "62bd3911e296eb7bf87975731eb8197afa0ab008f5f1edf0c4a8adb7efdf0dfb"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-embeddings/laya/laya.py",

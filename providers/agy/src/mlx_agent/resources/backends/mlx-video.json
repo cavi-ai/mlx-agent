@@ -5,6 +5,7 @@
   "builtin": false,
   "package": "mlx_video",
   "convert": "mlx_video.convert_wan",
+  "q_bits": [4, 8],
   "lock": "mlx-video.lock",
   "ports": {
     "video_generation": [

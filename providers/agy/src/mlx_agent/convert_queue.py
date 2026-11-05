@@ -10,6 +10,7 @@ from pathlib import Path
 
 from . import queue_bridge as bridge
 from .atomicio import write_text_atomic
+from .backends import QUANTIZED_BITS
 
 
 QUEUE_SCHEMA_VERSION = "1.1"
@@ -93,7 +94,7 @@ def _validate_item(item, legacy=False):
         raise ValueError("queue item kind is invalid")
     if not isinstance(item["preview_hash"], str) or not item["preview_hash"]:
         raise ValueError("queue item preview_hash is invalid")
-    if isinstance(item["q_bits"], bool) or item["q_bits"] not in (4, 8):
+    if isinstance(item["q_bits"], bool) or item["q_bits"] not in QUANTIZED_BITS:
         raise ValueError("queue item q_bits is invalid")
     for field in ("out", "path", "repo", "hf_cache"):
         if not _optional_string(item[field]):

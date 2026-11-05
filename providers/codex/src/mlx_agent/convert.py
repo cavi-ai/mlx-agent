@@ -10,9 +10,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .backends import (
+    QUANTIZED_BITS,
+    UNQUANTIZED_BITS,
     BackendError,
     backend_environment,
     backend_python,
+    conversion_bits,
     load_manifests,
     port_bits,
     port_converter,
@@ -21,7 +24,7 @@ from .backends import (
     spawn_with_env,
     sync_ports,
 )
-from .gguf import GGUFError, describe_gguf, find_projector
+from .gguf import GGUF_PORT_BITS, GGUFError, describe_gguf, find_projector
 from .intake_source import validate_subfolder
 from .serve import (
     _argv_matches,
@@ -35,8 +38,9 @@ from .wiring import _MODEL
 
 CONVERT_RECEIPT_SCHEMA_VERSION = "1.0"
 CONVERT_RECEIPT_KIND = "convert"
-Q_BITS_CHOICES = (4, 8)
-UNQUANTIZED_BITS = 32  # full-precision weights; only ports that declare it in port_bits accept it
+Q_BITS_CHOICES = QUANTIZED_BITS
+# The music requantizer reloads an exported MLX checkpoint, checked at these widths only.
+MUSIC_REQUANTIZE_BITS = (4, 8)
 EXECUTABLE = "mlx_lm.convert"
 GGUF_RUNNER = Path(__file__).resolve().with_name("gguf_runner.py")
 MUSIC_REQUANTIZE_RUNNER = Path(__file__).resolve().with_name("music_requantize_runner.py")
@@ -160,7 +164,7 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
         plan["source"]["path"] = str(source)
         plan["source"]["fingerprint"] = hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest()
     if q_bits == UNQUANTIZED_BITS and backend in (None, "mlx-lm"):
-        raise ConvertError("invalid_arguments", "This conversion has no unquantized recipe.", "Pass --q-bits 4 or --q-bits 8.")
+        raise ConvertError("invalid_arguments", "This conversion has no unquantized recipe.", _bits_hint(Q_BITS_CHOICES))
     if backend in (None, "mlx-lm"):
         plan["argv"] = [EXECUTABLE] + flags
         return _finalize_plan(plan)
@@ -175,14 +179,21 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
             "No optional backend named {0}.".format(backend),
             "Run mlx-agent backend list to see the declared backends.",
         )
-    widths = port_bits(model_type, backend, manifests)
-    if q_bits == UNQUANTIZED_BITS and not (widths and q_bits in widths):
-        raise ConvertError("invalid_arguments", "This conversion has no unquantized recipe.", "Pass --q-bits 4 or --q-bits 8.")
-    if widths and q_bits not in widths:
+    widths = conversion_bits(model_type, backend, manifests)
+    if q_bits == UNQUANTIZED_BITS and q_bits not in widths:
+        raise ConvertError("invalid_arguments", "This conversion has no unquantized recipe.", _bits_hint(widths))
+    if q_bits not in widths:
+        owner = "{0} port".format(model_type) if port_bits(model_type, backend, manifests) else "{0} converter".format(backend)
         raise ConvertError(
             "invalid_arguments",
-            "The {0} port converts at {1} bits only.".format(model_type, " or ".join(str(width) for width in widths)),
-            "Pass --q-bits {0}.".format(widths[-1]),
+            "The {0} converts at {1} bits only.".format(owner, _joined(widths)),
+            _bits_hint(widths),
+        )
+    if backend == "mlx-audio" and _is_quantized_music_source(hf_path) and q_bits not in MUSIC_REQUANTIZE_BITS:
+        raise ConvertError(
+            "invalid_arguments",
+            "Exported music checkpoints requantize at {0} bits only.".format(_joined(MUSIC_REQUANTIZE_BITS)),
+            _bits_hint(MUSIC_REQUANTIZE_BITS),
         )
     python = backend_python(manifest, backends_root_dir)
     plan["backend"] = backend
@@ -237,17 +248,23 @@ def _finalize_plan(plan):
     return plan
 
 
+def _joined(widths):
+    widths = [str(width) for width in widths]
+    return widths[0] if len(widths) == 1 else "{0} or {1}".format(", ".join(widths[:-1]), widths[-1])
+
+
+def _bits_hint(widths):
+    return "Pass --q-bits {0}.".format(_joined(widths))
+
+
 def _validate_q_bits(q_bits, extra=()):
     if not isinstance(q_bits, int) or isinstance(q_bits, bool):
-        raise ConvertError(
-            "invalid_arguments", "q_bits must be an integer.",
-            "Pass --q-bits 4 or --q-bits 8.",
-        )
+        raise ConvertError("invalid_arguments", "q_bits must be an integer.", _bits_hint(Q_BITS_CHOICES))
     if q_bits not in Q_BITS_CHOICES + tuple(extra):
         raise ConvertError(
             "invalid_arguments",
             "q_bits must be one of {0}.".format(list(Q_BITS_CHOICES + tuple(extra))),
-            "Only bounded 4bit and 8bit recipes are supported in v1.",
+            _bits_hint(Q_BITS_CHOICES),
         )
 
 
@@ -331,6 +348,12 @@ def plan_gguf_convert(gguf_path, q_bits=4, out=None, runner=None, describe=descr
     if draft is not None:
         plan["draft"] = dict(draft)
     port = draft["port"] if draft is not None else entry.get("port")
+    if port is not None and q_bits not in GGUF_PORT_BITS:
+        raise ConvertError(
+            "invalid_arguments",
+            "The {0} port converts GGUF files at {1} bits only.".format(port, _joined(GGUF_PORT_BITS)),
+            _bits_hint(GGUF_PORT_BITS),
+        )
     if port is not None:
         plan["port_converter"] = port
         plan["argv"].extend(["--port", port])

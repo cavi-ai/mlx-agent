@@ -15,6 +15,7 @@ from mlx_agent.backends import (
     backends_root,
     choose_backend,
     component_matches,
+    conversion_bits,
     is_installed,
     is_vision_type,
     load_manifests,
@@ -315,8 +316,8 @@ class ClassificationPortTests(unittest.TestCase):
         self.assertIsNone(port_converter("bert", "mlx-embeddings", self.manifests))
         self.assertIsNone(port_converter("audio8_asr_infinite", "mlx-audio", self.manifests))
         self.assertEqual(quantize_rule("laya", "mlx-embeddings", self.manifests)["group_size"], 32)
-        self.assertEqual(port_bits("laya", "mlx-embeddings", self.manifests), [8])
-        self.assertIsNone(port_bits("audio8_asr_infinite", "mlx-audio", self.manifests))
+        self.assertEqual(port_bits("laya", "mlx-embeddings", self.manifests), [6, 8])
+        self.assertEqual(port_bits("audio8_asr_infinite", "mlx-audio", self.manifests), [4, 8])
         signature = port_files("laya", "mlx-embeddings", self.manifests)
         self.assertEqual(port_for_files(signature + ["README.md", "multilingual/model.safetensors"], self.manifests), "laya")
         self.assertIsNone(port_for_files(signature[1:], self.manifests))
@@ -390,13 +391,21 @@ class ClassificationPortTests(unittest.TestCase):
             {"port_quantize": {"laya": {"include": ["encoder."], "group_size": 48}}},
             {"port_quantize": {"laya": {"include": ["encoder."], "group_size": True}}},
             {"port_bits": {"laya": []}}, {"port_bits": {"laya": [16]}}, {"port_bits": {"other": [8]}},
-            {"port_bits": {"laya": [True]}},
+            {"port_bits": {"laya": [True]}}, {"port_bits": {"laya": [6, 6]}},
+            {"q_bits": []}, {"q_bits": [3]}, {"q_bits": [32]}, {"q_bits": [4, True]}, {"q_bits": "4"},
         ]
         for fields in bad:
             with self.subTest(fields=fields):
                 with self.assertRaises(BackendError) as caught:
                     self.load_with(**fields)
                 self.assertEqual(caught.exception.code, "manifest_invalid")
+
+    def test_conversion_widths_come_from_the_port_then_the_converter_then_every_width(self):
+        self.assertEqual(conversion_bits("laya", "mlx-embeddings", self.manifests), [6, 8])
+        self.assertEqual(conversion_bits("wan", "mlx-video", self.manifests), [4, 8])
+        self.assertEqual(conversion_bits("qwen2", "mlx-lm", self.manifests), [4, 5, 6, 8])
+        self.assertEqual(conversion_bits("qwen2_vl", "mlx-vlm", self.manifests), [4, 5, 6, 8])
+        self.assertEqual(conversion_bits("triposg", "mlx-3d", self.manifests), [8, 32])
 
 
 if __name__ == "__main__":

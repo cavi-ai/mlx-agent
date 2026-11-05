@@ -37,6 +37,18 @@ class QueueCliTests(unittest.TestCase):
         code, payload = self.cli({"operation": "clear"})
         self.assertEqual((0, 0), (code, payload["data"]["removed_count"]))
 
+    def test_enqueue_keeps_every_conversion_width(self):
+        for bits in (4, 5, 6, 8):
+            code, payload = self.cli({"operation": "enqueue", "kind": "repo", "preview_hash": "h",
+                                      "q_bits": bits, "repo": "org/model"})
+            self.assertEqual((0, bits), (code, payload["data"]["item"]["q_bits"]))
+        stored = json.loads(self.queue.read_text())
+        self.assertEqual([4, 5, 6, 8], [item["q_bits"] for item in stored["items"]])
+        code, payload = self.cli({"operation": "enqueue", "kind": "repo", "preview_hash": "h",
+                                  "q_bits": 7, "repo": "org/model"})
+        self.assertEqual((2, "queue item q_bits is invalid"), (code, payload["error"]["message"]))
+        self.assertEqual(4, len(json.loads(self.queue.read_text())["items"]))
+
     def test_requests_outside_the_operation_grammar_are_rejected(self):
         for request, message in (([], "Unknown conversion queue operation."),
                                  ({"operation": "drop"}, "Unknown conversion queue operation."),

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `convert start --q-bits` and `lab queue` accept 5 and 6 for MLX-LM, MLX-VLM, MLX-Audio and MLX-Embeddings conversions and for GGUF files without a port; Laya also converts at 6 bits, which matched every answer of the unquantized conversion on all three checkpoints while 5 bits changed one or two; manifests declare a converter's widths with `q_bits`, `intake resolve` reports each conversion's widths and estimates sizes at 4, 5, 6 and 8 bits, and `convert scan` reports each GGUF's widths.
 - `convert mesh` extracts TripoSG surfaces on the upstream octree grid with `--resolution` up to 512 (default), seeds the latent noise from NumPy's default generator, caps the mesh with `--max-faces` (default 500000), and reports `stage_seconds` and `queries`; `convert start --q-bits 32` converts TripoSG without quantization, and `convert scan` lists that output.
 - CI tests macOS with Python 3.12 only, in the job that also runs the recorded-response discovery check on Apple Silicon; Linux still tests Python 3.11 and 3.12.
 - Fix: with `mlx_lm` 0.29.1 workers, JIT gateways give every Chat Completions tool call an id, a stream `index` and the `tool_calls` finish reason, and unstreamed Chat Completions, Messages and Responses answers no longer end with the model's end-of-sequence token.

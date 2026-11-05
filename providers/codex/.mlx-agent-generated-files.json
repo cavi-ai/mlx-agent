@@ -478,7 +478,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "059ca2dea9b2d42b47fac1d57df1d0580cade0303eab510d3379fa69b4061ec3"
+      "sha256": "efa1a45b7648be3e0bc2bb2ca7851f83c0fe12ecb3b1aa1bdb3f997f68bffe88"
     },
     {
       "path": "src/mlx_agent/coding_capture.py",
@@ -554,7 +554,7 @@
     },
     {
       "path": "src/mlx_agent/discovery.py",
-      "sha256": "cab26108d31ece8993becfff54cb98f42259e6d8d50fc93d20d28c9f7d7f7a2f"
+      "sha256": "b38de9c7d47ba822702143b755d73216de937e9b680c5c0505f718be5a1fbd1e"
     },
     {
       "path": "src/mlx_agent/fetch_runner.py",
@@ -590,7 +590,7 @@
     },
     {
       "path": "src/mlx_agent/huggingface.py",
-      "sha256": "5c67cab17f54cc8aeeed2afaad8b5976bb81ed30ce9dea7bb55f955b86bd461f"
+      "sha256": "84b7e353e58d5660c50f3a07efbb02acb2ddef29e62f06377574a1f88fec3b36"
     },
     {
       "path": "src/mlx_agent/inference_runner.py",

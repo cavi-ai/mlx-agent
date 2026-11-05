@@ -166,6 +166,20 @@
               "required": false
             },
             {
+              "name": "sort",
+              "flag": "--sort",
+              "kind": "option",
+              "type": "string",
+              "required": false
+            },
+            {
+              "name": "search",
+              "flag": "--search",
+              "kind": "option",
+              "type": "string",
+              "required": false
+            },
+            {
               "name": "fast",
               "flag": "--fast",
               "kind": "option",

@@ -537,6 +537,7 @@ def test_source_acquire_rejects_fifo_without_blocking_or_leaking(tmp_path: Path)
     script = f"""
 import hashlib
 import os
+import time
 from pathlib import Path
 from video_lab.trainers.wan_mps import WanSourceDescriptor, WanTrainingSourceResolver
 
@@ -551,21 +552,25 @@ descriptor = WanSourceDescriptor(
     expected_inode=info.st_ino,
 )
 before = len(os.listdir("/dev/fd"))
+started = time.monotonic()
 try:
     WanTrainingSourceResolver((descriptor,)).acquire()
 except ValueError as error:
     assert str(error) == "wan_source_invalid"
 else:
     raise AssertionError("FIFO source was accepted")
+elapsed = time.monotonic() - started
+assert elapsed < 1, elapsed
 assert len(os.listdir("/dev/fd")) == before
 """
 
+    # A blocking open never returns; the timeout bounds that hang, the child bounds acquire().
     completed = subprocess.run(
         [sys.executable, "-c", script],
         check=False,
         capture_output=True,
         text=True,
-        timeout=1,
+        timeout=60,
     )
 
     assert completed.returncode == 0, completed.stderr

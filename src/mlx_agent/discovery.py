@@ -32,6 +32,13 @@ CACHE_SCHEMA_VERSION = "2.0"
 # Concurrent Hugging Face model inspections during one discovery.
 INSPECTION_WORKERS = 6
 CACHE_TTL_SECONDS = 24 * 60 * 60
+# Ranking lenses: each orders candidates by its Hugging Face listing sort.
+SORTS = {
+    "downloads": "downloads",
+    "trending": "trendingScore",
+    "likes": "likes",
+    "newest": "createdAt",
+}
 
 
 @dataclass(frozen=True)
@@ -51,10 +58,12 @@ class DiscoveryRequest:
     new: bool = False
     fast: bool = False
     context_tokens: object = None
+    sort: object = None
+    search: object = None
 
     def cache_request(self):
         """The reproducible request shape, excluding transport-only cache switches."""
-        return {
+        shape = {
             "role": self.role,
             "memory_gb": self.memory_gb,
             "quantization": _canonical_quantization(self.quantization),
@@ -67,6 +76,17 @@ class DiscoveryRequest:
             "fast": self.fast,
             "context_tokens": self.context_tokens,
         }
+        # Lens keys appear only when set, so legacy cache entries keep their keys.
+        if self.sort is not None:
+            shape["sort"] = self.sort
+        if _normalise_search(self.search) is not None:
+            shape["search"] = _normalise_search(self.search)
+        return shape
+
+
+def _normalise_search(value):
+    text = " ".join(str(value).split()) if value is not None else ""
+    return text or None
 
 
 def _normalise_values(value):
@@ -139,6 +159,18 @@ def _kv_estimate(architecture, ram_gb, budget_gb, context_tokens):
     return block
 
 
+def _preview(repo, model, list_rank):
+    """The listing evidence a ranking reads, available before any inspection."""
+    return {
+        "repo": repo,
+        "trusted": repo.split("/", 1)[0].lower() in REPUTABLE,
+        "qrank": quant_rank(repo),
+        "downloads": model.get("downloads", 0),
+        "likes": model.get("likes", 0),
+        "list_rank": list_rank,
+    }
+
+
 def _estimates(ram, budget, kv_block):
     estimates = {"ram_gb": ram, "memory_budget_gb": budget, "headroom_fraction": 0.2}
     if kv_block is not None:
@@ -178,14 +210,21 @@ class DiscoveryService:
             return ResultEnvelope.ok("discover", self._response_data(request, cache[0], "fresh"))
 
         host = self.host
-        list_sort = "lastModified" if request.new else "trendingScore"
+        if request.sort is not None:
+            list_sort = SORTS[request.sort]
+        else:
+            list_sort = "lastModified" if request.new else "trendingScore"
+        search = _normalise_search(request.search)
+        list_options = {"sort": list_sort}
+        if search is not None:
+            list_options["search"] = search
         list_url_builder = getattr(self._huggingface, "list_models_url", None)
         list_url = (
-            list_url_builder(sort=list_sort, limit_fetch=300)
+            list_url_builder(limit_fetch=300, **list_options)
             if callable(list_url_builder) else None
         )
         try:
-            raw = self._huggingface.list_models(sort=list_sort)
+            raw = self._huggingface.list_models(**list_options)
         except Exception as error:
             return ResultEnvelope.fail(
                 "discover",
@@ -206,26 +245,95 @@ class DiscoveryService:
         with ThreadPoolExecutor(max_workers=min(INSPECTION_WORKERS, len(repos))) as pool:
             return dict(zip(repos, pool.map(self._huggingface.inspect_model, repos)))
 
+    def _ranking(self, request):
+        """The order every role list is sorted by; a lens keeps the Hugging Face order."""
+        if request.sort is not None:
+            return lambda candidate: (-candidate["list_rank"],)
+        return self._selection_key
+
     def _build_response(self, request, raw, host_data, list_url=None):
         buckets = {role: [] for role in DISCOVERY_ROLES}
         rejected = {}
         seen_repo, seen_base = set(), {}
         rejection_limit = max(1, int(request.limit or 1)) * 3
+        limit = max(0, int(request.limit))
+        ranking = self._ranking(request)
         listed = []
         for model in raw:
             repo = model.get("id") or model.get("modelId")
             if not repo or repo in seen_repo:
                 continue
             seen_repo.add(repo)
+            list_rank = len(seen_repo) - 1
             if (
                 request.role
                 and request.role != "tool-use"
                 and classify(repo) != request.role
             ):
                 continue
-            listed.append((repo, model))
-        enrichments = {} if request.fast else self._inspect_all([repo for repo, _model in listed])
-        for repo, model in listed:
+            if request.sort == "newest" and repo.split("/", 1)[0].lower() not in REPUTABLE:
+                continue
+            tags = model.get("tags") or []
+            # GGUF-only repositories carry no MLX weights, and their tree sums every quant file.
+            if "gguf" in tags and "safetensors" not in tags:
+                continue
+            listed.append((repo, model, list_rank))
+        # Walk in final rank order: a role list is settled once it holds `limit`
+        # candidates, because every later candidate ranks below them.
+        listed.sort(key=lambda entry: ranking(_preview(*entry)), reverse=True)
+        wanted = (request.role,) if request.role else DISCOVERY_ROLES
+        remaining = {role: 0 for role in DISCOVERY_ROLES}
+        for repo, _model, _rank in listed:
+            remaining[classify(repo)] += 1
+        unprocessed = len(listed)
+
+        def open_roles():
+            return {
+                role for role in wanted
+                if len(buckets[role]) < limit
+                and (remaining[role] if role != "tool-use" else unprocessed) > 0
+            }
+
+        position = 0
+        while position < len(listed):
+            still_open = open_roles()
+            if not still_open:
+                break
+            if request.fast:
+                batch_size = len(listed)
+            else:
+                deficit = sum(limit - len(buckets[role]) for role in still_open)
+                batch_size = max(INSPECTION_WORKERS, deficit)
+            batch = []
+            while position < len(listed) and len(batch) < batch_size:
+                entry = listed[position]
+                position += 1
+                remaining[classify(entry[0])] -= 1
+                unprocessed -= 1
+                # A repository whose role list is settled can still join tool-use.
+                if classify(entry[0]) in still_open or "tool-use" in still_open:
+                    batch.append(entry)
+            enrichments = {} if request.fast else self._inspect_all([repo for repo, _model, _rank in batch])
+            self._accept_batch(
+                batch, enrichments, request, host_data, list_url,
+                buckets, rejected, seen_base, rejection_limit, ranking,
+            )
+
+        for role in buckets:
+            buckets[role].sort(key=ranking, reverse=True)
+            buckets[role] = buckets[role][:limit]
+
+        return {
+            "host": host_data,
+            "fast": request.fast,
+            "roles": {role: items for role, items in buckets.items() if items},
+            "rejected": rejected,
+            "request": request.cache_request(),
+        }
+
+    def _accept_batch(self, batch, enrichments, request, host_data, list_url,
+                      buckets, rejected, seen_base, rejection_limit, ranking):
+        for repo, model, list_rank in batch:
             enrichment = {} if request.fast else enrichments[repo]
             roles, tool_use = classify_roles(repo, enrichment)
             selected_roles = (
@@ -246,6 +354,7 @@ class DiscoveryService:
                     enrichment,
                     request,
                     list_url,
+                    list_rank,
                 )
                 reasons = self._rejection_reasons(candidate, request)
                 candidate["rejection_reasons"] = reasons
@@ -256,7 +365,7 @@ class DiscoveryService:
                 key = (role, candidate["base"])
                 current = seen_base.get(key)
                 if current is not None:
-                    if self._selection_key(candidate) > self._selection_key(current):
+                    if ranking(candidate) > ranking(current):
                         buckets[role].remove(current)
                         buckets[role].append(candidate)
                         seen_base[key] = candidate
@@ -266,18 +375,6 @@ class DiscoveryService:
             if not accepted and rejected_candidate is not None:
                 if len(rejected) < rejection_limit:
                     rejected[repo] = rejected_candidate
-
-        for role in buckets:
-            buckets[role].sort(key=self._selection_key, reverse=True)
-            buckets[role] = buckets[role][: max(0, int(request.limit))]
-
-        return {
-            "host": host_data,
-            "fast": request.fast,
-            "roles": {role: items for role, items in buckets.items() if items},
-            "rejected": rejected,
-            "request": request.cache_request(),
-        }
 
     def _candidate(
         self,
@@ -290,6 +387,7 @@ class DiscoveryService:
         enrichment,
         request,
         list_url=None,
+        list_rank=0,
     ):
         ram, ram_source = resolve_ram(repo, enrichment)
         reasoning, reason_source = resolve_reasoning(repo, enrichment)
@@ -360,7 +458,9 @@ class DiscoveryService:
                 list_url,
             ),
             "rank_score": rank_score,
-            "selection_reasons": self._selection_reasons(role, quantization, trusted, fits),
+            # Position in the Hugging Face listing for the requested sort.
+            "list_rank": list_rank,
+            "selection_reasons": self._selection_reasons(role, quantization, trusted, fits, request.sort),
             "rejection_reasons": [],
         }
         if community_bench is not None:
@@ -436,8 +536,10 @@ class DiscoveryService:
         return records
 
     @staticmethod
-    def _selection_reasons(role, quantization, trusted, fits):
+    def _selection_reasons(role, quantization, trusted, fits, sort=None):
         reasons = ["role membership: {0}".format(role)]
+        if sort is not None:
+            reasons.append("ranked by Hugging Face {0} order".format(sort))
         if quantization:
             reasons.append("quantization inferred from repository name: {0}".format(quantization))
         if trusted:
@@ -533,6 +635,8 @@ class DiscoveryService:
             and request.include_gated
             and request.publishers is None
             and request.runtime is None
+            and request.sort is None
+            and _normalise_search(request.search) is None
             and not request.refresh
             and not request.offline
         )

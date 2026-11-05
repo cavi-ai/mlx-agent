@@ -120,6 +120,9 @@ def _add_discovery_arguments(parser):
     cache_group.add_argument("--offline", action="store_true", help="use only a matching local cache entry")
     parser.add_argument("--state-dir", help="directory for versioned discovery cache entries")
     parser.add_argument("--new", action="store_true", help="sort by most-recently-updated")
+    parser.add_argument("--sort", choices=["downloads", "trending", "likes", "newest"],
+                        help="rank each role by this Hugging Face order (newest: reputable publishers only)")
+    parser.add_argument("--search", help="match repository names on Hugging Face")
     parser.add_argument("--fast", action="store_true", help="skip per-model enrichment (name heuristics only)")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--wire", metavar="REPO", help="emit setup + config for a model, instead of discovering")
@@ -162,6 +165,8 @@ def _run_discovery(arguments, legacy):
         new=arguments.new,
         fast=arguments.fast,
         context_tokens=arguments.context_tokens,
+        sort=arguments.sort,
+        search=arguments.search,
     ))
     if fixture_warning:
         result = ResultEnvelope.ok("discover", result.data, warnings=[fixture_warning])

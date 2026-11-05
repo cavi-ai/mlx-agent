@@ -5,9 +5,23 @@ Scout discovers MLX models on Hugging Face, bucketed by role for this host: `gen
 ```bash
 python3 scripts/mlx-agent discover --role coding --limit 3
 python3 scripts/mlx-agent discover --new          # sort by Hub lastModified
+python3 scripts/mlx-agent discover --sort downloads --limit 4
+python3 scripts/mlx-agent discover --sort downloads --search "qwen3 coder"
 python3 scripts/mlx-agent discover --fast         # skip enrichment
 python3 scripts/mlx-agent discover --json
 ```
+
+## Lenses and search
+
+`--sort` ranks each role by a Hugging Face order instead of the publisher-first
+ranking: `downloads`, `trending`, `likes`, or `newest` (creation date, limited to
+the reputable publishers). Each candidate reports `list_rank`, its position in
+that listing, so a client can merge roles into one ranked list. `--search` sends
+its text to the Hub's repository-name search.
+
+Repositories tagged `gguf` without `safetensors` are left out: they hold no MLX
+weights. Discovery inspects repositories in rank order and stops once every
+requested role's list is final, so a small `--limit` sends few Hub requests.
 
 ## What makes the ranking honest
 

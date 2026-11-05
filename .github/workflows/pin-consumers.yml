@@ -1,0 +1,21 @@
+name: pin-consumers
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+permissions: {}
+jobs:
+  dispatch:
+    # A merge to main moves the mlx-agent pin in mlx-workbench through its pin-engine workflow.
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require CONSUMER_DISPATCH_TOKEN
+        env:
+          TOKEN: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
+        run: test -n "$TOKEN" || { echo "::error::Add the CONSUMER_DISPATCH_TOKEN repository secret"; exit 1; }
+      - name: Dispatch server-merged to mlx-workbench
+        env:
+          GH_TOKEN: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
+        run: gh api repos/cavi-ai/mlx-workbench/dispatches --method POST -f event_type=server-merged

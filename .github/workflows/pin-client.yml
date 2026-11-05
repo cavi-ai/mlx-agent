@@ -1,0 +1,54 @@
+name: pin-client
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [client-merged]
+permissions:
+  contents: read
+concurrency:
+  group: pin-client
+  cancel-in-progress: false
+jobs:
+  pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Fine-grained token: contents + pull requests write here.
+      - name: Require CONSUMER_DISPATCH_TOKEN
+        env:
+          TOKEN: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
+        run: test -n "$TOKEN" || { echo "::error::Add the CONSUMER_DISPATCH_TOKEN repository secret"; exit 1; }
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          token: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
+      - id: sync
+        env:
+          CLIENT: https://github.com/cavi-ai/cavi-api-client.git
+        run: |
+          to=$(git ls-remote "$CLIENT" refs/heads/main | cut -f1)
+          from=$(python3 -c 'import re; print(re.search(r"^cavi-api-client @ git\+\S+?@([0-9a-f]{40})#", open("requirements-dev.txt").read(), re.M)[1])')
+          test -n "$to"
+          if [ "$from" != "$to" ]; then
+            FROM="$from" TO="$to" python3 -c 'import os; p = "requirements-dev.txt"; t = open(p).read(); open(p, "w").write(t.replace("@" + os.environ["FROM"] + "#", "@" + os.environ["TO"] + "#"))'
+            echo "branch=bot/pin-client-${to:0:7}" >> "$GITHUB_OUTPUT"
+            echo "body=- cavi-api-client ${from:0:7} -> ${to:0:7}" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.sync.outputs.branch
+        env:
+          GH_TOKEN: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
+          BRANCH: ${{ steps.sync.outputs.branch }}
+          BODY: ${{ steps.sync.outputs.body }}
+        run: |
+          if git ls-remote --exit-code origin "refs/heads/$BRANCH" >/dev/null; then
+            echo "$BRANCH already proposed"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add requirements-dev.txt
+          git commit -q -m "chore: pin cavi-api-client to main"
+          git push -q origin "$BRANCH"
+          for old in $(gh pr list --state open --json number,headRefName -q '.[] | select(.headRefName | startswith("bot/pin-client-")) | .number'); do
+            gh pr close "$old" --delete-branch --comment "Superseded by a newer client pin."
+          done
+          gh pr create --head "$BRANCH" --title "chore: pin cavi-api-client to main" --body "$BODY"

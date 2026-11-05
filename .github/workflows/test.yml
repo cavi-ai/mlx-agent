@@ -26,13 +26,14 @@ jobs:
       - env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          BRANCH: ${{ github.head_ref }}
         run: |
           if git cat-file -e "$BASE:scripts/pin_guard.py"; then
             git show "$BASE:scripts/pin_guard.py" > "$RUNNER_TEMP/pin_guard.py"
           else
             cp scripts/pin_guard.py "$RUNNER_TEMP/pin_guard.py"
           fi
-          python3 "$RUNNER_TEMP/pin_guard.py" "$BASE" "$HEAD"
+          python3 "$RUNNER_TEMP/pin_guard.py" "$BASE" "$HEAD" "$BRANCH"
 
   contracts-and-install-lifecycle:
     name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
@@ -181,3 +182,27 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
         run: gh api repos/cavi-ai/mlx-workbench/dispatches --method POST -f event_type=server-merged
+
+  merge-client-pin:
+    needs: [contracts-and-install-lifecycle, coverage, experiment-engine]
+    if: >-
+      github.event_name == 'pull_request' &&
+      startsWith(github.head_ref, 'bot/pin-client-') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The pin bot's pull request merges itself once every gate passes.
+      - name: Merge the client pin
+        env:
+          GH_TOKEN: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          for file in $(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only); do
+            case "$file" in
+              requirements-dev.txt) ;;
+              *) echo "::error::$file is not part of a client pin"; exit 1 ;;
+            esac
+          done
+          gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --match-head-commit "$HEAD"

@@ -18,11 +18,30 @@ class MeshError(InferenceError):
 
 
 RESOLUTIONS = (32, 64, 128, 256, 512)
+DEFAULTS = {"steps": 50, "resolution": 512, "guidance": 7.0}
 MAX_FACES_RANGE = (1000, 10_000_000)
+RESOLUTION_RANGE = (16, 4096)
 
 
-def plan_mesh(model_path, image, out, steps=50, seed=42, resolution=512, guidance=7.0, max_faces=500_000,
+def _settings(config):
+    """A converted model's own mesh resolutions and defaults (its config ``mesh`` block), else the octree ones."""
+    mesh = config.get("mesh") if isinstance(config.get("mesh"), dict) else {}
+    resolutions = mesh.get("resolutions", RESOLUTIONS)
+    if not isinstance(resolutions, (list, tuple)) or not resolutions or not all(
+        type(value) is int and RESOLUTION_RANGE[0] <= value <= RESOLUTION_RANGE[1] for value in resolutions
+    ):
+        raise MeshError("model_unreadable", "The model config lists invalid mesh resolutions.", "Convert the model again.")
+    return tuple(resolutions), {key: mesh.get(key, value) for key, value in DEFAULTS.items()}
+
+
+def _choices(values):
+    values = [str(value) for value in values]
+    return values[0] if len(values) == 1 else "{0} or {1}".format(", ".join(values[:-1]), values[-1])
+
+
+def plan_mesh(model_path, image, out, steps=None, seed=42, resolution=None, guidance=None, max_faces=500_000,
               manifests=None, registries=None, root=None):
+    """The backend run for one image; unset steps, resolution and guidance take the model's own defaults."""
     model, image, target = (Path(value).expanduser().absolute() for value in (model_path, image, out))
     try:
         config = json.loads((model / "config.json").read_text())
@@ -30,14 +49,19 @@ def plan_mesh(model_path, image, out, steps=50, seed=42, resolution=512, guidanc
         raise MeshError("model_unreadable", "No readable converted model config.", "Pass --path to the converted model directory.") from error
     if not isinstance(config, dict):
         raise MeshError("model_unreadable", "Model config must be an object.", "Select a converted model.")
+    resolutions, defaults = _settings(config)
+    steps = defaults["steps"] if steps is None else steps
+    resolution = defaults["resolution"] if resolution is None else resolution
+    guidance = defaults["guidance"] if guidance is None else guidance
     if not image.is_file() or image.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
         raise MeshError("invalid_arguments", "--image must be an existing PNG, JPEG or WebP file.", "Select an input image.")
     if target.suffix.lower() != ".glb" or target.exists() or target.is_symlink() or not target.parent.is_dir():
         raise MeshError("invalid_arguments", "--out must be a new .glb path in an existing directory.", "Choose a new output path.")
     if type(steps) is not int or not 1 <= steps <= 100 or type(seed) is not int or not 0 <= seed < 2**32:
         raise MeshError("invalid_arguments", "Steps must be 1..100 and seed 0..4294967295.", "Use --steps 50 --seed 42.")
-    if type(resolution) is not int or resolution not in RESOLUTIONS:
-        raise MeshError("invalid_arguments", "Resolution must be 32, 64, 128, 256 or 512.", "Use --resolution 512.")
+    if type(resolution) is not int or resolution not in resolutions:
+        raise MeshError("invalid_arguments", "Resolution must be {0}.".format(_choices(resolutions)),
+                        "Use --resolution {0}.".format(defaults["resolution"]))
     if type(max_faces) is not int or not MAX_FACES_RANGE[0] <= max_faces <= MAX_FACES_RANGE[1]:
         raise MeshError("invalid_arguments", "Max faces must be 1000..10000000.", "Use --max-faces 500000.")
     if type(guidance) not in (int, float) or not math.isfinite(guidance) or not 1 <= guidance <= 20:

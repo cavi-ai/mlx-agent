@@ -188,6 +188,35 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual(client.header_requests, ["model.safetensors"])
         self.assertEqual([m["module"] for m in payload["components"][0]["matches"]], ["mlx_embeddings.classifiers.laya"])
 
+    def test_trellis2_download_counts_its_port_files_and_the_files_it_reads_elsewhere(self):
+        from .test_backends import TRELLIS2_FILES
+
+        def listing(repo, sizes):
+            return {"id": repo, "sha": "a" * 40, "pipeline_tag": "image-to-3d", "tags": [], "gated": False, "config": {},
+                    "siblings": [{"rfilename": name, "size": size} for name, size in sizes.items()]}
+
+        infos = {
+            "microsoft/TRELLIS.2-4B": listing("microsoft/TRELLIS.2-4B", {name: 1000 for name in TRELLIS2_FILES}),
+            "microsoft/TRELLIS-image-large": listing("microsoft/TRELLIS-image-large", {
+                "ckpts/ss_dec_conv3d_16l8_fp16.json": 300, "ckpts/ss_dec_conv3d_16l8_fp16.safetensors": 147_000_000,
+                "ckpts/slat_dec_gs_swin8_B_64l8gs32_fp16.safetensors": 9_000_000_000}),
+            "facebook/dinov3-vitl16-pretrain-lvd1689m": listing("facebook/dinov3-vitl16-pretrain-lvd1689m", {
+                "config.json": 700, "model.safetensors": 1_212_559_808, "README.md": 50}),
+        }
+        manifests = load_manifests()
+        registries = load_registries(manifests, root=Path("/nonexistent"), find_spec=lambda name: None)
+        payload = resolve("microsoft/TRELLIS.2-4B", client=ReposClient(infos), manifests=manifests, registries=registries)
+        self.validator.validate(payload)
+        self.assertEqual((payload["verdict"], payload["backend"], payload["model_type"]),
+                         ("convertible_after_install", "mlx-3d", "trellis2"))
+        self.assertEqual(payload["download_bytes"], 10 * 1000 + 300 + 147_000_000 + 700 + 1_212_559_808)
+        self.assertEqual(payload["warnings"], [])
+        del infos["facebook/dinov3-vitl16-pretrain-lvd1689m"]
+        payload = resolve("microsoft/TRELLIS.2-4B", client=ReposClient(infos), manifests=manifests, registries=registries)
+        self.assertEqual(payload["download_bytes"], 10 * 1000 + 300 + 147_000_000)
+        self.assertEqual(len(payload["warnings"]), 1)
+        self.assertTrue(payload["warnings"][0].startswith("facebook/dinov3-vitl16-pretrain-lvd1689m size unavailable"))
+
     def test_laya_estimate_uses_the_port_group_size_and_its_signature_files(self):
         _, payload = golden_laya()
         self.assertEqual(payload["estimated_output_bytes"], {"4": 339744590, "5": 385783630, "6": 431822670, "8": 523900750})

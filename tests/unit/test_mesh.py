@@ -87,6 +87,39 @@ class MeshPlanningTests(unittest.TestCase):
             self.plan()
         self.assertEqual(self.out.read_bytes(), b'keep')
 
+    def use_trellis2(self, **mesh):
+        settings = dict({'resolutions': [512, 1024, 1536], 'resolution': 1024, 'steps': 12, 'guidance': 7.5}, **mesh)
+        (self.model / 'config.json').write_text(json.dumps({'model_type': 'trellis2', 'mesh': settings}))
+
+    def test_each_model_runs_its_port_at_its_own_defaults(self):
+        args = self.plan()['argv']
+        self.assertEqual([args[args.index(flag)+1] for flag in ('--resolution', '--steps', '--guidance')], ['512', '50', '7.0'])
+        self.use_trellis2()
+        args = self.plan()['argv']
+        self.assertEqual(args[args.index('--module')+1], 'mlx.mlx_agent_ports.trellis2')
+        self.assertEqual([args[args.index(flag)+1] for flag in ('--resolution', '--steps', '--guidance')], ['1024', '12', '7.5'])
+        args = self.plan(resolution=1536, steps=30, guidance=3.0)['argv']
+        self.assertEqual([args[args.index(flag)+1] for flag in ('--resolution', '--steps', '--guidance')], ['1536', '30', '3.0'])
+
+    def test_trellis2_refuses_resolutions_its_cascade_lacks(self):
+        self.use_trellis2()
+        for resolution in (256, 2048):
+            with self.subTest(resolution=resolution), self.assertRaises(MeshError) as caught:
+                self.plan(resolution=resolution)
+            self.assertEqual(caught.exception.code, 'invalid_arguments')
+            self.assertEqual(str(caught.exception), 'Resolution must be 512, 1024 or 1536.')
+            self.assertEqual(caught.exception.remediation, 'Use --resolution 1024.')
+        code, output = self.cli('--resolution', '256')
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(output)['error']['code'], 'invalid_arguments')
+
+    def test_a_model_with_unreadable_mesh_resolutions_is_refused(self):
+        for resolutions in ([], [8], 'all', [512.0], [True]):
+            self.use_trellis2(resolutions=resolutions)
+            with self.subTest(resolutions=resolutions), self.assertRaises(MeshError) as caught:
+                self.plan()
+            self.assertEqual(caught.exception.code, 'model_unreadable')
+
     def test_scan_taxonomy_distinguishes_mesh_from_chat(self):
         result = classify('TripoSG', model_type='triposg', manifests=self.manifests,
                           registries=load_registries(self.manifests, self.root/'backends'), local=True)

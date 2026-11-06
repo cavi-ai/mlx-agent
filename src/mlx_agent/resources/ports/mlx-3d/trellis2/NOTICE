@@ -1,0 +1,3 @@
+The flow transformers, sampler, decoders and dual-grid mesh extraction are adapted to MLX from microsoft/TRELLIS.2 (MIT).
+The DINOv3 image encoder follows the Hugging Face transformers DINOv3 ViT implementation.
+The implementation was changed for native MLX evaluation.

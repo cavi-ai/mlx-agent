@@ -58,6 +58,47 @@ class FetchTests(unittest.TestCase):
         single = plan_fetch("org/name", file="a.gguf", python="/venv/bin/python", model_type="laya")
         self.assertEqual((single["allow_patterns"], single["file"]), ([], "a.gguf"))
 
+    def test_a_port_that_reads_other_repositories_downloads_their_files_too(self):
+        plan = plan_fetch("microsoft/TRELLIS.2-4B", hf_cache="/hf", python="/venv/bin/python", model_type="trellis2")
+        requires = load_manifests()["mlx-3d"]["port_requires"]["trellis2"]
+        self.assertEqual(plan["requires"], {repo: requires[repo] for repo in sorted(requires)})
+        argv = plan["argv"]
+        pulled = [argv[index + 1] for index, value in enumerate(argv) if value == "--require"]
+        self.assertEqual(pulled, ["facebook/dinov3-vitl16-pretrain-lvd1689m=config.json",
+                                  "facebook/dinov3-vitl16-pretrain-lvd1689m=model.safetensors",
+                                  "microsoft/TRELLIS-image-large=ckpts/ss_dec_conv3d_16l8_fp16.json",
+                                  "microsoft/TRELLIS-image-large=ckpts/ss_dec_conv3d_16l8_fp16.safetensors"])
+        self.assertEqual(argv[-2:], ["--cache-dir", "/hf"])
+        self.assertNotIn("requires", plan_fetch("VAST-AI/TripoSG", python="/venv/bin/python", model_type="triposg"))
+        single = plan_fetch("microsoft/TRELLIS.2-4B", file="a.gguf", python="/venv/bin/python", model_type="trellis2")
+        self.assertNotIn("--require", single["argv"])
+
+    def test_runner_requests_required_files_before_the_snapshot(self):
+        marker = self.base / "m.done.json"
+        requests = []
+
+        def hub(**kwargs):
+            requests.append(kwargs)
+            if kwargs["repo_id"] == "gated/encoder":
+                raise PermissionError("403 gated")
+            return "/hf/snapshot"
+
+        argv = ["--repo", "org/model", "--revision", "main", "--allow", "pipeline.json",
+                "--require", "other/decoder=ckpts/dec.json", "--require", "other/decoder=ckpts/dec.safetensors",
+                "--cache-dir", "/hf", "--marker", str(marker)]
+        self.assertEqual(fetch_runner.main(argv, download=hub), 0)
+        self.assertEqual(requests, [
+            {"repo_id": "other/decoder", "allow_patterns": ["ckpts/dec.json", "ckpts/dec.safetensors"], "cache_dir": "/hf"},
+            {"repo_id": "org/model", "revision": "main", "allow_patterns": ["pipeline.json"], "cache_dir": "/hf"},
+        ])
+        requests.clear()
+        code = fetch_runner.main(argv[:-2] + ["--require", "gated/encoder=model.safetensors", "--marker", str(marker)],
+                                 download=hub)
+        self.assertEqual(code, 1)
+        self.assertEqual([request["repo_id"] for request in requests], ["gated/encoder"])
+        result = json.loads(marker.read_text(encoding="utf-8"))
+        self.assertEqual((result["exit_status"], result["error"]), ("failed", "403 gated"))
+
     def test_a_subfolder_snapshot_downloads_only_that_folder(self):
         ported = plan_fetch("convaiinnovations/laya/multilingual", python="/venv/bin/python", model_type="laya")
         files = load_manifests()["mlx-embeddings"]["port_signatures"]["laya"]

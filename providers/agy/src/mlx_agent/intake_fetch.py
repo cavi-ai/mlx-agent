@@ -9,7 +9,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .backends import backend_environment, load_manifests, recipe_for, snapshot_files, spawn_with_env
+from .backends import (
+    backend_environment, load_manifests, port_requirements, recipe_for, snapshot_files, spawn_with_env,
+)
 from .convert import _default_module_present, _write_receipt, receipts_root
 from .intake_source import parse_hf_source, validate_file, validate_revision
 from .serve import _pid_alive
@@ -55,6 +57,7 @@ def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, py
     ignore_patterns, allow_patterns = [], []
     prefix = source["subfolder"] + "/" if source.get("subfolder") else ""
     ported = recipe = None
+    requires = {}
     if not source["file"] and model_type:
         manifests = load_manifests() if manifests is None else manifests
         ported = snapshot_files(model_type, manifests)
@@ -80,6 +83,9 @@ def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, py
             argv += ["--allow", name]
         for pattern in ignore_patterns:
             argv += ["--ignore", pattern]
+        requires = port_requirements(model_type, manifests) if ported and not prefix else {}
+        for repo, names in sorted(requires.items()):
+            argv += [item for name in names for item in ("--require", repo + "=" + name)]
     if hf_cache:
         argv += ["--cache-dir", str(hf_cache)]
     if local is not None:
@@ -97,6 +103,8 @@ def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, py
         "allow_patterns": allow_patterns,
         "slug": slug, "argv": argv, "network": ["huggingface.co"],
     }
+    if requires:
+        plan["requires"] = {repo: list(names) for repo, names in sorted(requires.items())}
     canonical = json.dumps(plan, sort_keys=True, separators=(",", ":"))
     plan["preview_hash"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return plan

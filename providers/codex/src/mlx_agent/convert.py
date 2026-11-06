@@ -19,6 +19,7 @@ from .backends import (
     load_manifests,
     port_bits,
     port_converter,
+    port_requirements,
     recipe_for,
     read_install_marker,
     spawn_with_env,
@@ -203,6 +204,11 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
     if recipe and recipe["backend"] == backend and recipe["port"] == model_type:
         flags = _recipe_flags(recipe, flags, hf_cache)
         plan["recipe"] = {key: recipe[key] for key in ("base", "base_revision", "lora", "lora_scale")}
+    requires = _required_sources(repo, model_type, manifests, hf_cache) if converter else {}
+    for name, path in requires.items():
+        flags += ["--requires", "{0}={1}".format(name, path)]
+    if requires:
+        plan["requires"] = requires
     if backend == "mlx-audio" and _is_quantized_music_source(hf_path):
         plan["argv"] = [str(python), str(MUSIC_REQUANTIZE_RUNNER)] + flags
     else:
@@ -223,6 +229,22 @@ def _is_quantized_music_source(path):
         return False
     return (isinstance(config, dict) and config.get("model_type") == "minimax_music3"
             and isinstance(config.get("quantization"), dict) and bool(config["quantization"]))
+
+
+def _required_sources(repo, model_type, manifests, hf_cache):
+    """Cached snapshots of the other repositories a port's converter reads, each holding the files it needs."""
+    found = {}
+    for name, files in sorted(port_requirements(model_type, manifests).items()):
+        snapshot = cached_snapshot(name, hf_cache)
+        missing = [item for item in files if snapshot is None or not (snapshot / item).is_file()]
+        if missing:
+            raise ConvertError(
+                "requirement_not_cached",
+                "{0} also needs {1} from {2} in the Hugging Face cache.".format(model_type, ", ".join(missing), name),
+                "Download it first: mlx-agent intake fetch {0} --model-type {1}.".format(repo, model_type),
+            )
+        found[name] = str(snapshot)
+    return found
 
 
 def _recipe_flags(recipe, flags, hf_cache):

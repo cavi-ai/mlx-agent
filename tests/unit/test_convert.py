@@ -260,6 +260,49 @@ class BackendConvertTests(unittest.TestCase):
         self.assertEqual(pipeline["argv"][pipeline["argv"].index("--hf-path") + 1], "Qwen/Qwen-Image-2.1")
         self.assertNotIn("recipe", pipeline)
 
+    def test_trellis2_converts_with_the_cached_files_it_reads_from_other_repositories(self):
+        hub = str(self.root / "hub")
+        source = self.cache("microsoft/TRELLIS.2-4B", ".")
+        options = dict(q_bits=32, backend="mlx-3d", model_type="trellis2", hf_cache=hub, backends_root_dir=self.root)
+        with self.assertRaises(ConvertError) as caught:
+            plan_convert("microsoft/TRELLIS.2-4B", **options)
+        self.assertEqual(caught.exception.code, "requirement_not_cached")
+        self.assertEqual(caught.exception.remediation,
+                         "Download it first: mlx-agent intake fetch microsoft/TRELLIS.2-4B --model-type trellis2.")
+        encoder = self.cache("facebook/dinov3-vitl16-pretrain-lvd1689m", ".")
+        decoder = self.cache("microsoft/TRELLIS-image-large", ".")
+        (decoder / "ckpts").mkdir()
+        for folder, names in ((encoder, ("config.json", "model.safetensors")),
+                              (decoder, ("ckpts/ss_dec_conv3d_16l8_fp16.json",))):
+            for name in names:
+                (folder / name).write_text("{}", encoding="utf-8")
+        with self.assertRaises(ConvertError) as caught:
+            plan_convert("microsoft/TRELLIS.2-4B", **options)
+        self.assertIn("ckpts/ss_dec_conv3d_16l8_fp16.safetensors", str(caught.exception))
+        (decoder / "ckpts/ss_dec_conv3d_16l8_fp16.safetensors").write_bytes(b"x")
+        plan = plan_convert("microsoft/TRELLIS.2-4B", **options)
+        argv = plan["argv"]
+        self.assertEqual(argv[1:3], ["-m", "mlx.mlx_agent_ports.trellis2.convert"])
+        self.assertEqual(argv[argv.index("--hf-path") + 1], str(source))
+        self.assertEqual([argv[index + 1] for index, value in enumerate(argv) if value == "--requires"],
+                         ["facebook/dinov3-vitl16-pretrain-lvd1689m={0}".format(encoder),
+                          "microsoft/TRELLIS-image-large={0}".format(decoder)])
+        self.assertEqual(plan["requires"], {"facebook/dinov3-vitl16-pretrain-lvd1689m": str(encoder),
+                                            "microsoft/TRELLIS-image-large": str(decoder)})
+        venv = self.root / "mlx-3d"
+        (venv / "lib" / "python3.12" / "site-packages" / "mlx").mkdir(parents=True)
+        (venv / "bin").mkdir()
+        (venv / "bin" / "python").write_text("", encoding="utf-8")
+        (venv / ".mlx-agent-backend.json").write_text(json.dumps({"id": "mlx-3d", "version": "0.31.1"}), encoding="utf-8")
+        plan = plan_convert("microsoft/TRELLIS.2-4B", out=str(self.root / "trellis2-out"), **options)
+        outcome = start_convert(plan, receipts_dir=str(self.root), confirm=True, preview_hash=plan["preview_hash"],
+                                spawn=lambda argv, log: 99, model_present=lambda repo: True)
+        RECEIPT_SCHEMA.validate(outcome["receipt"])
+        self.assertEqual(outcome["receipt"]["q_bits"], 32)
+        self.assertTrue((venv / "lib" / "python3.12" / "site-packages" / "mlx" / "mlx_agent_ports" / "trellis2" / "convert.py").is_file())
+        self.assertNotIn("requires", plan_convert("VAST-AI/TripoSG", q_bits=32, backend="mlx-3d", model_type="triposg",
+                                                  hf_cache=hub, backends_root_dir=self.root))
+
     def test_a_wan_checkpoint_converts_with_the_mlx_video_port_converter(self):
         plan = plan_convert("Wan-AI/Wan2.1-T2V-1.3B", hf_cache=self.root / "empty-cache", q_bits=4, backend="mlx-video", model_type="t2v",
                             out=str(self.root / "wan"), backends_root_dir=self.root)

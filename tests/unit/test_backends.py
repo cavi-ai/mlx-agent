@@ -27,6 +27,7 @@ from mlx_agent.backends import (
     port_converter,
     port_files,
     port_for_files,
+    port_requirements,
     probe_sources_from_wheel,
     quantize_rule,
     registry_from_sources,
@@ -406,6 +407,82 @@ class ClassificationPortTests(unittest.TestCase):
         self.assertEqual(conversion_bits("qwen2", "mlx-lm", self.manifests), [4, 5, 6, 8])
         self.assertEqual(conversion_bits("qwen2_vl", "mlx-vlm", self.manifests), [4, 5, 6, 8])
         self.assertEqual(conversion_bits("triposg", "mlx-3d", self.manifests), [8, 32])
+
+
+TRELLIS2_FILES = [
+    ".gitattributes", "README.md", "pipeline.json", "texturing_pipeline.json",
+    "ckpts/shape_dec_next_dc_f16c32_fp16.json", "ckpts/shape_dec_next_dc_f16c32_fp16.safetensors",
+    "ckpts/shape_enc_next_dc_f16c32_fp16.json", "ckpts/shape_enc_next_dc_f16c32_fp16.safetensors",
+    "ckpts/slat_flow_img2shape_dit_1_3B_1024_bf16.json", "ckpts/slat_flow_img2shape_dit_1_3B_1024_bf16.safetensors",
+    "ckpts/slat_flow_img2shape_dit_1_3B_512_bf16.json", "ckpts/slat_flow_img2shape_dit_1_3B_512_bf16.safetensors",
+    "ckpts/slat_flow_imgshape2tex_dit_1_3B_1024_bf16.json", "ckpts/slat_flow_imgshape2tex_dit_1_3B_1024_bf16.safetensors",
+    "ckpts/slat_flow_imgshape2tex_dit_1_3B_512_bf16.json", "ckpts/slat_flow_imgshape2tex_dit_1_3B_512_bf16.safetensors",
+    "ckpts/ss_flow_img_dit_1_3B_64_bf16.json", "ckpts/ss_flow_img_dit_1_3B_64_bf16.safetensors",
+    "ckpts/tex_dec_next_dc_f16c32_fp16.json", "ckpts/tex_dec_next_dc_f16c32_fp16.safetensors",
+    "ckpts/tex_enc_next_dc_f16c32_fp16.json", "ckpts/tex_enc_next_dc_f16c32_fp16.safetensors",
+]
+PIXAL3D_FILES = [
+    ".gitattributes", "LICENSE", "NOTICE", "README.md", "pipeline.json", "pipeline_mv.json",
+    "ckpts/shape_dec_next_dc_f16c32_fp16.json", "ckpts/shape_dec_next_dc_f16c32_fp16.safetensors",
+    "ckpts/slat_flow_img2shape_dit_1_3B_1024_bf16.json", "ckpts/slat_flow_img2shape_dit_1_3B_1024_bf16.safetensors",
+    "ckpts/slat_flow_img2shape_dit_1_3B_1024_bf16_mv.json", "ckpts/slat_flow_img2shape_dit_1_3B_1024_bf16_mv.safetensors",
+    "ckpts/slat_flow_img2shape_dit_1_3B_512_bf16.json", "ckpts/slat_flow_img2shape_dit_1_3B_512_bf16.safetensors",
+    "ckpts/slat_flow_img2shape_dit_1_3B_512_bf16_mv.json", "ckpts/slat_flow_img2shape_dit_1_3B_512_bf16_mv.safetensors",
+    "ckpts/slat_flow_imgshape2tex_dit_1_3B_1024_bf16.json", "ckpts/slat_flow_imgshape2tex_dit_1_3B_1024_bf16.safetensors",
+    "ckpts/slat_flow_imgshape2tex_dit_1_3B_1024_bf16_mv.json",
+    "ckpts/slat_flow_imgshape2tex_dit_1_3B_1024_bf16_mv.safetensors",
+    "ckpts/ss_dec_conv3d_16l8_fp16.json", "ckpts/ss_dec_conv3d_16l8_fp16.safetensors",
+    "ckpts/ss_flow_img_dit_1_3B_64_bf16.json", "ckpts/ss_flow_img_dit_1_3B_64_bf16.safetensors",
+    "ckpts/ss_flow_img_dit_1_3B_64_bf16_mv.json", "ckpts/ss_flow_img_dit_1_3B_64_bf16_mv.safetensors",
+    "ckpts/tex_dec_next_dc_f16c32_fp16.json", "ckpts/tex_dec_next_dc_f16c32_fp16.safetensors",
+]
+
+
+class MeshPortTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.manifests = load_manifests()
+
+    def load_with(self, **fields):
+        directory = Path(self.directory.name) / "manifests"
+        directory.mkdir(exist_ok=True)
+        (directory / "mlx-3d.json").write_text(json.dumps(dict(self.manifests["mlx-3d"], **fields)), encoding="utf-8")
+        return load_manifests(directory)
+
+    def test_a_trellis2_snapshot_is_recognized_by_its_files_and_pixal3d_is_not(self):
+        self.assertEqual(port_for_files(TRELLIS2_FILES, self.manifests), "trellis2")
+        self.assertIsNone(port_for_files(PIXAL3D_FILES, self.manifests))
+        self.assertIsNone(port_for_files([name for name in TRELLIS2_FILES if name != "texturing_pipeline.json"], self.manifests))
+        self.assertEqual(port_converter("trellis2", "mlx-3d", self.manifests), "mlx.mlx_agent_ports.trellis2.convert")
+        self.assertEqual(conversion_bits("trellis2", "mlx-3d", self.manifests), [8, 32])
+        registries = load_registries(self.manifests, root=Path(self.directory.name), find_spec=lambda name: None)
+        self.assertEqual([(hit["backend"], hit["category"]) for hit in lookup("trellis2", self.manifests, registries)],
+                         [("mlx-3d", "mesh_generation")])
+
+    def test_trellis2_names_the_files_its_converter_reads_from_other_repositories(self):
+        self.assertEqual(port_requirements("TRELLIS2", self.manifests), {
+            "microsoft/TRELLIS-image-large": ["ckpts/ss_dec_conv3d_16l8_fp16.json", "ckpts/ss_dec_conv3d_16l8_fp16.safetensors"],
+            "facebook/dinov3-vitl16-pretrain-lvd1689m": ["config.json", "model.safetensors"],
+        })
+        self.assertEqual(port_requirements("triposg", self.manifests), {})
+        self.assertEqual(port_requirements(None, self.manifests), {})
+
+    def test_port_requirements_are_validated(self):
+        files = ["config.json"]
+        bad = [
+            [], {"other": {"org/repo": files}}, {"trellis2": {}}, {"trellis2": []},
+            {"trellis2": {"not-a-repo": files}}, {"trellis2": {"org/repo/extra": files}}, {"trellis2": {"org/repo": []}},
+            {"trellis2": {"org/repo": ["../config.json"]}}, {"trellis2": {"org/repo": ["/config.json"]}},
+            {"trellis2": {"org/repo": [3]}}, {"trellis2": {"org/repo": "config.json"}},
+        ]
+        for requires in bad:
+            with self.subTest(requires=requires):
+                with self.assertRaises(BackendError) as caught:
+                    self.load_with(port_requires=requires)
+                self.assertEqual(caught.exception.code, "manifest_invalid")
+        self.assertEqual(port_requirements("trellis2", self.load_with(port_requires={"trellis2": {"org/repo": files}})),
+                         {"org/repo": files})
 
 
 if __name__ == "__main__":

@@ -454,7 +454,7 @@
     },
     {
       "path": "src/mlx_agent/backends.py",
-      "sha256": "f863ec469fb1edd82f03b3b7deee422ab5b837e2acdc92672bd570153bc51d4d"
+      "sha256": "7b1b7522cffb0cdff751875c1f6722b5227da4f43d4542824d6399294088d9d7"
     },
     {
       "path": "src/mlx_agent/bench.py",
@@ -478,7 +478,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "efa1a45b7648be3e0bc2bb2ca7851f83c0fe12ecb3b1aa1bdb3f997f68bffe88"
+      "sha256": "81b3ae05d858ce67f10e2ac6214bb14d324d11f6c1ee95a23e26da186b57bd8d"
     },
     {
       "path": "src/mlx_agent/coding_capture.py",
@@ -530,7 +530,7 @@
     },
     {
       "path": "src/mlx_agent/convert.py",
-      "sha256": "bed51d561d5f60f5ca7aa8a3abe2c742dbb01daf1f35c6a6319d36e0f0766928"
+      "sha256": "5d77c17561e316621e0a13c0f17337027f1461861733c58b9d7109d10b3277ef"
     },
     {
       "path": "src/mlx_agent/convert_queue.py",
@@ -558,7 +558,7 @@
     },
     {
       "path": "src/mlx_agent/fetch_runner.py",
-      "sha256": "07729cadbdaea2d16de3c1d64a38750a69928fc0e35e38da8eae65fdca1c7311"
+      "sha256": "3eb159b156a4c88ecd4b56655b83d58fd5dc37d26034dccb364286481374bfcd"
     },
     {
       "path": "src/mlx_agent/fleet.py",
@@ -602,11 +602,11 @@
     },
     {
       "path": "src/mlx_agent/intake.py",
-      "sha256": "084c8ca6039cd18a3e49082230c7ea26fb629ad32c0a8f268476e5afa900cf02"
+      "sha256": "6783abc120fee0ffd195d2ec1df9de9ce2b1b1f79748336047488c37c926e91f"
     },
     {
       "path": "src/mlx_agent/intake_fetch.py",
-      "sha256": "834091b7233a90b15854fffd4787babc23f923fd41cfb80a6218639a1ff3e4f0"
+      "sha256": "adb1eb8d8f14c1ec564e523a60edf30314cd3c5d6be0e70a6fd9546d34be5a78"
     },
     {
       "path": "src/mlx_agent/intake_source.py",
@@ -650,7 +650,7 @@
     },
     {
       "path": "src/mlx_agent/mesh.py",
-      "sha256": "c9f2a2da2d41526787869773d30cb59eff23ecd57edfb99e195fa0690de2bcec"
+      "sha256": "f0396e5816e4252845a2e9ce8b48a97f21d77b14159fd78f8ca0e4e6a23631ca"
     },
     {
       "path": "src/mlx_agent/mesh_runner.py",
@@ -738,7 +738,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-3d.json",
-      "sha256": "174c70cbea15d8544add38f3fb020046a2a41bbd907a1b6be64f7ed8121637d7"
+      "sha256": "e9b218f54c2cdc7abed34d3a84a29104bac481de80f4b47d6aaf72215494c593"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-3d.lock",
@@ -823,6 +823,46 @@
     {
       "path": "src/mlx_agent/resources/ports/mflux/qwen_image_21/qwen_image_21.py",
       "sha256": "49ee886e968c1856e0bafb14db5767332d690742eeaa979064fb9ab5d68758d3"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/trellis2/LICENSE",
+      "sha256": "d9a1b1e30d633d5732ea18e3cba9538d293ebc53e1a9e4e96ab739e0c5c4f1cb"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/trellis2/NOTICE",
+      "sha256": "a614175dee461ecd9e2f14ec049c46dd53e52fef9d91bb9ab84fbf90c0495cb4"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/trellis2/__init__.py",
+      "sha256": "e4190319c89f2329800312004166604b81c6d3be2f92a1d1290b85235ea020bd"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/trellis2/convert.py",
+      "sha256": "d9de23ad5ea8df84f06172327f45fa54682a4cc5318d510921382547f59d735a"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/trellis2/dinov3.py",
+      "sha256": "9bcc29150c634ef7b4081b6965beafb32f9d9344713a1bd50b31ba07f51a14e6"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/trellis2/dual_grid.py",
+      "sha256": "fb5df53f9318cbb7dcf09c7b578e7d2ad9626a2413bd0e1d2f11bd2a5e67e6c5"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/trellis2/flow.py",
+      "sha256": "7aca316bd82f27df4a383dd848d95fab6b03aa3ebc78d1d8fba802a72ca12ac0"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/trellis2/pipeline.py",
+      "sha256": "2154b627db92b3b88e647f0600e7e180896d0ba6e00f5ccbeeff1648919fe90f"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/trellis2/sparse.py",
+      "sha256": "2b9a71506ca3797dbb458acd6d4d8f0f3f6994862b9db3ca4918c3eef24be26a"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/trellis2/structure.py",
+      "sha256": "e2886123c471ff461d88b0fff771b4815acae6ae89d9d42459577b4abaa4904b"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/LICENSE",

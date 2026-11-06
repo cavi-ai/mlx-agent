@@ -4,10 +4,10 @@ Backend manifests describe converters and model types. Built-in `mlx-lm` uses
 the main runtime environment. Optional backends have separate locked environments
 for vision, audio, embeddings/classification, image generation, video generation, and 3D generation.
 
-`mlx-3d` supplies native MLX TripoSG conversion and image-to-mesh generation.
+`mlx-3d` supplies native MLX TripoSG and TRELLIS.2 conversion and image-to-mesh generation.
 It uses a separate Python 3.12 environment with pinned MLX, image-processing and
-surface-extraction dependencies. It does not install or execute TripoSG's PyTorch
-runtime. Install it with the same preview and confirmation steps below, using
+surface-extraction dependencies. It does not install or execute the PyTorch
+runtime of either model. Install it with the same preview and confirmation steps below, using
 `mlx-3d` as the backend ID.
 
 ## Inspect availability

@@ -9,8 +9,31 @@
   "categories": {"mesh_generation": "mlx_agent_ports"},
   "remap_files": {},
   "registry": {"mesh_generation": {"model_types": [], "remapping": {}}},
-  "ports": {"mesh_generation": ["triposg"]},
-  "port_convert": {"triposg": "convert"},
-  "port_bits": {"triposg": [8, 32]},
-  "port_pipelines": {"TripoSGPipeline": "triposg"}
+  "ports": {"mesh_generation": ["triposg", "trellis2"]},
+  "port_convert": {"triposg": "convert", "trellis2": "convert"},
+  "port_bits": {"triposg": [8, 32], "trellis2": [8, 32]},
+  "port_pipelines": {"TripoSGPipeline": "triposg"},
+  "port_signatures": {
+    "trellis2": [
+      "pipeline.json",
+      "texturing_pipeline.json",
+      "ckpts/ss_flow_img_dit_1_3B_64_bf16.json",
+      "ckpts/ss_flow_img_dit_1_3B_64_bf16.safetensors",
+      "ckpts/slat_flow_img2shape_dit_1_3B_512_bf16.json",
+      "ckpts/slat_flow_img2shape_dit_1_3B_512_bf16.safetensors",
+      "ckpts/slat_flow_img2shape_dit_1_3B_1024_bf16.json",
+      "ckpts/slat_flow_img2shape_dit_1_3B_1024_bf16.safetensors",
+      "ckpts/shape_dec_next_dc_f16c32_fp16.json",
+      "ckpts/shape_dec_next_dc_f16c32_fp16.safetensors"
+    ]
+  },
+  "port_requires": {
+    "trellis2": {
+      "microsoft/TRELLIS-image-large": [
+        "ckpts/ss_dec_conv3d_16l8_fp16.json",
+        "ckpts/ss_dec_conv3d_16l8_fp16.safetensors"
+      ],
+      "facebook/dinov3-vitl16-pretrain-lvd1689m": ["config.json", "model.safetensors"]
+    }
+  }
 }

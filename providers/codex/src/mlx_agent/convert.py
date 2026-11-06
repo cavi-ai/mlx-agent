@@ -16,9 +16,12 @@ from .backends import (
     backend_environment,
     backend_python,
     conversion_bits,
+    download_name,
+    download_path,
     load_manifests,
     port_bits,
     port_converter,
+    port_downloads,
     port_requirements,
     recipe_for,
     read_install_marker,
@@ -101,7 +104,7 @@ def cached_subfolder(repo, subfolder, hf_cache=None):
 
 
 def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backends_root_dir=None, model_type=None,
-                 subfolder=None, hf_cache=None, source_path=None):
+                 subfolder=None, hf_cache=None, source_path=None, downloads_dir=None):
     """Render the exact conversion plan; side-effect free (a subfolder is looked up in the cache).
 
     ``model_type`` (from intake) selects a port's own converter when the port
@@ -209,6 +212,11 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
         flags += ["--requires", "{0}={1}".format(name, path)]
     if requires:
         plan["requires"] = requires
+    downloads = _required_downloads(repo, model_type, manifests, downloads_dir) if converter else {}
+    for name, path in downloads.items():
+        flags += ["--download", "{0}={1}".format(name, path)]
+    if downloads:
+        plan["downloads"] = downloads
     if backend == "mlx-audio" and _is_quantized_music_source(hf_path):
         plan["argv"] = [str(python), str(MUSIC_REQUANTIZE_RUNNER)] + flags
     else:
@@ -244,6 +252,21 @@ def _required_sources(repo, model_type, manifests, hf_cache):
                 "Download it first: mlx-agent intake fetch {0} --model-type {1}.".format(repo, model_type),
             )
         found[name] = str(snapshot)
+    return found
+
+
+def _required_downloads(repo, model_type, manifests, downloads_dir):
+    """The files a port's converter reads from outside Hugging Face, each where ``intake fetch`` stored it."""
+    found = {}
+    for entry in port_downloads(model_type, manifests):
+        path = download_path(entry, downloads_dir)
+        if not path.is_file() or path.stat().st_size != entry["size"]:
+            raise ConvertError(
+                "requirement_not_cached",
+                "{0} also needs {1} from {2}.".format(model_type, download_name(entry), entry["url"].split("/")[2]),
+                "Download it first: mlx-agent intake fetch {0} --model-type {1}.".format(repo, model_type),
+            )
+        found[download_name(entry)] = str(path)
     return found
 
 

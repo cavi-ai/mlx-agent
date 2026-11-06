@@ -91,6 +91,14 @@ class Trellis2ConversionRefusalTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'pe_mode'):
                 convert(source, Path(folder) / 'out', sources)
 
+    def test_refuses_projection_conditioned_flows(self):
+        convert = port('convert').convert
+        with TemporaryDirectory() as folder:
+            source, sources = write_source(Path(folder), flow_args=dict(FLOW_ARGS, image_attn_mode='proj'))
+            with self.assertRaisesRegex(ValueError, 'image_attn_mode'):
+                convert(source, Path(folder) / 'out', sources)
+            self.assertFalse((Path(folder) / 'out').exists())
+
     def test_refuses_missing_weights(self):
         convert = port('convert').convert
         with TemporaryDirectory() as folder:
@@ -248,6 +256,7 @@ class Trellis2NativeTests(unittest.TestCase):
         self.assertEqual(crop[9, 9].tolist(), [200, 100, 50])
         self.assertEqual(crop[9, 0].tolist(), [0, 0, 0])
         self.assertLessEqual(abs(crop[9, 2] - 51).max(), 1)
+        self.assertEqual(dinov3.crop_object(Image.fromarray(rgba), margin=1.1).size, (20, 20))
         with self.assertRaisesRegex(ValueError, 'no opaque object'):
             dinov3.crop_object(Image.fromarray(np.zeros((8, 8, 4), dtype=np.uint8)))
 

@@ -1701,7 +1701,8 @@ def _add_convert_arguments(parser):
     mesh.add_argument("--steps", type=int, default=None, help="default: the model's own (TripoSG 50)")
     mesh.add_argument("--seed", type=int, default=42)
     mesh.add_argument("--resolution", type=int, default=None,
-                      help="TripoSG 32, 64, 128, 256 or 512 (default); TRELLIS.2 512, 1024 (default) or 1536")
+                      help="TripoSG 32, 64, 128, 256 or 512 (default); TRELLIS.2 512, 1024 (default) or 1536; "
+                           "Pixal3D 1024 or 1536 (default)")
     mesh.add_argument("--guidance", type=float, default=None, help="default: the model's own (TripoSG 7)")
     mesh.add_argument("--max-faces", type=int, default=500000)
     mesh.add_argument("--timeout", type=int, default=3600)

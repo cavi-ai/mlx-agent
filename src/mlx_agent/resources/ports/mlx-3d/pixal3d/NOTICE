@@ -1,0 +1,5 @@
+The projection conditioning and cascade are adapted to MLX from TencentARC/Pixal3D (MIT, see LICENSE).
+The camera field-of-view estimate is adapted from microsoft/MoGe (MIT, see LICENSE-MoGe).
+The feature upsampler is adapted from valeoai/NAF (Apache-2.0, see LICENSE-NAF).
+The flow transformers, decoders and mesh extraction are shared with the TRELLIS.2 port.
+The implementation was changed for native MLX evaluation.

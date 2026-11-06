@@ -81,6 +81,10 @@ class ServeCliTests(unittest.TestCase):
             self.assertEqual(plan['memory_policy'], {'idle_timeout_seconds': 600, 'keep_loaded': False, 'minimum_headroom_gb': 2})
             _, other = self._run(args + ['--jit', '--idle-timeout', '300', '--min-headroom-gb', '2'])
             self.assertNotEqual(plan['preview_hash'], json.loads(other)['data']['plan']['preview_hash'])
+            _, output = self._run(args + ['--jit', '--idle-timeout', '600', '--min-headroom-gb', '2', '--context-tokens', '32768'])
+            context_plan = json.loads(output)['data']['plan']
+            self.assertEqual(context_plan['memory_policy'], dict(plan['memory_policy'], context_tokens=32768))
+            self.assertNotEqual(plan['preview_hash'], context_plan['preview_hash'])
             code, output = self._run(args + ['--jit', '--min-headroom-gb', 'nan'])
             self.assertEqual(code, 2)
             self.assertEqual(json.loads(output)['error']['code'], 'invalid_arguments')

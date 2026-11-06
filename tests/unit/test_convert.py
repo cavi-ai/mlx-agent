@@ -303,6 +303,40 @@ class BackendConvertTests(unittest.TestCase):
         self.assertNotIn("requires", plan_convert("VAST-AI/TripoSG", q_bits=32, backend="mlx-3d", model_type="triposg",
                                                   hf_cache=hub, backends_root_dir=self.root))
 
+    def test_pixal3d_converts_with_the_upsampler_intake_fetch_stored_by_its_digest(self):
+        hub = str(self.root / "hub")
+        downloads = self.root / "downloads"
+        source = self.cache("TencentARC/Pixal3D", ".")
+        for repo, names in (("facebook/dinov3-vitl16-pretrain-lvd1689m", ("config.json", "model.safetensors")),
+                            ("Ruicheng/moge-2-vitl", ("model.pt",))):
+            folder = self.cache(repo, ".")
+            for name in names:
+                (folder / name).write_text("{}", encoding="utf-8")
+        options = dict(q_bits=32, backend="mlx-3d", model_type="pixal3d", hf_cache=hub, backends_root_dir=self.root,
+                       downloads_dir=downloads)
+        with self.assertRaises(ConvertError) as caught:
+            plan_convert("TencentARC/Pixal3D", **options)
+        self.assertEqual(caught.exception.code, "requirement_not_cached")
+        self.assertEqual(str(caught.exception), "pixal3d also needs naf_release.pth from github.com.")
+        self.assertEqual(caught.exception.remediation,
+                         "Download it first: mlx-agent intake fetch TencentARC/Pixal3D --model-type pixal3d.")
+        stored = downloads / "c096c1ab2217a5c3ac136365f721685e2201379cb69d509cfb0261183847c98f" / "naf_release.pth"
+        stored.parent.mkdir(parents=True)
+        stored.write_bytes(b"x" * 10)
+        with self.assertRaises(ConvertError):
+            plan_convert("TencentARC/Pixal3D", **options)
+        stored.write_bytes(b"x" * 2664431)
+        plan = plan_convert("TencentARC/Pixal3D", **options)
+        argv = plan["argv"]
+        self.assertEqual(argv[1:3], ["-m", "mlx.mlx_agent_ports.pixal3d.convert"])
+        self.assertEqual(argv[argv.index("--hf-path") + 1], str(source))
+        self.assertEqual([argv[index + 1] for index, value in enumerate(argv) if value == "--download"],
+                         ["naf_release.pth={0}".format(stored)])
+        self.assertEqual(plan["downloads"], {"naf_release.pth": str(stored)})
+        self.assertEqual(len([value for value in argv if value == "--requires"]), 2)
+        self.assertNotIn("downloads", plan_convert("VAST-AI/TripoSG", q_bits=32, backend="mlx-3d", model_type="triposg",
+                                                   hf_cache=hub, backends_root_dir=self.root, downloads_dir=downloads))
+
     def test_a_wan_checkpoint_converts_with_the_mlx_video_port_converter(self):
         plan = plan_convert("Wan-AI/Wan2.1-T2V-1.3B", hf_cache=self.root / "empty-cache", q_bits=4, backend="mlx-video", model_type="t2v",
                             out=str(self.root / "wan"), backends_root_dir=self.root)

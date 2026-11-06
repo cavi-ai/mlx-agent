@@ -43,6 +43,8 @@ _PORT_FILE = re.compile(r"[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*")
 _PIPELINE = re.compile(r"[A-Z][A-Za-z0-9]{0,95}")
 _REPO_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}")
 _COMMIT = re.compile(r"[0-9a-f]{40}")
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+_DOWNLOAD_URL = re.compile(r"https://[a-z0-9.-]+\.[a-z]{2,}(/[A-Za-z0-9_.-]+)*/[A-Za-z0-9_-][A-Za-z0-9_.-]*")
 _STRIP_SUFFIXES = ("_encoder", "_decoder", "_text", "_vision", "_audio", "_model")
 _VISION_FILE = re.compile(r"(vision|visual|image|siglip|clip)", re.IGNORECASE)
 _ENV_ALLOWLIST = (
@@ -156,6 +158,24 @@ def _validate_manifest(value, path):
         for sources in requires.values()
     ):
         raise _invalid(path, "port_requires map declared ports to other repositories and the files their converter reads there")
+    downloads = value.get("port_downloads", {})
+    if not isinstance(downloads, dict) or not set(downloads) <= ported or not all(
+        isinstance(entries, list) and entries and all(_valid_download(entry) for entry in entries)
+        and len({download_name(entry) for entry in entries}) == len(entries)
+        for entries in downloads.values()
+    ):
+        raise _invalid(path, "port_downloads map declared ports to the https files (url, sha256, size) their converter reads")
+
+
+def _valid_download(entry):
+    return isinstance(entry, dict) and set(entry) == {"url", "sha256", "size"} and isinstance(entry["url"], str) \
+        and bool(_DOWNLOAD_URL.fullmatch(entry["url"])) and isinstance(entry["sha256"], str) \
+        and bool(_SHA256.fullmatch(entry["sha256"])) and type(entry["size"]) is int and entry["size"] > 0
+
+
+def download_name(entry):
+    """The file name a port download is stored and passed to its converter under: the URL's last segment."""
+    return entry["url"].rsplit("/", 1)[-1]
 
 
 def _valid_requirement(repo, files):
@@ -270,6 +290,24 @@ def port_requirements(model_type, manifests):
         if found:
             return found
     return {}
+
+
+def port_downloads(model_type, manifests):
+    """The files a ported type's converter reads from outside Hugging Face (url, sha256, size); empty when none."""
+    for backend_id in sorted(manifests):
+        found = (manifests[backend_id].get("port_downloads") or {}).get(normalize_type(model_type or ""))
+        if found:
+            return found
+    return []
+
+
+def downloads_root(env=None):
+    """Where ``intake fetch`` keeps port downloads, each under its sha256."""
+    return backends_root(env).parent / "downloads"
+
+
+def download_path(entry, root=None):
+    return Path(root if root is not None else downloads_root()) / entry["sha256"] / download_name(entry)
 
 
 def port_for_files(names, manifests):

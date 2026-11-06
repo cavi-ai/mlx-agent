@@ -13,8 +13,9 @@ MAX_INPUT_SIZE = 1024
 ALPHA_THRESHOLD = 0.8 * 255
 
 
-def crop_object(image):
-    """Square crop around the opaque object, RGB premultiplied by alpha; an opaque image keeps its full frame."""
+def crop_object(image, margin=1.0):
+    """Square crop around the opaque object, ``margin`` times its larger side, RGB premultiplied by alpha;
+    an opaque image keeps its full frame."""
     image = image.convert("RGBA")
     scale = min(1, MAX_INPUT_SIZE / max(image.size))
     if scale < 1:
@@ -26,7 +27,7 @@ def crop_object(image):
     left, top = found[:, 1].min(), found[:, 0].min()
     right, bottom = found[:, 1].max(), found[:, 0].max()
     center = (left + right) / 2, (top + bottom) / 2
-    size = max(right - left, bottom - top)
+    size = int(max(right - left, bottom - top) * margin)
     box = (center[0] - size // 2, center[1] - size // 2, center[0] + size // 2, center[1] + size // 2)
     rgba = np.asarray(image.crop(box)).astype(np.float32) / 255
     return Image.fromarray((rgba[:, :, :3] * rgba[:, :, 3:4] * 255).astype(np.uint8))

@@ -262,6 +262,10 @@ class ResponseStream:
         self.response.update(_outcome(self.finish_reason), usage=_usage(self.usage))
         return events + [self._event("response." + self.response["status"], response=self.response)]
 
+    def keepalive(self):
+        # An SSE comment: Responses defines no ping event, and comments leave sequence numbers unchanged.
+        return [b": keepalive\n\n"]
+
     def fail(self, message):
         self.response.update(status="failed", error={"code": "server_error", "message": message})
         return [self._event("response.failed", response=self.response)]

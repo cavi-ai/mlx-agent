@@ -4,6 +4,7 @@ import json
 import sys
 import subprocess
 import threading
+import time
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -22,6 +23,7 @@ p = argparse.ArgumentParser()
 p.add_argument('--model'); p.add_argument('--port', type=int); p.add_argument('--trace')
 p.add_argument('--host', default='127.0.0.1')
 p.add_argument('--adapter-path'); p.add_argument('--mutate-adapter', action='store_true')
+p.add_argument('--reply-delay', type=float, default=0); p.add_argument('--keepalive', action='store_true')
 a = p.parse_args()
 with open(a.trace, 'a') as f: f.write('start\\n')
 if a.mutate_adapter:
@@ -33,8 +35,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200); self.end_headers(); self.wfile.write(b'{}')
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+        # Like MLX-LM, write nothing until the reply starts.
+        time.sleep(a.reply_delay)
         self.send_response(200); self.end_headers()
-        if body.get('stream'):
+        if body.get('stream') and a.keepalive:
+            # MLX-LM reports prompt progress as SSE comments before the first token.
+            self.wfile.write(b': keepalive 1/1\\n\\n'); self.wfile.flush()
+            self.wfile.write(b'data: {"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}\\n\\n')
+            self.wfile.write(b'data: [DONE]\\n\\n')
+        elif body.get('stream'):
             self.wfile.write(b'data: {"choices":[]}\\n\\n'); self.wfile.flush(); time.sleep(0.3)
             try: self.wfile.write(b'data: [DONE]\\n\\n')
             except BrokenPipeError: pass
@@ -224,6 +233,52 @@ class JITServingTests(unittest.TestCase):
         self.assertEqual(self.unload()[0], 409)
         self.assertIn(b'[DONE]', response.read())
         self.assertEqual(self.unload()[0], 200)
+
+    def stream(self, path, body):
+        connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=10)
+        try:
+            connection.request('POST', path, json.dumps(body))
+            response = connection.getresponse()
+            return response.status, response.read().decode()
+        finally:
+            connection.close()
+
+    def test_client_disconnect_releases_lease_before_worker_replies(self):
+        self.config['worker_argv'] += ['--reply-delay', '30']
+        control = {'Authorization': 'Bearer test-control-token'}
+        connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=10)
+        connection.request('POST', '/v1/chat/completions', json.dumps({'messages': []}))
+        for _ in range(100):
+            status = self.request('GET', '/_mlx/status', headers=control)[1]
+            if status['model_state'] == 'loaded' and status['active_requests'] == 1:
+                break
+            time.sleep(0.1)
+        self.assertEqual(status['active_requests'], 1)
+        connection.close()
+        for _ in range(50):
+            if self.request('GET', '/_mlx/status', headers=control)[1]['active_requests'] == 0:
+                break
+            time.sleep(0.1)
+        self.assertEqual(self.request('GET', '/_mlx/status', headers=control)[1]['active_requests'], 0)
+
+    def test_messages_stream_forwards_worker_keepalive_as_ping(self):
+        self.config['worker_argv'] += ['--keepalive']
+        status, text = self.stream('/v1/messages', {'model': 'default_model', 'max_tokens': 8, 'stream': True,
+                                                    'messages': [{'role': 'user', 'content': 'x'}]})
+        self.assertEqual(status, 200)
+        events = [line[len('event: '):] for line in text.splitlines() if line.startswith('event: ')]
+        self.assertEqual(events[:3], ['message_start', 'ping', 'content_block_start'])
+        self.assertIn('event: ping\ndata: {"type": "ping"}\n\n', text)
+
+    def test_responses_stream_forwards_worker_keepalive_as_comment(self):
+        self.config['worker_argv'] += ['--keepalive']
+        status, text = self.stream('/v1/responses', {'model': 'default_model', 'input': 'x', 'stream': True})
+        self.assertEqual(status, 200)
+        lines = text.splitlines()
+        first_delta = lines.index('event: response.output_text.delta')
+        self.assertIn(': keepalive', lines[:first_delta])
+        numbers = [json.loads(line[len('data: '):])['sequence_number'] for line in lines if line.startswith('data: ')]
+        self.assertEqual(numbers, list(range(len(numbers))))
 
     def test_controls_require_token_and_untrusted_model_requests_never_load(self):
         self.assertEqual(self.request('POST', '/_mlx/unload', {})[0], 403)

@@ -14,6 +14,7 @@ import json
 import math
 import os
 import re
+import selectors
 import signal
 import socket
 import subprocess
@@ -485,6 +486,22 @@ class GatewayHandler(BaseHTTPRequestHandler):
         message = "Model worker returned HTTP {}".format(response.status)
         return GatewayError(502, "worker_error", message + (": {}".format(reason) if isinstance(reason, str) else "."))
 
+    def _worker_replied(self, worker):
+        """Wait without a deadline for the worker's first reply byte; False once the client disconnects."""
+        with selectors.DefaultSelector() as selector:
+            selector.register(worker, selectors.EVENT_READ)
+            selector.register(self.connection, selectors.EVENT_READ)
+            while True:
+                for key, _ in selector.select():
+                    if key.fileobj is worker:
+                        return True
+                    try:
+                        if not self.connection.recv(1, socket.MSG_PEEK):
+                            return False
+                    except OSError:
+                        return False
+                    selector.unregister(self.connection)
+
     def _relay(self, response, translate):
         """Answer a non-streamed request from the worker's translated chat completion."""
         if response.status != 200:
@@ -514,6 +531,11 @@ class GatewayHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"".join(translator.start()))
         try:
             while line := response.readline(MAX_BODY):
+                if line.startswith(b":"):
+                    # Prompt-progress comments keep the client stream active before the first token.
+                    self.wfile.write(b"".join(translator.keepalive()))
+                    self.wfile.flush()
+                    continue
                 if not line.startswith(b"data: "):
                     continue
                 data = line[len(b"data: "):].strip()
@@ -608,6 +630,9 @@ class GatewayHandler(BaseHTTPRequestHandler):
             connection = http.client.HTTPConnection("127.0.0.1", port, timeout=120)
             connection.request("POST", "/v1/chat/completions" if translated else self.path, json.dumps(body),
                                {"Content-Type": "application/json"})
+            # MLX-LM writes nothing until an unstreamed answer is complete or a queued request starts.
+            if not self._worker_replied(connection.sock):
+                return
             response = connection.getresponse()
 
             def trimmed(value):

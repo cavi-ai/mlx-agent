@@ -25,6 +25,7 @@ from mlx_agent.backends import (
     probe_sources_from_directory,
     port_bits,
     port_converter,
+    port_downloads,
     port_files,
     port_for_files,
     port_requirements,
@@ -450,15 +451,45 @@ class MeshPortTests(unittest.TestCase):
         (directory / "mlx-3d.json").write_text(json.dumps(dict(self.manifests["mlx-3d"], **fields)), encoding="utf-8")
         return load_manifests(directory)
 
-    def test_a_trellis2_snapshot_is_recognized_by_its_files_and_pixal3d_is_not(self):
+    def test_trellis2_and_pixal3d_snapshots_are_told_apart_by_their_files(self):
         self.assertEqual(port_for_files(TRELLIS2_FILES, self.manifests), "trellis2")
-        self.assertIsNone(port_for_files(PIXAL3D_FILES, self.manifests))
+        self.assertEqual(port_for_files(PIXAL3D_FILES, self.manifests), "pixal3d")
         self.assertIsNone(port_for_files([name for name in TRELLIS2_FILES if name != "texturing_pipeline.json"], self.manifests))
-        self.assertEqual(port_converter("trellis2", "mlx-3d", self.manifests), "mlx.mlx_agent_ports.trellis2.convert")
-        self.assertEqual(conversion_bits("trellis2", "mlx-3d", self.manifests), [8, 32])
+        self.assertIsNone(port_for_files([name for name in PIXAL3D_FILES if "ss_dec" not in name], self.manifests))
         registries = load_registries(self.manifests, root=Path(self.directory.name), find_spec=lambda name: None)
-        self.assertEqual([(hit["backend"], hit["category"]) for hit in lookup("trellis2", self.manifests, registries)],
-                         [("mlx-3d", "mesh_generation")])
+        for port in ("trellis2", "pixal3d"):
+            with self.subTest(port=port):
+                self.assertEqual(port_converter(port, "mlx-3d", self.manifests), "mlx.mlx_agent_ports.{0}.convert".format(port))
+                self.assertEqual(conversion_bits(port, "mlx-3d", self.manifests), [8, 32])
+                self.assertEqual([(hit["backend"], hit["category"]) for hit in lookup(port, self.manifests, registries)],
+                                 [("mlx-3d", "mesh_generation")])
+
+    def test_pixal3d_names_its_camera_and_encoder_repositories_and_the_upsampler_it_downloads(self):
+        self.assertEqual(port_requirements("pixal3d", self.manifests), {
+            "facebook/dinov3-vitl16-pretrain-lvd1689m": ["config.json", "model.safetensors"],
+            "Ruicheng/moge-2-vitl": ["model.pt"],
+        })
+        self.assertEqual(port_downloads("Pixal3D", self.manifests), [{
+            "url": "https://github.com/valeoai/NAF/releases/download/model/naf_release.pth",
+            "sha256": "c096c1ab2217a5c3ac136365f721685e2201379cb69d509cfb0261183847c98f", "size": 2664431}])
+        self.assertEqual(port_downloads("trellis2", self.manifests), [])
+        self.assertEqual(port_downloads(None, self.manifests), [])
+
+    def test_port_downloads_are_validated(self):
+        good = {"url": "https://example.org/files/w.pth", "sha256": "a" * 64, "size": 10}
+        bad = [
+            [], {"other": [good]}, {"pixal3d": []}, {"pixal3d": good}, {"pixal3d": [dict(good, url="http://example.org/w.pth")]},
+            {"pixal3d": [dict(good, url="https://example.org/files/")]}, {"pixal3d": [dict(good, url="https://example.org/w.pth?x=1")]},
+            {"pixal3d": [dict(good, url="https://example.org/.w.pth")]}, {"pixal3d": [dict(good, sha256="A" * 64)]},
+            {"pixal3d": [dict(good, size=0)]}, {"pixal3d": [dict(good, size=True)]}, {"pixal3d": [dict(good, extra=1)]},
+            {"pixal3d": [good, dict(good, sha256="b" * 64)]},
+        ]
+        for downloads in bad:
+            with self.subTest(downloads=downloads):
+                with self.assertRaises(BackendError) as caught:
+                    self.load_with(port_downloads=downloads)
+                self.assertEqual(caught.exception.code, "manifest_invalid")
+        self.assertEqual(port_downloads("pixal3d", self.load_with(port_downloads={"pixal3d": [good]})), [good])
 
     def test_trellis2_names_the_files_its_converter_reads_from_other_repositories(self):
         self.assertEqual(port_requirements("TRELLIS2", self.manifests), {

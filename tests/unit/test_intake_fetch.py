@@ -73,6 +73,58 @@ class FetchTests(unittest.TestCase):
         single = plan_fetch("microsoft/TRELLIS.2-4B", file="a.gguf", python="/venv/bin/python", model_type="trellis2")
         self.assertNotIn("--require", single["argv"])
 
+    def test_a_port_that_reads_a_file_outside_hugging_face_downloads_it_by_its_digest(self):
+        plan = plan_fetch("TencentARC/Pixal3D", hf_cache="/hf", python="/venv/bin/python", model_type="pixal3d",
+                          downloads_dir="/dl")
+        entry = {"url": "https://github.com/valeoai/NAF/releases/download/model/naf_release.pth",
+                 "sha256": "c096c1ab2217a5c3ac136365f721685e2201379cb69d509cfb0261183847c98f", "size": 2664431}
+        argv = plan["argv"]
+        self.assertEqual([argv[index + 1] for index, value in enumerate(argv) if value == "--download"],
+                         ["{0}={1}={2}".format(entry["sha256"], entry["size"], entry["url"])])
+        self.assertEqual(argv[argv.index("--downloads-dir") + 1], "/dl")
+        self.assertEqual(plan["downloads"], [entry])
+        self.assertEqual(plan["network"], ["huggingface.co", "github.com"])
+        self.assertEqual(sorted(plan["requires"]), ["Ruicheng/moge-2-vitl", "facebook/dinov3-vitl16-pretrain-lvd1689m"])
+        trellis = plan_fetch("microsoft/TRELLIS.2-4B", python="/venv/bin/python", model_type="trellis2", downloads_dir="/dl")
+        self.assertNotIn("--download", trellis["argv"])
+        self.assertNotIn("downloads", trellis)
+        self.assertEqual(trellis["network"], ["huggingface.co"])
+
+    def test_runner_keeps_a_download_only_when_its_size_and_digest_match(self):
+        import hashlib
+        import io
+
+        payload = b"naf weights"
+        digest = hashlib.sha256(payload).hexdigest()
+        url = "https://example.org/files/naf.pth"
+        opened = []
+
+        def opener(address):
+            opened.append(address)
+            return io.BytesIO(payload)
+
+        downloads = self.base / "downloads"
+        marker = self.base / "m.done.json"
+        argv = ["--repo", "org/model", "--revision", "main", "--downloads-dir", str(downloads), "--marker", str(marker)]
+        self.assertEqual(fetch_runner.main(argv + ["--download", "{0}={1}={2}".format(digest, len(payload), url)],
+                                           download=lambda **kwargs: "/hf/snapshot", opener=opener), 0)
+        stored = downloads / digest / "naf.pth"
+        self.assertEqual(stored.read_bytes(), payload)
+        self.assertEqual(opened, [url])
+        self.assertEqual(fetch_runner.main(argv + ["--download", "{0}={1}={2}".format(digest, len(payload), url)],
+                                           download=lambda **kwargs: "/hf/snapshot", opener=opener), 0)
+        self.assertEqual(opened, [url])
+        wrong = "0" * 64
+        snapshots = []
+        code = fetch_runner.main(argv + ["--download", "{0}={1}={2}".format(wrong, len(payload), url)],
+                                 download=lambda **kwargs: snapshots.append(kwargs), opener=opener)
+        self.assertEqual(code, 1)
+        self.assertEqual(list((downloads / wrong).iterdir()), [])
+        self.assertEqual(snapshots, [])
+        result = json.loads(marker.read_text(encoding="utf-8"))
+        self.assertEqual((result["exit_status"], result["error"]),
+                         ("failed", "{0} did not match its recorded size and sha256.".format(url)))
+
     def test_runner_requests_required_files_before_the_snapshot(self):
         marker = self.base / "m.done.json"
         requests = []

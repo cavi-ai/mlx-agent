@@ -454,7 +454,7 @@
     },
     {
       "path": "src/mlx_agent/backends.py",
-      "sha256": "7b1b7522cffb0cdff751875c1f6722b5227da4f43d4542824d6399294088d9d7"
+      "sha256": "93e8602a61083892edb06597e128769a218fbe9eb8bd57294e7430d1131d1475"
     },
     {
       "path": "src/mlx_agent/bench.py",
@@ -478,7 +478,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "e6ffed01378034b171fea3292b95382594e590cac5dadc44e75151dc75fb749d"
+      "sha256": "48494597f2dabc6aec91991914b01fa7e9861fbd4b3eee1245a082373b7b6f46"
     },
     {
       "path": "src/mlx_agent/coding_capture.py",
@@ -530,7 +530,7 @@
     },
     {
       "path": "src/mlx_agent/convert.py",
-      "sha256": "5d77c17561e316621e0a13c0f17337027f1461861733c58b9d7109d10b3277ef"
+      "sha256": "0426da87a7cb26af9ca6c60faa873f914909b3055c9d5a4233b1d8fd7e71812a"
     },
     {
       "path": "src/mlx_agent/convert_queue.py",
@@ -558,7 +558,7 @@
     },
     {
       "path": "src/mlx_agent/fetch_runner.py",
-      "sha256": "3eb159b156a4c88ecd4b56655b83d58fd5dc37d26034dccb364286481374bfcd"
+      "sha256": "7469831ca8eb6f2d80ca718641c57c2b1856e88a88eb94a8d63b7e60da1637c8"
     },
     {
       "path": "src/mlx_agent/fleet.py",
@@ -602,11 +602,11 @@
     },
     {
       "path": "src/mlx_agent/intake.py",
-      "sha256": "6783abc120fee0ffd195d2ec1df9de9ce2b1b1f79748336047488c37c926e91f"
+      "sha256": "27e734c6b12ec2cd774ecb5a7bf5d0005d752d1ce8c61b83c5aba6aafbb0c2b3"
     },
     {
       "path": "src/mlx_agent/intake_fetch.py",
-      "sha256": "adb1eb8d8f14c1ec564e523a60edf30314cd3c5d6be0e70a6fd9546d34be5a78"
+      "sha256": "0a1342827b0558fe46eedf921595d843722225944948e44f232aa2ed0d12a950"
     },
     {
       "path": "src/mlx_agent/intake_source.py",
@@ -738,7 +738,7 @@
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-3d.json",
-      "sha256": "e9b218f54c2cdc7abed34d3a84a29104bac481de80f4b47d6aaf72215494c593"
+      "sha256": "0e2a4e75745c7d3c06232d4a7e42568ae7d6549ee2146c7445cc8787e062f7bf"
     },
     {
       "path": "src/mlx_agent/resources/backends/mlx-3d.lock",
@@ -825,6 +825,54 @@
       "sha256": "49ee886e968c1856e0bafb14db5767332d690742eeaa979064fb9ab5d68758d3"
     },
     {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/pixal3d/LICENSE",
+      "sha256": "8e28d8efae5a9ac269c3b7c5df67a5ea4b5f1ae02543d6407dc35ea4b8346ab7"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/pixal3d/LICENSE-MoGe",
+      "sha256": "ad7d951c80c5fc2b2bce035f2041bc0a0dbf9028c8ecc4c9a8e1fba8130b6b59"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/pixal3d/LICENSE-NAF",
+      "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/pixal3d/NOTICE",
+      "sha256": "860a905d29cc4c6709a22cb4ae4520a6fcaf3462adc1994b2d9067f8433f580e"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/pixal3d/__init__.py",
+      "sha256": "3a72096e29548a3ed6bdb5433b3b2a6b3ebc1907571a95b1b252755d7d5a85a2"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/pixal3d/checkpoint.py",
+      "sha256": "5491bb67fb87b6335cc7f58b0721d3af889685c6affe1b76db2aea5b6761e814"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/pixal3d/convert.py",
+      "sha256": "25a2400546251d83a178685c8f22b72a45c43dfcbdc3cf9a2b4c25e88fc9ec01"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/pixal3d/moge.py",
+      "sha256": "9e37beb57265225273f4dbfb5a142964df13002911ce054ae15b790b3df69a15"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/pixal3d/naf.py",
+      "sha256": "2c40155288a5fbed5eac500baa030e8cb31b36ccee73bfc216213e07c70c3b3e"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/pixal3d/ops.py",
+      "sha256": "a196e98a473df9df03b7608ef671c9c0a771a8afcb744165cf475717efb3862c"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/pixal3d/pipeline.py",
+      "sha256": "fbcc02dd2f7c3b1983482246bfd0f7765af7b9320b6e4a0555d6dccc3fed0725"
+    },
+    {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/pixal3d/projection.py",
+      "sha256": "44dcecf1519290f8adac8426aee3dc8688fc6c1e6ca0994bd359394c1f19866a"
+    },
+    {
       "path": "src/mlx_agent/resources/ports/mlx-3d/trellis2/LICENSE",
       "sha256": "d9a1b1e30d633d5732ea18e3cba9538d293ebc53e1a9e4e96ab739e0c5c4f1cb"
     },
@@ -838,11 +886,11 @@
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/trellis2/convert.py",
-      "sha256": "d9de23ad5ea8df84f06172327f45fa54682a4cc5318d510921382547f59d735a"
+      "sha256": "033349727f2a169e2fa9d47604515b9644388793b6f9abd325dae111657eff7f"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/trellis2/dinov3.py",
-      "sha256": "9bcc29150c634ef7b4081b6965beafb32f9d9344713a1bd50b31ba07f51a14e6"
+      "sha256": "eabbb7fc7d8e9dd44da850f00aaf4fce7ab8c37ce72385a5e0c542dc23765277"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/trellis2/dual_grid.py",
@@ -850,7 +898,7 @@
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/trellis2/flow.py",
-      "sha256": "7aca316bd82f27df4a383dd848d95fab6b03aa3ebc78d1d8fba802a72ca12ac0"
+      "sha256": "b8417329ff94c91f062b6f559860b39fc7714c483232b4df9a53af5e54b055bf"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/trellis2/pipeline.py",

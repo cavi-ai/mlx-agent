@@ -45,6 +45,8 @@ def _locate(base, sources, reference):
 
 def _check_flow(name, args):
     wrong = [key for key, value in FLOW_FLAGS.items() if args.get(key) != value]
+    if args.get("image_attn_mode", "cross") != "cross":
+        wrong.append("image_attn_mode")
     if wrong:
         raise ValueError("{0} uses an unsupported variant: {1}.".format(name, ", ".join(wrong)))
 

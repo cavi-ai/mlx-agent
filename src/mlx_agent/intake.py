@@ -9,7 +9,8 @@ import math
 
 from .backends import (
     QUANTIZED_BITS, choose_backend, component_matches, conversion_bits, load_manifests, load_registries, lookup,
-    port_files, port_for_files, port_for_pipeline, port_requirements, quantize_rule, recipe_for, snapshot_files,
+    port_downloads, port_files, port_for_files, port_for_pipeline, port_requirements, quantize_rule, recipe_for,
+    snapshot_files,
 )
 from .huggingface import HuggingFaceClient, HuggingFaceHTTPError
 from .intake_fetch import FETCH_IGNORE_PATTERNS
@@ -373,6 +374,7 @@ def resolve(text, revision=None, client=None, manifests=None, registries=None):
         recipe_download_bytes(client, recipe, files, payload["warnings"]) if recipe
         else download_bytes(files, payload["model_type"], manifests) + requirement_download_bytes(
             client, port_requirements(payload["model_type"], manifests), payload["warnings"])
+        + sum(entry["size"] for entry in port_downloads(payload["model_type"], manifests))
     )
     payload["cached"] = recipe is None and snapshot_cached(
         source["repo"], _text(info.get("sha")), files["names"], prefix, payload["model_type"], manifests)

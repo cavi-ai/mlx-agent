@@ -20,7 +20,7 @@ The preview renders the exact `mlx_lm.convert` argv before anything runs. `conve
 MLX-LM, MLX-VLM, MLX-Audio and MLX-Embeddings conversions and GGUF files without a port accept 4, 5, 6 and 8 bits.
 MLX-Video and mflux converters, exported music checkpoints and the GGUF ports
 (DeepSeek-V4 DSpark, Qwen3.5) accept 4 and 8. Ports convert at the widths they were
-checked at: Audio8 at 4 and 8, Laya at 6 and 8, TripoSG at 8 and 32 (unquantized).
+checked at: Audio8 at 4 and 8, Laya at 6 and 8, TripoSG and TRELLIS.2 at 8 and 32 (unquantized).
 `intake resolve` reports the offered widths as `q_bits`, and `convert scan` reports each GGUF's
 widths the same way; a vision projector or a drafter no port converts reports none.
 
@@ -58,6 +58,36 @@ higher resolutions query more points. `--max-faces` (default 500000, 1000 to
 noise is `numpy.random.default_rng(seed).standard_normal`, so a seed
 reproduces the PyTorch reference noise. The upstream CUDA flash decoder is not
 reproduced. TripoSG is not a chat server.
+
+## TRELLIS.2 image-to-3D
+
+TRELLIS.2 reads files from two other repositories: the sparse-structure decoder
+from `microsoft/TRELLIS-image-large` and the DINOv3 image encoder from
+`facebook/dinov3-vitl16-pretrain-lvd1689m`, a gated repository whose terms must
+be accepted on Hugging Face first. `intake fetch --model-type trellis2` downloads
+the shape checkpoints with those files, and `intake resolve` counts them in
+`download_bytes`. `convert start` reads them from the Hugging Face cache and
+refuses with `requirement_not_cached` when one is missing. `--q-bits 8`
+quantizes the image encoder and the flow transformers; the decoders stay full
+precision.
+
+```bash
+python3 scripts/mlx-agent intake fetch microsoft/TRELLIS.2-4B --model-type trellis2 --json
+python3 scripts/mlx-agent convert start --repo microsoft/TRELLIS.2-4B --backend mlx-3d --model-type trellis2 --q-bits 32 --out /path/to/models/TRELLIS.2-MLX-32bit --json
+# Review each plan, then repeat it with --confirm --preview-hash <hash>.
+python3 scripts/mlx-agent convert mesh --path /path/to/models/TRELLIS.2-MLX-32bit --image /path/to/object.png --out /path/to/output.glb --json
+```
+
+`convert mesh` takes `--resolution` 512, 1024 (default) or 1536, and its steps
+(12) and guidance (7.5) default to the checkpoint's sampler settings. At 512 one
+shape flow runs. At 1024 and 1536 the 512 latent is decoded to its voxels, which
+seed a second flow at the higher level; when they exceed 49152 tokens the level
+drops by 128, down to 1024, and the result's `resolution` reports the level
+used. The image is cropped to the pixels with alpha above 0.8; an opaque image
+keeps its full frame and background removal is not performed. The output is an
+untextured GLB mesh; `stage_seconds` reports `conditioning`,
+`sparse_structure`, `shape_latent_512`, `shape_latent_high`, `decode`, `mesh`,
+`decimation` and `export`.
 
 ## GGUF sources
 

@@ -9,7 +9,7 @@ import math
 
 from .backends import (
     QUANTIZED_BITS, choose_backend, component_matches, conversion_bits, load_manifests, load_registries, lookup,
-    port_files, port_for_files, port_for_pipeline, quantize_rule, recipe_for, snapshot_files,
+    port_files, port_for_files, port_for_pipeline, port_requirements, quantize_rule, recipe_for, snapshot_files,
 )
 from .huggingface import HuggingFaceClient, HuggingFaceHTTPError
 from .intake_fetch import FETCH_IGNORE_PATTERNS
@@ -217,6 +217,20 @@ def recipe_download_bytes(client, recipe, files, warnings):
     return lora + download_bytes(base, None, {})
 
 
+def requirement_download_bytes(client, requires, warnings):
+    """The files a port reads from other repositories, which ``intake fetch`` downloads with the snapshot."""
+    total = 0
+    for repo, names in sorted(requires.items()):
+        try:
+            info = client.fetch_model_info(repo)
+        except (HuggingFaceHTTPError,) + TRANSPORT_ERRORS as error:
+            warnings.append("{0} size unavailable: {1}".format(repo, error))
+            continue
+        sizes = summarize_files(info if isinstance(info, dict) else {})["sizes"]
+        total += sum(sizes.get(name, 0) for name in names)
+    return total
+
+
 def download_bytes(files, model_type, manifests):
     """What ``intake fetch`` of the snapshot takes: a ported type's files, else every file but ignored formats."""
     ported = snapshot_files(model_type, manifests)
@@ -357,7 +371,8 @@ def resolve(text, revision=None, client=None, manifests=None, registries=None):
     )
     payload["download_bytes"] = (
         recipe_download_bytes(client, recipe, files, payload["warnings"]) if recipe
-        else download_bytes(files, payload["model_type"], manifests)
+        else download_bytes(files, payload["model_type"], manifests) + requirement_download_bytes(
+            client, port_requirements(payload["model_type"], manifests), payload["warnings"])
     )
     payload["cached"] = recipe is None and snapshot_cached(
         source["repo"], _text(info.get("sha")), files["names"], prefix, payload["model_type"], manifests)

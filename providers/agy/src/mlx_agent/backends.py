@@ -150,6 +150,18 @@ def _validate_manifest(value, path):
         for files in signatures.values()
     ):
         raise _invalid(path, "port_signatures map declared ports to the relative files that identify them")
+    requires = value.get("port_requires", {})
+    if not isinstance(requires, dict) or not set(requires) <= ported or not all(
+        isinstance(sources, dict) and sources and all(_valid_requirement(repo, files) for repo, files in sources.items())
+        for sources in requires.values()
+    ):
+        raise _invalid(path, "port_requires map declared ports to other repositories and the files their converter reads there")
+
+
+def _valid_requirement(repo, files):
+    return isinstance(repo, str) and bool(_REPO_ID.fullmatch(repo)) and isinstance(files, list) and bool(files) and all(
+        isinstance(name, str) and _PORT_FILE.fullmatch(name) and ".." not in name.split("/") for name in files
+    )
 
 
 def _valid_widths(widths, allowed):
@@ -249,6 +261,15 @@ def snapshot_files(model_type, manifests):
         if files:
             return files
     return None
+
+
+def port_requirements(model_type, manifests):
+    """The files a ported type's converter reads from other repositories, by repository; empty when none."""
+    for backend_id in sorted(manifests):
+        found = (manifests[backend_id].get("port_requires") or {}).get(normalize_type(model_type or ""))
+        if found:
+            return found
+    return {}
 
 
 def port_for_files(names, manifests):

@@ -25,6 +25,8 @@ def main(argv=None, download=None):
     parser.add_argument("--base-repo", default=None, help="also download this pinned base snapshot first")
     parser.add_argument("--base-revision", default=None)
     parser.add_argument("--base-ignore", action="append", default=None)
+    parser.add_argument("--require", action="append", default=[],
+                        help="also download REPO=FILE from another repository first")
     parser.add_argument("--cache-dir", default=None)
     parser.add_argument("--local-dir", default=None)
     parser.add_argument("--marker", required=True)
@@ -49,6 +51,16 @@ def main(argv=None, download=None):
                 base["cache_dir"] = arguments.cache_dir
             print("downloading base {0}".format(arguments.base_repo), flush=True)
             (download or _snapshot_download)(**base)
+        required = {}
+        for item in arguments.require:
+            repo, _, name = item.partition("=")
+            required.setdefault(repo, []).append(name)
+        for repo, names in sorted(required.items()):
+            extra = {"repo_id": repo, "allow_patterns": names}
+            if arguments.cache_dir:
+                extra["cache_dir"] = arguments.cache_dir
+            print("downloading required {0}".format(repo), flush=True)
+            (download or _snapshot_download)(**extra)
         path = (download or _snapshot_download)(**kwargs)
         result, code = {"exit_status": "done", "path": str(path)}, 0
         print("downloaded {0} to {1}".format(arguments.repo, path), flush=True)

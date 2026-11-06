@@ -48,6 +48,10 @@ class WorkflowSupplyChainTests(unittest.TestCase):
                 if match is None or match.group(1).startswith("./"):
                     continue
                 with self.subTest(workflow=path.name, line=number):
+                    if match.group(1).startswith("cavi-ai/"):
+                        # cavi-ai actions follow their main.
+                        self.assertRegex(match.group(1), r"^cavi-ai/[\w./-]+@main$")
+                        continue
                     self.assertRegex(match.group(1), r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
                     self.assertRegex(match.group(2), r"^\s+# v\d+\.\d+\.\d+$")
 

@@ -208,5 +208,8 @@ class StreamTranslator:
                                   "delta": {"stop_reason": _stop_reason(self.finish_reason, self.tool_used), "stop_sequence": None}}),
             sse("message_stop", {"type": "message_stop"})]
 
+    def keepalive(self):
+        return [sse("ping", {"type": "ping"})]
+
     def fail(self, message):
         return [sse("error", error_body(502, message))]

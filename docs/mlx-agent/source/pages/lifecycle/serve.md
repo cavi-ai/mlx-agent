@@ -119,6 +119,12 @@ Concurrent cold requests share the load. Unload releases the worker and keeps
 the gateway reachable; active requests, including streams, block it. Changed
 model files need a new serve plan.
 
+The gateway waits for the worker's reply to start without a deadline, including
+unstreamed answers that the worker sends only when generation finishes. A
+client that disconnects before the reply starts ends its request. Streamed
+Messages answers turn the worker's prompt-progress keepalives into `ping`
+events, and streamed Responses answers pass them on as SSE comments.
+
 Status reports gateway liveness and `model_state` separately. Stop terminates
 the owned gateway/worker process group. The gateway serves its selected model
 and rejects request-time adapter/draft-model overrides.

@@ -230,11 +230,21 @@ def _require_decode_identity(plan):
                              "Review a fresh serving preview.")
 
 
+def _require_vision_identity(plan):
+    if "vision_profile" in plan:
+        from .vision_runtime import identity
+        configured = plan["vision_profile"]
+        facts = {key: value for key, value in configured.items() if key != "adapter_enabled"}
+        if facts != identity(configured["runtime_executable"]):
+            raise ServeError("vision_profile_changed", "Vision runtime source or dependencies changed.",
+                             "Review a fresh serving preview.")
+
+
 def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                adapter_path=None, path=None, jit=False, receipts_dir=None, hf_cache=None, memory_policy=None,
                runtime_executable=None, strata_speculation=False,
                strata_expert_memory_gb=None, strata_context_tokens=None, training_receipt=None, thinking="default",
-               m5_prefill=False, prompt_lookup=False):
+               m5_prefill=False, prompt_lookup=False, vision_cache=False):
     """Render the start plan and local file identities without side effects."""
     if thinking not in ("default", "off"):
         raise ServeError("invalid_arguments", "thinking must be default or off.", "Pass --thinking off or omit it.")
@@ -244,6 +254,9 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
     if type(prompt_lookup) is not bool or (prompt_lookup and runtime != "mlx_lm"):
         raise ServeError("invalid_arguments", "Code-edit acceleration requires MLX-LM.",
                          "Use --runtime auto or mlx_lm, or omit --prompt-lookup.")
+    if type(vision_cache) is not bool or (vision_cache and runtime != "mlx-vlm"):
+        raise ServeError("invalid_arguments", "Vision feature reuse requires MLX-VLM.",
+                         "Use --runtime auto or mlx-vlm, or omit --vision-cache.")
     binding = None
     if training_receipt is not None:
         if repo is not None or path is not None or adapter_path is not None:
@@ -390,6 +403,16 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
             if prefill_kernel is not None and prefill_kernel["adapter_enabled"]:
                 argv += ["--m5-prefill-fingerprint", prefill_kernel["fingerprint"]]
             argv += native_argv[1:]
+    vision_profile = None
+    if vision_cache:
+        from .vision_runtime import available, identity
+        vision_profile = identity(values["executable"])
+        vision_profile["adapter_enabled"] = available(vision_profile)
+        if vision_profile["adapter_enabled"]:
+            argv = [vision_profile["runtime_python"], "-I", "-B",
+                    str(Path(__file__).with_name("vision_runtime.py").resolve()),
+                    "--runtime-executable", values["executable"],
+                    "--expected-vision-fingerprint", vision_profile["fingerprint"]] + native_argv[1:]
     plan = {
         "repo": repo.strip() if has_repo else None,
         "path": local_path,
@@ -414,6 +437,8 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         plan["prefill_kernel"] = prefill_kernel
     if decode_profile is not None:
         plan["decode_profile"] = decode_profile
+    if vision_profile is not None:
+        plan["vision_profile"] = vision_profile
     if adapter_path is not None:
         plan["adapter_identity"] = adapter_identity
     if thinking == "off":
@@ -558,6 +583,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
     _require_adapter_identity(plan)
     _require_prefill_identity(plan)
     _require_decode_identity(plan)
+    _require_vision_identity(plan)
 
     if plan["runtime"] == "strata" and not plan.get("jit"):
         from .jit_serve import available_memory_bytes
@@ -658,6 +684,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         _require_adapter_identity(plan)
         _require_prefill_identity(plan)
         _require_decode_identity(plan)
+        _require_vision_identity(plan)
     except ServeError:
         _terminate_pid(pid)
         raise
@@ -686,6 +713,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         receipt["prefill_kernel"] = plan["prefill_kernel"]
     if "decode_profile" in plan:
         receipt["decode_profile"] = plan["decode_profile"]
+    if "vision_profile" in plan:
+        receipt["vision_profile"] = plan["vision_profile"]
     content = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     _atomic_in_directory(root, receipt_path.name, content, 0o600)
     return {"status": "started", "receipt": receipt}
@@ -738,6 +767,8 @@ def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_comma
             entries[-1]["prefill_kernel"] = receipt["prefill_kernel"]
         if "decode_profile" in receipt:
             entries[-1]["decode_profile"] = receipt["decode_profile"]
+        if "vision_profile" in receipt:
+            entries[-1]["vision_profile"] = receipt["vision_profile"]
         if receipt.get("jit"):
             entries[-1]["jit"] = True
             if alive and entries[-1]["argv_match"]:

@@ -950,7 +950,7 @@ def _add_serve_arguments(parser):
     start.add_argument("--prompt-lookup", action="store_true",
                        help="opt-in code-edit decoding; plain greedy requests run one at a time")
     start.add_argument("--vision-cache", action="store_true",
-                       help="opt-in bounded Qwen3-VL image feature reuse with MLX-VLM")
+                       help="opt-in bounded Qwen2.5-VL and Qwen3-VL image feature reuse with MLX-VLM")
     start.add_argument("--jit", action="store_true", help="keep endpoint reachable; load local weights on inference requests")
     _add_memory_arguments(start)
     start.add_argument("--launchd", action="store_true", help="install a launchd agent plist instead of spawning now")

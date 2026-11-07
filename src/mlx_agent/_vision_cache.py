@@ -55,12 +55,14 @@ def apply(model, max_bytes=MAX_BYTES, max_entries=MAX_ENTRIES):
     import mlx.core as mx
     import mlx.nn as nn
     from mlx.utils import tree_flatten, tree_map
+    from mlx_vlm.models.qwen2_5_vl.qwen2_5_vl import Model as Qwen25Model
+    from mlx_vlm.models.qwen2_5_vl.vision import VisionModel as Qwen25VisionModel
     from mlx_vlm.models.qwen3_vl.qwen3_vl import Model
     from mlx_vlm.models.qwen3_vl.vision import VisionModel
     from mlx_vlm.models.qwen3_vl_moe.qwen3_vl_moe import Model as MoEModel
     from mlx_vlm.models.qwen3_vl_moe.vision import VisionModel as MoEVisionModel
 
-    towers = {Model: VisionModel, MoEModel: MoEVisionModel}
+    towers = {Qwen25Model: Qwen25VisionModel, Model: VisionModel, MoEModel: MoEVisionModel}
     if (type(model) not in towers or model.training or hasattr(model, "_mlx_agent_vision_cache")
             or type(model.vision_tower) is not towers[type(model)]):
         return False
@@ -79,7 +81,8 @@ def apply(model, max_bytes=MAX_BYTES, max_entries=MAX_ENTRIES):
             if model.training or self.training:
                 cache.clear()
                 return base.__call__(self, pixels, grid, **kwargs)
-            if (kwargs or not isinstance(pixels, mx.array)
+            native_kwargs = not kwargs or (base is Qwen25VisionModel and kwargs == {"output_hidden_states": False})
+            if (not native_kwargs or not isinstance(pixels, mx.array)
                     or pixels.dtype not in (mx.float16, mx.bfloat16, mx.float32)
                     or not isinstance(grid, mx.array) or grid.ndim != 2 or grid.shape[-1] != 3):
                 return base.__call__(self, pixels, grid, **kwargs)
@@ -93,7 +96,7 @@ def apply(model, max_bytes=MAX_BYTES, max_entries=MAX_ENTRIES):
             features = cache.get(key)
             hit = features is not None
             if features is None:
-                features = base.__call__(self, pixels, grid)
+                features = base.__call__(self, pixels, grid, **kwargs)
                 mx.eval(features)
                 cache.encodings += 1
                 cache.put(key, features, sum(v.nbytes for _, v in tree_flatten(features)))

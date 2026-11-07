@@ -442,7 +442,7 @@
     },
     {
       "path": "src/mlx_agent/_vision_cache.py",
-      "sha256": "00fdcb741d124d6683a3eedd2055a5568e32019bb3f6c870940dae239db0b1e0"
+      "sha256": "97b7639381377d7bf5ebc3b3a4940a43ce874664575f30b00e51d479e1311af1"
     },
     {
       "path": "src/mlx_agent/adoption.py",
@@ -486,7 +486,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "c11e78e7a0226009fafacd41b528a7dde401de0f4644f209bd3cdd91c70adf94"
+      "sha256": "6776c14636d828b5494d65d7f930a5d4d460e75f7acbae49190aa8e87579ce75"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -1162,7 +1162,7 @@
     },
     {
       "path": "src/mlx_agent/vision_runtime.py",
-      "sha256": "3e16ad9bbe00906498289dafac0d8672e24fd3e26de35ae567e6aaabf487a77c"
+      "sha256": "983209c1b9bf05df106076bb9c2c054798c57ebb0c171af31329fd855b17159d"
     },
     {
       "path": "src/mlx_agent/watch.py",

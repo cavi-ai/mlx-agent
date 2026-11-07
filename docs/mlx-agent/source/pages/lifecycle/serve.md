@@ -81,10 +81,12 @@ same fingerprint before loading. No runtime source or model code is downloaded.
 
 ## Repeated-image acceleration
 
-Add `--vision-cache` to both preview and confirmation to reuse Qwen3-VL image
-features across questions about the same image, including dense and MoE models.
+Add `--vision-cache` to both preview and confirmation to reuse Qwen2.5-VL and
+Qwen3-VL image features across questions about the same image, including dense
+and MoE Qwen3-VL models.
 It preserves all DeepStack features and uses the installed MLX-VLM
-0.7.4 backend with MLX/MLX-metal 0.32.3, MLX-LM 0.32.2 and NumPy 2.5.3.
+0.7.4 backend with MLX/MLX-metal 0.32.3, MLX-LM 0.32.2, NumPy 2.5.3 and
+Transformers 5.18.0.
 The image encoder and model processor keep their native calculations and
 resolution; text embeddings, position data, KV caches and generation remain
 request-specific.

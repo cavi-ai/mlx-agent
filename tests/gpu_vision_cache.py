@@ -22,19 +22,27 @@ class VisionEmbeddingTests(unittest.TestCase):
         if self.family == "qwen3_vl_moe":
             text.update(num_experts=4, num_experts_per_tok=2, decoder_sparse_step=1,
                         mlp_only_layers=[], moe_intermediate_size=64)
+        if self.family == "qwen2_5_vl":
+            text = dict(model_type=self.family, hidden_size=128, num_hidden_layers=1,
+                intermediate_size=256, num_attention_heads=4, rms_norm_eps=1e-6, vocab_size=64,
+                rope_scaling={"type": "mrope", "mrope_section": [4, 6, 6]})
+        vision = config_module.VisionConfig(depth=3, hidden_size=64, intermediate_size=128,
+            out_hidden_size=128, num_heads=4, patch_size=16, spatial_patch_size=16,
+            num_position_embeddings=16, deepstack_visual_indexes=[0, 1, 2]) if self.family != "qwen2_5_vl" else (
+            config_module.VisionConfig(depth=1, hidden_size=64, intermediate_size=128,
+                out_hidden_size=128, num_heads=4, fullatt_block_indexes=[0], window_size=56))
         config = config_module.ModelConfig(model_type=self.family, image_token_id=11, video_token_id=13,
             vision_start_token_id=10, vision_end_token_id=12,
             text_config=config_module.TextConfig(**text),
-            vision_config=config_module.VisionConfig(depth=3, hidden_size=64, intermediate_size=128,
-                out_hidden_size=128, num_heads=4, patch_size=16, spatial_patch_size=16,
-                num_position_embeddings=16, deepstack_visual_indexes=[0, 1, 2]))
+            vision_config=vision)
         model = Model(config)
         model.eval()
         mx.eval(model.parameters())
         return model
 
     def inputs(self):
-        return mx.array([[3, 10, 11, 11, 11, 11, 12, 4]]), mx.random.normal((16, 1536)), mx.array([[1, 4, 4]])
+        width = 1176 if self.family == "qwen2_5_vl" else 1536
+        return mx.array([[3, 10, 11, 11, 11, 11, 12, 4]]), mx.random.normal((16, width)), mx.array([[1, 4, 4]])
 
     def equal(self, expected, actual):
         def equal(a, b):
@@ -47,7 +55,7 @@ class VisionEmbeddingTests(unittest.TestCase):
                 self.assertTrue(mx.array_equal(a, b).item())
         for key in ("inputs_embeds", "visual_pos_masks", "deepstack_visual_embeds", "position_ids", "rope_deltas"):
             equal(getattr(expected, key), getattr(actual, key))
-        self.assertIsNotNone(actual.deepstack_visual_embeds)
+        if self.family != "qwen2_5_vl": self.assertIsNotNone(actual.deepstack_visual_embeds)
 
     def test_repeat_reuses_encoder_and_rebuilds_current_token_and_rope_outputs(self):
         model = self.model()
@@ -130,7 +138,7 @@ class VisionEmbeddingTests(unittest.TestCase):
         weights = dict(tree_flatten(model.parameters()))
         outputs = model.vision_tower(pixels, grid)
         size = sum(v.nbytes for _, v in tree_flatten(outputs))
-        self.assertGreater(size, outputs[0].nbytes)
+        if self.family != "qwen2_5_vl": self.assertGreater(size, outputs[0].nbytes)
         self.assertTrue(apply(model))
         adapted = dict(tree_flatten(model.parameters()))
         self.assertEqual(weights.keys(), adapted.keys())
@@ -152,6 +160,10 @@ class VisionEmbeddingTests(unittest.TestCase):
 
 class MoEVisionEmbeddingTests(VisionEmbeddingTests):
     family = "qwen3_vl_moe"
+
+
+class Qwen25VisionEmbeddingTests(VisionEmbeddingTests):
+    family = "qwen2_5_vl"
 
 
 if __name__ == "__main__":

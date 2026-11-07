@@ -8,11 +8,13 @@ MEDIA_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 DETAILS = {"auto", "low", "high", "original"}
 
 
-def image_url(value):
+def image_url(value, *, allow_data=True):
     """Validate a reference without fetching, decoding pixels or changing bytes."""
     if not isinstance(value, str) or not value:
         raise ValueError("Images need a data URL or an HTTP(S) URL.")
     if value.startswith("data:"):
+        if not allow_data:
+            raise ValueError("URL image sources must use HTTP(S).")
         header, separator, data = value.partition(",")
         if not separator or header not in {"data:" + mime + ";base64" for mime in MEDIA_TYPES} or not data:
             raise ValueError("Image data URLs need a supported media type and base64 data.")
@@ -23,9 +25,10 @@ def image_url(value):
     else:
         try:
             parts = urlsplit(value)
-            valid = (parts.scheme in ("http", "https") and parts.hostname and parts.port != 0
+            valid = (value.startswith(("http://", "https://")) and parts.hostname and parts.port != 0
                      and parts.username is None and parts.password is None
-                     and not any(character.isspace() for character in value))
+                     and not any(character.isspace() or ord(character) < 32 or ord(character) == 127
+                                 for character in value))
         except ValueError:
             valid = False
         if not valid:
@@ -43,7 +46,7 @@ def messages_image(block):
             raise ValueError("Image sources need a supported media type and base64 data.")
         return image_url("data:" + source["media_type"] + ";base64," + source["data"])
     if source.get("type") == "url" and set(source) == {"type", "url"}:
-        return image_url(source["url"])
+        return image_url(source["url"], allow_data=False)
     raise ValueError("Image sources must use base64 data or an HTTP(S) URL.")
 
 

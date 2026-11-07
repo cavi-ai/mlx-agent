@@ -602,7 +602,7 @@
     },
     {
       "path": "src/mlx_agent/image_inputs.py",
-      "sha256": "4b4213c98cdd017e28fad385256961cfdb0d0c4c431659fc6628653e281858cc"
+      "sha256": "c07d07c340b67900621ba3327e15e2845b26a708911616c0dc49b6e89ab282e5"
     },
     {
       "path": "src/mlx_agent/inference_runner.py",

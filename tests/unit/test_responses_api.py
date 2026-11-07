@@ -167,6 +167,7 @@ class ResponsesGatewayTests(unittest.TestCase):
         self.server.config["runtime"] = "mlx-vlm"
         for image in ({"type": "input_image", "file_id": "file_1"},
                       {"type": "input_image", "image_url": "data:image/png;base64,!"},
+                      {"type": "input_image", "image_url": "\x00https://example.invalid/i.png"},
                       {"type": "input_image", "image_url": "https://example.invalid/i.png", "detail": []}):
             with self.subTest(image=image):
                 status, _, text = self.post({"model": str(self.model),

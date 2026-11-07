@@ -195,6 +195,8 @@ class MessagesGatewayTests(unittest.TestCase):
         self.server.config["runtime"] = "mlx-vlm"
         for source in ({"type": "base64", "media_type": [], "data": "AA=="},
                        {"type": "base64", "media_type": "image/png", "data": "!"},
+                       {"type": "url", "url": "\x00https://example.invalid/i.png"},
+                       {"type": "url", "url": "data:image/png;base64,"+vision_probe_image_base64()},
                        {"type": "file", "file_id": "file_1"}):
             with self.subTest(source=source):
                 status, _, text = self.post({"model": str(self.model), "max_tokens": 64,

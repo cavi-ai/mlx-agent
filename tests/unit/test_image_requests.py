@@ -48,6 +48,8 @@ class ImageRequestTests(unittest.TestCase):
 
     def test_malformed_images_and_unsupported_roles_are_refused(self):
         images = ("", "file:///tmp/image.png", "/tmp/image.png", "https://", "https://user:pass@example.invalid/i.png",
+                  "\x00https://example.invalid/a.png", "\x01https://example.invalid/a.png",
+                  "https://example.invalid/\x7fa.png", "HTTPS://example.invalid/a.png",
                   "data:text/plain;base64,SGk=", "data:image/png,raw", "data:image/png;base64,!!",
                   "data:image/png;base64,")
         for image in images:
@@ -61,6 +63,7 @@ class ImageRequestTests(unittest.TestCase):
         for source in ({"type": "file", "file_id": "file_1"}, {"type": "base64", "media_type": "image/png", "data": "!"},
                        {"type": "base64", "media_type": [], "data": "AA=="},
                        {"type": "base64", "media_type": {}, "data": "AA=="},
+                       {"type": "url", "url": IMAGE},
                        {"type": "url", "url": URL, "unknown": True}):
             with self.subTest(source=source), self.assertRaises(messages_api.MessagesRequestError):
                 messages_api.to_chat_request({"max_tokens": 64, "messages": [{"role": "user", "content": [

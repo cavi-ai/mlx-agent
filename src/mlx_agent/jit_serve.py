@@ -46,11 +46,12 @@ def validate_memory_policy(policy=None):
     defaults = {"idle_timeout_seconds": 0, "keep_loaded": False, "minimum_headroom_gb": None}
     if policy is None:
         return defaults
-    if not isinstance(policy, dict) or set(policy) - set(defaults) - {"context_tokens"}:
+    if not isinstance(policy, dict) or set(policy) - set(defaults) - {"context_tokens", "unload_under_pressure"}:
         raise ValueError("Unknown memory policy fields.")
     result = dict(defaults, **policy)
     # Null and absent both mean no KV term; policies without a context keep their existing form.
     context = result.pop("context_tokens", None)
+    pressure = result.pop("unload_under_pressure", False)
     idle, keep, reserve = (result[key] for key in defaults)
     if type(idle) is not int or not 0 <= idle <= 86400:
         raise ValueError("Idle timeout must be an integer between 0 and 86400 seconds.")
@@ -58,6 +59,12 @@ def validate_memory_policy(policy=None):
         raise ValueError("Keep loaded must be a boolean.")
     if reserve is not None and (type(reserve) not in (int, float) or not math.isfinite(reserve) or not 0 <= reserve <= 1024):
         raise ValueError("Headroom reserve must be a finite value between 0 and 1024 GB.")
+    if type(pressure) is not bool:
+        raise ValueError("Unload under pressure must be a boolean.")
+    if pressure:
+        if reserve is None or keep:
+            raise ValueError("Unload under pressure requires a headroom reserve and cannot be combined with keep loaded.")
+        result["unload_under_pressure"] = True
     if context is not None:
         if type(context) is not int or not CONTEXT_MIN <= context <= CONTEXT_MAX:
             raise ValueError("Context tokens must be an integer between {} and {}.".format(CONTEXT_MIN, CONTEXT_MAX))
@@ -136,6 +143,8 @@ class ModelWorker:
         self.log = None
         self.memory_policy = validate_memory_policy(config.get("memory_policy"))
         self.memory_check = None
+        self.resident_memory_check = None
+        self.request_blocked_reason = None
         self.load_blocked_reason = None
         self.last_unload_reason = None
         self.last_activity = None
@@ -166,6 +175,8 @@ class ModelWorker:
                     "worker_port": self.worker_port if self.model_state == "loaded" else None,
                     "last_error": self.last_error, "memory_policy": dict(self.memory_policy),
                     "memory_check": self.memory_check, "load_blocked_reason": self.load_blocked_reason,
+                    "resident_memory_check": self.resident_memory_check,
+                    "request_blocked_reason": self.request_blocked_reason,
                     "last_unload_reason": self.last_unload_reason}
 
     def configure(self, changes):
@@ -219,6 +230,32 @@ class ModelWorker:
                     "KV cache, " if context is not None else "")
                 raise GatewayError(503, "insufficient_headroom", self.load_blocked_reason)
 
+    def _resident_check(self, policy, available, scope):
+        known = type(available) is int and available >= 0
+        required = math.ceil(policy["minimum_headroom_gb"] * 1e9)
+        self.resident_memory_check = {
+            "available_bytes": available if known else None,
+            "minimum_available_bytes": required, "captured_at": time.time(),
+            "scope": scope, "estimated": True,
+        }
+        if not known:
+            return GatewayError(503, "memory_unknown", "OS memory headroom is unavailable for the resident model guard.")
+        if available < required:
+            return GatewayError(503, "insufficient_headroom", "Insufficient memory headroom for the configured reserve.")
+        return None
+
+    def _check_resident_memory(self, policy):
+        if not policy.get("unload_under_pressure"):
+            return
+        # The admission already holds a request lease, so an idle reaper cannot
+        # evict the worker while this bounded OS probe runs outside the lock.
+        available = self.memory_probe()
+        with self.condition:
+            error = self._resident_check(policy, available, "request")
+            self.request_blocked_reason = str(error) if error else None
+        if error:
+            raise error
+
     def acquire(self):
         with self.condition:
             if not self.condition.wait_for(lambda: self.model_state != "unloading" or self.closed, timeout=10):
@@ -229,6 +266,8 @@ class ModelWorker:
             if self.active_requests >= MAX_REQUESTS:
                 raise GatewayError(503, "endpoint_busy", "Too many inference requests.")
             self.active_requests += 1
+            policy = dict(self.memory_policy)
+            self.request_blocked_reason = None
             starter = self.model_state not in ("loaded", "loading")
             if starter:
                 self.model_state = "loading"
@@ -243,6 +282,10 @@ class ModelWorker:
             with self.condition:
                 if self.closed or self.model_state != "loaded":
                     raise GatewayError(503, "model_load_failed", self.last_error or "Model is not ready.")
+            self._check_resident_memory(policy)
+            with self.condition:
+                if self.closed or self.model_state != "loaded":
+                    raise GatewayError(503, "endpoint_stopping", "Endpoint is stopping.")
                 return self.worker_port
         except BaseException:
             self.release()
@@ -360,13 +403,28 @@ class ModelWorker:
     def unload_if_idle(self):
         with self.condition:
             self._refresh()
-            policy = self.memory_policy
+            policy = dict(self.memory_policy)
             if (self.closed or self.model_state != "loaded" or self.active_requests or policy["keep_loaded"]
-                    or not policy["idle_timeout_seconds"] or self.last_activity is None
-                    or self.clock() - self.last_activity < policy["idle_timeout_seconds"]):
+                    or self.last_activity is None):
                 return False
-            self.model_state = "unloading"
-        self._finish_unload("idle")
+            idle = bool(policy["idle_timeout_seconds"] and
+                        self.clock() - self.last_activity >= policy["idle_timeout_seconds"])
+            if idle:
+                self.model_state = "unloading"
+            elif not policy.get("unload_under_pressure"):
+                return False
+            worker = self.process
+        if not idle:
+            available = self.memory_probe()
+            with self.condition:
+                if (self.closed or self.model_state != "loaded" or self.active_requests
+                        or self.process is not worker or self.memory_policy != policy):
+                    return False
+                error = self._resident_check(policy, available, "idle_reclaim")
+                if error is None or error.code == "memory_unknown":
+                    return False
+                self.model_state = "unloading"
+        self._finish_unload("idle" if idle else "memory_pressure")
         return True
 
     def unload(self):

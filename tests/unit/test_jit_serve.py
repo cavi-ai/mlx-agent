@@ -17,6 +17,7 @@ from mlx_agent.serve import load_recipes, plan_start, start_serve, stop_serve, u
 
 WORKER = '''
 import argparse, json, os, time
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from socketserver import TCPServer
 p = argparse.ArgumentParser()
@@ -24,6 +25,7 @@ p.add_argument('--model'); p.add_argument('--port', type=int); p.add_argument('-
 p.add_argument('--host', default='127.0.0.1')
 p.add_argument('--adapter-path'); p.add_argument('--mutate-adapter', action='store_true')
 p.add_argument('--reply-delay', type=float, default=0); p.add_argument('--keepalive', action='store_true')
+p.add_argument('--stream-release')
 a = p.parse_args()
 with open(a.trace, 'a') as f: f.write('start\\n')
 if a.mutate_adapter:
@@ -44,7 +46,11 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(b'data: {"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}\\n\\n')
             self.wfile.write(b'data: [DONE]\\n\\n')
         elif body.get('stream'):
-            self.wfile.write(b'data: {"choices":[]}\\n\\n'); self.wfile.flush(); time.sleep(0.3)
+            self.wfile.write(b'data: {"choices":[]}\\n\\n'); self.wfile.flush()
+            if a.stream_release:
+                deadline = time.monotonic() + 10
+                while not Path(a.stream_release).exists() and time.monotonic() < deadline: time.sleep(.01)
+            else: time.sleep(0.3)
             try: self.wfile.write(b'data: [DONE]\\n\\n')
             except BrokenPipeError: pass
         else:
@@ -98,6 +104,142 @@ class JITServingTests(unittest.TestCase):
 
     def configure(self, policy):
         return self.request('POST', '/_mlx/policy', policy, {'Authorization': 'Bearer test-control-token'})
+
+    def paused_reaper(self):
+        check = self.server.controller.unload_if_idle
+        patcher = mock.patch.object(self.server.controller, 'unload_if_idle', return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return check
+
+    def load_pressure_guarded(self):
+        check = self.paused_reaper()
+        self.server.controller.memory_probe = lambda: 8_000_000_000
+        self.assertEqual(self.configure({'minimum_headroom_gb': 2, 'unload_under_pressure': True})[0], 200)
+        self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
+        return check, self.server.controller.status()['worker_pid']
+
+    def test_pressure_policy_requires_reserve_and_preserves_legacy_shape(self):
+        before = self.server.controller.status()['memory_policy']
+        for changes in ({'unload_under_pressure': True}, {'unload_under_pressure': 'yes'},
+                        {'minimum_headroom_gb': 2, 'unload_under_pressure': True, 'keep_loaded': True}):
+            self.assertEqual(self.configure(changes)[0], 400)
+            self.assertEqual(self.server.controller.status()['memory_policy'], before)
+        self.assertEqual(self.configure({'unload_under_pressure': False})[0], 200)
+        self.assertEqual(self.server.controller.status()['memory_policy'], before)
+
+    def test_loaded_guard_refuses_low_and_unknown_headroom_and_recovers(self):
+        _, pid = self.load_pressure_guarded()
+        for reading, code in ((0, 'insufficient_headroom'), (None, 'memory_unknown')):
+            self.server.controller.memory_probe = lambda: reading
+            status, body = self.request('POST', '/v1/chat/completions', {'messages': []})
+            self.assertEqual((status, body['error']['code']), (503, code))
+            state = self.server.controller.status()
+            self.assertEqual((state['worker_pid'], state['active_requests']), (pid, 0))
+            self.assertIsNotNone(state['request_blocked_reason'])
+        # The loaded worker is not charged for its resident weights again.
+        self.server.controller.memory_probe = lambda: 2_000_000_000
+        self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
+        state = self.server.controller.status()
+        self.assertIsNone(state['request_blocked_reason'])
+        self.assertEqual(state['resident_memory_check']['minimum_available_bytes'], 2_000_000_000)
+
+    def test_pressure_eviction_keeps_endpoint_and_reloads_after_recovery(self):
+        check, first_pid = self.load_pressure_guarded()
+        self.server.controller.memory_probe = lambda: 0
+        self.assertTrue(check())
+        state = self.server.controller.status()
+        self.assertEqual((state['model_state'], state['last_unload_reason']), ('unloaded', 'memory_pressure'))
+        self.assertEqual(self.request('GET', '/v1/models')[0], 200)
+        self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 503)
+        self.assertEqual(self.trace.read_text().splitlines(), ['start'])
+        self.server.controller.memory_probe = lambda: 8_000_000_000
+        self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
+        self.assertNotEqual(self.server.controller.status()['worker_pid'], first_pid)
+        self.assertEqual(self.trace.read_text().splitlines(), ['start', 'start'])
+
+    def test_unknown_pressure_never_authorizes_worker_eviction(self):
+        check, pid = self.load_pressure_guarded()
+        self.server.controller.memory_probe = lambda: None
+        self.assertFalse(check())
+        self.assertEqual(self.server.controller.status()['worker_pid'], pid)
+
+    def test_pressure_opt_out_does_not_probe_loaded_requests_or_reaper(self):
+        check = self.paused_reaper()
+        self.server.controller.memory_probe = lambda: 8_000_000_000
+        self.assertEqual(self.configure({'minimum_headroom_gb': 2})[0], 200)
+        self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
+        self.server.controller.memory_probe = mock.Mock(side_effect=AssertionError('unexpected warm probe'))
+        self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
+        self.assertFalse(check())
+        self.server.controller.memory_probe.assert_not_called()
+
+    def blocked_pressure_probe(self, check):
+        entered, release = threading.Event(), threading.Event()
+        identity = [None]
+        def probe():
+            if threading.get_ident() == identity[0]:
+                entered.set()
+                release.wait(5)
+                return 0
+            return 8_000_000_000
+        self.server.controller.memory_probe = probe
+        def sweep():
+            identity[0] = threading.get_ident()
+            return check()
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        self.addCleanup(pool.shutdown)
+        self.addCleanup(release.set)
+        future = pool.submit(sweep)
+        self.assertTrue(entered.wait(2))
+        return pool, release, future
+
+    def test_pressure_probe_does_not_block_policy_and_discards_changed_policy(self):
+        check, pid = self.load_pressure_guarded()
+        pool, release, future = self.blocked_pressure_probe(check)
+        try:
+            changed = pool.submit(self.configure, {'unload_under_pressure': False, 'keep_loaded': True})
+            self.assertEqual(changed.result(timeout=1)[0], 200)
+        finally:
+            release.set()
+        self.assertFalse(future.result(timeout=2))
+        self.assertEqual(self.server.controller.status()['worker_pid'], pid)
+
+    def test_pressure_probe_cannot_evict_a_replacement_worker(self):
+        check, old_pid = self.load_pressure_guarded()
+        _, release, future = self.blocked_pressure_probe(check)
+        try:
+            self.assertEqual(self.unload()[0], 200)
+            self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
+            new_pid = self.server.controller.status()['worker_pid']
+            self.assertNotEqual(new_pid, old_pid)
+        finally:
+            release.set()
+        self.assertFalse(future.result(timeout=2))
+        self.assertEqual(self.server.controller.status()['worker_pid'], new_pid)
+
+    def test_pressure_probe_and_new_rejections_preserve_an_active_stream(self):
+        signal = self.root / 'release-stream'
+        self.config['worker_argv'] += ['--stream-release', str(signal)]
+        self.addCleanup(signal.touch)
+        check, pid = self.load_pressure_guarded()
+        _, release, future = self.blocked_pressure_probe(check)
+        connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=10)
+        self.addCleanup(connection.close)
+        connection.request('POST', '/v1/chat/completions', json.dumps({'stream': True, 'messages': []}))
+        response = connection.getresponse()
+        self.assertEqual(response.readline(), b'data: {"choices":[]}\n')
+        release.set()
+        self.assertFalse(future.result(timeout=2))
+        self.server.controller.memory_probe = lambda: 0
+        self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 503)
+        self.assertEqual(self.server.controller.status()['active_requests'], 1)
+        self.assertEqual(self.server.controller.status()['worker_pid'], pid)
+        signal.touch()
+        self.assertIn(b'[DONE]', response.read())
+        with self.server.controller.condition:
+            self.assertTrue(self.server.controller.condition.wait_for(lambda: self.server.controller.active_requests == 0, timeout=2))
+        self.assertTrue(check())
 
     def test_policy_persistence_is_private_and_save_failure_preserves_live_policy(self):
         path = self.root / 'jit-config.json'
@@ -500,6 +642,9 @@ class JITServingTests(unittest.TestCase):
                 configure_serve_memory(port, policy, str(self.root), expected_pid=pid + 1)
             self.assertEqual(configure_serve_memory(port, policy, str(self.root), expected_pid=pid)['memory_policy'], policy)
             self.assertEqual(status_serve(str(self.root))[0]['memory_policy'], policy)
+            pressure = dict(policy, keep_loaded=False, minimum_headroom_gb=0, unload_under_pressure=True)
+            self.assertEqual(configure_serve_memory(port, pressure, str(self.root), expected_pid=pid)['memory_policy'], pressure)
+            self.assertEqual(configure_serve_memory(port, policy, str(self.root), expected_pid=pid)['memory_policy'], policy)
             with_context = dict(policy, minimum_headroom_gb=0, context_tokens=8192)
             self.assertEqual(configure_serve_memory(port, with_context, str(self.root), expected_pid=pid)['memory_policy'], with_context)
             self.assertEqual(configure_serve_memory(port, policy, str(self.root), expected_pid=pid)['memory_policy'], policy)

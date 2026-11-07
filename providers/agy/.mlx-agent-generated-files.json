@@ -482,11 +482,11 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "de0f202f0b9b79686713dab0be403f7613678970131953ac5c872641f53a7f37"
+      "sha256": "01caf8d44ac36b6872c118cb2ccfb08ca43dfee55a5ec1960a826cf2860a82c2"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
-      "sha256": "5914eee89c34616c5a2dd6c83ee7411bf85e7eb08041cafe0127cc4dfe0fc78c"
+      "sha256": "459418ca42793e5963ef96c3d24cfbb474750b4c66cd7596ff8185ae8016d9c9"
     },
     {
       "path": "src/mlx_agent/coding_capture.py",
@@ -626,7 +626,7 @@
     },
     {
       "path": "src/mlx_agent/jit_serve.py",
-      "sha256": "598001d6ef032c23a749835ec8905cac378b5676907d0ad290d3abc659e3fa64"
+      "sha256": "9898198d029e8ba13a411e6ab856ed4bc1a96050e9289214632d8e4ba56325ef"
     },
     {
       "path": "src/mlx_agent/kokoro_runtime.py",
@@ -1054,7 +1054,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "fe8c346fada149349d16c5eb3c89bb2ffc8343b28ea46e82f03cecda657cc762"
+      "sha256": "da76e480bea7e2ae989699c49994d88945c6b15922e55a101059cdc37c672660"
     },
     {
       "path": "src/mlx_agent/speak.py",

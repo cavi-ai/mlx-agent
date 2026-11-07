@@ -85,6 +85,13 @@ class ServeCliTests(unittest.TestCase):
             context_plan = json.loads(output)['data']['plan']
             self.assertEqual(context_plan['memory_policy'], dict(plan['memory_policy'], context_tokens=32768))
             self.assertNotEqual(plan['preview_hash'], context_plan['preview_hash'])
+            _, output = self._run(args + ['--jit', '--min-headroom-gb', '2', '--unload-under-pressure'])
+            pressure_plan = json.loads(output)['data']['plan']
+            self.assertTrue(pressure_plan['memory_policy']['unload_under_pressure'])
+            self.assertNotEqual(plan['preview_hash'], pressure_plan['preview_hash'])
+            for extra in ([], ['--min-headroom-gb', '2', '--keep-loaded']):
+                code, output = self._run(args + ['--jit', '--unload-under-pressure', *extra])
+                self.assertEqual((code, json.loads(output)['error']['code']), (2, 'invalid_arguments'))
             code, output = self._run(args + ['--jit', '--min-headroom-gb', 'nan'])
             self.assertEqual(code, 2)
             self.assertEqual(json.loads(output)['error']['code'], 'invalid_arguments')
@@ -94,6 +101,11 @@ class ServeCliTests(unittest.TestCase):
             code, _ = self._run(['serve', 'policy', '--port', '8080', '--expected-pid', '123', '--idle-timeout', '300', '--keep-loaded', '--json'])
             self.assertEqual(code, 0)
             configure.assert_called_once_with(8080, {'idle_timeout_seconds': 300, 'keep_loaded': True, 'minimum_headroom_gb': None}, None, 123)
+        with mock.patch('mlx_agent.serve.configure_serve_memory', return_value={'status': 'configured'}) as configure:
+            code, _ = self._run(['serve', 'policy', '--port', '8080', '--expected-pid', '123',
+                                 '--min-headroom-gb', '2', '--unload-under-pressure', '--json'])
+            self.assertEqual(code, 0)
+            self.assertTrue(configure.call_args.args[1]['unload_under_pressure'])
         with self.assertRaises(SystemExit):
             self._run(['serve', 'policy', '--port', '8080', '--json'])
 

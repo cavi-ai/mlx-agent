@@ -202,13 +202,27 @@ python3 scripts/mlx-agent serve policy --port 8080 --expected-pid <gateway-pid> 
 ```
 
 Idle time starts after the last request or stream finishes. `--idle-timeout 0`
-disables automatic unload. `--keep-loaded` prevents automatic unload after use;
+disables automatic idle unload. `--keep-loaded` prevents automatic idle unload;
 it does not preload weights, and manual unload remains available. Omitting
-`--keep-loaded` in a policy replacement enables idle unload; omitting
+`--keep-loaded` in a policy replacement allows configured idle unloading; omitting
 `--min-headroom-gb` disables admission checking, and omitting `--context-tokens`
 removes the KV cache term. Policy is persisted atomically
 in private gateway configuration. Start without policy flags retains manual
 unload behavior. Policy flags require JIT.
+
+Add `--unload-under-pressure` with `--min-headroom-gb` to protect the reserve
+after loading. New requests return `insufficient_headroom` when OS headroom is
+below the reserve; an idle worker unloads while its endpoint stays reachable.
+Active requests and streams finish before automatic reclamation. Unknown
+headroom returns `memory_unknown` for new requests and does not trigger pressure
+unloading.
+This option cannot be combined with `--keep-loaded`.
+
+The loaded-request check counts only the reserve. Status records the latest
+observation in `resident_memory_check` and any refusal in
+`request_blocked_reason`. The cold-load estimate below still applies after
+reclamation. Omitting `--unload-under-pressure` in a policy replacement disables
+both the loaded-request guard and pressure unloading.
 
 Before a guarded cold load, fresh OS headroom must cover estimated local weight
 bytes × 1.10, a 1.5 GB runtime allowance, and the requested reserve in decimal GB.

@@ -279,6 +279,18 @@ class Pixal3DNativeTests(unittest.TestCase):
         np.testing.assert_allclose(pixels[:4], [[256, 256], [0, 256], [512, 256], [256, 0]], atol=1e-3)
         self.assertLess(pixels[4, 0], 0)
 
+    def test_the_side_the_input_camera_sees_is_the_glb_front_and_up_stays_up(self):
+        import numpy as np
+        projection, pipeline = port('pixal3d.projection'), port('pixal3d.pipeline')
+        angle, resolution = 0.6, 17
+        coords = np.array([[0, 8, 0], [0, 8, 16], [8, 16, 8], [8, 0, 8]])
+        pixels = projection.pixels(projection.grid_points(coords, resolution), angle, projection.distance(angle), 512)
+        nearer = int(np.argmax(np.abs(pixels[:2, 0] - 256)))  # perspective spreads the side nearer the camera
+        vertices = pipeline.gltf_vertices(np.linspace(-0.5, 0.5, resolution)[coords])
+        self.assertEqual(int(np.argmax(vertices[:2, 2])), nearer)
+        self.assertLess(pixels[2, 1], pixels[3, 1])  # higher in the image
+        self.assertGreater(vertices[2, 1], vertices[3, 1])
+
     def test_projection_samples_like_grid_sample_with_border_padding(self):
         """Expected values are F.grid_sample(bilinear, align_corners=False, padding_mode='border')."""
         import mlx.core as mx

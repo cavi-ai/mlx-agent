@@ -10,7 +10,7 @@ from PIL import Image
 
 from . import moge, naf, projection
 from ..trellis2 import dinov3, dual_grid, flow, sparse, structure
-from ..trellis2.pipeline import _denormalize, _kernels, _noise, _sampler
+from ..trellis2.pipeline import _denormalize, _kernels, _noise, _sampler, gltf_axes
 from ..triposg.geometry import decimate, write_glb
 from ..triposg.weights import Weights
 
@@ -22,6 +22,12 @@ CASCADE_FLOOR = 1024
 LOW_RESOLUTION = 512
 CROP_MARGIN = 1.1
 NAF_SIZE = (512, 512)
+
+
+def gltf_vertices(vertices):
+    """Projection-grid vertices in glTF axes, through the z-up world the input camera sees from -y,
+    so the side facing the camera is the glTF front (+z)."""
+    return gltf_axes(vertices @ projection.AXES.T)
 
 
 def load(path):
@@ -141,7 +147,7 @@ def generate(model, image, out, steps=12, seed=42, resolution=1536, guidance=7.5
     previous, cursor = cursor, time.perf_counter()
     stages["decode"] = cursor - previous
     vertices, faces = dual_grid.to_mesh(voxels, vertices, crossed, split, level_resolution)
-    vertices = np.stack([-vertices[:, 0], vertices[:, 1], -vertices[:, 2]], axis=1)
+    vertices = gltf_vertices(vertices)
     previous, cursor = cursor, time.perf_counter()
     stages["mesh"] = cursor - previous
     vertices, faces = decimate(vertices, faces, max_faces)

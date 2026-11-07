@@ -28,6 +28,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         calls = [CALL] if body.get('tools') and body['messages'][-1]['role'] != 'tool' else []
+        # The native chat template serializes arguments itself. A JSON string
+        # here becomes a quoted string instead of the generated argument object.
+        history = [c for m in body.get('messages', []) for c in m.get('tool_calls', [])]
+        answer = 'Double-encoded tool history' if any(isinstance(c['function']['arguments'], str) for c in history) else 'It is 23 degrees.'
         self.send_response(200); self.end_headers()
         if body.get('stream'):
             delta = {'role': 'assistant', 'content': '' if calls else 'It is 23 degrees.', 'tool_calls': calls}
@@ -36,7 +40,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(('data: ' + json.dumps(response('chat.completion.chunk', choice)) + '\\n\\n').encode())
             self.wfile.write(b'data: [DONE]\\n\\n')
         else:
-            text = '<|im_end|>' if calls else 'It is 23 degrees.<|im_end|>'
+            text = '<|im_end|>' if calls else answer + '<|im_end|>'
             self.wfile.write(json.dumps(response('chat.completion', {'index': 0, 'finish_reason': 'stop',
                 'message': {'role': 'assistant', 'content': text, 'tool_calls': calls}})).encode())
 class Server(ThreadingHTTPServer):
@@ -67,6 +71,7 @@ class ChatCompletionsGatewayTests(unittest.TestCase):
         (self.model / "model.safetensors").write_bytes(b"fixture")
         (root / "worker.py").write_text(WORKER)
         config = {
+            "runtime": "mlx_lm",
             "model": str(self.model), "local_path": str(self.model), "fingerprint": model_fingerprint(self.model),
             "control_token": "test-control-token", "max_tokens": 8192,
             "worker_argv": [sys.executable, str(root / "worker.py"), "--model", str(self.model), "--port", "{worker_port}"],
@@ -117,6 +122,18 @@ class ChatCompletionsGatewayTests(unittest.TestCase):
         tool_turn = json.loads(self.post("/v1/messages", {"max_tokens": 64, "messages": [{"role": "user", "content": "Weather?"}],
                                                           "tools": [{"name": "get_weather", "input_schema": TOOLS[0]["function"]["parameters"]}]}))
         self.assertEqual([block["type"] for block in tool_turn["content"]], ["tool_use"])
+
+    def test_other_runtimes_retain_openai_tool_argument_strings(self):
+        self.server.config["runtime"] = "lmstudio"
+        chat = json.loads(self.post("/v1/chat/completions", {"messages": ANSWERED, "tools": TOOLS}))
+        self.assertEqual(chat["choices"][0]["message"]["content"], "Double-encoded tool history")
+
+    def test_existing_native_console_receipts_decode_tool_history(self):
+        self.post("/v1/chat/completions", {"messages": QUESTION})
+        self.server.config.pop("runtime")
+        self.server.config["worker_argv"][0] = "mlx_lm.server"
+        chat = json.loads(self.post("/v1/chat/completions", {"messages": ANSWERED, "tools": TOOLS}))
+        self.assertEqual(chat["choices"][0]["message"]["content"], "It is 23 degrees.")
 
 
 if __name__ == "__main__":

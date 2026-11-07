@@ -178,4 +178,4 @@ def discover_services(receipts_dirs=(), registry=None, process_roots=None, inspe
         except (OSError, ValueError, KeyError, TypeError) as error:
             errors.append({'source': str(value), 'message': str(error)})
     return {'schema_version': 1, 'services': services, 'errors': errors,
-            'capabilities': {'scoped_doctor': True, 'expected_pid_stop': True}}
+            'capabilities': {'scoped_doctor': True, 'scoped_watch': True, 'expected_pid_stop': True}}

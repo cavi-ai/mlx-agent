@@ -752,6 +752,36 @@
               "required": false
             },
             {
+              "name": "wired_root",
+              "flag": "--wired-root",
+              "kind": "option",
+              "type": "string",
+              "required": false,
+              "repeatable": true
+            },
+            {
+              "name": "hf_cache",
+              "flag": "--hf-cache",
+              "kind": "option",
+              "type": "string",
+              "required": false
+            },
+            {
+              "name": "no_hf_cache",
+              "flag": "--no-hf-cache",
+              "kind": "option",
+              "type": "boolean",
+              "required": false
+            },
+            {
+              "name": "owned_repo",
+              "flag": "--owned-repo",
+              "kind": "option",
+              "type": "string",
+              "required": false,
+              "repeatable": true
+            },
+            {
               "name": "json",
               "flag": "--json",
               "kind": "option",
@@ -775,6 +805,36 @@
               "kind": "option",
               "type": "integer",
               "required": false
+            },
+            {
+              "name": "wired_root",
+              "flag": "--wired-root",
+              "kind": "option",
+              "type": "string",
+              "required": false,
+              "repeatable": true
+            },
+            {
+              "name": "hf_cache",
+              "flag": "--hf-cache",
+              "kind": "option",
+              "type": "string",
+              "required": false
+            },
+            {
+              "name": "no_hf_cache",
+              "flag": "--no-hf-cache",
+              "kind": "option",
+              "type": "boolean",
+              "required": false
+            },
+            {
+              "name": "owned_repo",
+              "flag": "--owned-repo",
+              "kind": "option",
+              "type": "string",
+              "required": false,
+              "repeatable": true
             },
             {
               "name": "json",

@@ -63,6 +63,7 @@ class ServiceRegistryTests(unittest.TestCase):
             self.assertEqual(len(result['errors']), 2)
             self.assertEqual(result['schema_version'], 1)
             self.assertEqual(result['services'], [])
+            self.assertTrue(result['capabilities']['scoped_watch'])
 
     def test_symlinked_directories_are_refused(self):
         with TemporaryDirectory() as folder:

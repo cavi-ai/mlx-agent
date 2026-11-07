@@ -486,7 +486,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "9018ec709e69f5d089e0beb1081b2754a739322533b9a3826ca16d7ebcdbeebc"
+      "sha256": "b194d4a875083a5de6d977a1086fe72ce09208236eea5a6c35c0e110c5fa53ee"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -682,7 +682,7 @@
     },
     {
       "path": "src/mlx_agent/model_doctor.py",
-      "sha256": "b0e07d72468e11b52f8721b6324275d14d7774ab1f28684858a7ad35919608f3"
+      "sha256": "54148ea015bf7435c3b7947db955a233f595f1050cc7155c2edff19ca61d21f1"
     },
     {
       "path": "src/mlx_agent/models.py",
@@ -1074,7 +1074,7 @@
     },
     {
       "path": "src/mlx_agent/service_registry.py",
-      "sha256": "272e004a5664e3e48fd34e8ad4a1e65b4e899951dae5bd653fdc0ed4b7fb8e83"
+      "sha256": "62b755248b6ea47fce13773559e02d241004a279ab229e2ef576fea5b7c45498"
     },
     {
       "path": "src/mlx_agent/speak.py",
@@ -1178,7 +1178,7 @@
     },
     {
       "path": "src/mlx_agent/watch.py",
-      "sha256": "970047c193f8d3a5527e1679a0c3c8dfff26d732cd0476b80f544232179ddacf"
+      "sha256": "bc2a9ee5cbecc89015a97df3338b120bb47a22f75dce881e51de013cbbc70032"
     },
     {
       "path": "src/mlx_agent/wiring.py",

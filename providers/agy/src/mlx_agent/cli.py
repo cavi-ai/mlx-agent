@@ -1484,16 +1484,25 @@ def _add_watch_arguments(parser):
                             help="watch state root (default ./.mlx-agent-watch)")
         action.add_argument("--limit", type=int, default=6,
                             help="discovery results per role (default 6)")
+        action.add_argument("--wired-root", action="append", default=None,
+                            help="exact client file or directory to inspect (repeatable; default current project)")
+        cache = action.add_mutually_exclusive_group()
+        cache.add_argument("--hf-cache", help="inspect only this Hugging Face cache")
+        cache.add_argument("--no-hf-cache", action="store_true", help="do not inspect a Hugging Face cache")
+        action.add_argument("--owned-repo", action="append", default=[],
+                            help="explicitly owned Hugging Face org/name ID (repeatable)")
         action.add_argument("--json", action="store_true")
 
 
 def _run_watch(arguments):
     from .discovery import DiscoveryRequest
     from .watch import (
-        WatchError, build_snapshot, collect_owned, diff_snapshots, read_baseline, snapshot_candidates, write_snapshot,
+        WatchError, build_snapshot, collect_owned, diff_snapshots, read_baseline,
+        snapshot_candidates, validate_owned_repos, write_snapshot,
     )
     operation = "watch-{0}".format(arguments.watch_command)
     try:
+        explicit = validate_owned_repos(arguments.owned_repo)
         service, fixture_warning, fixture_error = _discovery_service_from_environment()
         if fixture_error is not None:
             return _emit_wire_result(fixture_error, arguments.json)
@@ -1503,16 +1512,20 @@ def _run_watch(arguments):
             return _emit_wire_result(ResultEnvelope.fail(
                 operation, error["code"], error["message"], error["remediation"]
             ), arguments.json)
-        owned = collect_owned(_watch_runtime_clients())
+        evidence = {}
+        owned = collect_owned(_watch_runtime_clients(), hf_cache=arguments.hf_cache,
+                              wired_roots=arguments.wired_root, include_hf_cache=not arguments.no_hf_cache,
+                              owned_repos=explicit, evidence=evidence)
         candidates = snapshot_candidates(result.data)
         if arguments.watch_command == "snapshot":
-            snapshot = build_snapshot(owned, candidates)
+            snapshot = build_snapshot(owned, candidates, **evidence)
             destination = write_snapshot(arguments.state_dir, snapshot)
             data = {
                 "state": str(destination),
                 "owned": len(snapshot["owned"]),
                 "candidates": len(snapshot["candidates"]),
                 "rotated_previous": snapshot["previous"] is not None,
+                **evidence,
             }
             result = ResultEnvelope.ok(operation, data)
             if arguments.json:
@@ -1523,11 +1536,12 @@ def _run_watch(arguments):
                 ))
             return 0
         baseline = read_baseline(arguments.state_dir)
-        current = build_snapshot(owned, candidates)
+        current = build_snapshot(owned, candidates, **evidence)
         findings = diff_snapshots(baseline, current)
         data = {
             "baseline_created_at": baseline["created_at"],
             "findings": findings,
+            **evidence,
         }
         warnings = [
             {"code": finding["code"], "message": "{0}: {1}".format(finding["repo"], finding["detail"])}

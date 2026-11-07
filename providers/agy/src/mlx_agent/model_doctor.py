@@ -110,6 +110,31 @@ def _read_text_quiet(path):
         return None
 
 
+def _complete_runtime_inventory(response):
+    if isinstance(response, dict):
+        if response.get("error"):
+            return False
+        if "models" in response:
+            records = response["models"]
+        elif "data" in response:
+            records = response["data"]
+        else:
+            return False
+    else:
+        records = response
+    if not isinstance(records, list):
+        return False
+    for record in records:
+        if isinstance(record, str) and record:
+            continue
+        if isinstance(record, dict):
+            value = record.get("repo") or record.get("id") or record.get("name") or record.get("model")
+            if isinstance(value, str) and value:
+                continue
+        return False
+    return True
+
+
 def collect_runtime_inventory(runtime_clients):
     """Collect served model IDs from already-running loopback runtimes."""
     inventory = []
@@ -118,6 +143,8 @@ def collect_runtime_inventory(runtime_clients):
         name = str(getattr(runtime, "name", runtime.__class__.__name__))
         try:
             response = runtime.list_models()
+            if not _complete_runtime_inventory(response):
+                errors.append("{0}: malformed model inventory".format(name))
             for model_id in sorted(installed_model_ids(response)):
                 if len(inventory) >= MAX_INVENTORY_ENTRIES:
                     break

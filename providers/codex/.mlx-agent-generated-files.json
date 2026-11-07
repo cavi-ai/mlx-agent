@@ -57,6 +57,10 @@
       "sha256": "b6fe6fe6fce77e054c60e4da3869ac00db1439661c47fc7cc17efef962a7ceae"
     },
     {
+      "path": "src/mlx_agent/_decode_policy.py",
+      "sha256": "644de897c776310232ca6e1e1252afb15769ff6653ecee4d5a50ce2579985031"
+    },
+    {
       "path": "src/mlx_agent/_lab/video_lab/__init__.py",
       "sha256": "877280c1be7cc9aa2f9a2c908e4f141453ff3515b89b04e53f231df621b197e4"
     },
@@ -434,7 +438,7 @@
     },
     {
       "path": "src/mlx_agent/_prompt_lookup.py",
-      "sha256": "6420e2ac07c8216c8d1c4f09a4881993561764848004aaea1ac68c46dd9c0df2"
+      "sha256": "208f8db4c5be9fba4b541f6274482a4dbcd2353b0e65c981b3e0b6979dc9f5e4"
     },
     {
       "path": "src/mlx_agent/adoption.py",
@@ -478,11 +482,11 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "de0f202f0b9b79686713dab0be403f7613678970131953ac5c872641f53a7f37"
+      "sha256": "01caf8d44ac36b6872c118cb2ccfb08ca43dfee55a5ec1960a826cf2860a82c2"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
-      "sha256": "5914eee89c34616c5a2dd6c83ee7411bf85e7eb08041cafe0127cc4dfe0fc78c"
+      "sha256": "459418ca42793e5963ef96c3d24cfbb474750b4c66cd7596ff8185ae8016d9c9"
     },
     {
       "path": "src/mlx_agent/coding_capture.py",
@@ -622,7 +626,7 @@
     },
     {
       "path": "src/mlx_agent/jit_serve.py",
-      "sha256": "598001d6ef032c23a749835ec8905cac378b5676907d0ad290d3abc659e3fa64"
+      "sha256": "ae9cc9efddd46e408fa72b8c054ccf2bf5f5995786b6594193d11d8c3f01ba1b"
     },
     {
       "path": "src/mlx_agent/kokoro_runtime.py",
@@ -710,7 +714,7 @@
     },
     {
       "path": "src/mlx_agent/prompt_lookup_runtime.py",
-      "sha256": "badf2d083874002e81135c9e7f32f756586570c89bdc6fbd3c862d7ef8a5d52e"
+      "sha256": "0211e96cd93db042a01e5bae2151eebd73394ae69d2524f3bf7a892c92d3305f"
     },
     {
       "path": "src/mlx_agent/providers.py",
@@ -1050,7 +1054,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "fe8c346fada149349d16c5eb3c89bb2ffc8343b28ea46e82f03cecda657cc762"
+      "sha256": "da76e480bea7e2ae989699c49994d88945c6b15922e55a101059cdc37c672660"
     },
     {
       "path": "src/mlx_agent/speak.py",

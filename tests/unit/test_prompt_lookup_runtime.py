@@ -10,6 +10,14 @@ from mlx_agent.serve import ServeError, load_recipes, plan_start, start_serve, s
 
 
 class PromptLookupRuntimeTests(unittest.TestCase):
+    def test_profile_binds_adaptive_policy_source(self):
+        current = identity()
+        self.assertEqual(current["name"], "prompt-lookup-v2")
+        self.assertIn("_decode_policy.py", current["sources"])
+        original = Path.read_bytes
+        with patch.object(Path, "read_bytes", new=lambda path: b"changed policy" if path.name == "_decode_policy.py" else original(path)):
+            self.assertNotEqual(identity()["fingerprint"], current["fingerprint"])
+
     @patch("mlx_agent.prompt_lookup_runtime.can_wrap_runtime", return_value=True)
     @patch("mlx_agent.prefill_runtime.can_wrap_runtime", return_value=True)
     def test_preview_binds_both_options_and_rejects_changed_source(self, *_):

@@ -263,6 +263,7 @@ def run_coding_workload(repo, runtime, gen_tokens=512, timeout=180, clock=time.m
         return result("invalid_tool_call")
     messages.extend([response, {"role": "tool", "tool_call_id": calls[0]["id"],
                                "content": json.dumps({"path": "clamp.py", "source": BASE_SOURCE})}])
+    tools = None
     response = request("first_edit")
     if response.get("tool_calls"):
         return result("unexpected_tool_call")

@@ -89,11 +89,23 @@ model or new weights are required. Native batching remains the default when the
 option is omitted.
 
 In this mode, plain greedy requests run one at a time. Sampling, logit penalties or
-biases, seeds, logprobs, adapters and draft models retain native generation. Only
+biases, logprobs, adapters and draft models retain native generation. Seeds retain
+the pinned runtime's temperature-zero argmax behavior. Only
 ordinary KVCache states use lookup; rotating, quantized and hybrid caches retain
 native generation. Prompt cache reuse, stop tokens and cancellation retain the
-server's token alignment. Performance depends on copied text; ordinary chat may
-be slower. Keep this option off for concurrent chat workloads.
+server's token alignment. Each request first measures two target single-token
+verification calls, then adjusts proposed length between two and eight tokens.
+Two consecutive rejected proposals, four unprofitable verification blocks, a
+single block costing over twice the calibrated per-token target time, or an
+absent prompt match hand the remaining generation to native decoding. Lookup
+waits for three generated tokens before treating an absent match as final. Cost
+decisions use target verification time per emitted token; they do not establish
+a comparative speedup over native generation. Logs retain proposed/accepted
+tokens, native tokens and the fallback reason. Performance depends on copied
+text; keep this option off for concurrent chat workloads.
+
+The request loop waits briefly on an empty queue to leave CPU time for response
+delivery and other applications. New arrivals wake the loop immediately.
 
 The supported runtime is macOS with MLX and mlx-metal 0.31.1 and mlx-lm 0.29.1.
 Other dependency versions use native MLX. Like `--m5-prefill`, this option wraps
@@ -194,13 +206,27 @@ python3 scripts/mlx-agent serve policy --port 8080 --expected-pid <gateway-pid> 
 ```
 
 Idle time starts after the last request or stream finishes. `--idle-timeout 0`
-disables automatic unload. `--keep-loaded` prevents automatic unload after use;
+disables automatic idle unload. `--keep-loaded` prevents automatic idle unload;
 it does not preload weights, and manual unload remains available. Omitting
-`--keep-loaded` in a policy replacement enables idle unload; omitting
+`--keep-loaded` in a policy replacement allows configured idle unloading; omitting
 `--min-headroom-gb` disables admission checking, and omitting `--context-tokens`
 removes the KV cache term. Policy is persisted atomically
 in private gateway configuration. Start without policy flags retains manual
 unload behavior. Policy flags require JIT.
+
+Add `--unload-under-pressure` with `--min-headroom-gb` to protect the reserve
+after loading. New requests return `insufficient_headroom` when OS headroom is
+below the reserve; an idle worker unloads while its endpoint stays reachable.
+Active requests and streams finish before automatic reclamation. Unknown
+headroom returns `memory_unknown` for new requests and does not trigger pressure
+unloading.
+This option cannot be combined with `--keep-loaded`.
+
+The loaded-request check counts only the reserve. Status records the latest
+observation in `resident_memory_check` and any refusal in
+`request_blocked_reason`. The cold-load estimate below still applies after
+reclamation. Omitting `--unload-under-pressure` in a policy replacement disables
+both the loaded-request guard and pressure unloading.
 
 Before a guarded cold load, fresh OS headroom must cover estimated local weight
 bytes × 1.10, a 1.5 GB runtime allowance, and the requested reserve in decimal GB.

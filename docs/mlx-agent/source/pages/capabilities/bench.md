@@ -49,8 +49,10 @@ python3 scripts/mlx-agent bench coding --repo <repo> --base-url http://127.0.0.1
 `bench coding` sends at most three streaming chat requests: a `read_file` tool
 call for a fixed `clamp.py` fixture, an edit enforcing integer bounds, then an
 edit responding to actual test results and adding reversed-bound handling. It
-never reads project files. Both edits must pass fixed correctness checks. The
-checker accepts a restricted single-function grammar, excludes imports,
+never reads project files. The read tool is available only for the initial
+request; edits continue from the actual tool result and assistant responses.
+Both edits must pass fixed correctness checks. The checker accepts a restricted
+single-function grammar, excludes imports,
 attributes, loops, recursion, assignments and arithmetic, and runs it in a
 bounded isolated child process. This is a synthetic micro-workload, not a
 general Python sandbox or a measure of broad coding ability.

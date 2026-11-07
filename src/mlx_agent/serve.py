@@ -872,8 +872,9 @@ def configure_serve_memory(port, policy, receipts_dir=None, expected_pid=None):
         policy = validate_memory_policy(policy)
     except ValueError as error:
         raise ServeError("invalid_arguments", str(error), "Correct the memory policy.") from error
-    # The gateway merges changes, so a replacement without a context clears it explicitly.
-    return _configure_owned_jit(port, receipts_dir, expected_pid, "policy", dict({"context_tokens": None}, **policy))
+    # The gateway merges changes; replacements must also clear omitted options.
+    return _configure_owned_jit(port, receipts_dir, expected_pid, "policy",
+                                dict({"context_tokens": None, "unload_under_pressure": False}, **policy))
 
 
 def _configure_owned_jit(port, receipts_dir, expected_pid, action, policy=None):

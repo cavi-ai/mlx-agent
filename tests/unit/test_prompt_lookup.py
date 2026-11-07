@@ -1,11 +1,28 @@
 import unittest
 import sys
+import os
+from pathlib import Path
+import subprocess
+import time
+from queue import Empty, Queue
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from mlx_agent import _prompt_lookup as lookup
 from mlx_agent._prompt_lookup import PromptLookupIndex, request_eligible
+from mlx_agent.prefill_runtime import VERSIONS, identity
+
+
+class PromptLookupProcessTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "darwin" and identity()["versions"] == VERSIONS,
+                         "Requires the supported native MLX runtime")
+    def test_token_and_cache_checks_run_in_an_owned_process(self):
+        root = Path(__file__).resolve().parents[2]
+        result = subprocess.run([sys.executable, str(root / "tests/gpu_prompt_lookup.py"), "-v"],
+            cwd=root, env=dict(os.environ, PYTHONPATH=str(root / "src")),
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 class PromptLookupIndexTests(unittest.TestCase):
@@ -42,7 +59,7 @@ class PromptLookupEligibilityTests(unittest.TestCase):
             (args.logits, "repetition_penalty", 1.1),
             (args.model, "draft", "/models/draft"),
             (args.model, "adapter", "/models/adapter"),
-            (args, "seed", 3), (args, "logprobs", 2),
+            (args, "logprobs", 2),
             (cli, "draft_model", "/models/draft"),
             (cli, "adapter_path", "/models/adapter"),
         ):
@@ -51,6 +68,13 @@ class PromptLookupEligibilityTests(unittest.TestCase):
                 setattr(parent, name, value)
                 self.assertFalse(request_eligible(args, cli))
                 setattr(parent, name, previous)
+
+    def test_seed_does_not_change_the_pinned_temperature_zero_argmax(self):
+        args = self.arguments()
+        cli = SimpleNamespace(draft_model=None, adapter_path=None)
+        for seed in (None, 0, 3):
+            args.seed = seed
+            self.assertTrue(request_eligible(args, cli))
 
 
 class PromptLookupHookTests(unittest.TestCase):
@@ -67,6 +91,9 @@ class PromptLookupHookTests(unittest.TestCase):
                                 insert_cache=Mock())
 
         class NativeGenerator:
+            def _generate(self):
+                return self.requests
+
             def _is_batchable(self, args):
                 return True
 
@@ -92,6 +119,27 @@ class PromptLookupHookTests(unittest.TestCase):
                 restore()
                 self.assertIs(server.ResponseGenerator, NativeGenerator)
                 self.assertIs(generation.generate_step, native_step)
+
+    def test_request_queue_preserves_prequeued_and_later_fifo_items(self):
+        with self.runtime() as (owner, *_):
+            original = Queue()
+            original.put("before")
+            owner.requests = original
+            requests = owner._generate()
+            requests.put("after")
+            original.put("racing producer")
+            self.assertEqual([requests.get_nowait() for _ in range(3)],
+                             ["before", "after", "racing producer"])
+            self.assertEqual(original.qsize(), 0)
+
+    def test_empty_request_queue_yields_instead_of_spinning(self):
+        with self.runtime() as (owner, *_):
+            owner.requests = Queue()
+            requests = owner._generate()
+            started = time.monotonic()
+            with self.assertRaises(Empty):
+                requests.get_nowait()
+            self.assertGreaterEqual(time.monotonic() - started, .0005)
 
     def test_request_closes_before_cache_publication_and_restores_native_owner(self):
         args = PromptLookupEligibilityTests().arguments()

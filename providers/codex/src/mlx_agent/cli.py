@@ -981,6 +981,8 @@ def _add_serve_arguments(parser):
 def _add_memory_arguments(parser):
     parser.add_argument("--idle-timeout", type=int, default=None, help="unload after this many idle seconds (0 disables)")
     parser.add_argument("--keep-loaded", action="store_true", help="prevent automatic idle unload after use")
+    parser.add_argument("--unload-under-pressure", action="store_true",
+                        help="guard loaded requests and unload idle workers below --min-headroom-gb")
     parser.add_argument("--min-headroom-gb", type=float, default=None, help="reserve GB beyond estimated weights and runtime allowance")
     parser.add_argument("--context-tokens", type=int, default=None,
                         help="also reserve the KV cache for this many context tokens (1024-1048576; needs --min-headroom-gb)")
@@ -991,6 +993,8 @@ def _memory_arguments(arguments):
               "minimum_headroom_gb": arguments.min_headroom_gb}
     if arguments.context_tokens is not None:
         policy["context_tokens"] = arguments.context_tokens
+    if arguments.unload_under_pressure:
+        policy["unload_under_pressure"] = True
     return policy
 
 
@@ -1050,7 +1054,8 @@ def _run_serve(arguments):
             strata_context_tokens=arguments.strata_context_tokens,
             memory_policy=_memory_arguments(arguments) if (arguments.idle_timeout is not None or arguments.keep_loaded
                                                            or arguments.min_headroom_gb is not None
-                                                           or arguments.context_tokens is not None) else None,
+                                                           or arguments.context_tokens is not None
+                                                           or arguments.unload_under_pressure) else None,
             thinking=arguments.thinking,
             m5_prefill=arguments.m5_prefill,
             prompt_lookup=arguments.prompt_lookup,

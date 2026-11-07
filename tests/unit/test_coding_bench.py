@@ -107,6 +107,8 @@ class CodingWorkloadTests(unittest.TestCase):
         self.assertEqual(len(runtime.requests), 3)
         first, edit, followup = runtime.requests
         self.assertEqual(first["tools"][0]["function"]["name"], "read_file")
+        self.assertIsNone(edit["tools"])
+        self.assertIsNone(followup["tools"])
         self.assertEqual(edit["messages"][-1]["role"], "tool")
         self.assertEqual(edit["messages"][-1]["tool_call_id"], "call-1")
         self.assertEqual(json.loads(edit["messages"][-1]["content"])["path"], "clamp.py")

@@ -159,6 +159,7 @@ class ModelWorker:
         self.policy_revision = 0
         self.memory_budget_pending = False
         self.strata_children = {}
+        self.owned_session = None
         self.clock = time.monotonic
         self.memory_probe = available_memory_bytes
 
@@ -175,6 +176,9 @@ class ModelWorker:
     def _refresh(self):
         if self.process and self.process.poll() is not None and self.model_state == "loaded":
             self.process = None
+            if self.config.get("runtime") == "strata":
+                from mlx_agent.process_tree import session_children
+                self.strata_children.update(session_children(self.owned_session))
             if self.strata_children:
                 from mlx_agent.process_tree import remaining
                 try:
@@ -469,6 +473,9 @@ class ModelWorker:
     def _stop_worker(self):
         with self.condition:
             process = self.process
+        if self.config.get("runtime") == "strata":
+            from mlx_agent.process_tree import session_children
+            self.strata_children.update(session_children(self.owned_session))
         if self.config.get("runtime") == "strata" and process and process.poll() is None:
             from mlx_agent.process_tree import descendants
             self.strata_children.update(descendants(process.pid))
@@ -900,6 +907,11 @@ def main():
     if args.model != config["model"]:
         raise ValueError("JIT configuration identity changed.")
     server = make_server(config, args.port)
+    if config.get("runtime") == "strata":
+        if os.getpgrp() != os.getpid() or os.getsid(0) != os.getpid():
+            server.server_close()
+            raise ValueError("Launch Strata through serve start in its owned gateway session.")
+        server.controller.owned_session = os.getpid()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: threading.Thread(target=server.shutdown, daemon=True).start())
     try:

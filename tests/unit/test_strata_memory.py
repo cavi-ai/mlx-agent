@@ -206,7 +206,42 @@ class StrataMemoryTests(unittest.TestCase):
 
     def test_child_cleanup_never_signals_a_reused_pid(self):
         from mlx_agent import process_tree
-        with patch.object(process_tree, '_snapshot', return_value={123: (1, 'replacement')}), \
+        with patch.object(process_tree, '_snapshot', return_value={123: (1, 1, 'replacement')}), \
                 patch.object(process_tree.os, 'kill') as kill:
             process_tree.terminate({123: 'captured original'}, grace_seconds=0)
         kill.assert_not_called()
+
+    @unittest.skipUnless(os.name == 'posix', 'Strata requires a POSIX process tree')
+    def test_early_frontend_exit_cannot_leave_an_uncaptured_engine(self):
+        ready, pidfile = self.root/'early-ready', self.root/'early-engine'
+        engine = "import signal,time,pathlib,sys; signal.signal(signal.SIGTERM,signal.SIG_IGN); pathlib.Path(sys.argv[1]).touch(); time.sleep(120)"
+        front = "\n".join([
+            "import subprocess,sys,pathlib,time",
+            "p=subprocess.Popen([sys.executable,'-c',sys.argv[1],sys.argv[2]])",
+            "pathlib.Path(sys.argv[3]).write_text(str(p.pid))",
+            "while not pathlib.Path(sys.argv[2]).exists(): time.sleep(.01)",
+            "sys.exit(1)"])
+        config = self.worker().config
+        from mlx_agent.jit_serve import model_fingerprint
+        config.update(fingerprint=model_fingerprint(self.root), worker_readiness_seconds=3,
+                      worker_argv=[sys.executable,'-c',front,engine,str(ready),str(pidfile)])
+        program = "\n".join([
+            'import sys,json,subprocess,os',
+            'from mlx_agent.jit_serve import ModelWorker,GatewayError',
+            'w=ModelWorker(json.loads(sys.argv[1]))',
+            'w.owned_session=os.getpid()',
+            'try: w._start()',
+            'except GatewayError: pass',
+            "pid=open(sys.argv[2]).read().strip()",
+            "state=subprocess.run(['/bin/ps','-p',pid,'-o','stat='],capture_output=True,text=True).stdout.strip()",
+            "assert not state or state.startswith('Z'), state",
+            "assert w.model_state=='failed'"])
+        helper = subprocess.Popen([sys.executable,'-c',program,json.dumps(config),str(pidfile)],
+                                  start_new_session=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        try:
+            out,err=helper.communicate(timeout=20)
+            self.assertEqual(helper.returncode,0,out+err)
+        finally:
+            try: os.killpg(helper.pid,signal.SIGKILL)
+            except ProcessLookupError: pass
+            helper.wait(timeout=3)

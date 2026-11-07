@@ -634,7 +634,7 @@
     },
     {
       "path": "src/mlx_agent/jit_serve.py",
-      "sha256": "9c08b83dbe18b7da5192561b65963b0abe1eedabb6d6642e6b9f30bb87276afc"
+      "sha256": "d7a06c7917491689faf7bdea8f044170bfcfb8a60d20461fd902b8765b1a2e6f"
     },
     {
       "path": "src/mlx_agent/kokoro_runtime.py",
@@ -718,7 +718,7 @@
     },
     {
       "path": "src/mlx_agent/process_tree.py",
-      "sha256": "790d007fd38039a50ec08fbfd67ab999b76f8d2e00b9cbe23be660002e86ca70"
+      "sha256": "6a25034e7e47ad2ba594700bc1940c5d61238b4346f4147a08b40a6306700c5c"
     },
     {
       "path": "src/mlx_agent/project_blueprint.py",

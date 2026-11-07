@@ -165,8 +165,12 @@ format, streamed and unstreamed, by translating to the worker's
 `/v1/chat/completions`. Text, system prompts, custom tools (`tool_use` and
 `tool_result`), `max_tokens`, `temperature`, `top_p`, `top_k` and
 `stop_sequences` are carried over; usage reports input, output and cached
-prompt tokens when the worker provides them. Requests the local runtime cannot
-honor are refused with an `invalid_request_error`: image or document content,
+prompt tokens when the worker provides them. With `mlx-vlm`, user messages can
+include image blocks with a base64 source (JPEG, PNG, GIF or WebP) or an HTTP(S)
+URL. Text and image order is preserved. Image resolution follows the selected
+model's processor. Requests the local runtime cannot
+honor are refused with an `invalid_request_error`: images on text runtimes,
+document content, image file IDs, images in system, assistant or tool-result content,
 non-custom tools, forced `tool_choice` (`any`, `tool`) and other parameters.
 `tool_choice: none` sends no tools. Tool-use ids come from the worker, or are
 generated when it gives none. The model name must be the gateway's model.
@@ -183,7 +187,12 @@ output item, content part, text and function-call argument events, then
 answer. `parallel_tool_calls`, `prompt_cache_key` and `client_metadata` are
 accepted without changing generation; an empty `reasoning` object and
 `include: ["reasoning.encrypted_content"]` are accepted because no reasoning
-items are produced. Image or file content, other tool types, `strict`
+items are produced. With `mlx-vlm`, user message content can include
+`input_image` items with an `image_url` containing an HTTP(S) URL or a base64
+image data URL. Text and image order is preserved; image detail hints are
+forwarded to the worker, whose model processor controls resolution.
+Images on text runtimes, image file IDs, images outside user messages, file
+content, other tool types, `strict`
 function schemas, reasoning controls, structured text formats, forced
 `tool_choice` and other parameters, including `previous_response_id`, are
 refused with an `invalid_request_error`.

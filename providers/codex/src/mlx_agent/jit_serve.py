@@ -699,14 +699,15 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 self._json(200, self.server.controller.configure(body))
                 return
             translated = self.path in ("/v1/messages", "/v1/responses")
+            allow_images = self.server.config.get("runtime") == "mlx-vlm"
             if self.path == "/v1/messages":
                 try:
-                    body = to_chat_request(body)
+                    body = to_chat_request(body, allow_images=allow_images)
                 except MessagesRequestError as error:
                     raise GatewayError(400, "invalid_request", str(error))
             elif self.path == "/v1/responses":
                 try:
-                    fields, body = responses_api.envelope(body), responses_api.to_chat_request(body)
+                    fields, body = responses_api.envelope(body), responses_api.to_chat_request(body, allow_images=allow_images)
                 except responses_api.ResponsesRequestError as error:
                     raise GatewayError(400, "invalid_request", str(error))
             elif self.path not in ("/v1/chat/completions", "/v1/completions"):

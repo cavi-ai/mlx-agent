@@ -9,6 +9,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from mlx_agent.jit_serve import make_server, model_fingerprint
+from mlx_agent.probe_assets import vision_probe_image_base64
 from .test_messages_api import WORKER
 
 WEATHER = {"type": "function", "name": "get_weather", "description": "Current weather for a city.", "strict": False,
@@ -147,6 +148,32 @@ class ResponsesGatewayTests(unittest.TestCase):
             status, _, text = self.post(body)
             error = json.loads(text)["error"]
             self.assertEqual((status, error["type"]), (400, "invalid_request_error"), text)
+        self.assertFalse(self.trace.exists())
+
+    def test_vision_worker_receives_images_in_streamed_and_complete_requests(self):
+        self.server.config["runtime"] = "mlx-vlm"
+        image = "data:image/png;base64,"+vision_probe_image_base64()
+        for stream in (False, True):
+            with self.subTest(stream=stream):
+                status, _, text = self.post({"model": str(self.model), "max_output_tokens": 64, "stream": stream,
+                    "input": [{"role": "user", "content": [{"type": "input_text", "text": "Read this."},
+                        {"type": "input_image", "image_url": image, "detail": "auto"}]}]})
+                self.assertEqual(status, 200, text)
+                self.assertEqual(self.sent()["messages"], [{"role": "user", "content": [
+                    {"type": "text", "text": "Read this."},
+                    {"type": "image_url", "image_url": {"url": image, "detail": "auto"}}]}])
+
+    def test_invalid_vision_source_is_rejected_before_loading(self):
+        self.server.config["runtime"] = "mlx-vlm"
+        for image in ({"type": "input_image", "file_id": "file_1"},
+                      {"type": "input_image", "image_url": "data:image/png;base64,!"},
+                      {"type": "input_image", "image_url": "\x00https://example.invalid/i.png"},
+                      {"type": "input_image", "image_url": "https://example.invalid/i.png", "detail": []}):
+            with self.subTest(image=image):
+                status, _, text = self.post({"model": str(self.model),
+                    "input": [{"role": "user", "content": [image]}]})
+                self.assertEqual(status, 400, text)
+                self.assertEqual(json.loads(text)["error"]["type"], "invalid_request_error")
         self.assertFalse(self.trace.exists())
 
 

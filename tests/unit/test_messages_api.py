@@ -9,6 +9,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from mlx_agent.jit_serve import make_server, model_fingerprint
+from mlx_agent.probe_assets import vision_probe_image_base64
 
 
 # Answers like mlx_lm.server: tool calls arrive whole (id null before 0.31), and assistant tool-call arguments must be JSON text.
@@ -175,6 +176,33 @@ class MessagesGatewayTests(unittest.TestCase):
             status, _, text = self.post(body)
             error = json.loads(text)
             self.assertEqual((status, error["type"], error["error"]["type"]), (400, "error", "invalid_request_error"), text)
+        self.assertFalse(self.trace.exists())
+
+    def test_vision_worker_receives_images_in_streamed_and_complete_requests(self):
+        self.server.config["runtime"] = "mlx-vlm"
+        image = {"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                                            "data": vision_probe_image_base64()}}
+        for stream in (False, True):
+            with self.subTest(stream=stream):
+                status, _, text = self.post({"model": str(self.model), "max_tokens": 64, "stream": stream,
+                    "messages": [{"role": "user", "content": [image, {"type": "text", "text": "Read this."}]}]})
+                self.assertEqual(status, 200, text)
+                self.assertEqual(self.sent()["messages"], [{"role": "user", "content": [
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,"+vision_probe_image_base64()}},
+                    {"type": "text", "text": "Read this."}]}])
+
+    def test_invalid_vision_source_is_rejected_before_loading(self):
+        self.server.config["runtime"] = "mlx-vlm"
+        for source in ({"type": "base64", "media_type": [], "data": "AA=="},
+                       {"type": "base64", "media_type": "image/png", "data": "!"},
+                       {"type": "url", "url": "\x00https://example.invalid/i.png"},
+                       {"type": "url", "url": "data:image/png;base64,"+vision_probe_image_base64()},
+                       {"type": "file", "file_id": "file_1"}):
+            with self.subTest(source=source):
+                status, _, text = self.post({"model": str(self.model), "max_tokens": 64,
+                    "messages": [{"role": "user", "content": [{"type": "image", "source": source}]}]})
+                self.assertEqual(status, 400, text)
+                self.assertEqual(json.loads(text)["error"]["type"], "invalid_request_error")
         self.assertFalse(self.trace.exists())
 
 

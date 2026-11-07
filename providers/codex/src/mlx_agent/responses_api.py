@@ -9,6 +9,7 @@ import secrets
 import time
 
 from mlx_agent.messages_api import sse, tool_call
+from mlx_agent.image_inputs import responses_image
 
 PARAMETERS = {"model", "input", "instructions", "max_output_tokens", "tools", "tool_choice", "parallel_tool_calls",
               "stream", "temperature", "top_p", "store", "background", "metadata", "include", "reasoning", "text",
@@ -60,7 +61,26 @@ def _call(item):
             "function": {"name": _string(item, "name"), "arguments": arguments}}
 
 
-def _input(items):
+def _content(content, allow_images):
+    if not isinstance(content, list) or not any(isinstance(p, dict) and p.get("type") == "input_image" for p in content):
+        return _text(content, "message")
+    if not allow_images:
+        raise ResponsesRequestError("Images require a user message and a vision runtime.")
+    parts = []
+    for part in content:
+        if isinstance(part, dict) and part.get("type") in TEXT_PARTS and isinstance(part.get("text"), str):
+            parts.append({"type": "text", "text": part["text"]})
+        elif isinstance(part, dict) and part.get("type") == "input_image":
+            try:
+                parts.append(responses_image(part))
+            except ValueError as error:
+                raise ResponsesRequestError(str(error)) from error
+        else:
+            raise ResponsesRequestError("Unsupported message content.")
+    return parts
+
+
+def _input(items, allow_images=False):
     if isinstance(items, str):
         return [{"role": "user", "content": items}]
     if not isinstance(items, list) or not items:
@@ -71,7 +91,8 @@ def _input(items):
         if kind == "message":
             if item.get("role") not in ROLES:
                 raise ResponsesRequestError("Each message needs the user, assistant, system or developer role.")
-            chat.append({"role": ROLES[item["role"]], "content": _text(item.get("content"), "message")})
+            chat.append({"role": ROLES[item["role"]],
+                         "content": _content(item.get("content"), allow_images and item["role"] == "user")})
         elif kind == "function_call":
             # Chat completions carry an assistant turn's text and its calls in one message.
             if chat and chat[-1]["role"] == "assistant":
@@ -106,7 +127,7 @@ def _tools(tools):
     return functions
 
 
-def to_chat_request(body):
+def to_chat_request(body, *, allow_images=False):
     """Translate a Responses request into the worker's chat-completions request."""
     unknown = sorted(set(body) - PARAMETERS)
     if unknown:
@@ -124,7 +145,7 @@ def to_chat_request(body):
     if choice not in ("auto", "none"):
         raise ResponsesRequestError("Forced tool use is not supported by the local runtime.")
     chat = [{"role": "system", "content": _text(body["instructions"], "instructions")}] if body.get("instructions") else []
-    request = {"messages": chat + _input(body.get("input"))}
+    request = {"messages": chat + _input(body.get("input"), allow_images)}
     if "model" in body:
         request["model"] = body["model"]
     if body.get("max_output_tokens") is not None:

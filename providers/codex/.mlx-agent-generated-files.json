@@ -438,7 +438,7 @@
     },
     {
       "path": "src/mlx_agent/_prompt_lookup.py",
-      "sha256": "5e8a601e84f38021b3be3fa814972bef272496fea1d4a8cb22fb8f8faa323012"
+      "sha256": "204a075cc5275958bab1b2805042a58d22cb225aaa69519940bac5614ddc6897"
     },
     {
       "path": "src/mlx_agent/adoption.py",

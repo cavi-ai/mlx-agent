@@ -4,11 +4,17 @@ Backend manifests describe converters and model types. Built-in `mlx-lm` uses
 the main runtime environment. Optional backends have separate locked environments
 for vision, audio, embeddings/classification, image generation, video generation, and 3D generation.
 
-`mlx-3d` supplies native MLX TripoSG and TRELLIS.2 conversion and image-to-mesh generation.
+`mlx-3d` supplies native MLX TripoSG, TRELLIS.2 and Pixal3D conversion and image-to-mesh generation.
 It uses a separate Python 3.12 environment with pinned MLX, image-processing and
 surface-extraction dependencies. It does not install or execute the PyTorch
-runtime of either model. Install it with the same preview and confirmation steps below, using
+runtime of any of these models. Install it with the same preview and confirmation steps below, using
 `mlx-3d` as the backend ID.
+
+A manifest's `port_requires` lists the files a port's converter reads from other
+Hugging Face repositories, and `port_downloads` lists the files it reads from
+elsewhere, each as an `https` `url` with its `sha256` and `size`. `intake fetch`
+stores each download under `downloads/<sha256>/<name>` beside the backend
+environments and keeps it only when its size and digest match.
 
 ## Inspect availability
 

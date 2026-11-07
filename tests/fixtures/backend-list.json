@@ -23,7 +23,7 @@
       "completed_at": null,
       "id": "mlx-3d",
       "log_path": null,
-      "model_types": 2,
+      "model_types": 3,
       "registry_source": "snapshot",
       "started_at": null,
       "state": "absent",

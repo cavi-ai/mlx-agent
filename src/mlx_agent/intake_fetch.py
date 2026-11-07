@@ -10,7 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .backends import (
-    backend_environment, load_manifests, port_requirements, recipe_for, snapshot_files, spawn_with_env,
+    backend_environment, downloads_root, load_manifests, port_downloads, port_requirements, recipe_for,
+    snapshot_files, spawn_with_env,
 )
 from .convert import _default_module_present, _write_receipt, receipts_root
 from .intake_source import parse_hf_source, validate_file, validate_revision
@@ -38,7 +39,7 @@ def _utc_now():
 
 
 def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, python=None, model_type=None,
-               manifests=None):
+               manifests=None, downloads_dir=None):
     """A download plan. A snapshot of a ported model type (``model_type`` from intake) takes only the
     port's files; any other snapshot skips formats MLX never reads. A subfolder source takes only that folder."""
     source = parse_hf_source(text)
@@ -57,7 +58,7 @@ def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, py
     ignore_patterns, allow_patterns = [], []
     prefix = source["subfolder"] + "/" if source.get("subfolder") else ""
     ported = recipe = None
-    requires = {}
+    requires, downloads = {}, []
     if not source["file"] and model_type:
         manifests = load_manifests() if manifests is None else manifests
         ported = snapshot_files(model_type, manifests)
@@ -86,6 +87,11 @@ def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, py
         requires = port_requirements(model_type, manifests) if ported and not prefix else {}
         for repo, names in sorted(requires.items()):
             argv += [item for name in names for item in ("--require", repo + "=" + name)]
+        downloads = port_downloads(model_type, manifests) if ported and not prefix else []
+        for entry in downloads:
+            argv += ["--download", "{0}={1}={2}".format(entry["sha256"], entry["size"], entry["url"])]
+        if downloads:
+            argv += ["--downloads-dir", str(downloads_dir if downloads_dir is not None else downloads_root())]
     if hf_cache:
         argv += ["--cache-dir", str(hf_cache)]
     if local is not None:
@@ -105,6 +111,9 @@ def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, py
     }
     if requires:
         plan["requires"] = {repo: list(names) for repo, names in sorted(requires.items())}
+    if downloads:
+        plan["downloads"] = [dict(entry) for entry in downloads]
+        plan["network"] = plan["network"] + sorted({entry["url"].split("/")[2] for entry in downloads})
     canonical = json.dumps(plan, sort_keys=True, separators=(",", ":"))
     plan["preview_hash"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return plan

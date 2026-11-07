@@ -125,7 +125,8 @@ client that disconnects before the reply starts ends its request. Streamed
 Messages answers turn the worker's prompt-progress keepalives into `ping`
 events, and streamed Responses answers pass them on as SSE comments.
 
-Status reports gateway liveness and `model_state` separately. Stop terminates
+Status reports gateway liveness and `model_state` separately, and the loaded
+worker's `worker_port`. Stop terminates
 the owned gateway/worker process group. The gateway serves its selected model
 and rejects request-time adapter/draft-model overrides.
 
@@ -196,12 +197,22 @@ Idle time starts after the last request or stream finishes. `--idle-timeout 0`
 disables automatic unload. `--keep-loaded` prevents automatic unload after use;
 it does not preload weights, and manual unload remains available. Omitting
 `--keep-loaded` in a policy replacement enables idle unload; omitting
-`--min-headroom-gb` disables admission checking. Policy is persisted atomically
+`--min-headroom-gb` disables admission checking, and omitting `--context-tokens`
+removes the KV cache term. Policy is persisted atomically
 in private gateway configuration. Start without policy flags retains manual
 unload behavior. Policy flags require JIT.
 
 Before a guarded cold load, fresh OS headroom must cover estimated local weight
 bytes × 1.10, a 1.5 GB runtime allowance, and the requested reserve in decimal GB.
+
+Add `--context-tokens N` (1024–1048576, with `--min-headroom-gb`) to also cover
+the KV cache for N tokens: 2 × layers × KV heads × head dimension × 2 bytes per
+token, read from the local `config.json` or its `text_config`. The estimate
+assumes every layer keeps a full-attention cache; models with sliding-window or
+linear-attention layers need less. A configuration without these values returns
+`memory_unknown`. Strata endpoints refuse the option because their estimate
+already includes the cache at `--strata-context-tokens`.
+
 Unknown headroom or weight size returns HTTP 503 `memory_unknown`; insufficient
 space returns HTTP 503 `insufficient_headroom`. The endpoint remains reachable.
 Status includes policy, the dated estimate in `memory_check`, and

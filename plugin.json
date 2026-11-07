@@ -528,6 +528,34 @@
               "required": false
             },
             {
+              "name": "base_url",
+              "flag": "--base-url",
+              "kind": "option",
+              "type": "string",
+              "required": false
+            },
+            {
+              "name": "workload",
+              "flag": "--workload",
+              "kind": "option",
+              "type": "string",
+              "required": false
+            },
+            {
+              "name": "concurrency",
+              "flag": "--concurrency",
+              "kind": "option",
+              "type": "integer",
+              "required": false
+            },
+            {
+              "name": "receipts_dir",
+              "flag": "--receipts-dir",
+              "kind": "option",
+              "type": "string",
+              "required": false
+            },
+            {
               "name": "json",
               "flag": "--json",
               "kind": "option",

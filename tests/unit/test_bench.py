@@ -1,7 +1,17 @@
+import io
+import json
+import threading
+import time
 import unittest
+from contextlib import redirect_stdout
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import TCPServer
+from unittest.mock import patch
 
+from mlx_agent import cli
 from mlx_agent.bench import (
     BENCH_PROBE_ID,
+    BENCH_PROMPT,
     BenchError,
     _timed_run,
     measure_runtime,
@@ -296,6 +306,159 @@ class MetricIntegrityTests(unittest.TestCase):
             measure_runtime("pub/model", runtime, runs=1, timeout=1.0, clock=clock)
         self.assertEqual(caught.exception.code, "measurement_timeout")
         self.assertEqual(len(runtime.timeouts), 1)
+
+
+def _shared_prefix(left, right):
+    length = 0
+    for a, b in zip(left, right):
+        if a != b:
+            break
+        length += 1
+    return length
+
+
+class _LoopbackRuntime(ThreadingHTTPServer):
+    """An OpenAI-compatible server that records each prompt and the peak number of open streams."""
+
+    daemon_threads = True
+
+    def __init__(self, delay=0.0, report_usage=True):
+        super().__init__(("127.0.0.1", 0), _LoopbackHandler)
+        self.prompts, self.lock, self.active, self.peak, self.delay = [], threading.Lock(), 0, 0, delay
+        self.report_usage = report_usage
+
+    def server_bind(self):
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
+class _LoopbackHandler(BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        body = json.dumps({"data": [{"id": "org/model"}]}).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self):
+        prompt = json.loads(self.rfile.read(int(self.headers["Content-Length"])))["messages"][-1]["content"]
+        server = self.server
+        with server.lock:
+            # Like a prompt cache: reuse the longest prefix shared with an earlier prompt, at 4 characters a token.
+            cached = max((_shared_prefix(prompt, seen) for seen in server.prompts), default=0) // 4
+            server.prompts.append(prompt)
+            server.active += 1
+            server.peak = max(server.peak, server.active)
+        try:
+            time.sleep(server.delay)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            for _ in range(4):
+                self.wfile.write(b'data: {"choices":[{"delta":{"content":"tok"}}]}\n\n')
+                self.wfile.flush()
+                time.sleep(0.01)
+            usage = {"prompt_tokens": len(prompt) // 4, "completion_tokens": 4,
+                     "prompt_tokens_details": {"cached_tokens": cached}}
+            if server.report_usage:
+                self.wfile.write(b"data: " + json.dumps({"choices": [], "usage": usage}).encode() + b"\n\n")
+            self.wfile.write(b"data: [DONE]\n\n")
+        finally:
+            with server.lock:
+                server.active -= 1
+
+
+class BenchWorkloadTests(unittest.TestCase):
+    def start(self, delay=0.0, report_usage=True):
+        self.runtime = _LoopbackRuntime(delay, report_usage)
+        thread = threading.Thread(target=self.runtime.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 2)
+        self.addCleanup(self.runtime.server_close)
+        self.addCleanup(self.runtime.shutdown)
+
+    def bench(self, *extra):
+        output = io.StringIO()
+        base = "http://127.0.0.1:{0}".format(self.runtime.server_address[1])
+        with redirect_stdout(output), patch("mlx_agent.host.HostInventory.inspect", side_effect=RuntimeError("no host")):
+            code = cli.main(["bench", "run", "--repo", "org/model", "--runtime", "mlx_lm", "--base-url", base,
+                             "--runs", "2", "--json", *extra])
+        return code, json.loads(output.getvalue())
+
+    def test_base_url_measures_the_runtime_at_that_origin(self):
+        self.start()
+        code, result = self.bench()
+        self.assertEqual(code, 0, result)
+        self.assertEqual(self.runtime.prompts, [BENCH_PROMPT] * 3)
+        self.assertEqual(result["data"]["measurement"]["workload"], "chat")
+        self.assertEqual(result["data"]["evidence"]["strength"], "runtime_measured")
+
+    def test_prefix_workload_repeats_a_long_shared_prefix_and_reports_cached_tokens(self):
+        self.start()
+        code, result = self.bench("--workload", "prefix")
+        self.assertEqual(code, 0, result)
+        first, *timed = self.runtime.prompts
+        self.assertEqual(len(timed), 2)
+        shared = min(_shared_prefix(first, prompt) for prompt in timed)
+        self.assertGreater(shared, 60000)
+        self.assertTrue(all(len(prompt) - shared < 100 for prompt in self.runtime.prompts))
+        self.assertEqual(len(set(self.runtime.prompts)), 3)
+        measurement = result["data"]["measurement"]
+        self.assertGreater(measurement["prompt_tokens"], 15000)
+        self.assertGreater(measurement["cached_tokens"], 15000)
+        self.assertIsNotNone(measurement["first_ttft_ms"])
+        self.assertIsNone(result["data"]["evidence"])
+        # A later invocation starts from a prefix the server has not seen.
+        self.bench("--workload", "prefix")
+        self.assertLess(_shared_prefix(first, self.runtime.prompts[3]), 100)
+
+    def test_prefill_workload_sends_long_prompts_without_a_shared_prefix(self):
+        self.start()
+        code, result = self.bench("--workload", "prefill")
+        self.assertEqual(code, 0, result)
+        prompts = self.runtime.prompts
+        self.assertEqual(len(prompts), 3)
+        self.assertTrue(all(_shared_prefix(a, b) < 100 for a in prompts for b in prompts if a is not b))
+        measurement = result["data"]["measurement"]
+        self.assertGreater(measurement["prompt_tokens"], 30000)
+        self.assertLess(measurement["cached_tokens"], 30)
+
+    def test_concurrent_workload_keeps_the_requested_streams_open_together(self):
+        self.start(delay=0.3)
+        code, result = self.bench("--workload", "concurrent", "--concurrency", "4")
+        self.assertEqual(code, 0, result)
+        self.assertEqual(self.runtime.peak, 4)
+        self.assertEqual(len(self.runtime.prompts), 12)
+        measurement = result["data"]["measurement"]
+        self.assertEqual(measurement["concurrency"], 4)
+        self.assertEqual([len(round_["streams"]) for round_ in measurement["samples"]], [4, 4])
+        for round_ in measurement["samples"]:
+            # Four streams of four tokens each over the round's wall time.
+            self.assertAlmostEqual(round_["aggregate_end_to_end_toks"], 16 / (round_["elapsed_ms"] / 1000), delta=1)
+            self.assertIsNone(round_["aggregate_decode_toks"])
+        self.assertGreater(measurement["aggregate_end_to_end_toks"], 0)
+        self.assertIsNone(measurement["aggregate_decode_toks"])
+
+    def test_concurrent_streams_without_usage_have_no_token_throughput(self):
+        self.start(report_usage=False)
+        code, result = self.bench("--workload", "concurrent", "--concurrency", "2")
+        self.assertEqual(code, 0, result)
+        measurement = result["data"]["measurement"]
+        self.assertIsNone(measurement["decode_toks"])
+        self.assertIsNone(measurement["aggregate_end_to_end_toks"])
+        self.assertIsNone(measurement["aggregate_decode_toks"])
+
+    def test_workload_arguments_are_refused_where_they_do_not_apply(self):
+        self.start()
+        for extra in (("--workload", "prefix", "--export", "out.jsonl"), ("--workload", "cold"),
+                      ("--workload", "concurrent", "--concurrency", "9")):
+            code, result = self.bench(*extra)
+            self.assertEqual(code, 2, extra)
+            self.assertEqual(result["error"]["code"], "invalid_arguments")
+        self.assertEqual(self.runtime.prompts, [])
 
 
 if __name__ == "__main__":

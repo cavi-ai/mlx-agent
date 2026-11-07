@@ -12,8 +12,10 @@ import json
 import math
 import os
 import re
+import secrets
 import statistics
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -42,6 +44,12 @@ BENCH_PROMPT = (
 RUNS_MIN, RUNS_MAX, RUNS_DEFAULT = 1, 10, 3
 GEN_TOKENS_MIN, GEN_TOKENS_MAX, GEN_TOKENS_DEFAULT = 16, 2048, 128
 TIMEOUT_DEFAULT = 120.0
+WORKLOADS = ("chat", "prefix", "prefill", "concurrent", "cold")
+PROMPT_TOKEN_TARGETS = {"prefix": 16384, "prefill": 32768}
+CONCURRENCY_MIN, CONCURRENCY_MAX, CONCURRENCY_DEFAULT = 2, 8, 4
+# About 20 tokens a line with common tokenizers; results report the server's own prompt count.
+_FILLER_LINE = "Record {0:05d}: unified memory bandwidth, quantization, KV cache growth and decode speed.\n"
+_FILLER_LINE_TOKENS = 20
 
 
 class BenchError(RuntimeError):
@@ -72,11 +80,23 @@ class BenchMeasurement:
     end_to_end_toks: Optional[float] = None
     elapsed_ms: Optional[float] = None
     measurement_method: str = "unknown"
+    workload: str = "chat"
+    first_ttft_ms: Optional[float] = None
+    cached_tokens: Optional[int] = None
+    concurrency: Optional[int] = None
+    aggregate_decode_toks: Optional[float] = None
+    aggregate_end_to_end_toks: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "probe_id": BENCH_PROBE_ID,
             "outcome": "measured",
+            "workload": self.workload,
+            "first_ttft_ms": self.first_ttft_ms,
+            "cached_tokens": self.cached_tokens,
+            "concurrency": self.concurrency,
+            "aggregate_decode_toks": self.aggregate_decode_toks,
+            "aggregate_end_to_end_toks": self.aggregate_end_to_end_toks,
             "repo": self.repo,
             "runtime": self.runtime,
             "runs": self.runs,
@@ -133,11 +153,41 @@ def validate_bench_bounds(runs, gen_tokens, timeout):
         raise ValueError("timeout must be between 1 and 600 seconds")
 
 
+def validate_workload(workload, runs, concurrency):
+    if workload not in WORKLOADS:
+        raise ValueError("workload must be one of: {0}".format(", ".join(WORKLOADS)))
+    if (not isinstance(concurrency, int) or isinstance(concurrency, bool)
+            or not CONCURRENCY_MIN <= concurrency <= CONCURRENCY_MAX):
+        raise ValueError("concurrency must be between {0} and {1}".format(CONCURRENCY_MIN, CONCURRENCY_MAX))
+    if workload == "cold" and runs != 1:
+        raise ValueError("the cold workload measures exactly one run; pass --runs 1")
+
+
+def workload_prompt(workload, index, session):
+    """One run's prompt: prefix runs share all but their final question, prefill runs share nothing.
+
+    The session text starts every long prompt, so a later invocation never reuses this one's cache.
+    """
+    if workload == "prefix":
+        return "Session {0}.\n{1}\nQuestion {2}: what does record {2:05d} describe? Answer in one sentence.".format(
+            session, _filler(PROMPT_TOKEN_TARGETS["prefix"]), index + 1)
+    if workload == "prefill":
+        return "Session {0}, document {1}.\n{2}\nSummarize the document in one sentence.".format(
+            session, index + 1, _filler(PROMPT_TOKEN_TARGETS["prefill"]))
+    return BENCH_PROMPT
+
+
+def _filler(tokens):
+    return "".join(_FILLER_LINE.format(line) for line in range(1, tokens // _FILLER_LINE_TOKENS + 1))
+
+
+
 def measure_runtime(repo, runtime, runs=RUNS_DEFAULT, gen_tokens=GEN_TOKENS_DEFAULT,
                     timeout=TIMEOUT_DEFAULT, chip=None, clock=time.monotonic,
-                    now=None):
+                    now=None, workload="chat", concurrency=CONCURRENCY_DEFAULT):
     """Measure one already-served model; never starts or downloads anything."""
     validate_bench_bounds(runs, gen_tokens, timeout)
+    validate_workload(workload, runs, concurrency)
     if not isinstance(repo, str) or not repo.strip():
         raise BenchError(
             "invalid_repo",
@@ -168,16 +218,45 @@ def measure_runtime(repo, runtime, runs=RUNS_DEFAULT, gen_tokens=GEN_TOKENS_DEFA
         )
 
     deadline = clock() + float(timeout)
+    session = secrets.token_hex(4)
+    round_count = runs + (workload != "cold")
+
+    def run_round(index, budget):
+        round_deadline = clock() + budget
+
+        def run_once(_=None):
+            remaining = round_deadline - clock()
+            if remaining <= 0:
+                raise _measurement_timeout()
+            return _timed_run(stream_generate, repo, gen_tokens, remaining, clock,
+                              workload_prompt(workload, index, session))
+
+        if workload != "concurrent":
+            return run_once()
+        started = clock()
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            streams = list(pool.map(run_once, range(concurrency)))
+        elapsed = clock() - started
+        counts = [stream["completion_tokens"] for stream in streams]
+        return {"streams": streams, "elapsed_ms": round(elapsed * 1000.0, 1),
+                "aggregate_decode_toks": None,
+                "aggregate_end_to_end_toks": round(sum(counts) / elapsed, 1)
+                if all(value is not None for value in counts) and elapsed > 0 else None}
+
     try:
-        samples = []
-        for index in range(runs + 1):
+        rounds = []
+        first = None
+        for index in range(round_count):
             remaining = deadline - clock()
             if remaining <= 0:
                 raise _measurement_timeout()
-            sample = _timed_run(stream_generate, repo, gen_tokens,
-                                remaining / (runs + 1 - index), clock)
-            if index:
-                samples.append(sample)
+            result = run_round(index, remaining / (round_count - index))
+            if clock() > deadline:
+                raise _measurement_timeout()
+            if index == 0 and workload != "cold":
+                first = result
+            else:
+                rounds.append(result)
     except BenchError:
         raise
     except Exception as error:
@@ -186,6 +265,8 @@ def measure_runtime(repo, runtime, runs=RUNS_DEFAULT, gen_tokens=GEN_TOKENS_DEFA
             "The measurement run failed: {0}".format(_safe_error(error)),
             "Confirm the model responds to a normal generation request, then retry.",
         )
+
+    samples = [stream for item in rounds for stream in item["streams"]] if workload == "concurrent" else rounds
 
     def median(key):
         values = [sample[key] for sample in samples]
@@ -212,7 +293,13 @@ def measure_runtime(repo, runtime, runs=RUNS_DEFAULT, gen_tokens=GEN_TOKENS_DEFA
         spread_pct=round(spread, 1) if spread is not None else None,
         chip=chip,
         measured_at=measured_at,
-        samples=samples,
+        samples=rounds,
+        workload=workload,
+        first_ttft_ms=first["ttft_ms"] if workload == "prefix" else None,
+        cached_tokens=int(round(median("cached_tokens"))) if median("cached_tokens") is not None else None,
+        concurrency=concurrency if workload == "concurrent" else None,
+        aggregate_end_to_end_toks=(round(statistics.median(item["aggregate_end_to_end_toks"] for item in rounds), 1)
+                                  if workload == "concurrent" and all(item["aggregate_end_to_end_toks"] is not None for item in rounds) else None),
         end_to_end_toks=median("end_to_end_toks"),
         elapsed_ms=median("elapsed_ms"),
         measurement_method=next(iter(methods)) if len(methods) == 1 else "mixed",
@@ -224,13 +311,13 @@ def _measurement_timeout():
                       "Use fewer runs or a larger timeout for this local model.")
 
 
-def _timed_run(stream_generate, repo, gen_tokens, timeout, clock):
+def _timed_run(stream_generate, repo, gen_tokens, timeout, clock, prompt=BENCH_PROMPT):
     started = clock()
     deadline = started + timeout
     first_content_at = None
     content_events = 0
     usage = {}
-    for event in stream_generate(repo, BENCH_PROMPT, gen_tokens, timeout=timeout):
+    for event in stream_generate(repo, prompt, gen_tokens, timeout=timeout):
         observed = clock()
         if observed > deadline:
             raise _measurement_timeout()
@@ -258,6 +345,7 @@ def _timed_run(stream_generate, repo, gen_tokens, timeout, clock):
         "elapsed_ms": round(elapsed * 1000.0, 1),
         "prompt_tokens": usage.get("prompt_eval_count", usage.get("prompt_tokens")),
         "completion_tokens": completion_tokens,
+        "cached_tokens": usage.get("prompt_eval_cached_count", usage.get("cached_tokens")),
         "decode_toks": None,
         "prefill_toks": None,
         "end_to_end_toks": round(completion_tokens / elapsed, 1)
@@ -304,6 +392,11 @@ def _stream_event_usage(event):
             value = usage.get(key)
             if type(value) is int and 0 <= value <= 1e9:
                 normalized[key] = value
+        details = usage.get("prompt_tokens_details")
+        if isinstance(details, dict):
+            value = details.get("cached_tokens")
+            if type(value) is int and 0 <= value <= 1e9:
+                normalized["cached_tokens"] = value
     for key in ("eval_count", "prompt_eval_count", "prompt_eval_cached_count"):
         value = event.get(key)
         if type(value) is int and 0 <= value <= 1e9:
@@ -333,6 +426,8 @@ _community_bench_cache = None
 
 def export_record(measurement, tool_version):
     """Build one bounded, anonymized export line from a measurement."""
+    if measurement.workload != "chat":
+        raise ValueError("bench exports require the chat workload")
     record = {
         "schema_version": BENCH_EXPORT_SCHEMA_VERSION,
         "repo": measurement.repo,

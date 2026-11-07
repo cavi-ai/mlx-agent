@@ -217,6 +217,28 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual(len(payload["warnings"]), 1)
         self.assertTrue(payload["warnings"][0].startswith("facebook/dinov3-vitl16-pretrain-lvd1689m size unavailable"))
 
+    def test_pixal3d_download_counts_the_upsampler_it_fetches_from_outside_hugging_face(self):
+        from .test_backends import PIXAL3D_FILES
+
+        def listing(repo, sizes):
+            return {"id": repo, "sha": "a" * 40, "pipeline_tag": "image-to-3d", "tags": [], "gated": False, "config": {},
+                    "siblings": [{"rfilename": name, "size": size} for name, size in sizes.items()]}
+
+        infos = {
+            "TencentARC/Pixal3D": listing("TencentARC/Pixal3D", {name: 1000 for name in PIXAL3D_FILES}),
+            "facebook/dinov3-vitl16-pretrain-lvd1689m": listing("facebook/dinov3-vitl16-pretrain-lvd1689m", {
+                "config.json": 700, "model.safetensors": 1_212_559_808}),
+            "Ruicheng/moge-2-vitl": listing("Ruicheng/moge-2-vitl", {"model.pt": 1_300_000_000, "README.md": 40}),
+        }
+        manifests = load_manifests()
+        registries = load_registries(manifests, root=Path("/nonexistent"), find_spec=lambda name: None)
+        payload = resolve("TencentARC/Pixal3D", client=ReposClient(infos), manifests=manifests, registries=registries)
+        self.validator.validate(payload)
+        self.assertEqual((payload["verdict"], payload["backend"], payload["model_type"]),
+                         ("convertible_after_install", "mlx-3d", "pixal3d"))
+        self.assertEqual(payload["download_bytes"], 11 * 1000 + 700 + 1_212_559_808 + 1_300_000_000 + 2_664_431)
+        self.assertEqual(payload["warnings"], [])
+
     def test_laya_estimate_uses_the_port_group_size_and_its_signature_files(self):
         _, payload = golden_laya()
         self.assertEqual(payload["estimated_output_bytes"], {"4": 339744590, "5": 385783630, "6": 431822670, "8": 523900750})

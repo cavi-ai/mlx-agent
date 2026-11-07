@@ -1,11 +1,26 @@
 import unittest
 import sys
+import os
+from pathlib import Path
+import subprocess
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from mlx_agent import _prompt_lookup as lookup
 from mlx_agent._prompt_lookup import PromptLookupIndex, request_eligible
+from mlx_agent.prefill_runtime import VERSIONS, identity
+
+
+class PromptLookupProcessTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "darwin" and identity()["versions"] == VERSIONS,
+                         "Requires the supported native MLX runtime")
+    def test_token_and_cache_checks_run_in_an_owned_process(self):
+        root = Path(__file__).resolve().parents[2]
+        result = subprocess.run([sys.executable, str(root / "tests/gpu_prompt_lookup.py"), "-v"],
+            cwd=root, env=dict(os.environ, PYTHONPATH=str(root / "src")),
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 class PromptLookupIndexTests(unittest.TestCase):

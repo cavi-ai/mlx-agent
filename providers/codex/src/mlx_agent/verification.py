@@ -7,6 +7,7 @@ import http.client
 import ipaddress
 import json
 import math
+import re
 import subprocess
 import sys
 import tempfile
@@ -428,7 +429,7 @@ def _http_json_post(url, payload, timeout=10.0):
 
 
 def _http_event_stream(url, payload, timeout=120.0, max_response_bytes=INVENTORY_RESPONSE_MAX_BYTES,
-                       connection_factory=None, clock=time.monotonic):
+                       connection_factory=None, clock=time.monotonic, include_progress=False):
     """Yield bounded JSON events from a validated loopback streaming endpoint.
 
     Handles both server-sent events (``data: {...}`` lines terminated by
@@ -483,21 +484,27 @@ def _http_event_stream(url, payload, timeout=120.0, max_response_bytes=INVENTORY
             buffer += chunk
             while b"\n" in buffer:
                 line, buffer = buffer.split(b"\n", 1)
-                event, done = _parse_stream_line(line)
+                event, done = _parse_stream_line(line, include_progress=include_progress)
                 if event is not None:
                     yield event
                 if done:
                     break
         if not done and buffer.strip():
-            event, _done = _parse_stream_line(buffer)
+            event, _done = _parse_stream_line(buffer, include_progress=include_progress)
             if event is not None:
                 yield event
     finally:
         connection.close()
 
 
-def _parse_stream_line(line):
+def _parse_stream_line(line, include_progress=False):
     text = line.strip()
+    if include_progress and text.startswith(b": keepalive"):
+        match = re.fullmatch(rb": keepalive (\d{1,9})/(\d{1,9})", text)
+        if match and int(match[1]) <= int(match[2]):
+            return {"prompt_progress": {"processed": int(match[1]), "total": int(match[2]),
+                                        "source": "mlx_lm_keepalive"}}, False
+        return {"prompt_progress": {"invalid": True}}, False
     if not text:
         return None, False
     if text.startswith(b"data:"):
@@ -714,6 +721,15 @@ class OllamaRuntimeClient:
         )
 
 
+def _chat_request_payload(model, messages, max_tokens, tools=None, temperature=0, seed=0):
+    payload = {"model": model, "messages": messages, "max_tokens": max_tokens,
+               "stream": True, "stream_options": {"include_usage": True},
+               "temperature": temperature, "seed": seed}
+    if tools:
+        payload["tools"] = tools
+    return payload
+
+
 class OpenAICompatibleRuntimeClient:
     """Bounded adapter for an existing local OpenAI-compatible runtime."""
 
@@ -769,6 +785,12 @@ class OpenAICompatibleRuntimeClient:
             },
             timeout=timeout,
         )
+
+    def stream_chat(self, model, messages, max_tokens, timeout=120.0, tools=None,
+                    temperature=0, seed=0, include_progress=False):
+        payload = _chat_request_payload(model, messages, max_tokens, tools, temperature, seed)
+        return _http_event_stream("{0}/v1/chat/completions".format(self._base_url), payload,
+                                  timeout=timeout, include_progress=include_progress)
 
 
 class LMStudioRuntimeClient(OpenAICompatibleRuntimeClient):

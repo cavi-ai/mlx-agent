@@ -1,4 +1,4 @@
-"""Chat-completions worker responses in the shape OpenAI clients expect.
+"""Native chat requests and worker responses in the shape OpenAI clients expect.
 
 mlx_lm 0.29.1 sends tool calls without ids, stream indexes or the ``tool_calls``
 finish reason, and leaves the tokenizer's end-of-sequence text on unstreamed
@@ -9,6 +9,30 @@ from __future__ import annotations
 import json
 import secrets
 from pathlib import Path
+
+
+def decode_tool_arguments(body):
+    """Decode OpenAI history arguments for MLX-LM's template serializer.
+
+    The native server passes history straight to the tokenizer. Its templates
+    serialize function arguments themselves, so retaining the API's JSON string
+    double-encodes them. Already structured or malformed values stay unchanged.
+    """
+    messages = body.get("messages")
+    for message in messages if isinstance(messages, list) else []:
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        calls = message.get("tool_calls")
+        for call in calls if isinstance(calls, list) else []:
+            function = call.get("function") if isinstance(call, dict) else None
+            if not isinstance(function, dict) or not isinstance(function.get("arguments"), str):
+                continue
+            try:
+                arguments = json.loads(function["arguments"])
+            except (ValueError, RecursionError):
+                continue
+            if isinstance(arguments, dict):
+                function["arguments"] = arguments
 
 
 def end_of_sequence(model_path):

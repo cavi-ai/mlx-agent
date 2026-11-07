@@ -588,6 +588,59 @@
               "required": false
             }
           ]
+        },
+        "coding": {
+          "arguments": [
+            {
+              "name": "repo",
+              "flag": "--repo",
+              "kind": "option",
+              "type": "string",
+              "required": true
+            },
+            {
+              "name": "runtime",
+              "flag": "--runtime",
+              "kind": "option",
+              "type": "string",
+              "required": false
+            },
+            {
+              "name": "base_url",
+              "flag": "--base-url",
+              "kind": "option",
+              "type": "string",
+              "required": false
+            },
+            {
+              "name": "gen_tokens",
+              "flag": "--gen-tokens",
+              "kind": "option",
+              "type": "integer",
+              "required": false
+            },
+            {
+              "name": "timeout",
+              "flag": "--timeout",
+              "kind": "option",
+              "type": "number",
+              "required": false
+            },
+            {
+              "name": "out",
+              "flag": "--out",
+              "kind": "option",
+              "type": "string",
+              "required": false
+            },
+            {
+              "name": "json",
+              "flag": "--json",
+              "kind": "option",
+              "type": "boolean",
+              "required": false
+            }
+          ]
         }
       }
     },

@@ -145,7 +145,7 @@ class CommandArgumentGrammarTests(unittest.TestCase):
         self.assertAccepted("bench", "aggregate --exports e --out o --json",
                             ["bench", "aggregate", "--exports", "e", "--out", "o", "--json"])
         cases = (
-            ("", "Bench requires the run or aggregate action"),
+            ("", "Bench requires the run, aggregate or coding action"),
             ("run --repo org/model", "Bench run requires --runtime"),
             ("run --runtime mlx_lm", "Bench run requires --repo"),
             ("run --repo org/model --runtime vllm", "invalid runtime value"),

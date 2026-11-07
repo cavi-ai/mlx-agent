@@ -661,6 +661,12 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 raise GatewayError(400, "invalid_body", "max_tokens must be a positive integer.")
             body["max_tokens"] = min(tokens, self.server.config["max_tokens"])
             body["model"] = self.server.config["local_path"]
+            runtime = self.server.config.get("runtime")
+            # Existing receipts predate the runtime field; recognize only the
+            # exact native console entrypoint for those configurations.
+            legacy_mlx = runtime is None and Path(self.server.config["worker_argv"][0]).name == "mlx_lm.server"
+            if runtime == "mlx_lm" or legacy_mlx:
+                chat_completions.decode_tool_arguments(body)
             port = self.server.controller.acquire()
             leased = True
             connection = http.client.HTTPConnection("127.0.0.1", port, timeout=120)

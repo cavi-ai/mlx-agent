@@ -25,7 +25,7 @@ CAPABILITY_ACTIONS = {
     "scout": ("discover",),
     "adopt": ("start", "resume", "status"),
     "wire": ("render", "apply", "status", "rollback"),
-    "bench": ("run", "aggregate"),
+    "bench": ("run", "aggregate", "coding"),
     "doctor": ("models",),
     "watch": ("snapshot", "diff"),
     "fleet": ("render", "apply"),

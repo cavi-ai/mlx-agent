@@ -247,10 +247,12 @@ def _parse_wire(tokens):
 
 
 def _parse_bench(tokens):
-    if not tokens or tokens[0] not in {"run", "aggregate"}:
-        raise CommandArgumentError("Bench requires the run or aggregate action")
+    if not tokens or tokens[0] not in {"run", "aggregate", "coding"}:
+        raise CommandArgumentError("Bench requires the run, aggregate or coding action")
     if tokens[0] == "aggregate":
         return _parse_bench_aggregate(tokens)
+    if tokens[0] == "coding":
+        return _parse_bench_coding(tokens)
     argv, index = ["bench", "run"], 1
     seen = set()
     values = {
@@ -288,6 +290,37 @@ def _parse_bench(tokens):
     for required in ("--repo", "--runtime"):
         if required not in seen:
             raise CommandArgumentError("Bench run requires {0}".format(required))
+    return argv
+
+
+def _parse_bench_coding(tokens):
+    argv, index, seen = ["bench", "coding"], 1, set()
+    values = {
+        "--repo": _model,
+        "--runtime": lambda value: value if value in {"mlx_lm", "lmstudio", "mlx-vlm", "litellm"} else None,
+        "--base-url": _endpoint,
+        "--gen-tokens": lambda value: _integer(value, "gen-tokens", 256, 1024),
+        "--timeout": lambda value: _decimal(value, "timeout", 1, 600),
+        "--out": lambda value: _path(value, "out"),
+    }
+    while index < len(tokens):
+        flag = tokens[index]
+        if flag in seen:
+            raise CommandArgumentError("duplicate flag: {0}".format(flag))
+        seen.add(flag)
+        if flag == "--json":
+            argv.append(flag)
+            index += 1
+        elif flag in values:
+            value = values[flag](_value(tokens, index, flag))
+            if value is None:
+                raise CommandArgumentError("invalid {0} value".format(flag))
+            argv.extend([flag, value])
+            index += 2
+        else:
+            raise CommandArgumentError("unsupported Bench coding argument: {0}".format(flag))
+    if "--repo" not in seen:
+        raise CommandArgumentError("Bench coding requires --repo")
     return argv
 
 

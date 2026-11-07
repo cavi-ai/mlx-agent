@@ -630,6 +630,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         if config_path.parent != root.absolute() or config_path.is_symlink():
             raise ServeError("invalid_arguments", "Unsafe JIT configuration path.", "Review a fresh serve plan.")
         config = {key: plan[key] for key in ("local_path", "fingerprint", "worker_argv", "max_tokens")}
+        config["runtime"] = plan["runtime"]
         if plan.get("adapter_path") is not None:
             config.update(adapter_path=plan["adapter_path"], adapter_identity=plan["adapter_identity"])
         if plan.get("training_binding") is not None:
@@ -637,7 +638,6 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         if "readiness_deadline" in plan:
             config["worker_readiness_seconds"] = plan["readiness_deadline"]
         if plan["runtime"] == "strata":
-            config["runtime"] = "strata"
             config["strata_expert_memory_gb"] = plan.get("strata_expert_memory_gb")
             config["strata_context_tokens"] = plan.get("strata_context_tokens", 131072)
         config.update(model=plan["repo"] or plan["path"], control_token=secrets.token_hex(32),

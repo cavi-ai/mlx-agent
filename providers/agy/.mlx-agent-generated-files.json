@@ -26,7 +26,7 @@
     },
     {
       "path": "skills/mlx-bench/SKILL.md",
-      "sha256": "a252067276ecb5230b21fc4a9ed4dce1feefc99071b20feaa9388f1e92ad0ada"
+      "sha256": "99062c72d642dd188f1b7ecbc67312853d5beb1496699129ee4dd5979a99f71b"
     },
     {
       "path": "skills/mlx-doctor/SKILL.md",
@@ -478,7 +478,11 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "ad73d880874494a9e2cb594a6645d10f9354494260388dfd036ee5aaf97c7067"
+      "sha256": "de0f202f0b9b79686713dab0be403f7613678970131953ac5c872641f53a7f37"
+    },
+    {
+      "path": "src/mlx_agent/coding_bench.py",
+      "sha256": "7876e44e13a0d9ffec326ba8d44e075a8dede972ac40417005cf486ae17598d6"
     },
     {
       "path": "src/mlx_agent/coding_capture.py",
@@ -510,7 +514,7 @@
     },
     {
       "path": "src/mlx_agent/command_args.py",
-      "sha256": "851ef18b18f7d6c722098e1b96e8cc4cf86a951d61d0cedc01a99a65bc999196"
+      "sha256": "89655b8e75e8acf985e4dc65133f88b96f34a403fd66f0e09f227b349363d675"
     },
     {
       "path": "src/mlx_agent/command_executor.py",
@@ -1134,7 +1138,7 @@
     },
     {
       "path": "src/mlx_agent/verification.py",
-      "sha256": "dd468cc2176b0675eb38f1967b15e953105bed1c6626e0f26c84c2e8090fe8a2"
+      "sha256": "91b119bfa419074ebd171c1d64cc935879de8f562afdb8323c828c972d6a8eb0"
     },
     {
       "path": "src/mlx_agent/video.py",

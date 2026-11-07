@@ -39,7 +39,43 @@ Concurrent throughput is unavailable if any stream lacks completion counts.
 The older `aggregate_decode_toks` field remains `null`: round wall time does
 not establish aggregate server decode timing.
 
-## Boundaries
+## Coding workload
+
+```bash
+python3 scripts/mlx-agent bench coding --repo <repo> --runtime mlx_lm --json
+python3 scripts/mlx-agent bench coding --repo <repo> --base-url http://127.0.0.1:8090 --out ./coding-trace.json --json
+```
+
+`bench coding` sends at most three streaming chat requests: a `read_file` tool
+call for a fixed `clamp.py` fixture, an edit enforcing integer bounds, then an
+edit responding to actual test results and adding reversed-bound handling. It
+never reads project files. Both edits must pass fixed correctness checks. The
+checker accepts a restricted single-function grammar, excludes imports,
+attributes, loops, recursion, assignments and arithmetic, and runs it in a
+bounded isolated child process. This is a synthetic micro-workload, not a
+general Python sandbox or a measure of broad coding ability.
+
+Supported runtimes use local OpenAI-compatible streaming chat and tool calls:
+`mlx_lm` (default), `lmstudio`, `mlx-vlm`, and `litellm`. Sampling requests
+temperature zero and seed zero. `--gen-tokens` bounds each response to 256–1024
+tokens (default 512); `--timeout` bounds all three requests and checks to 1–600
+seconds (default 180), excluding the bounded model-inventory lookup.
+
+Results retain each request's client elapsed time, first content/tool delta,
+reported token counts, quality checks, and request/response hashes. The exact
+conversation is continued between requests, allowing the runtime's existing
+prefix cache to operate. `cached_tokens` is reported only from valid server
+usage or a complete, consistent MLX-LM `: keepalive processed/total` sequence,
+labeled `cache_source`. Progress-derived counts subtract the reported remaining
+prompt work from total prompt usage. Missing or inconsistent telemetry stays
+`null`. A cache hit or a lower latency alone does not establish a speedup.
+
+`--out` creates a JSON trace with the synthetic transcript using mode 0600 and
+refuses an existing file. The transcript is omitted from normal output. Exit
+status is 0 for passing quality, 1 for failed quality, and 2 for argument or
+runtime errors. Coding results are separate from community benchmark exports.
+
+## Measurement boundaries
 
 - Measures only what is already serving: `model_not_serving` otherwise. Never starts servers (that is `serve`'s job), never downloads. A JIT endpoint loads its model for a bench request as it does for any request; bench never unloads it.
 - Loopback-only endpoints, absolute deadlines, bounded responses — the same envelope as verification.

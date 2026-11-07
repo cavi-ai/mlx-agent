@@ -754,6 +754,14 @@ def _add_bench_arguments(parser):
     aggregate.add_argument("--exports", required=True, help="directory of .jsonl export files")
     aggregate.add_argument("--out", default=None, help="aggregate output path (default: print only)")
     aggregate.add_argument("--json", action="store_true")
+    coding = actions.add_parser("coding", help="run a fixed read-file and coding-edit correctness workload")
+    coding.add_argument("--repo", required=True, help="model identifier exactly as the runtime serves it")
+    coding.add_argument("--runtime", default="mlx_lm", choices=[name for name in _BENCH_RUNTIMES if name != "ollama"])
+    coding.add_argument("--base-url", default=None, help="loopback origin of the runtime")
+    coding.add_argument("--gen-tokens", type=int, default=512, help="maximum output tokens per request (256-1024)")
+    coding.add_argument("--timeout", type=float, default=180, help="total workload deadline, excluding inventory (1-600 seconds)")
+    coding.add_argument("--out", default=None, help="create a private JSON trace; refuses an existing file")
+    coding.add_argument("--json", action="store_true")
 
 
 def _run_bench(arguments):
@@ -762,6 +770,8 @@ def _run_bench(arguments):
     from .verification import _http_json_get
     operation = "bench-{0}".format(arguments.bench_command)
     try:
+        if arguments.bench_command == "coding":
+            return _run_coding_bench(arguments)
         if arguments.bench_command == "aggregate":
             from .bench import aggregate_exports
 
@@ -878,6 +888,42 @@ def _run_bench(arguments):
             payload["code"], payload["message"], payload["remediation"]
         ))
     return 2
+
+
+def _run_coding_bench(arguments):
+    from .coding_bench import run_coding_workload, validate_coding_bounds
+    validate_coding_bounds(arguments.gen_tokens, arguments.timeout)
+    if arguments.timeout < 1:
+        raise ValueError("coding timeout must be at least one second")
+    # Reserve the trace before inference so an existing file cannot waste a run
+    # or be overwritten. The mode applies even under a permissive umask.
+    trace = None
+    if arguments.out:
+        try:
+            descriptor = os.open(arguments.out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            trace = os.fdopen(descriptor, "w", encoding="utf-8")
+        except OSError as error:
+            raise ValueError("Cannot create the coding trace: {0}".format(error)) from error
+    try:
+        data = run_coding_workload(arguments.repo, _bench_runtime_client(arguments.runtime, arguments.base_url),
+                                   gen_tokens=arguments.gen_tokens, timeout=arguments.timeout)
+        if trace:
+            json.dump(data, trace, indent=2)
+            trace.write("\n")
+    finally:
+        if trace:
+            trace.close()
+    data = {key: value for key, value in data.items() if key != "transcript"}
+    data["trace"] = arguments.out
+    result = ResultEnvelope.ok("bench-coding", data)
+    if arguments.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        print("Coding workload: {0}; {1} request(s), {2} ms".format(data["reason"], len(data["turns"]), data["elapsed_ms"]))
+        for turn in data["turns"]:
+            print("  {0}: {1} ms; cached tokens: {2} ({3})".format(
+                turn["name"], turn["elapsed_ms"], turn["cached_tokens"], turn["cache_source"] or "unknown"))
+    return 0 if data["quality_passed"] else 1
 
 
 def _add_serve_arguments(parser):

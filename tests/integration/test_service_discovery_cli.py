@@ -3,6 +3,8 @@ import ast
 import json
 import os
 import socket
+import signal
+import time
 import subprocess
 import sys
 import unittest
@@ -12,12 +14,20 @@ from unittest import mock
 
 CLI = Path(__file__).resolve().parents[2] / 'scripts/mlx-agent'
 SERVER = '''#!/usr/bin/env python3
-import argparse, json
+import argparse, json, os, sys, time
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import TCPServer
 parser = argparse.ArgumentParser()
 parser.add_argument('--model'); parser.add_argument('--port', type=int)
+parser.add_argument('--fixture-not-ready', action='store_true')
 args, _ = parser.parse_known_args()
+marker = Path(args.model).parent / 'fixture-worker.json'
+temporary = marker.with_suffix('.tmp')
+temporary.write_text(json.dumps({'pid': os.getpid(), 'argv': sys.argv, 'model': args.model, 'port': args.port}))
+os.replace(temporary, marker)
+if args.fixture_not_ready:
+    while True: time.sleep(1)
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         body = json.dumps({'data': [{'id': args.model}]}).encode()
@@ -29,6 +39,25 @@ class Server(HTTPServer):
         self.server_name, self.server_port = self.server_address[:2]
 Server(('127.0.0.1', args.port), Handler).serve_forever()
 '''
+
+
+def stop_fixture(marker, executable, model, port):
+    """Only the private fixture process is eligible, including before a serve receipt exists."""
+    from mlx_agent.serve import _argv_matches, _pid_command
+    if not marker.is_file():
+        return
+    record = json.loads(marker.read_text())
+    pid, argv = record['pid'], record['argv']
+    if (type(pid) is not int or pid <= 0 or not argv
+            or Path(argv[0]).resolve() != executable.resolve()
+            or Path(record['model']).resolve() != model.resolve() or record['port'] != port):
+        raise AssertionError('Fixture process ownership changed')
+    expected = {'argv': argv, 'path': record['model'], 'port': port}
+    try:
+        if os.getpgid(pid) == pid and _argv_matches(expected, _pid_command(pid)):
+            os.killpg(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
 
 
 class ServiceDiscoveryCliTests(unittest.TestCase):
@@ -43,6 +72,36 @@ class ServiceDiscoveryCliTests(unittest.TestCase):
             with namespace['Server'](('127.0.0.1', 0), namespace['BaseHTTPRequestHandler']) as server:
                 self.assertEqual(server.server_name, '127.0.0.1')
                 self.assertEqual(server.server_port, server.socket.getsockname()[1])
+
+    def test_fixture_cleanup_works_before_readiness_and_serve_receipt(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            model = root / 'model'; model.mkdir()
+            executable = root / 'fixture-server.py'; executable.write_text(SERVER)
+            marker = root / 'fixture-worker.json'
+            process = subprocess.Popen([sys.executable, str(executable), '--model', str(model),
+                '--port', '12345', '--fixture-not-ready'], stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            try:
+                deadline = time.monotonic() + 5
+                while not marker.exists() and process.poll() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(marker.is_file())
+                self.assertIsNone(process.poll())
+                original = marker.read_text()
+                changed = json.loads(original); changed['port'] = 12346
+                marker.write_text(json.dumps(changed))
+                with self.assertRaises(AssertionError):
+                    stop_fixture(marker, executable, model, 12345)
+                self.assertIsNone(process.poll())
+                marker.write_text(original)
+                stop_fixture(marker, executable, model, 12345)
+                process.wait(timeout=5)
+                self.assertEqual(process.returncode, -signal.SIGTERM)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                process.wait(timeout=5)
 
     def test_launch_is_discovered_from_another_directory_and_stop_checks_selected_pid(self):
         with TemporaryDirectory() as folder:
@@ -90,6 +149,9 @@ class ServiceDiscoveryCliTests(unittest.TestCase):
             finally:
                 if pid is None and receipt.is_file():
                     pid = json.loads(receipt.read_text())['pid']
-                if pid is not None:
-                    code, stopped = run(['serve', 'stop', '--port', str(port), '--expected-pid', str(pid), '--receipts-dir', str(receipts)])
-                    self.assertEqual(code, 0, stopped)
+                try:
+                    if pid is not None:
+                        code, stopped = run(['serve', 'stop', '--port', str(port), '--expected-pid', str(pid), '--receipts-dir', str(receipts)])
+                        self.assertEqual(code, 0, stopped)
+                finally:
+                    stop_fixture(root / 'fixture-worker.json', executable, model, port)

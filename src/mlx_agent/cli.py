@@ -966,15 +966,19 @@ def _add_serve_arguments(parser):
     stop = actions.add_parser("stop", help="stop exactly the server a serve receipt owns")
     stop.add_argument("--port", type=int, required=True)
     stop.add_argument("--receipts-dir", default=None)
+    stop.add_argument("--expected-pid", type=int, default=None)
+    stop.add_argument("--expected-start", default=None, help="process start identity returned by service discovery")
     stop.add_argument("--json", action="store_true")
     unload = actions.add_parser("unload", help="release JIT model weights while keeping the endpoint reachable")
     unload.add_argument("--port", type=int, required=True)
     unload.add_argument("--expected-pid", type=int, default=None)
+    unload.add_argument("--expected-start", default=None)
     unload.add_argument("--receipts-dir", default=None)
     unload.add_argument("--json", action="store_true")
     policy = actions.add_parser("policy", help="configure owned JIT memory management without restarting")
     policy.add_argument("--port", type=int, required=True)
     policy.add_argument("--expected-pid", type=int, required=True)
+    policy.add_argument("--expected-start", default=None)
     policy.add_argument("--receipts-dir", default=None)
     policy.add_argument("--json", action="store_true")
     _add_memory_arguments(policy, clear_budget=True)
@@ -998,6 +1002,9 @@ def _add_serve_arguments(parser):
             action.add_argument("--keep-loaded", action="store_true")
             action.add_argument("--unload-under-pressure", action=argparse.BooleanOptionalAction, default=True)
             action.add_argument("--replace", action="store_true")
+    discover = actions.add_parser("discover", help="find engine services across registered and live receipt locations")
+    discover.add_argument("--receipts-dir", action="append", default=[])
+    discover.add_argument("--json", action="store_true")
 
 
 def _add_memory_arguments(parser, clear_budget=False):
@@ -1057,6 +1064,11 @@ def _run_serve(arguments):
                 result = {"name": arguments.name, "deleted": True}
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json,
                                       human=json.dumps(result, indent=2))
+        if arguments.serve_command == "discover":
+            from .service_registry import discover_services
+            data = discover_services(arguments.receipts_dir)
+            return _emit_serve_result(ResultEnvelope.ok(operation, data), arguments.json,
+                                      human=_serve_status_human(data["services"]))
         if arguments.serve_command == "status":
             entries = status_serve(arguments.receipts_dir)
             return _emit_serve_result(
@@ -1064,7 +1076,9 @@ def _run_serve(arguments):
                 human=_serve_status_human(entries),
             )
         if arguments.serve_command == "stop":
-            outcome = stop_serve(arguments.port, arguments.receipts_dir)
+            outcome = stop_serve(arguments.port, arguments.receipts_dir, **(
+                {**({"expected_pid": arguments.expected_pid} if arguments.expected_pid is not None else {}),
+                 **({"expected_start": arguments.expected_start} if arguments.expected_start is not None else {})}))
             return _emit_serve_result(
                 ResultEnvelope.ok(operation, outcome), arguments.json,
                 human="serve {0}: port {1} (pid {2})".format(
@@ -1072,11 +1086,13 @@ def _run_serve(arguments):
                 ),
             )
         if arguments.serve_command == "unload":
-            outcome = unload_serve(arguments.port, arguments.receipts_dir, arguments.expected_pid)
+            outcome = unload_serve(arguments.port, arguments.receipts_dir, arguments.expected_pid, **(
+                {"expected_start": arguments.expected_start} if arguments.expected_start is not None else {}))
             return _emit_serve_result(ResultEnvelope.ok(operation, outcome), arguments.json,
                 human="Model unloaded; endpoint remains reachable on port {}.".format(arguments.port))
         if arguments.serve_command == "policy":
-            outcome = configure_serve_memory(arguments.port, _memory_arguments(arguments), arguments.receipts_dir, arguments.expected_pid)
+            outcome = configure_serve_memory(arguments.port, _memory_arguments(arguments), arguments.receipts_dir, arguments.expected_pid, **(
+                {"expected_start": arguments.expected_start} if arguments.expected_start is not None else {}))
             return _emit_serve_result(ResultEnvelope.ok(operation, outcome), arguments.json,
                                       human="JIT memory policy saved and applied on port {}.".format(arguments.port))
         recipes = load_recipes()
@@ -1468,16 +1484,25 @@ def _add_watch_arguments(parser):
                             help="watch state root (default ./.mlx-agent-watch)")
         action.add_argument("--limit", type=int, default=6,
                             help="discovery results per role (default 6)")
+        action.add_argument("--wired-root", action="append", default=None,
+                            help="exact client file or directory to inspect (repeatable; default current project)")
+        cache = action.add_mutually_exclusive_group()
+        cache.add_argument("--hf-cache", help="inspect only this Hugging Face cache")
+        cache.add_argument("--no-hf-cache", action="store_true", help="do not inspect a Hugging Face cache")
+        action.add_argument("--owned-repo", action="append", default=[],
+                            help="explicitly owned Hugging Face org/name ID (repeatable)")
         action.add_argument("--json", action="store_true")
 
 
 def _run_watch(arguments):
     from .discovery import DiscoveryRequest
     from .watch import (
-        WatchError, build_snapshot, collect_owned, diff_snapshots, read_baseline, snapshot_candidates, write_snapshot,
+        WatchError, build_snapshot, collect_owned, diff_snapshots, read_baseline,
+        snapshot_candidates, validate_owned_repos, write_snapshot,
     )
     operation = "watch-{0}".format(arguments.watch_command)
     try:
+        explicit = validate_owned_repos(arguments.owned_repo)
         service, fixture_warning, fixture_error = _discovery_service_from_environment()
         if fixture_error is not None:
             return _emit_wire_result(fixture_error, arguments.json)
@@ -1487,16 +1512,20 @@ def _run_watch(arguments):
             return _emit_wire_result(ResultEnvelope.fail(
                 operation, error["code"], error["message"], error["remediation"]
             ), arguments.json)
-        owned = collect_owned(_watch_runtime_clients())
+        evidence = {}
+        owned = collect_owned(_watch_runtime_clients(), hf_cache=arguments.hf_cache,
+                              wired_roots=arguments.wired_root, include_hf_cache=not arguments.no_hf_cache,
+                              owned_repos=explicit, evidence=evidence)
         candidates = snapshot_candidates(result.data)
         if arguments.watch_command == "snapshot":
-            snapshot = build_snapshot(owned, candidates)
+            snapshot = build_snapshot(owned, candidates, **evidence)
             destination = write_snapshot(arguments.state_dir, snapshot)
             data = {
                 "state": str(destination),
                 "owned": len(snapshot["owned"]),
                 "candidates": len(snapshot["candidates"]),
                 "rotated_previous": snapshot["previous"] is not None,
+                **evidence,
             }
             result = ResultEnvelope.ok(operation, data)
             if arguments.json:
@@ -1507,11 +1536,12 @@ def _run_watch(arguments):
                 ))
             return 0
         baseline = read_baseline(arguments.state_dir)
-        current = build_snapshot(owned, candidates)
+        current = build_snapshot(owned, candidates, **evidence)
         findings = diff_snapshots(baseline, current)
         data = {
             "baseline_created_at": baseline["created_at"],
             "findings": findings,
+            **evidence,
         }
         warnings = [
             {"code": finding["code"], "message": "{0}: {1}".format(finding["repo"], finding["detail"])}
@@ -2071,7 +2101,8 @@ def _convert_scan(arguments):
     from .convert import ConvertError, load_receipts
     from .gguf import MAX_SCAN_FILES, default_gguf_roots, inventory
     from .taxonomy import annotate_inventory
-    roots = arguments.gguf_roots or default_gguf_roots()
+    roots = arguments.gguf_roots if arguments.gguf_roots is not None else (
+        [] if arguments.mlx_roots is not None else default_gguf_roots())
     if not roots and not arguments.mlx_roots:
         raise ConvertError(
             "no_scan_roots",
@@ -2433,11 +2464,13 @@ def _add_doctor_arguments(parser):
         default=None,
         help="root scanned for Wire-managed configs (repeatable; defaults to the project root)",
     )
-    parser.add_argument(
+    cache = parser.add_mutually_exclusive_group()
+    cache.add_argument(
         "--hf-cache",
         default=None,
         help="Hugging Face cache root (defaults to ~/.cache/huggingface/hub)",
     )
+    cache.add_argument("--no-hf-cache", action="store_true", help="check wired configurations without reading a model cache")
     parser.add_argument(
         "--prune",
         action="store_true",
@@ -2457,8 +2490,11 @@ def _run_model_doctor(arguments):
 
     operation = "doctor-models"
     wired_roots = arguments.wired_root or [arguments.project]
-    hf_cache = arguments.hf_cache or default_hf_cache()
+    hf_cache = None if arguments.no_hf_cache else (arguments.hf_cache or default_hf_cache())
     if arguments.prune:
+        if arguments.no_hf_cache:
+            return _emit_serve_result(ResultEnvelope.fail(operation, "invalid_arguments", "Cache pruning requires a cache.",
+                                      "Remove --no-hf-cache before reviewing cache cleanup."), arguments.json, human="Cache pruning requires a cache.")
         try:
             plan = plan_prune(hf_cache)
             outcome = execute_prune(

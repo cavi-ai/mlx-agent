@@ -3,19 +3,39 @@
   "$id": "https://github.com/cavi-ai/mlx-agent/schemas/watch-state.schema.json",
   "title": "mlx-agent watch state",
   "type": "object",
-  "required": ["schema_version", "created_at", "owned", "candidates", "previous"],
+  "required": [
+    "schema_version",
+    "created_at",
+    "owned",
+    "candidates",
+    "previous"
+  ],
   "properties": {
-    "schema_version": { "const": "1.0" },
-    "created_at": { "type": "string", "format": "date-time" },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
     "owned": {
       "type": "array",
       "maxItems": 500,
       "items": {
         "type": "object",
-        "required": ["id", "source"],
+        "required": [
+          "id",
+          "source"
+        ],
         "properties": {
-          "id": { "type": "string", "minLength": 1 },
-          "source": { "type": "string", "minLength": 1 }
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "additionalProperties": false
       }
@@ -25,17 +45,121 @@
       "maxProperties": 2000,
       "additionalProperties": {
         "type": "object",
-        "required": ["base", "weight_bytes", "gated", "license"],
+        "required": [
+          "base",
+          "weight_bytes",
+          "gated",
+          "license"
+        ],
         "properties": {
-          "base": { "type": ["string", "null"] },
-          "weight_bytes": { "type": ["integer", "null"] },
-          "gated": { "type": ["string", "boolean", "null"] },
-          "license": { "type": ["string", "null"] }
+          "base": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "weight_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "gated": {
+            "type": [
+              "string",
+              "boolean",
+              "null"
+            ]
+          },
+          "license": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         },
         "additionalProperties": false
       }
     },
-    "previous": { "type": ["object", "null"] }
+    "previous": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "required": [
+        "version",
+        "wired_roots",
+        "hf_cache",
+        "owned_repos",
+        "runtime_sources"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "wired_roots": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "hf_cache": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "owned_repos": {
+          "type": "array",
+          "maxItems": 500,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$"
+          }
+        },
+        "runtime_sources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ownership_checks": {
+      "type": "object",
+      "required": [
+        "checked_sources",
+        "unchecked_sources"
+      ],
+      "properties": {
+        "checked_sources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "unchecked_sources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    }
   },
   "additionalProperties": false
 }

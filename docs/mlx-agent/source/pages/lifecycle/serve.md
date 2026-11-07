@@ -35,6 +35,20 @@ is reported as `adapter_status: unknown`. Direct `--launchd` plists retain their
 existing deferred-launch behavior; these worker-load checks apply to supervised
 serving.
 
+## Discover running services
+
+`serve discover --json` reports services across registered receipt locations and
+live MLX Agent gateways owned by the current user. New launches register their
+receipt location in the per-user service index. Repeat `--receipts-dir PATH` to
+include another known location. Discovery is read-only; each result includes its
+receipt location, process identity and reported model residency. An unloaded JIT
+gateway can remain available to clients.
+
+Use the result's `receipts_dir` for controls. `--expected-pid` and
+`--expected-start` bind stop, unload and policy changes to the selected process;
+a changed process is refused. Errors from an unavailable location are reported
+separately from services found elsewhere.
+
 ## Serve a trained adapter
 
 Use a completed LoRA receipt to select the base snapshot and adapter together:

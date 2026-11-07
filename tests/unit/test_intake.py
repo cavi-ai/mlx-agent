@@ -134,6 +134,13 @@ def repo_info(model_type=None, tags=(), pipeline_tag=None, library_name="transfo
 
 
 class ResolveTests(unittest.TestCase):
+    def test_resolution_keeps_requested_revision_and_reports_immutable_target(self):
+        client = FakeClient(info={'sha': 'a' * 40, 'siblings': []})
+        result = resolve('org/model', client=client)
+        self.assertEqual(result['source']['revision'], 'main')
+        self.assertEqual(result['source']['resolved_revision'], 'a' * 40)
+
+
     def setUp(self):
         self.manifests = synthetic_manifests()
         self.validator = Draft202012Validator(SCHEMA)

@@ -99,7 +99,10 @@ def _walk_directory(path, create=False, component_hook=None):
             except FileNotFoundError:
                 if not create:
                     raise ValueError("path component does not exist: {0}".format(component))
-                os.mkdir(component, 0o700, dir_fd=descriptor)
+                try:
+                    os.mkdir(component, 0o700, dir_fd=descriptor)
+                except FileExistsError:
+                    pass  # Another writer created it; the no-follow open below still validates it.
                 os.fsync(descriptor)
                 child = os.open(component, flags, dir_fd=descriptor)
             except OSError as error:

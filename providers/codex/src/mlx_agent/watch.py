@@ -12,6 +12,7 @@ from .model_doctor import (
     inspect_hf_cache,
     scan_wired_configs,
 )
+from .intake_source import IntakeSourceError, parse_hf_source
 from .models import base_name
 from .transactions import _atomic_in_directory
 
@@ -40,28 +41,94 @@ def state_file(state_dir):
     return Path(state_dir) / "watch" / STATE_FILENAME
 
 
-def collect_owned(runtime_clients, hf_cache=None, wired_roots=None):
-    """Collect owned model ids from local inventories and wired configs."""
+def validate_owned_repos(repos):
+    """Explicit ownership accepts canonical repo IDs, never URLs or paths."""
+    validated = {}
+    for repo in repos or []:
+        try:
+            source = parse_hf_source(repo)
+            if source["repo"] != repo or source.get("file") or source.get("subfolder"):
+                raise IntakeSourceError("Expected an org/name repository ID.")
+        except (IntakeSourceError, TypeError) as error:
+            raise WatchError("invalid_owned_repo", "Invalid owned repository: {0!r}".format(repo),
+                             "Pass --owned-repo as a Hugging Face org/name ID.") from error
+        validated.setdefault(repo.casefold(), repo)
+    if len(validated) > MAX_OWNED:
+        raise WatchError("too_many_owned_repos", "Too many explicit owned repositories.",
+                         "Watch accepts at most {0} owned repositories.".format(MAX_OWNED))
+    return list(validated.values())
+
+
+def _scope_path(path):
+    try:
+        return str(Path(path).expanduser().resolve())
+    except (OSError, RuntimeError) as error:
+        raise WatchError("invalid_scope", "An ownership path could not be resolved: {0}".format(path),
+                         "Choose an accessible client path or Hugging Face cache.") from error
+
+
+def collect_owned(runtime_clients, hf_cache=None, wired_roots=None, *, include_hf_cache=True,
+                  owned_repos=None, evidence=None):
+    """Collect only selected inventories, preserving which sources were checked."""
+    explicit = validate_owned_repos(owned_repos)
+    roots = list(wired_roots) if wired_roots is not None else [Path.cwd()]
+    cache = Path(hf_cache) if hf_cache is not None else (default_hf_cache() if include_hf_cache else None)
+    runtime_clients = list(runtime_clients)
+    runtime_sources = {str(getattr(client, "name", client.__class__.__name__)) for client in runtime_clients}
+    scope = {"version": 1, "wired_roots": sorted({_scope_path(root) for root in roots}),
+             "hf_cache": _scope_path(cache) if include_hf_cache else None,
+             "owned_repos": sorted(repo.casefold() for repo in explicit),
+             "runtime_sources": sorted(runtime_sources)}
+    checked = {"managed"}
+    # The shared scanner deliberately skips unreadable, invalid and oversized
+    # configs. It proves presence, but cannot prove a wired model is absent.
+    unchecked = {"wired"} if roots else set()
     owned = []
     seen = set()
+    truncated = False
 
     def add(model_id, source):
+        nonlocal truncated
         if not isinstance(model_id, str) or not model_id:
             return
         key = model_id.casefold()
-        if key in seen or len(owned) >= MAX_OWNED:
+        if key in seen:
+            return
+        if len(owned) >= MAX_OWNED:
+            truncated = True
             return
         seen.add(key)
         owned.append({"id": model_id, "source": source})
 
-    cache = Path(hf_cache) if hf_cache is not None else default_hf_cache()
-    for item in inspect_hf_cache(cache):
-        add(item["id"], "hf-cache")
-    runtime_inventory, _errors = collect_runtime_inventory(runtime_clients)
+    for repo in explicit:
+        add(repo, "managed")
+    if include_hf_cache:
+        try:
+            cache_inventory = inspect_hf_cache(cache)
+            if cache.is_dir() and len(cache_inventory) < MAX_OWNED:
+                checked.add("hf-cache")
+            else:
+                unchecked.add("hf-cache")
+            for item in cache_inventory:
+                add(item["id"], "hf-cache")
+        except OSError:
+            unchecked.add("hf-cache")
+    runtime_inventory, errors = collect_runtime_inventory(runtime_clients)
+    failed = {name for name in runtime_sources if any(error.startswith(name + ":") for error in errors)}
+    if len(runtime_inventory) >= MAX_OWNED:
+        failed = runtime_sources
+    checked.update(runtime_sources - failed)
+    unchecked.update(failed)
     for item in runtime_inventory:
         add(item["id"], item["source"])
-    for config in scan_wired_configs(wired_roots or [Path.cwd()]):
+    for config in scan_wired_configs([Path(root) for root in scope["wired_roots"]]):
         add(config.get("model"), "wired")
+    if truncated:
+        unchecked.update(checked)
+        checked.clear()
+    if evidence is not None:
+        evidence.update(scope=scope, ownership_checks={"checked_sources": sorted(checked),
+                                                     "unchecked_sources": sorted(unchecked)})
     return owned
 
 
@@ -92,14 +159,19 @@ def snapshot_candidates(discovery_data):
     return candidates
 
 
-def build_snapshot(owned, candidates, now=None):
-    return {
+def build_snapshot(owned, candidates, now=None, scope=None, ownership_checks=None):
+    snapshot = {
         "schema_version": WATCH_SCHEMA_VERSION,
         "created_at": now or _utc_now(),
         "owned": list(owned)[:MAX_OWNED],
         "candidates": dict(candidates),
         "previous": None,
     }
+    if scope is not None:
+        snapshot["scope"] = scope
+    if ownership_checks is not None:
+        snapshot["ownership_checks"] = ownership_checks
+    return snapshot
 
 
 def write_snapshot(state_dir, snapshot):
@@ -115,7 +187,8 @@ def write_snapshot(state_dir, snapshot):
     if isinstance(existing, dict) and existing.get("schema_version") == WATCH_SCHEMA_VERSION:
         snapshot["previous"] = {
             key: existing.get(key)
-            for key in ("schema_version", "created_at", "owned", "candidates")
+            for key in ("schema_version", "created_at", "owned", "candidates", "scope", "ownership_checks")
+            if key in existing
         }
         snapshot["previous"]["previous"] = None
     content = (json.dumps(snapshot, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
@@ -148,13 +221,30 @@ def read_baseline(state_dir):
     return value
 
 
+def _can_infer_missing(baseline, current, source):
+    scope = current.get("scope")
+    required = {"version", "wired_roots", "hf_cache", "owned_repos", "runtime_sources"}
+    if (not isinstance(scope, dict) or not required.issubset(scope)
+            or type(scope.get("version")) is not int or scope["version"] != 1
+            or baseline.get("scope") != scope):
+        return False
+    for snapshot in (baseline, current):
+        checks = snapshot.get("ownership_checks")
+        if not isinstance(checks, dict):
+            return False
+        checked, unchecked = checks.get("checked_sources"), checks.get("unchecked_sources")
+        if (not isinstance(checked, list) or not isinstance(unchecked, list)
+                or source not in checked or source in unchecked):
+            return False
+    return True
+
+
 def diff_snapshots(baseline, current):
     """Classify changes relevant to owned models between two snapshots."""
     findings = []
     owned_ids = {item["id"].casefold() for item in current.get("owned", [])}
     owned_bases = {base_name(item["id"]) for item in current.get("owned", [])}
     baseline_candidates = baseline.get("candidates") or {}
-    baseline_owned = {item["id"].casefold() for item in baseline.get("owned", [])}
 
     for repo, info in sorted((current.get("candidates") or {}).items()):
         if len(findings) >= MAX_FINDINGS:
@@ -194,7 +284,7 @@ def diff_snapshots(baseline, current):
     for item in baseline.get("owned", []):
         if len(findings) >= MAX_FINDINGS:
             break
-        if item["id"].casefold() not in owned_ids:
+        if item["id"].casefold() not in owned_ids and _can_infer_missing(baseline, current, item.get("source")):
             findings.append({
                 "code": "owned_missing",
                 "repo": item["id"],

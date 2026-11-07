@@ -486,7 +486,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "6776c14636d828b5494d65d7f930a5d4d460e75f7acbae49190aa8e87579ce75"
+      "sha256": "0d3d7ed9451f55d92722a55e9bcc3e5518e6ae589365df664872a45160571f88"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -634,7 +634,7 @@
     },
     {
       "path": "src/mlx_agent/jit_serve.py",
-      "sha256": "2a17355e8598687348ccd2881e2b7ef28ced1d083e11f860293b20bb52650411"
+      "sha256": "c9817200e29aaa1b3513f47195fbfaab991a66af20d9f78ffea9aba7abc0f481"
     },
     {
       "path": "src/mlx_agent/kokoro_runtime.py",
@@ -715,6 +715,10 @@
     {
       "path": "src/mlx_agent/probe_assets.py",
       "sha256": "17c39982e6bec5c8742dfb8707de536e688922d3aad6496113f8b9beeb44478d"
+    },
+    {
+      "path": "src/mlx_agent/process_tree.py",
+      "sha256": "6a25034e7e47ad2ba594700bc1940c5d61238b4346f4147a08b40a6306700c5c"
     },
     {
       "path": "src/mlx_agent/project_blueprint.py",
@@ -1062,7 +1066,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "f44bfd9172e341ce2b0462f0d429e7a116b3f4b040408e88a5ba209fc50e6d9e"
+      "sha256": "908a156ac498811f1bd9604b4e5213deade3c9b39ecfc3f50657e028f637bdc3"
     },
     {
       "path": "src/mlx_agent/speak.py",
@@ -1074,7 +1078,7 @@
     },
     {
       "path": "src/mlx_agent/strata_runtime.py",
-      "sha256": "945bef1e39fd0089cc113c7a8adf99ae5f8468d9f1ccbdff20849ca35b91feb8"
+      "sha256": "9994206b1edf4dc945d5f804b4f87bbc27021a83bc656db7a7585a4f987f25fd"
     },
     {
       "path": "src/mlx_agent/study_recipes.py",

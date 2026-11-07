@@ -163,6 +163,7 @@ class ModelWorker:
             self._refresh()
             return {"model_state": self.model_state, "active_requests": self.active_requests,
                     "worker_pid": self.process.pid if self.process and self.process.poll() is None else None,
+                    "worker_port": self.worker_port if self.model_state == "loaded" else None,
                     "last_error": self.last_error, "memory_policy": dict(self.memory_policy),
                     "memory_check": self.memory_check, "load_blocked_reason": self.load_blocked_reason,
                     "last_unload_reason": self.last_unload_reason}

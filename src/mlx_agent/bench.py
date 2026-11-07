@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import statistics
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -41,6 +43,12 @@ BENCH_PROMPT_TOKEN_ESTIMATE = 96
 RUNS_MIN, RUNS_MAX, RUNS_DEFAULT = 1, 10, 3
 GEN_TOKENS_MIN, GEN_TOKENS_MAX, GEN_TOKENS_DEFAULT = 16, 2048, 128
 TIMEOUT_DEFAULT = 120.0
+WORKLOADS = ("chat", "prefix", "prefill", "concurrent", "cold")
+PROMPT_TOKEN_TARGETS = {"prefix": 16384, "prefill": 32768}
+CONCURRENCY_MIN, CONCURRENCY_MAX, CONCURRENCY_DEFAULT = 2, 8, 4
+# About 20 tokens a line with common tokenizers; results report the server's own prompt count.
+_FILLER_LINE = "Record {0:05d}: unified memory bandwidth, quantization, KV cache growth and decode speed.\n"
+_FILLER_LINE_TOKENS = 20
 
 
 class BenchError(RuntimeError):
@@ -68,11 +76,17 @@ class BenchMeasurement:
     chip: Optional[str]
     measured_at: str
     samples: List[Dict[str, Any]] = field(default_factory=list)
+    workload: str = "chat"
+    first_ttft_ms: Optional[float] = None
+    cached_tokens: Optional[int] = None
+    concurrency: Optional[int] = None
+    aggregate_decode_toks: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "probe_id": BENCH_PROBE_ID,
             "outcome": "measured",
+            "workload": self.workload,
             "repo": self.repo,
             "runtime": self.runtime,
             "runs": self.runs,
@@ -85,6 +99,10 @@ class BenchMeasurement:
             "spread_pct": self.spread_pct,
             "chip": self.chip,
             "measured_at": self.measured_at,
+            "first_ttft_ms": self.first_ttft_ms,
+            "cached_tokens": self.cached_tokens,
+            "concurrency": self.concurrency,
+            "aggregate_decode_toks": self.aggregate_decode_toks,
             "samples": list(self.samples),
         }
 
@@ -123,11 +141,43 @@ def validate_bench_bounds(runs, gen_tokens, timeout):
         raise ValueError("timeout must be between 1 and 600 seconds")
 
 
+def validate_workload(workload, runs, concurrency):
+    if workload not in WORKLOADS:
+        raise ValueError("workload must be one of: {0}".format(", ".join(WORKLOADS)))
+    if (not isinstance(concurrency, int) or isinstance(concurrency, bool)
+            or not CONCURRENCY_MIN <= concurrency <= CONCURRENCY_MAX):
+        raise ValueError("concurrency must be between {0} and {1}".format(CONCURRENCY_MIN, CONCURRENCY_MAX))
+    if workload == "cold" and runs != 1:
+        raise ValueError("the cold workload measures exactly one run; pass --runs 1")
+
+
+def workload_prompt(workload, index, session):
+    """One run's prompt: prefix runs share all but their final question, prefill runs share nothing.
+
+    The session text starts every long prompt, so a later invocation never reuses this one's cache.
+    """
+    if workload == "prefix":
+        return "Session {0}.\n{1}\nQuestion {2}: what does record {2:05d} describe? Answer in one sentence.".format(
+            session, _filler(PROMPT_TOKEN_TARGETS["prefix"]), index + 1)
+    if workload == "prefill":
+        return "Session {0}, document {1}.\n{2}\nSummarize the document in one sentence.".format(
+            session, index + 1, _filler(PROMPT_TOKEN_TARGETS["prefill"]))
+    return BENCH_PROMPT
+
+
+def _filler(tokens):
+    return "".join(_FILLER_LINE.format(line) for line in range(1, tokens // _FILLER_LINE_TOKENS + 1))
+
+
 def measure_runtime(repo, runtime, runs=RUNS_DEFAULT, gen_tokens=GEN_TOKENS_DEFAULT,
                     timeout=TIMEOUT_DEFAULT, chip=None, clock=time.monotonic,
-                    now=None):
-    """Measure one already-served model; never starts or downloads anything."""
+                    now=None, workload="chat", concurrency=CONCURRENCY_DEFAULT):
+    """Measure one already-served model; never starts or downloads anything.
+
+    The cold workload skips the warm-up, so its single run includes a JIT load.
+    """
     validate_bench_bounds(runs, gen_tokens, timeout)
+    validate_workload(workload, runs, concurrency)
     if not isinstance(repo, str) or not repo.strip():
         raise BenchError(
             "invalid_repo",
@@ -158,12 +208,27 @@ def measure_runtime(repo, runtime, runs=RUNS_DEFAULT, gen_tokens=GEN_TOKENS_DEFA
         )
 
     per_run_timeout = float(timeout) / runs
+    session = secrets.token_hex(4)
+    estimate = PROMPT_TOKEN_TARGETS.get(workload, BENCH_PROMPT_TOKEN_ESTIMATE)
+
+    def run_once(index):
+        return _timed_run(stream_generate, repo, gen_tokens, per_run_timeout, clock,
+                          workload_prompt(workload, index, session), estimate)
+
+    def run_round(index):
+        if workload != "concurrent":
+            return run_once(index)
+        started = clock()
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            streams = list(pool.map(lambda _: run_once(index), range(concurrency)))
+        elapsed = max(clock() - started, 1e-9)
+        tokens = sum(stream.get("completion_tokens") or stream["content_events"] for stream in streams)
+        return {"streams": streams, "elapsed_ms": round(elapsed * 1000.0, 1),
+                "aggregate_decode_toks": round(tokens / elapsed, 1)}
+
     try:
-        _timed_run(stream_generate, repo, gen_tokens, per_run_timeout, clock)
-        samples = [
-            _timed_run(stream_generate, repo, gen_tokens, per_run_timeout, clock)
-            for _ in range(runs)
-        ]
+        first = None if workload == "cold" else run_round(0)
+        rounds = [run_round(index) for index in range(1, runs + 1)]
     except BenchError:
         raise
     except Exception as error:
@@ -173,6 +238,7 @@ def measure_runtime(repo, runtime, runs=RUNS_DEFAULT, gen_tokens=GEN_TOKENS_DEFA
             "Confirm the model responds to a normal generation request, then retry.",
         )
 
+    samples = [stream for round_ in rounds for stream in round_["streams"]] if workload == "concurrent" else rounds
     decode_values = [sample["decode_toks"] for sample in samples]
     median_decode = statistics.median(decode_values)
     spread = 0.0
@@ -188,8 +254,9 @@ def measure_runtime(repo, runtime, runs=RUNS_DEFAULT, gen_tokens=GEN_TOKENS_DEFA
     ]
     prompt_tokens = (
         int(round(statistics.median(prompt_token_values)))
-        if prompt_token_values else BENCH_PROMPT_TOKEN_ESTIMATE
+        if prompt_token_values else estimate
     )
+    cached_values = [sample["cached_tokens"] for sample in samples if sample.get("cached_tokens") is not None]
     measured_at = now() if callable(now) else _utc_now()
     return BenchMeasurement(
         repo=repo,
@@ -203,17 +270,25 @@ def measure_runtime(repo, runtime, runs=RUNS_DEFAULT, gen_tokens=GEN_TOKENS_DEFA
         spread_pct=round(spread, 1),
         chip=chip,
         measured_at=measured_at,
-        samples=samples,
+        samples=rounds,
+        workload=workload,
+        # The prefix warm-up is the only run that reads the shared prefix uncached.
+        first_ttft_ms=first["ttft_ms"] if workload == "prefix" else None,
+        cached_tokens=int(round(statistics.median(cached_values))) if cached_values else None,
+        concurrency=concurrency if workload == "concurrent" else None,
+        aggregate_decode_toks=(round(statistics.median(round_["aggregate_decode_toks"] for round_ in rounds), 1)
+                               if workload == "concurrent" else None),
     )
 
 
-def _timed_run(stream_generate, repo, gen_tokens, timeout, clock):
+def _timed_run(stream_generate, repo, gen_tokens, timeout, clock, prompt=BENCH_PROMPT,
+               prompt_estimate=BENCH_PROMPT_TOKEN_ESTIMATE):
     started = clock()
     first_content_at = None
     last_event_at = None
     content_events = 0
     usage = None
-    for event in stream_generate(repo, BENCH_PROMPT, gen_tokens, timeout=timeout):
+    for event in stream_generate(repo, prompt, gen_tokens, timeout=timeout):
         if not isinstance(event, dict):
             continue
         last_event_at = clock()
@@ -257,7 +332,7 @@ def _timed_run(stream_generate, repo, gen_tokens, timeout, clock):
         ttft_seconds = first_content_at - started
         if ttft_seconds > 0:
             # A server-reported prompt count beats the fixed estimate.
-            prompt_tokens = (usage or {}).get("prompt_tokens") or BENCH_PROMPT_TOKEN_ESTIMATE
+            prompt_tokens = (usage or {}).get("prompt_tokens") or prompt_estimate
             sample["prefill_toks"] = round(prompt_tokens / ttft_seconds, 1)
     elif usage and usage.get("completion_tokens") and finished > started:
         sample["decode_toks"] = round(usage["completion_tokens"] / (finished - started), 1)
@@ -267,6 +342,10 @@ def _timed_run(stream_generate, repo, gen_tokens, timeout, clock):
     # branch produced the decode number.
     if usage and usage.get("prompt_tokens"):
         sample["prompt_tokens"] = usage["prompt_tokens"]
+    if usage and usage.get("completion_tokens"):
+        sample["completion_tokens"] = usage["completion_tokens"]
+    if usage and "cached_tokens" in usage:
+        sample["cached_tokens"] = usage["cached_tokens"]
     sample.setdefault("prefill_toks", None)
     return sample
 
@@ -291,6 +370,10 @@ def _stream_event_usage(event):
             normalized["completion_tokens"] = usage["completion_tokens"]
         if isinstance(usage.get("prompt_tokens"), int):
             normalized["prompt_tokens"] = usage["prompt_tokens"]
+        details = usage.get("prompt_tokens_details")
+        cached = details.get("cached_tokens") if isinstance(details, dict) else None
+        if isinstance(cached, int) and not isinstance(cached, bool) and cached >= 0:
+            normalized["cached_tokens"] = cached
     for key in ("eval_count", "eval_duration", "prompt_eval_count", "prompt_eval_duration"):
         value = event.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:

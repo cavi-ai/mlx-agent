@@ -131,6 +131,17 @@ class CommandArgumentGrammarTests(unittest.TestCase):
             ["bench", "run", "--repo", "org/model", "--runtime", "mlx_lm", "--role", "coding", "--runs", "3",
              "--gen-tokens", "128", "--timeout", "30.5", "--export", "out.json", "--json"],
         )
+        self.assertAccepted(
+            "bench", "run --repo org/model --runtime mlx_lm --base-url http://127.0.0.1:8090 --workload concurrent --concurrency 4 --receipts-dir r",
+            ["bench", "run", "--repo", "org/model", "--runtime", "mlx_lm", "--base-url", "http://127.0.0.1:8090",
+             "--workload", "concurrent", "--concurrency", "4", "--receipts-dir", "r"],
+        )
+        for raw, message in (
+            ("run --repo org/model --runtime mlx_lm --workload soak", "invalid workload value"),
+            ("run --repo org/model --runtime mlx_lm --concurrency 9", "concurrency must be between 2 and 8"),
+            ("run --repo org/model --runtime mlx_lm --base-url http://example.com:8080", "endpoint must be a credential-free local HTTP URL"),
+        ):
+            self.assertRefused("bench", raw, message)
         self.assertAccepted("bench", "aggregate --exports e --out o --json",
                             ["bench", "aggregate", "--exports", "e", "--out", "o", "--json"])
         cases = (

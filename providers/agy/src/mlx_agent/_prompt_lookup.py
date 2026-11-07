@@ -9,9 +9,9 @@ import logging
 import time
 
 if __package__:
-    from ._decode_policy import LookupPolicy
+    from ._decode_policy import LookupPolicy, MAX_PROPOSAL_TOKENS
 else:
-    from _decode_policy import LookupPolicy
+    from _decode_policy import LookupPolicy, MAX_PROPOSAL_TOKENS
 
 _request = ContextVar("prompt_lookup_request", default=None)
 MIN_MATCH_TOKENS = 3
@@ -48,7 +48,7 @@ class PromptLookupIndex:
         for size in range(min(8, len(history)), MIN_MATCH_TOKENS - 1, -1):
             position = self.index.get(tuple(history[-size:]))
             if position is not None:
-                return self.tokens[position:position + max(0, min(8, limit))]
+                return self.tokens[position:position + max(0, min(MAX_PROPOSAL_TOKENS, limit))]
         return []
 
 
@@ -123,7 +123,7 @@ def lookup_step(prompt, model, *, full_prompt, max_tokens, prompt_cache,
         from mlx_lm.generate import generate_step as native_step
 
     index = PromptLookupIndex(full_prompt)
-    policy = LookupPolicy()
+    policy = LookupPolicy.for_architecture(mx.device_info().get("architecture"))
     history = list(full_prompt[-8:])
     progress = prompt_progress_callback or (lambda *_: None)
     y = prompt
@@ -146,7 +146,7 @@ def lookup_step(prompt, model, *, full_prompt, max_tokens, prompt_cache,
             started = clock()
             limit = min(policy.proposal_limit, max_tokens - generated - 1)
             proposal = index.propose(history, limit) if limit > 0 else []
-            if policy.native_reason or (limit > 0 and not proposal and generated >= MIN_MATCH_TOKENS):
+            if policy.native_reason or (limit > 0 and not proposal and generated >= policy.prefix_search_tokens):
                 request.fallback_reason = policy.native_reason or "no_prompt_match"
                 # Native generation pipelines one token ahead and owns its final
                 # cache commit. Hand over the pending token exactly once.

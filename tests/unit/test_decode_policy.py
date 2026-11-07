@@ -5,6 +5,52 @@ from mlx_agent._decode_policy import LookupPolicy
 
 
 class LookupPolicyTests(unittest.TestCase):
+    def test_m5_calibrates_before_using_a_bounded_wide_window(self):
+        policy = LookupPolicy.for_architecture("applegpu_g17s")
+        self.assertEqual(policy.prefix_search_tokens, 8)
+        self.assertEqual(policy.proposal_limit, 0)
+        policy.observe(0, 0, .01)
+        self.assertEqual(policy.proposal_limit, 0)
+        policy.observe(0, 0, .001)
+        self.assertEqual(policy.proposal_limit, 32)
+        policy.observe(32, 32, .001)
+        self.assertEqual(policy.proposal_limit, 32)
+        policy.observe(32, 9, .001)
+        self.assertEqual(policy.proposal_limit, 10)
+        policy.observe(10, 10, .001)
+        self.assertEqual(policy.proposal_limit, 12)
+        self.assertIsNone(policy.native_reason)
+
+    def test_other_and_unknown_architectures_keep_the_legacy_window(self):
+        for architecture in (None, "", "applegpu_g16s", "applegpu_g17d"):
+            policy = LookupPolicy.for_architecture(architecture)
+            self.assertEqual(policy.prefix_search_tokens, 3)
+            policy.observe(0, 0, .001)
+            policy.observe(0, 0, .001)
+            self.assertEqual(policy.proposal_limit, 4)
+            for _ in range(5):
+                policy.observe(8, 8, .001)
+            self.assertEqual(policy.proposal_limit, 8)
+        self.assertEqual(LookupPolicy.for_architecture("applegpu_g17s").calibration, [])
+
+    def test_m5_wide_misses_cost_and_invalid_counts_keep_native_fallback(self):
+        for observation, reason in (((32, 0, .1), "verification_cost"),
+                                    ((33, 1, .001), "invalid_observation"),
+                                    ((32, 1, math.nan), "invalid_observation")):
+            policy = LookupPolicy.for_architecture("applegpu_g17s")
+            policy.observe(0, 0, .001)
+            policy.observe(0, 0, .001)
+            policy.observe(*observation)
+            self.assertEqual(policy.native_reason, reason)
+            self.assertEqual(policy.proposal_limit, 0)
+        policy = LookupPolicy.for_architecture("applegpu_g17s")
+        policy.observe(0, 0, .001)
+        policy.observe(0, 0, .001)
+        policy.observe(32, 0, .001)
+        self.assertEqual(policy.proposal_limit, 2)
+        policy.observe(2, 0, .001)
+        self.assertEqual(policy.native_reason, "low_acceptance")
+
     def calibrated(self):
         policy = LookupPolicy()
         self.assertEqual(policy.proposal_limit, 0)

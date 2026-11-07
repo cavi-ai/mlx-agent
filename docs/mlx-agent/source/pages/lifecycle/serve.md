@@ -229,6 +229,41 @@ with `store` (the default) are kept in gateway memory, the most recent 64, and
 
 ## Memory policy
 
+### Strata model budgets
+
+For a prepared Strata GGUF profile, add `--memory-budget-gb` to its JIT preview
+and confirmation. The estimated total includes dense weights, expert storage,
+context and runtime working memory. The MTP draft head is loaded and budgeted
+only with `--strata-speculation on`.
+
+```bash
+python3 scripts/mlx-agent serve start --path /absolute/strata/profile --runtime strata --jit --memory-budget-gb 24 --strata-context-tokens 16384 --min-headroom-gb 24 --unload-under-pressure --json
+```
+
+Use different budgets for shared work or dedicated inference. The planner keeps
+the faster resident path when it fits; otherwise it assigns a fixed expert cache
+and reads other experts from disk. Budgeted workers disable the separate parked
+conversation cache. A budget is an allocation estimate, not a hard process-RAM
+limit. OS headroom remains a separate admission and pressure guard.
+
+Change the budget on the same endpoint using its gateway PID:
+
+```bash
+python3 scripts/mlx-agent serve policy --port 8080 --expected-pid <gateway-pid> --memory-budget-gb 48 --min-headroom-gb 32 --unload-under-pressure --json
+```
+
+Active requests finish before a budget change unloads the worker. New requests
+receive `model_reconfiguring` until it unloads; the next request loads the new
+allocation. Loading or unloading workers reject budget changes with `model_busy`.
+Status exposes the requested `memory_allocation` and `memory_budget_pending`.
+Omitting the budget in a later policy update preserves it; `serve policy
+--clear-memory-budget` explicitly returns to the original allocation settings.
+A budget defaults to
+a 2 GB reserve when no headroom is supplied and cannot be combined with an
+explicit expert-memory limit at startup. These settings require Strata JIT.
+
+### Idle and pressure controls
+
 Include policy flags in the initial JIT preview and confirmation:
 
 ```bash
@@ -236,7 +271,7 @@ python3 scripts/mlx-agent serve start --path /absolute/local/model --runtime mlx
 python3 scripts/mlx-agent serve start --path /absolute/local/model --runtime mlx_lm --jit --idle-timeout 600 --min-headroom-gb 2 --confirm --preview-hash <hash> --json
 ```
 
-Use the gateway PID from status to replace the whole policy without restarting:
+Use the gateway PID from status to replace idle and pressure controls without restarting:
 
 ```bash
 python3 scripts/mlx-agent serve policy --port 8080 --expected-pid <gateway-pid> --idle-timeout 600 --min-headroom-gb 2 --json
@@ -247,7 +282,8 @@ Idle time starts after the last request or stream finishes. `--idle-timeout 0`
 disables automatic idle unload. `--keep-loaded` prevents automatic idle unload;
 it does not preload weights, and manual unload remains available. Omitting
 `--keep-loaded` in a policy replacement allows configured idle unloading; omitting
-`--min-headroom-gb` disables admission checking, and omitting `--context-tokens`
+`--min-headroom-gb` disables admission checking when no model budget is active,
+and omitting `--context-tokens`
 removes the KV cache term. Policy is persisted atomically
 in private gateway configuration. Start without policy flags retains manual
 unload behavior. Policy flags require JIT.

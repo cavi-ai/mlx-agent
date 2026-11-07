@@ -870,7 +870,7 @@
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/pixal3d/pipeline.py",
-      "sha256": "fbcc02dd2f7c3b1983482246bfd0f7765af7b9320b6e4a0555d6dccc3fed0725"
+      "sha256": "08b36be5b81244fa75a2d08305f1961f3dd028353ec0240d2f5ae90149bb71d7"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/pixal3d/projection.py",
@@ -906,7 +906,7 @@
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/trellis2/pipeline.py",
-      "sha256": "2154b627db92b3b88e647f0600e7e180896d0ba6e00f5ccbeeff1648919fe90f"
+      "sha256": "05036d1116dad8092f552cfa28c2eb83e467b9201789a7f12e41b9eb1af572e9"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/trellis2/sparse.py",

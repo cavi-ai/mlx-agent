@@ -19,6 +19,11 @@ CASCADE_FLOOR = 1024
 LOW_RESOLUTION = 512
 
 
+def gltf_axes(vertices):
+    """z-up mesh vertices in glTF axes: y up, with the -y side facing +z, glTF's front."""
+    return np.stack([vertices[:, 0], vertices[:, 2], -vertices[:, 1]], axis=1)
+
+
 def _kernels(values):
     """Sparse-conv weights in the gather layout once, instead of per call."""
     out = {}
@@ -123,7 +128,7 @@ def generate(model, image, out, steps=12, seed=42, resolution=1024, guidance=7.5
     previous, cursor = cursor, time.perf_counter()
     stages["decode"] = cursor - previous
     vertices, faces = dual_grid.to_mesh(voxels, vertices, crossed, split, level_resolution)
-    vertices = np.stack([vertices[:, 0], vertices[:, 2], -vertices[:, 1]], axis=1)
+    vertices = gltf_axes(vertices)
     previous, cursor = cursor, time.perf_counter()
     stages["mesh"] = cursor - previous
     vertices, faces = decimate(vertices, faces, max_faces)

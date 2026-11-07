@@ -27,6 +27,8 @@ def _measurement(decode=38.2, chip="Apple M5 Max"):
         chip=chip,
         measured_at="2026-07-27T12:00:00+00:00",
         samples=[],
+        end_to_end_toks=25.0,
+        measurement_method="server_timings",
     )
 
 
@@ -36,15 +38,38 @@ class ExportRecordTests(unittest.TestCase):
         self.assertEqual(set(record), {
             "schema_version", "repo", "chip", "runtime", "ttft_ms",
             "decode_toks", "prefill_toks", "measured_at", "tool_version",
+            "probe_id", "measurement_method", "gen_tokens", "prompt_tokens", "end_to_end_toks",
         })
         self.assertNotIn("samples", record)
         self.assertNotIn("log_path", record)
 
-    def test_decode_toks_required(self):
+    def test_missing_decode_is_preserved_with_wall_clock_method(self):
         record = export_record(_measurement(), "0.4.0")
         record["decode_toks"] = None
+        record["prefill_toks"] = None
+        record["measurement_method"] = "client_wall_clock"
+        self.assertIsNone(validate_export_record(record)["decode_toks"])
+
+    def test_method_cannot_claim_stage_timings_for_wall_clock_rate(self):
+        record = export_record(_measurement(), "0.4.0")
+        record["measurement_method"] = "client_wall_clock"
         with self.assertRaises(ValueError):
             validate_export_record(record)
+
+    def test_latency_only_record_cannot_claim_token_throughput(self):
+        record = export_record(_measurement(), "0.4.0")
+        record["measurement_method"] = "latency_only"
+        record["decode_toks"] = record["prefill_toks"] = None
+        with self.assertRaises(ValueError):
+            validate_export_record(record)
+
+    def test_legacy_export_retains_its_version_without_invented_method(self):
+        legacy = {"schema_version": "1.0", "repo": "pub/model", "chip": "Apple M5 Max",
+                  "runtime": "mlx_lm", "ttft_ms": 412.0, "decode_toks": 100.0,
+                  "prefill_toks": 900.0, "measured_at": "2026-07-27T12:00:00+00:00",
+                  "tool_version": "0.4.0"}
+        self.assertEqual(validate_export_record(legacy), legacy)
+        self.assertNotIn("measurement_method", legacy)
 
     def test_out_of_bounds_numbers_rejected(self):
         record = export_record(_measurement(), "0.4.0")
@@ -64,6 +89,34 @@ class ExportRecordTests(unittest.TestCase):
 
 
 class AggregateTests(unittest.TestCase):
+    def test_runtime_method_and_workload_are_separate_groups(self):
+        first = export_record(_measurement(), "0.4.0")
+        variants = [dict(first), dict(first, runtime="ollama"), dict(first, gen_tokens=256),
+                    dict(first, measurement_method="client_wall_clock", decode_toks=None, prefill_toks=None)]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "exports.jsonl"
+            for record in variants:
+                append_export(path, record)
+            aggregate = aggregate_exports([path])
+        self.assertEqual(aggregate["schema_version"], "2.0")
+        self.assertEqual(len(aggregate["entries"]), 4)
+        self.assertEqual({v["runtime"] for v in aggregate["entries"]}, {"mlx_lm", "ollama"})
+        self.assertTrue(all(v["samples"] == 1 for v in aggregate["entries"]))
+
+    def test_legacy_measurements_are_explicitly_separate(self):
+        current = export_record(_measurement(), "0.4.0")
+        legacy = {key: current[key] for key in ("repo", "chip", "runtime", "ttft_ms", "decode_toks",
+                                              "prefill_toks", "measured_at", "tool_version")}
+        legacy.update(schema_version="1.0", decode_toks=1000.0)
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "exports.jsonl"
+            for record in (current, legacy):
+                append_export(path, record)
+            entries = aggregate_exports([path])["entries"]
+        self.assertEqual(len(entries), 2)
+        methods = {v["measurement_method"]: v["decode_toks"] for v in entries}
+        self.assertEqual(methods, {"server_timings": 38.2, "legacy_unclassified": 1000.0})
+
     def test_dedupes_to_newest_and_medians(self):
         with TemporaryDirectory() as directory:
             target = Path(directory) / "exports.jsonl"
@@ -90,6 +143,27 @@ class AggregateTests(unittest.TestCase):
 
 
 class CommunityBenchTests(unittest.TestCase):
+    def test_multiple_runtime_groups_do_not_choose_arbitrary_annotation(self):
+        first = export_record(_measurement(), "0.4.0")
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "exports.jsonl"
+            append_export(path, first)
+            append_export(path, dict(first, runtime="ollama"))
+            aggregate = aggregate_exports([path])
+            out = Path(directory) / "aggregate.json"
+            out.write_text(json.dumps(aggregate))
+            self.assertEqual(load_community_bench(out), {})
+
+    def test_single_current_group_retains_method_and_runtime(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "exports.jsonl"
+            append_export(path, export_record(_measurement(), "0.4.0"))
+            out = Path(directory) / "aggregate.json"
+            out.write_text(json.dumps(aggregate_exports([path])))
+            entry = load_community_bench(out)[("pub/model", "Apple M5 Max")]
+        self.assertEqual(entry["measurement_method"], "server_timings")
+        self.assertEqual(entry["runtime"], "mlx_lm")
+
     def test_empty_stub_yields_no_entries(self):
         self.assertEqual(load_community_bench(), {})
 

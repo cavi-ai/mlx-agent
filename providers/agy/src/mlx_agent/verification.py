@@ -471,7 +471,9 @@ def _http_event_stream(url, payload, timeout=120.0, max_response_bytes=INVENTORY
         while not done:
             remaining = _deadline_remaining(deadline, clock)
             _set_connection_timeout(connection, remaining)
-            chunk = response.read(_HTTP_READ_CHUNK_BYTES)
+            # read(n) may wait to fill n bytes, hiding early tokens in a short
+            # stream. read1 returns available bytes after at most one raw read.
+            chunk = response.read1(_HTTP_READ_CHUNK_BYTES)
             _deadline_remaining(deadline, clock)
             if not chunk:
                 break

@@ -725,7 +725,7 @@ def _add_bench_arguments(parser):
     run.add_argument("--json", action="store_true")
     aggregate = actions.add_parser(
         "aggregate",
-        help="deduplicate and median-aggregate bench export files",
+        help="collect the latest bench exports per runtime, method and workload",
     )
     aggregate.add_argument("--exports", required=True, help="directory of .jsonl export files")
     aggregate.add_argument("--out", default=None, help="aggregate output path (default: print only)")
@@ -735,6 +735,7 @@ def _add_bench_arguments(parser):
 def _run_bench(arguments):
     from .bench import BenchError, measure_runtime
     from .host import HostInventory
+    from .verification import _http_json_get
     operation = "bench-{0}".format(arguments.bench_command)
     try:
         if arguments.bench_command == "aggregate":
@@ -769,7 +770,8 @@ def _run_bench(arguments):
             return 0
         chip = None
         try:
-            chip = HostInventory.inspect().chip
+            host, _ = HostInventory.inspect(_http_json_get)
+            chip = host.chip
         except Exception:
             chip = None
         measurement = measure_runtime(
@@ -803,9 +805,19 @@ def _run_bench(arguments):
                 if measurement.prefill_toks is not None
                 else "n/a"
             )
-            print("  decode:  {0} tok/s (spread {1}%)".format(measurement.decode_toks, measurement.spread_pct))
+            decode = (
+                "{0} tok/s (spread {1}%)".format(measurement.decode_toks, measurement.spread_pct)
+                if measurement.decode_toks is not None else "n/a"
+            )
+            end_to_end = (
+                "{0} tok/s".format(measurement.end_to_end_toks)
+                if measurement.end_to_end_toks is not None else "n/a"
+            )
+            print("  decode:  {0}".format(decode))
             print("  ttft:    {0}".format(ttft))
             print("  prefill: {0}".format(prefill))
+            print("  end-to-end: {0}".format(end_to_end))
+            print("  method:  {0}".format(measurement.measurement_method))
         return 0
     except BenchError as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)

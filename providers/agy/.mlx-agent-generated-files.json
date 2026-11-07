@@ -458,7 +458,7 @@
     },
     {
       "path": "src/mlx_agent/bench.py",
-      "sha256": "c906e7d89b6411dc6a5e3a7a23f7bbef5191e1325856845502f43e0870a21769"
+      "sha256": "23ff86fb791130157047f5524f3050965c3dc8ba5e8257171715d21796185378"
     },
     {
       "path": "src/mlx_agent/blueprint.py",
@@ -478,7 +478,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "81b3ae05d858ce67f10e2ac6214bb14d324d11f6c1ee95a23e26da186b57bd8d"
+      "sha256": "16b62efc38580ff1776de2f275429b5f7de8d253822338f8cb5e7d848ee4fc47"
     },
     {
       "path": "src/mlx_agent/coding_capture.py",
@@ -1086,7 +1086,7 @@
     },
     {
       "path": "src/mlx_agent/verification.py",
-      "sha256": "d265d9aad3575e91534bf38ba184c8b8d619dbf4e1d1458d36d6cb5f22037af8"
+      "sha256": "dd468cc2176b0675eb38f1967b15e953105bed1c6626e0f26c84c2e8090fe8a2"
     },
     {
       "path": "src/mlx_agent/video.py",

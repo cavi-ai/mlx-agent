@@ -280,6 +280,9 @@ def measure_runtime(repo, runtime, runs=RUNS_DEFAULT, gen_tokens=GEN_TOKENS_DEFA
         spread = (max(decode_values) - min(decode_values)) / median_decode * 100.0
     prompt_tokens = median("prompt_tokens")
     methods = {sample["measurement_method"] for sample in samples}
+    method = next(iter(methods)) if len(methods) == 1 else "mixed"
+    if method == "server_timings" and median_decode is None and median("prefill_toks") is None:
+        method = "mixed"
     measured_at = now() if callable(now) else _utc_now()
     return BenchMeasurement(
         repo=repo,
@@ -302,7 +305,7 @@ def measure_runtime(repo, runtime, runs=RUNS_DEFAULT, gen_tokens=GEN_TOKENS_DEFA
                                   if workload == "concurrent" and all(item["aggregate_end_to_end_toks"] is not None for item in rounds) else None),
         end_to_end_toks=median("end_to_end_toks"),
         elapsed_ms=median("elapsed_ms"),
-        measurement_method=next(iter(methods)) if len(methods) == 1 else "mixed",
+        measurement_method=method,
     )
 
 
@@ -340,12 +343,16 @@ def _timed_run(stream_generate, repo, gen_tokens, timeout, clock, prompt=BENCH_P
         raise _measurement_timeout()
     elapsed = finished - started
     completion_tokens = usage.get("eval_count", usage.get("completion_tokens"))
+    prompt_tokens = usage.get("prompt_eval_count", usage.get("prompt_tokens"))
+    cached_tokens = usage.get("prompt_eval_cached_count", usage.get("cached_tokens"))
+    if cached_tokens is not None and prompt_tokens is not None and cached_tokens > prompt_tokens:
+        cached_tokens = None
     sample = {
         "content_events": content_events,
         "elapsed_ms": round(elapsed * 1000.0, 1),
-        "prompt_tokens": usage.get("prompt_eval_count", usage.get("prompt_tokens")),
+        "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
-        "cached_tokens": usage.get("prompt_eval_cached_count", usage.get("cached_tokens")),
+        "cached_tokens": cached_tokens,
         "decode_toks": None,
         "prefill_toks": None,
         "end_to_end_toks": round(completion_tokens / elapsed, 1)
@@ -362,8 +369,10 @@ def _timed_run(stream_generate, repo, gen_tokens, timeout, clock, prompt=BENCH_P
             usage["eval_count"] / (usage["eval_duration"] / 1e9), 1
         )
     if "prompt_eval_count" in usage and usage.get("prompt_eval_duration"):
-        uncached = usage["prompt_eval_count"] - usage.get("prompt_eval_cached_count", 0)
-        if uncached >= 0:
+        uncached = usage["prompt_eval_count"] - cached_tokens if cached_tokens is not None else None
+        if "prompt_eval_cached_count" not in usage:
+            uncached = usage["prompt_eval_count"]
+        if uncached is not None and uncached >= 0:
             sample["prefill_toks"] = round(uncached / (usage["prompt_eval_duration"] / 1e9), 1)
     sample["measurement_method"] = (
         "server_timings" if sample["decode_toks"] is not None or sample["prefill_toks"] is not None
@@ -401,6 +410,8 @@ def _stream_event_usage(event):
         value = event.get(key)
         if type(value) is int and 0 <= value <= 1e9:
             normalized[key] = value
+        elif key == "prompt_eval_cached_count" and key in event:
+            normalized[key] = None
     for key in ("eval_duration", "prompt_eval_duration"):
         value = event.get(key)
         if type(value) in (int, float) and 1 <= value <= 2 ** 63 - 1 and math.isfinite(value):
@@ -480,10 +491,11 @@ def validate_export_record(record):
         method = record["measurement_method"]
         if record["probe_id"] != BENCH_PROBE_ID or method not in MEASUREMENT_METHODS:
             raise ValueError("bench export record has an unsupported measurement method")
-        if type(record["gen_tokens"]) is not int or not GEN_TOKENS_MIN <= record["gen_tokens"] <= GEN_TOKENS_MAX:
+        gen = record["gen_tokens"]
+        if type(gen) not in (int, float) or not GEN_TOKENS_MIN <= gen <= GEN_TOKENS_MAX or gen != int(gen):
             raise ValueError("bench export record gen_tokens is outside bench bounds")
         prompt = record["prompt_tokens"]
-        if prompt is not None and (type(prompt) is not int or not 0 <= prompt <= 1e9):
+        if prompt is not None and (type(prompt) not in (int, float) or not 0 <= prompt <= 1e9 or prompt != int(prompt)):
             raise ValueError("bench export record prompt_tokens must be an integer or null")
         stages = record["decode_toks"] is not None or record["prefill_toks"] is not None
         if method == "server_timings" and not stages:
@@ -503,6 +515,8 @@ def _export_timestamp(value):
     if len(value) > 64 or not re.fullmatch(
             r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})", value):
         raise ValueError("bench export measured_at must include a date, time and timezone")
+    if value[-1] not in "Zz" and (int(value[-5:-3]) > 23 or int(value[-2:]) > 59):
+        raise ValueError("bench export measured_at has an invalid timezone offset")
     return datetime.fromisoformat(value.replace("Z", "+00:00").replace("z", "+00:00"))
 
 

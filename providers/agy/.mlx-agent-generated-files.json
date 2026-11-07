@@ -458,7 +458,7 @@
     },
     {
       "path": "src/mlx_agent/bench.py",
-      "sha256": "b6747b1e809e4e7801abe8e4c10718d96bed428ccbb4933ac9ef8d4e1bd2a4da"
+      "sha256": "099d56b55d3f79e59b9a1170dacd6cfa6204158f41f15326c31155920fdf8f5a"
     },
     {
       "path": "src/mlx_agent/blueprint.py",

@@ -281,6 +281,16 @@ class MetricIntegrityTests(unittest.TestCase):
             "prompt_eval_count": 100, "prompt_eval_cached_count": 120,
             "prompt_eval_duration": 0.25e9})])
         self.assertIsNone(sample["prefill_toks"])
+        self.assertIsNone(sample["cached_tokens"])
+
+    def test_malformed_cached_count_does_not_become_an_uncached_prompt(self):
+        for cached in (True, -1, "80", 1.5, float("nan")):
+            with self.subTest(cached=cached):
+                sample = self.sample([(0.5, {"message": {"content": "reply"},
+                    "prompt_eval_count": 100, "prompt_eval_cached_count": cached,
+                    "prompt_eval_duration": 0.25e9})])
+                self.assertIsNone(sample["cached_tokens"])
+                self.assertIsNone(sample["prefill_toks"])
 
     def test_zero_completion_is_distinct_from_missing_usage(self):
         sample = self.sample([(0.5, {"choices": [], "usage": {"completion_tokens": 0, "prompt_tokens": 80}})])
@@ -288,6 +298,27 @@ class MetricIntegrityTests(unittest.TestCase):
         self.assertEqual(sample["end_to_end_toks"], 0.0)
         self.assertIsNone(sample["ttft_ms"])
         self.assertIsNone(sample["decode_toks"])
+
+    def test_complementary_stage_samples_export_as_mixed_measurement(self):
+        from mlx_agent.bench import export_record
+
+        class PartialStages(TimedRuntime):
+            calls = 0
+
+            def stream_generate(self, *args, **kwargs):
+                self.calls += 1
+                usage = ({"prompt_eval_count": 80, "prompt_eval_duration": 1e9}
+                         if self.calls == 3 else {"eval_count": 20, "eval_duration": 1e9})
+                self.events = [(0.5, {"message": {"content": "reply"}, **usage})]
+                yield from super().stream_generate(*args, **kwargs)
+
+        clock = ManualClock()
+        result = measure_runtime("pub/model", PartialStages(clock, [], elapsed=1), runs=2,
+                                 timeout=10, clock=clock, chip="Apple M5 Max")
+        self.assertIsNone(result.decode_toks)
+        self.assertIsNone(result.prefill_toks)
+        self.assertEqual(result.measurement_method, "mixed")
+        self.assertEqual(export_record(result, "0.11.1")["measurement_method"], "mixed")
 
     def test_warmup_and_samples_share_one_total_deadline(self):
         clock = ManualClock()

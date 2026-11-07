@@ -23,13 +23,16 @@ class BenchSchemaTests(unittest.TestCase):
         legacy["schema_version"] = "1.0"
         wall_clock = dict(current, measurement_method="client_wall_clock", decode_toks=None, prefill_toks=None)
         latency = dict(wall_clock, measurement_method="latency_only", end_to_end_toks=None)
-        for value in (current, legacy, wall_clock, latency):
+        integral_numbers = dict(current, gen_tokens=128.0, prompt_tokens=96.0)
+        for value in (current, legacy, wall_clock, latency, integral_numbers):
             with self.subTest(valid=value["schema_version"], method=value.get("measurement_method")):
                 validator.validate(value)
                 self.assertEqual(validate_export_record(value), value)
         invalid = [dict(current, measurement_method="client_wall_clock"),
                    dict(current, gen_tokens=True), dict(current, prompt_tokens=1.5),
                    dict(current, measured_at="yesterday"), dict(current, measured_at="2026-11-06"),
+                   dict(current, measured_at="2026-07-27T12:00:00+00:60"),
+                   dict(current, measured_at="2026-07-27T12:00:00+24:00"),
                    dict(current, private_path="/private/local"),
                    dict(current, probe_id="bench-v1"),
                    dict(latency, end_to_end_toks=20.0), dict(wall_clock, end_to_end_toks=None),

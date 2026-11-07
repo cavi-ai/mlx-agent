@@ -1,4 +1,5 @@
 """Exercise launch, cross-directory discovery and stop through the shipped CLI."""
+import ast
 import json
 import os
 import socket
@@ -7,11 +8,13 @@ import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 CLI = Path(__file__).resolve().parents[2] / 'scripts/mlx-agent'
 SERVER = '''#!/usr/bin/env python3
 import argparse, json
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from socketserver import TCPServer
 parser = argparse.ArgumentParser()
 parser.add_argument('--model'); parser.add_argument('--port', type=int)
 args, _ = parser.parse_known_args()
@@ -20,11 +23,27 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps({'data': [{'id': args.model}]}).encode()
         self.send_response(200); self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
     def log_message(self, *args): pass
-HTTPServer(('127.0.0.1', args.port), Handler).serve_forever()
+class Server(HTTPServer):
+    def server_bind(self):
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+Server(('127.0.0.1', args.port), Handler).serve_forever()
 '''
 
 
 class ServiceDiscoveryCliTests(unittest.TestCase):
+    def test_fixture_listener_does_not_resolve_loopback_hostname(self):
+        module = ast.parse(SERVER)
+        definitions = [node for node in module.body
+                       if isinstance(node, (ast.Import, ast.ImportFrom))
+                       or isinstance(node, ast.ClassDef) and node.name == 'Server']
+        namespace = {}
+        exec(compile(ast.Module(body=definitions, type_ignores=[]), '<service fixture>', 'exec'), namespace)
+        with mock.patch('socket.getfqdn', side_effect=AssertionError('Loopback startup must not query DNS')):
+            with namespace['Server'](('127.0.0.1', 0), namespace['BaseHTTPRequestHandler']) as server:
+                self.assertEqual(server.server_name, '127.0.0.1')
+                self.assertEqual(server.server_port, server.socket.getsockname()[1])
+
     def test_launch_is_discovered_from_another_directory_and_stop_checks_selected_pid(self):
         with TemporaryDirectory() as folder:
             root = Path(folder)
@@ -46,12 +65,14 @@ class ServiceDiscoveryCliTests(unittest.TestCase):
             with socket.socket() as probe:
                 probe.bind(('127.0.0.1', 0)); port = probe.getsockname()[1]
             start = ['serve', 'start', '--path', str(model), '--runtime', 'mlx_lm', '--port', str(port), '--receipts-dir', str(receipts)]
-            code, preview = run(start)
-            self.assertEqual(code, 2)
-            code, launched = run(start + ['--confirm', '--preview-hash', preview['data']['plan']['preview_hash']])
-            self.assertEqual(code, 0, launched)
-            pid = launched['data']['receipt']['pid']
+            pid = None
+            receipt = receipts / ".mlx-agent-receipts" / "serve" / (str(port) + ".json")
             try:
+                code, preview = run(start)
+                self.assertEqual(code, 2)
+                code, launched = run(start + ['--confirm', '--preview-hash', preview['data']['plan']['preview_hash']])
+                self.assertEqual(code, 0, launched)
+                pid = launched['data']['receipt']['pid']
                 code, found = run(['serve', 'discover'])
                 self.assertEqual(code, 0, found)
                 matching = [value for value in found['data']['services'] if value['pid'] == pid]
@@ -67,5 +88,8 @@ class ServiceDiscoveryCliTests(unittest.TestCase):
                 self.assertEqual(code, 2)
                 self.assertEqual(refused['error']['code'], 'server_changed')
             finally:
-                code, stopped = run(['serve', 'stop', '--port', str(port), '--expected-pid', str(pid), '--receipts-dir', str(receipts)])
-                self.assertEqual(code, 0, stopped)
+                if pid is None and receipt.is_file():
+                    pid = json.loads(receipt.read_text())['pid']
+                if pid is not None:
+                    code, stopped = run(['serve', 'stop', '--port', str(port), '--expected-pid', str(pid), '--receipts-dir', str(receipts)])
+                    self.assertEqual(code, 0, stopped)

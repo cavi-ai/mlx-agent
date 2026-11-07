@@ -188,3 +188,10 @@ weights. GGUF conversion uses `--gguf` rather than an optional backend override.
 After conversion finishes, use [Serve](serve.md) for a compatible HTTP model or
 [Local inference](local-inference.md) for supported speech, classification,
 image, and video tasks. Inspect status and logs before relying on outputs.
+
+## Scan selected folders
+
+Providing `--mlx-root` contains the scan to those folders without adding default
+GGUF locations. Add `--gguf-root` for other weight folders you want included.
+GGUF file links outside the selected roots are excluded. The report keeps
+results from readable folders and lists unavailable locations in `root_errors`.

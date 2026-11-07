@@ -4,11 +4,24 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from mlx_agent.cli import main
 
 
 class ConvertCliTests(unittest.TestCase):
+    def test_explicit_mlx_root_does_not_expand_to_default_gguf_folders(self):
+        with TemporaryDirectory() as folder:
+            selected = Path(folder) / 'selected'; selected.mkdir()
+            excluded = Path(folder) / 'excluded'; excluded.mkdir()
+            with patch('mlx_agent.gguf.default_gguf_roots', return_value=[str(excluded)]):
+                code, output = self._run(['convert', 'scan', '--mlx-root', str(selected), '--json'])
+            self.assertEqual(code, 0)
+            roots = json.loads(output)['data']['roots']
+            self.assertEqual(roots['gguf'], [])
+            self.assertEqual(roots['mlx'], [str(selected)])
+
+
     def _run(self, argv):
         buffer = io.StringIO()
         with redirect_stdout(buffer):

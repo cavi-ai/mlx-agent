@@ -6,6 +6,7 @@ import fnmatch
 import http.client
 import json
 import math
+import re
 
 from .backends import (
     QUANTIZED_BITS, choose_backend, component_matches, conversion_bits, load_manifests, load_registries, lookup,
@@ -333,6 +334,12 @@ def resolve(text, revision=None, client=None, manifests=None, registries=None):
         payload.update(verdict="unknown", reasons=["hub_unreachable"])
         payload["warnings"].append("the model API returned a non-object document")
         return payload
+
+    resolved = _text(info.get("sha"))
+    if resolved and re.fullmatch(r"[0-9a-fA-F]{40}", resolved):
+        payload["source"]["resolved_revision"] = resolved
+        source["revision"] = resolved
+        payload["source"]["url"] = _source_url(source)
 
     subfolder = source.get("subfolder")
     prefix = subfolder + "/" if subfolder else ""

@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import secrets
@@ -565,6 +566,15 @@ def _pid_command(pid):
     return result.stdout.strip() or None
 
 
+def _pid_start(pid):
+    try:
+        result = subprocess.run(["/bin/ps", "-p", str(pid), "-o", "lstart="],
+                                capture_output=True, text=True, timeout=2, env=dict(os.environ, LC_ALL="C"))
+        return (result.stdout.strip() or None) if result.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def _default_path_present(path):
     return Path(path).is_dir()
 
@@ -667,6 +677,9 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             )
 
     root.mkdir(parents=True, exist_ok=True)
+    if spawn is _default_spawn:
+        from .service_registry import register_receipts
+        register_receipts(root.absolute().parent.parent)
     log_path = root / "{0}.log".format(plan["port"])
     if plan.get("jit"):
         config_path = Path(plan["control_config"])
@@ -747,7 +760,15 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
 
 def _read_receipt(path):
     try:
-        value = json.loads(Path(path).read_text(encoding="utf-8"))
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb") as source:
+            metadata = os.fstat(source.fileno())
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 1024 * 1024:
+                return None
+            raw = source.read(1024 * 1024 + 1)
+            if len(raw) > 1024 * 1024:
+                return None
+            value = json.loads(raw)
     except (OSError, ValueError, json.JSONDecodeError):
         return None
     if not isinstance(value, dict) or value.get("kind") != SERVE_RECEIPT_KIND:
@@ -756,16 +777,24 @@ def _read_receipt(path):
         return None
     if not isinstance(value.get("argv"), list) or not isinstance(value.get("port"), int):
         return None
+    if (not value["argv"] or any(not isinstance(item, str) for item in value["argv"])
+            or not isinstance(value.get("runtime"), str) or "repo" not in value
+            or not (value.get("repo") or value.get("path"))):
+        return None
     return value
 
 
-def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_command):
+def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_command, deadline=None, errors=None):
     """Cross-check serve receipts against live processes; read-only."""
     root = receipts_root(receipts_dir)
     entries = []
     if not root.is_dir():
         return entries
     for path in sorted(root.glob("*.json")):
+        if deadline is not None and time.monotonic() >= deadline:
+            if errors is not None:
+                errors.append({"source": str(root.absolute().parent.parent), "message": "Service status deadline reached"})
+            break
         if len(entries) >= MAX_RECEIPTS:
             break
         receipt = _read_receipt(path)
@@ -784,6 +813,7 @@ def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_comma
             "argv_match": _argv_matches(receipt, command) if alive else False,
             "log_path": receipt.get("log_path"),
             "started_at": receipt.get("started_at"),
+            "process_started_at": _pid_start(receipt["pid"]) if alive and pid_command is _pid_command else None,
         })
         entries[-1].update(_adapter_metadata(receipt, root))
         if receipt.get("training_binding") is not None:
@@ -798,7 +828,10 @@ def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_comma
             entries[-1]["jit"] = True
             if alive and entries[-1]["argv_match"]:
                 try:
-                    entries[-1].update(_jit_control(receipt, root, "status"))
+                    if deadline is None:
+                        entries[-1].update(_jit_control(receipt, root, "status"))
+                    else:
+                        entries[-1].update(_jit_control(receipt, root, "status", timeout=max(0.1, min(2, deadline - time.monotonic()))))
                 except ServeError:
                     entries[-1]["model_state"] = "unknown"
             else:
@@ -874,14 +907,14 @@ def _jit_config(receipt, root):
                          "Stop and review a fresh endpoint.") from error
 
 
-def _jit_control(receipt, root, action, policy=None):
+def _jit_control(receipt, root, action, policy=None, timeout=None):
     config = _jit_config(receipt, root)
     request = urllib.request.Request("http://127.0.0.1:{}/_mlx/{}".format(receipt["port"], action),
         data=json.dumps(policy or {}).encode() if action in ("unload", "policy") else None,
         headers={"Authorization": "Bearer " + config["control_token"], "Content-Type": "application/json"})
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
-        with opener.open(request, timeout=10 if action == "unload" else 2) as response:
+        with opener.open(request, timeout=timeout if timeout is not None else (10 if action == "unload" else 2)) as response:
             state = json.load(response)
             if not isinstance(state, dict) or state.get("model_state") not in ("loaded", "unloaded", "loading", "unloading", "failed"):
                 raise ValueError("Invalid model residency status.")
@@ -918,11 +951,11 @@ def _owned_jit_worker(receipt, root):
     return None
 
 
-def unload_serve(port, receipts_dir=None, expected_pid=None):
-    return _configure_owned_jit(port, receipts_dir, expected_pid, "unload")
+def unload_serve(port, receipts_dir=None, expected_pid=None, expected_start=None):
+    return _configure_owned_jit(port, receipts_dir, expected_pid, "unload", expected_start=expected_start)
 
 
-def configure_serve_memory(port, policy, receipts_dir=None, expected_pid=None):
+def configure_serve_memory(port, policy, receipts_dir=None, expected_pid=None, expected_start=None):
     from .jit_serve import validate_memory_policy
     clear_budget = isinstance(policy, dict) and "model_memory_budget_gb" in policy and policy["model_memory_budget_gb"] is None
     try:
@@ -933,10 +966,10 @@ def configure_serve_memory(port, policy, receipts_dir=None, expected_pid=None):
         policy["model_memory_budget_gb"] = None
     # The gateway merges changes; replacements must also clear omitted options.
     return _configure_owned_jit(port, receipts_dir, expected_pid, "policy",
-                                dict({"context_tokens": None, "unload_under_pressure": False}, **policy))
+                                dict({"context_tokens": None, "unload_under_pressure": False}, **policy), expected_start=expected_start)
 
 
-def _configure_owned_jit(port, receipts_dir, expected_pid, action, policy=None):
+def _configure_owned_jit(port, receipts_dir, expected_pid, action, policy=None, expected_start=None):
     root = receipts_root(receipts_dir)
     receipt = _read_receipt(root / "{}.json".format(port))
     if not receipt or not receipt.get("jit"):
@@ -944,6 +977,8 @@ def _configure_owned_jit(port, receipts_dir, expected_pid, action, policy=None):
                          "Enable Load on request for this endpoint first.")
     if expected_pid is not None and receipt["pid"] != expected_pid:
         raise ServeError("pid_argv_mismatch", "Endpoint identity changed.", "Refresh serving status before unloading.")
+    if expected_start is not None and _pid_start(receipt["pid"]) != expected_start:
+        raise ServeError("server_changed", "Endpoint process start changed.", "Refresh serving status before changing this service.")
     if not _pid_alive(receipt["pid"]) or not _argv_matches(receipt, _pid_command(receipt["pid"])):
         raise ServeError("pid_argv_mismatch", "Endpoint process no longer matches its receipt.",
                          "Refresh serving status before unloading.")
@@ -952,7 +987,7 @@ def _configure_owned_jit(port, receipts_dir, expected_pid, action, policy=None):
 
 
 def stop_serve(port, receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_command,
-               terminate=_terminate_pid, clock=time.monotonic, sleep=time.sleep):
+               terminate=_terminate_pid, clock=time.monotonic, sleep=time.sleep, expected_pid=None, expected_start=None):
     """Stop exactly the process a serve receipt owns; never kills by port scan."""
     root = receipts_root(receipts_dir)
     receipt_path = root / "{0}.json".format(port)
@@ -964,6 +999,9 @@ def stop_serve(port, receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_c
             "serve stop only stops processes that serve started; stop foreign processes yourself.",
         )
     pid = receipt["pid"]
+    if (expected_pid is not None and pid != expected_pid) or (expected_start is not None and _pid_start(pid) != expected_start):
+        raise ServeError("server_changed", "The selected serving process changed; nothing was stopped.",
+                         "Refresh serving status and review the current service.")
     orphan = _owned_jit_worker(receipt, root) if not pid_alive(pid) else None
     if orphan:
         pid = orphan

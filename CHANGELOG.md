@@ -11,6 +11,7 @@
 - Add native MLX TripoSG, TRELLIS.2 and Pixal3D mesh generation, including octree surface extraction and camera-aligned glTF output.
 - Accept 5-bit and 6-bit conversion where supported, and report converter-specific bit widths and model sizes.
 - Rank discovery by downloads, trending, likes or recency, and search repository names.
+- Discover MLX Agent services across receipt locations and scope doctor, watch and stop commands to a selected service.
 - Fix JIT tool-call identifiers, stream keepalives, end-token trimming, KV-cache admission and readiness deadlines.
 - Add `mlx-agent --version` and refresh installation, serving and compatibility documentation.
 

@@ -1,3 +1,4 @@
+import os
 import io
 import json
 import subprocess
@@ -12,6 +13,17 @@ from mlx_agent.cli import main
 
 
 class ServeCliTests(unittest.TestCase):
+    def test_discover_reports_versioned_empty_inventory_from_an_explicit_root(self):
+        with TemporaryDirectory() as folder, mock.patch.dict(os.environ, {'XDG_STATE_HOME': folder}):
+            with mock.patch('mlx_agent.service_registry.live_receipt_roots', return_value=[]):
+                code, output = self._run(['serve', 'discover', '--receipts-dir', folder, '--json'])
+            self.assertEqual(code, 0)
+            data = json.loads(output)['data']
+            self.assertEqual(data['schema_version'], 1)
+            self.assertEqual(data['services'], [])
+            self.assertEqual(data['errors'], [])
+
+
     def test_training_receipt_cli_uses_auto_runtime_and_refuses_stale_confirmation(self):
         from mlx_agent.lora import adapter_identity
         from mlx_agent.jit_serve import model_fingerprint

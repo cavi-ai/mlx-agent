@@ -196,6 +196,13 @@ class EndpointCheckTests(unittest.TestCase):
 
 
 class RunModelDoctorTests(unittest.TestCase):
+    def test_excluded_cache_cannot_establish_a_missing_model(self):
+        with patch('mlx_agent.model_doctor.scan_wired_configs', return_value=[{'path': '/fixture/config.json', 'model': 'org/model'}]), \
+             patch('mlx_agent.model_doctor.scan_receipt_after_hashes', return_value=[]):
+            result = run_model_doctor([], None, [])
+        self.assertNotIn('drift_missing_model', [item['code'] for item in result['findings']])
+        self.assertFalse(result['summary']['hf_cache_checked'])
+
     def test_missing_model_finding(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)

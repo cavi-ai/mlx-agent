@@ -11,6 +11,16 @@ from mlx_agent.cli import main
 
 
 class DoctorModelsCliTests(unittest.TestCase):
+    def test_explicit_no_cache_does_not_inspect_the_default_hf_cache(self):
+        from unittest.mock import patch
+        with TemporaryDirectory() as folder:
+            with patch('mlx_agent.model_doctor.inspect_hf_cache', side_effect=AssertionError('cache outside scope')):
+                buffer = io.StringIO()
+                with redirect_stdout(buffer):
+                    code = main(['doctor', 'models', '--wired-root', folder, '--no-hf-cache', '--json'])
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(buffer.getvalue())['data']['summary']['hf_cache_bytes'], 0)
+
     def setUp(self):
         # The CLI builds its provider registry from the environment. Pin every
         # root so the developer's own dotfiles never decide the result.

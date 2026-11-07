@@ -110,6 +110,31 @@ def _read_text_quiet(path):
         return None
 
 
+def _complete_runtime_inventory(response):
+    if isinstance(response, dict):
+        if response.get("error"):
+            return False
+        if "models" in response:
+            records = response["models"]
+        elif "data" in response:
+            records = response["data"]
+        else:
+            return False
+    else:
+        records = response
+    if not isinstance(records, list):
+        return False
+    for record in records:
+        if isinstance(record, str) and record:
+            continue
+        if isinstance(record, dict):
+            value = record.get("repo") or record.get("id") or record.get("name") or record.get("model")
+            if isinstance(value, str) and value:
+                continue
+        return False
+    return True
+
+
 def collect_runtime_inventory(runtime_clients):
     """Collect served model IDs from already-running loopback runtimes."""
     inventory = []
@@ -118,6 +143,8 @@ def collect_runtime_inventory(runtime_clients):
         name = str(getattr(runtime, "name", runtime.__class__.__name__))
         try:
             response = runtime.list_models()
+            if not _complete_runtime_inventory(response):
+                errors.append("{0}: malformed model inventory".format(name))
             for model_id in sorted(installed_model_ids(response)):
                 if len(inventory) >= MAX_INVENTORY_ENTRIES:
                     break
@@ -300,7 +327,7 @@ def check_endpoint(endpoint, timeout=_HEALTH_TIMEOUT):
 def run_model_doctor(wired_roots, hf_cache, runtime_clients):
     """Run every read-only check and return the doctor report."""
     wired_roots = [Path(root) for root in wired_roots]
-    inventory = inspect_hf_cache(hf_cache)
+    inventory = inspect_hf_cache(hf_cache) if hf_cache is not None else []
     runtime_inventory, runtime_errors = collect_runtime_inventory(runtime_clients)
     inventory.extend(runtime_inventory)
     known_ids = {item["id"].casefold() for item in inventory}
@@ -311,7 +338,7 @@ def run_model_doctor(wired_roots, hf_cache, runtime_clients):
     findings = []
     for config in wired:
         model = config.get("model")
-        if model and model.casefold() not in known_ids:
+        if hf_cache is not None and model and model.casefold() not in known_ids:
             findings.append({
                 "code": "drift_missing_model",
                 "path": config["path"],
@@ -401,6 +428,7 @@ def run_model_doctor(wired_roots, hf_cache, runtime_clients):
         "summary": {
             "models": len(inventory),
             "hf_cache_bytes": total_bytes,
+            "hf_cache_checked": hf_cache is not None,
             "wired_configs": len(wired),
             "findings": len(findings),
         },

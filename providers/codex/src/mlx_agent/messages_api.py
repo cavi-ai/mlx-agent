@@ -7,6 +7,8 @@ from __future__ import annotations
 import json
 import secrets
 
+from mlx_agent.image_inputs import messages_image
+
 PARAMETERS = {"model", "messages", "max_tokens", "system", "tools", "tool_choice", "stream",
               "temperature", "top_p", "top_k", "stop_sequences", "metadata"}
 SAMPLING = {"temperature": "temperature", "top_p": "top_p", "top_k": "top_k", "stop_sequences": "stop"}
@@ -43,7 +45,7 @@ def _string(block, key):
     return value
 
 
-def _messages(message):
+def _messages(message, allow_images=False):
     if not isinstance(message, dict) or message.get("role") not in ("user", "assistant"):
         raise MessagesRequestError("Each message needs the user or assistant role.")
     role, content = message["role"], message.get("content")
@@ -51,11 +53,17 @@ def _messages(message):
         return [{"role": role, "content": content}]
     if not isinstance(content, list):
         raise MessagesRequestError("Message content must be a string or a list of blocks.")
-    results, text, calls = [], [], []
+    results, text, calls, parts = [], [], [], []
     for block in content:
         kind = block.get("type") if isinstance(block, dict) else None
         if kind == "text" and isinstance(block.get("text"), str):
             text.append(block["text"])
+            parts.append({"type": "text", "text": block["text"]})
+        elif kind == "image" and role == "user" and allow_images:
+            try:
+                parts.append(messages_image(block))
+            except ValueError as error:
+                raise MessagesRequestError(str(error)) from error
         elif kind == "tool_use" and role == "assistant" and isinstance(block.get("input", {}), dict):
             calls.append({"id": _string(block, "id"), "type": "function",
                           "function": {"name": _string(block, "name"), "arguments": json.dumps(block.get("input", {}))}})
@@ -66,7 +74,8 @@ def _messages(message):
             raise MessagesRequestError("Unsupported {} content block: {}.".format(role, kind))
     if calls:
         return results + [{"role": role, "content": "".join(text), "tool_calls": calls}]
-    return results + ([{"role": role, "content": "".join(text)}] if text or not results else [])
+    content = parts if any(part["type"] == "image_url" for part in parts) else "".join(text)
+    return results + ([{"role": role, "content": content}] if parts or not results else [])
 
 
 def _tools(tools):
@@ -83,7 +92,7 @@ def _tools(tools):
     return functions
 
 
-def to_chat_request(body):
+def to_chat_request(body, *, allow_images=False):
     """Translate a Messages request into the worker's chat-completions request."""
     unknown = sorted(set(body) - PARAMETERS)
     if unknown:
@@ -94,7 +103,7 @@ def to_chat_request(body):
         raise MessagesRequestError("max_tokens is required.")
     chat = [{"role": "system", "content": _text(body["system"], "system")}] if body.get("system") else []
     for message in body["messages"]:
-        chat.extend(_messages(message))
+        chat.extend(_messages(message, allow_images))
     request = {"model": body.get("model"), "messages": chat, "max_tokens": body["max_tokens"]}
     choice = (body.get("tool_choice") or {"type": "auto"}).get("type")
     if choice not in ("auto", "none"):

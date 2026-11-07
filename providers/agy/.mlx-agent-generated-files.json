@@ -601,6 +601,10 @@
       "sha256": "84b7e353e58d5660c50f3a07efbb02acb2ddef29e62f06377574a1f88fec3b36"
     },
     {
+      "path": "src/mlx_agent/image_inputs.py",
+      "sha256": "4b4213c98cdd017e28fad385256961cfdb0d0c4c431659fc6628653e281858cc"
+    },
+    {
       "path": "src/mlx_agent/inference_runner.py",
       "sha256": "5ca51b193911cf79ae7fd3d9dafa143fbdedb8bb1a13209b05065d28aea861f6"
     },
@@ -626,7 +630,7 @@
     },
     {
       "path": "src/mlx_agent/jit_serve.py",
-      "sha256": "ae9cc9efddd46e408fa72b8c054ccf2bf5f5995786b6594193d11d8c3f01ba1b"
+      "sha256": "2a17355e8598687348ccd2881e2b7ef28ced1d083e11f860293b20bb52650411"
     },
     {
       "path": "src/mlx_agent/kokoro_runtime.py",
@@ -666,7 +670,7 @@
     },
     {
       "path": "src/mlx_agent/messages_api.py",
-      "sha256": "8e4d7280a1b5bab75b9192c0641b42d4b25d1bde4aed93e1b1147c58fb8b7cd5"
+      "sha256": "6ab4dfef7bb959eea753538f33852b50c73f0ce71aaa0145897e149ec452c3f6"
     },
     {
       "path": "src/mlx_agent/modality.py",
@@ -1042,7 +1046,7 @@
     },
     {
       "path": "src/mlx_agent/responses_api.py",
-      "sha256": "b6fe99302e0e5cfb60dc6acb8717bad1d4c68c8b32e2b4a6ca20a503951651e6"
+      "sha256": "88b5d1db9a26e64128430f20ecfb75e0f417b8e84d87bd275d2ea6590edd69b0"
     },
     {
       "path": "src/mlx_agent/runtime_preference.py",

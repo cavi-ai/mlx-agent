@@ -148,6 +148,8 @@ class ModelWorker:
         self.load_blocked_reason = None
         self.last_unload_reason = None
         self.last_activity = None
+        self.activity_revision = 0
+        self.policy_revision = 0
         self.clock = time.monotonic
         self.memory_probe = available_memory_bytes
 
@@ -198,6 +200,7 @@ class ModelWorker:
                     raise GatewayError(503, "policy_not_saved", str(error)) from error
             self.config.update(config)
             self.memory_policy = policy
+            self.policy_revision += 1
             return self.status()
 
     def _check_memory(self):
@@ -266,6 +269,7 @@ class ModelWorker:
             if self.active_requests >= MAX_REQUESTS:
                 raise GatewayError(503, "endpoint_busy", "Too many inference requests.")
             self.active_requests += 1
+            self.activity_revision += 1
             policy = dict(self.memory_policy)
             self.request_blocked_reason = None
             starter = self.model_state not in ("loaded", "loading")
@@ -380,6 +384,7 @@ class ModelWorker:
     def release(self):
         with self.condition:
             self.active_requests -= 1
+            self.activity_revision += 1
             if self.active_requests == 0:
                 self.last_activity = self.clock()
             self.condition.notify_all()
@@ -414,11 +419,13 @@ class ModelWorker:
             elif not policy.get("unload_under_pressure"):
                 return False
             worker = self.process
+            revisions = self.activity_revision, self.policy_revision
         if not idle:
             available = self.memory_probe()
             with self.condition:
                 if (self.closed or self.model_state != "loaded" or self.active_requests
-                        or self.process is not worker or self.memory_policy != policy):
+                        or self.process is not worker or self.memory_policy != policy
+                        or revisions != (self.activity_revision, self.policy_revision)):
                     return False
                 error = self._resident_check(policy, available, "idle_reclaim")
                 if error is None or error.code == "memory_unknown":

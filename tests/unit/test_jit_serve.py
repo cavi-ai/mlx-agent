@@ -218,6 +218,29 @@ class JITServingTests(unittest.TestCase):
         self.assertFalse(future.result(timeout=2))
         self.assertEqual(self.server.controller.status()['worker_pid'], new_pid)
 
+    def test_completed_request_invalidates_a_pending_pressure_observation(self):
+        check, pid = self.load_pressure_guarded()
+        _, release, future = self.blocked_pressure_probe(check)
+        try:
+            self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
+            with self.server.controller.condition:
+                self.assertTrue(self.server.controller.condition.wait_for(lambda: self.server.controller.active_requests == 0, timeout=2))
+        finally:
+            release.set()
+        self.assertFalse(future.result(timeout=2))
+        self.assertEqual(self.server.controller.status()['worker_pid'], pid)
+
+    def test_policy_changed_back_invalidates_a_pending_pressure_observation(self):
+        check, pid = self.load_pressure_guarded()
+        _, release, future = self.blocked_pressure_probe(check)
+        try:
+            self.assertEqual(self.configure({'unload_under_pressure': False})[0], 200)
+            self.assertEqual(self.configure({'unload_under_pressure': True})[0], 200)
+        finally:
+            release.set()
+        self.assertFalse(future.result(timeout=2))
+        self.assertEqual(self.server.controller.status()['worker_pid'], pid)
+
     def test_pressure_probe_and_new_rejections_preserve_an_active_stream(self):
         signal = self.root / 'release-stream'
         self.config['worker_argv'] += ['--stream-release', str(signal)]

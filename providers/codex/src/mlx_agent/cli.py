@@ -2659,6 +2659,8 @@ def build_parser(command=None):
         return command is None or command == name
 
     parser = argparse.ArgumentParser(description="MLX agent command-line core.")
+    from . import __version__
+    parser.add_argument("--version", action="version", version="mlx-agent " + __version__)
     subcommands = parser.add_subparsers(dest="command", required=True)
     task = subcommands.add_parser("task", help="durable local inference tasks")
     if wanted("task"):

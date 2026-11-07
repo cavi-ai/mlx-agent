@@ -3,6 +3,8 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 
+from jsonschema import Draft202012Validator
+
 from tests.unit.site_catalog_schema import SchemaValidationError, validate_site_catalog
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -12,6 +14,29 @@ CANONICAL_REPOSITORY_URL = "https://github.com/cavi-ai/mlx-agent"
 
 
 class SiteCatalogTests(unittest.TestCase):
+    def test_catalog_can_omit_machine_specific_execution_evidence(self):
+        catalog = json.loads((ROOT / "site/catalog.json").read_text())
+        schema = json.loads((ROOT / "schemas/site-catalog.schema.json").read_text())
+        self.assertEqual(catalog["schema_version"], "1.1")
+        catalog["verification_evidence"].pop("core", None)
+        validate_site_catalog(catalog, schema)
+        Draft202012Validator(schema).validate(catalog)
+
+    def test_legacy_catalog_requires_its_execution_evidence(self):
+        catalog = json.loads((ROOT / "site/catalog.json").read_text())
+        schema = json.loads((ROOT / "schemas/site-catalog.schema.json").read_text())
+        catalog["schema_version"] = "1.0"
+        catalog["verification_evidence"]["core"] = {
+            "host": "test host", "ram_gb": 16, "live_discovery": "fixture",
+            "fixture_adopt": "fixture", "reversible_wire": "fixture", "tested_at": "2026-01-01",
+        }
+        validate_site_catalog(catalog, schema)
+        Draft202012Validator(schema).validate(catalog)
+        del catalog["verification_evidence"]["core"]
+        with self.assertRaises(SchemaValidationError):
+            validate_site_catalog(catalog, schema)
+        self.assertFalse(Draft202012Validator(schema).is_valid(catalog))
+
     def test_site_catalog_matches_plugin_and_provider_contracts(self):
         catalog = json.loads((ROOT / "site/catalog.json").read_text())
         plugin = json.loads((ROOT / "plugin.json").read_text())

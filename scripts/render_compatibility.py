@@ -93,7 +93,7 @@ def _load_release_evidence(path, matrix):
         evidence = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError, json.JSONDecodeError) as error:
         raise ValueError("could not read release evidence: {0}".format(error))
-    if not isinstance(evidence, dict) or evidence.get("schema_version") != "1.0":
+    if not isinstance(evidence, dict) or evidence.get("schema_version") not in ("1.0", "1.1"):
         raise ValueError("release evidence has an unsupported schema")
     if evidence.get("allowed_evidence_statuses") != matrix["allowed_evidence_statuses"]:
         raise ValueError("release evidence status vocabulary differs from the compatibility matrix")

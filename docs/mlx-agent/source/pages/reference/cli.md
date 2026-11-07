@@ -21,7 +21,7 @@ python3 scripts/mlx-agent intake fetch --help
 | `research` | Write a domain research pack; `--no-write` renders only. |
 | `blueprint` | Write a project design pack; `--no-write` renders only. |
 | `lab` | Manage retained experiments, studies, datasets, and training through the optional engine. |
-| `bench run/aggregate` | Measure an already-served model or aggregate exports. |
+| `bench run/aggregate/coding` | Measure an already-served model or aggregate exports. |
 | `wire render/apply/status/rollback` | Render and manage configuration transactions. |
 | `fleet render/apply` | Render or apply per-role LiteLLM routing configuration. |
 
@@ -38,7 +38,8 @@ python3 scripts/mlx-agent intake fetch --help
 | `convert transcribe/decide/generate/speak/music/describe/video` | Execute supported local inference tasks. |
 | `task capabilities/start/status/list/result/cancel/verify-model` | Manage durable local classification and media tasks. See [Durable inference tasks](../lifecycle/tasks.md). |
 | `serve start/status/stop` | Launch and inspect receipt-owned local servers. |
-| `serve unload/policy` | Release JIT workers or replace an owned gateway's memory policy. |
+| `serve unload/policy` | Release JIT workers or update an owned gateway's memory policy. |
+| `serve profile save/show/list/delete` | Save and reuse Strata memory, headroom, context and decoding settings. |
 | `lora start/status` | Train an adapter on a cached base and local dataset. |
 | `fuse start/status` | Merge an adapter into standalone weights. |
 | `doctor models` | Inspect model inventory, config drift, and endpoint health. |

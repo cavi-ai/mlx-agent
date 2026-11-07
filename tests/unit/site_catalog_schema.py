@@ -28,6 +28,7 @@ _VALIDATION_KEYWORDS = {
     "enum",
     "format",
     "items",
+    "if",
     "maxContains",
     "maxItems",
     "minContains",
@@ -37,6 +38,7 @@ _VALIDATION_KEYWORDS = {
     "pattern",
     "required",
     "type",
+    "then",
     "uniqueItems",
 }
 
@@ -106,6 +108,9 @@ def _validate(instance: object, schema: Mapping[str, object], root: Mapping[str,
 
     for index, branch in enumerate(schema.get("allOf", [])):
         _validate(instance, branch, root, f"{path}.allOf[{index}]")
+    if "if" in schema and _is_valid(instance, schema["if"], root, path):
+        if "then" in schema:
+            _validate(instance, schema["then"], root, path)
 
 
 def _resolve_reference(reference: object, root: Mapping[str, object], path: str) -> Mapping[str, object]:

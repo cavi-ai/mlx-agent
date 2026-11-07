@@ -1,6 +1,6 @@
 {
   "$schema": "../schemas/site-catalog.schema.json",
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "product": {
     "slug": "mlx-agent",
     "name": "MLX Agent",
@@ -8,7 +8,7 @@
     "license": "MIT"
   },
   "release": {
-    "version": "0.11.1",
+    "version": "0.12.0",
     "channel": "source-checkout"
   },
   "links": {
@@ -142,14 +142,6 @@
   },
   "verification_evidence": {
     "compatibility_matrix": "compatibility/providers.json",
-    "core": {
-      "host": "Apple M5 Max",
-      "ram_gb": 128,
-      "live_discovery": "passed",
-      "fixture_adopt": "passed-metadata-only-no-download",
-      "reversible_wire": "passed-byte-exact-rollback",
-      "tested_at": "2026-07-18"
-    },
     "provider_contracts": {
       "claude": {
         "schema_validation": "supported",

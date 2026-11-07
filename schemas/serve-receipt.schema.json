@@ -70,6 +70,23 @@
       },
       "additionalProperties": false
     },
+    "vision_profile": {
+      "type": "object",
+      "required": ["name", "fingerprint", "runtime_executable", "runtime_python", "versions", "runtime_sources", "sources", "max_bytes", "max_entries", "adapter_enabled"],
+      "properties": {
+        "name": { "const": "vision-features-v1" },
+        "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "runtime_executable": { "type": "string", "minLength": 1 },
+        "runtime_python": { "type": ["string", "null"] },
+        "versions": { "type": "object", "additionalProperties": { "type": ["string", "null"] } },
+        "runtime_sources": { "type": "object", "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" } },
+        "sources": { "type": "object", "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" } },
+        "max_bytes": { "const": 134217728 },
+        "max_entries": { "const": 20 },
+        "adapter_enabled": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
     "prefill_kernel": {
       "type": "object",
       "required": ["name", "fingerprint", "versions", "sources", "adapter_enabled", "runtime_executable"],

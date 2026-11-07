@@ -79,11 +79,33 @@ environment is selected. Other serving runtimes reject this MLX-LM-only option.
 Changed source or dependencies require a fresh preview; each JIT worker checks the
 same fingerprint before loading. No runtime source or model code is downloaded.
 
+## Repeated-image acceleration
+
+Add `--vision-cache` to both preview and confirmation to reuse Qwen2.5-VL image
+features across questions about the same image. It uses the installed MLX-VLM
+0.7.4 backend with MLX/MLX-metal 0.32.3, MLX-LM 0.32.2 and NumPy 2.5.3.
+The image encoder and model processor keep their native calculations and
+resolution; text embeddings, position data, KV caches and generation remain
+request-specific.
+
+The cache holds at most 20 entries and 128 MiB of feature tensor data in worker
+memory. Unloading the worker releases it; no image or cache files are written.
+Keys include processed pixel content, dtype, shape and image layout, so changing
+an image at the same URL cannot reuse stale features. Unsupported models,
+videos, training and adapters retain native processing.
+
+The preview, receipt and status record `vision_profile`. Its fingerprint binds
+the adapter and installed runtime sources. Changed source or dependencies require
+a fresh preview. The wrapper uses the backend's own Python in isolated mode;
+unavailable or incompatible backends keep their native launch arguments. Logs
+report cache hits, retained tensor bytes and encoder calls. This option requires
+`mlx-vlm`; other runtimes reject it.
+
 ## Code-edit acceleration
 
 Add `--prompt-lookup` to both preview and confirmation for code edits that reuse
-source text from the prompt. With client temperature zero, the server proposes up
-to eight tokens from repeated prompt sequences and verifies them with the target
+source text from the prompt. With client temperature zero, the server proposes
+continuations from repeated prompt sequences and verifies them with the target
 model before emitting them. It indexes only the last 8192 prompt tokens. No draft
 model or new weights are required. Native batching remains the default when the
 option is omitted.

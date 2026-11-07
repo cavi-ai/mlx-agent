@@ -441,6 +441,10 @@
       "sha256": "2db64bc5e652b9729a0bcdf9af7ff4dbf61737506dcdb52d8bc29aff9786a514"
     },
     {
+      "path": "src/mlx_agent/_vision_cache.py",
+      "sha256": "0af5795a5311e945ca5446d81450ed4e2577728070593a457f873481cc676dfb"
+    },
+    {
       "path": "src/mlx_agent/adoption.py",
       "sha256": "ea12b889604d11ada8e3749cc0413a7e25653ec6d5b45b9aa8f14ae2cc0864b2"
     },
@@ -482,7 +486,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "01caf8d44ac36b6872c118cb2ccfb08ca43dfee55a5ec1960a826cf2860a82c2"
+      "sha256": "b6ae4dd0481bc9bf09667537ddfc2d27c119c80ea11ab63d0b31fa219e6b691d"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -1058,7 +1062,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "da76e480bea7e2ae989699c49994d88945c6b15922e55a101059cdc37c672660"
+      "sha256": "f44bfd9172e341ce2b0462f0d429e7a116b3f4b040408e88a5ba209fc50e6d9e"
     },
     {
       "path": "src/mlx_agent/speak.py",
@@ -1155,6 +1159,10 @@
     {
       "path": "src/mlx_agent/video_runner.py",
       "sha256": "c6fd058716522f68b55718e6280787bd5dfc664ada430077dfa3d54e466cbb8d"
+    },
+    {
+      "path": "src/mlx_agent/vision_runtime.py",
+      "sha256": "a0e94cb82ed70b9ebf9b9adfa243e3545b68430543e153facae0226a428e8a0a"
     },
     {
       "path": "src/mlx_agent/watch.py",

@@ -125,7 +125,8 @@ client that disconnects before the reply starts ends its request. Streamed
 Messages answers turn the worker's prompt-progress keepalives into `ping`
 events, and streamed Responses answers pass them on as SSE comments.
 
-Status reports gateway liveness and `model_state` separately. Stop terminates
+Status reports gateway liveness and `model_state` separately, and the loaded
+worker's `worker_port`. Stop terminates
 the owned gateway/worker process group. The gateway serves its selected model
 and rejects request-time adapter/draft-model overrides.
 

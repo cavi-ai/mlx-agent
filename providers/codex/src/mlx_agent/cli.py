@@ -692,23 +692,41 @@ def _run_wire(arguments):
 _BENCH_RUNTIMES = ("ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm")
 
 
-def _bench_runtime_client(name):
+_BENCH_ORIGINS = {"ollama": "http://127.0.0.1:11434", "lmstudio": "http://127.0.0.1:1234",
+                  "mlx-vlm": "http://127.0.0.1:8083", "mlx_lm": "http://127.0.0.1:8080", "litellm": "http://127.0.0.1:4000"}
+
+
+def _bench_runtime_client(name, base_url=None):
     from .verification import LMStudioRuntimeClient, MLXVLMRuntimeClient, OllamaRuntimeClient, OpenAICompatibleRuntimeClient
+    if name not in _BENCH_ORIGINS:
+        raise ValueError("unsupported bench runtime: {0}".format(name))
+    origin = base_url or _BENCH_ORIGINS[name]
     if name == "ollama":
-        return OllamaRuntimeClient()
+        return OllamaRuntimeClient(base_url=origin)
     if name == "lmstudio":
-        return LMStudioRuntimeClient()
+        return LMStudioRuntimeClient(base_url=origin)
     if name == "mlx-vlm":
-        return MLXVLMRuntimeClient()
-    if name == "mlx_lm":
-        return OpenAICompatibleRuntimeClient("mlx_lm", "http://127.0.0.1:8080")
-    if name == "litellm":
-        return OpenAICompatibleRuntimeClient("litellm", "http://127.0.0.1:4000")
-    raise ValueError("unsupported bench runtime: {0}".format(name))
+        return MLXVLMRuntimeClient(base_url=origin)
+    return OpenAICompatibleRuntimeClient(name, origin)
+
+
+def _require_unloaded_jit(origin, receipts_dir):
+    """A cold measurement needs an owned JIT endpoint at the origin whose model is unloaded."""
+    from urllib.parse import urlsplit
+    from .bench import BenchError
+    from .serve import status_serve
+    port = urlsplit(origin).port
+    entry = next((item for item in status_serve(receipts_dir) if item["port"] == port and item.get("jit")), None)
+    if entry is None:
+        raise BenchError("jit_required", "No owned JIT endpoint serves port {0}.".format(port),
+                         "Point --base-url at a serve start --jit endpoint and pass its --receipts-dir.")
+    if entry.get("model_state") != "unloaded":
+        raise BenchError("model_loaded", "The endpoint model is {0}, not unloaded.".format(entry.get("model_state")),
+                         "Run serve unload --port {0} first.".format(port))
 
 
 def _add_bench_arguments(parser):
-    from .bench import GEN_TOKENS_DEFAULT, RUNS_DEFAULT, TIMEOUT_DEFAULT
+    from .bench import CONCURRENCY_DEFAULT, GEN_TOKENS_DEFAULT, RUNS_DEFAULT, TIMEOUT_DEFAULT, WORKLOADS
     from .models import DISCOVERY_ROLES
     actions = parser.add_subparsers(dest="bench_command", required=True)
     run = actions.add_parser(
@@ -722,6 +740,12 @@ def _add_bench_arguments(parser):
     run.add_argument("--gen-tokens", type=int, default=GEN_TOKENS_DEFAULT, help="tokens generated per run (16-2048)")
     run.add_argument("--timeout", type=float, default=TIMEOUT_DEFAULT, help="total measurement deadline in seconds")
     run.add_argument("--export", default=None, help="append an anonymized result line to this JSONL file")
+    run.add_argument("--base-url", default=None, help="loopback origin of the runtime (default: its standard port)")
+    run.add_argument("--workload", default="chat", choices=WORKLOADS,
+                     help="chat, prefix (repeated 16k-token prefix), prefill (32k-token prompts), "
+                          "concurrent (parallel streams) or cold (first request to an unloaded JIT endpoint)")
+    run.add_argument("--concurrency", type=int, default=CONCURRENCY_DEFAULT, help="streams per run for --workload concurrent (2-8)")
+    run.add_argument("--receipts-dir", default=None, help="serve receipts base of the JIT endpoint for --workload cold")
     run.add_argument("--json", action="store_true")
     aggregate = actions.add_parser(
         "aggregate",
@@ -767,6 +791,13 @@ def _run_bench(arguments):
                     " -> {0}".format(arguments.out) if arguments.out else "",
                 ))
             return 0
+        from .bench import validate_workload
+        validate_workload(arguments.workload, arguments.runs, arguments.concurrency)
+        if arguments.export and arguments.workload != "chat":
+            raise ValueError("--export records the chat workload only")
+        client = _bench_runtime_client(arguments.runtime, arguments.base_url)
+        if arguments.workload == "cold":
+            _require_unloaded_jit(arguments.base_url or _BENCH_ORIGINS[arguments.runtime], arguments.receipts_dir)
         chip = None
         try:
             chip = HostInventory.inspect().chip
@@ -774,13 +805,16 @@ def _run_bench(arguments):
             chip = None
         measurement = measure_runtime(
             arguments.repo,
-            _bench_runtime_client(arguments.runtime),
+            client,
             runs=arguments.runs,
             gen_tokens=arguments.gen_tokens,
             timeout=arguments.timeout,
             chip=chip,
+            workload=arguments.workload,
+            concurrency=arguments.concurrency,
         )
-        evidence = measurement.to_evidence(role=arguments.role).to_dict()
+        # Runtime-measured evidence is the chat probe; other workloads are diagnostics.
+        evidence = measurement.to_evidence(role=arguments.role).to_dict() if arguments.workload == "chat" else None
         data = {"measurement": measurement.to_dict(), "evidence": evidence}
         if arguments.export:
             from . import __version__
@@ -794,8 +828,9 @@ def _run_bench(arguments):
         if arguments.json:
             print(json.dumps(result.to_dict(), indent=2))
         else:
-            print("Bench: {0} on {1} ({2} runs)".format(
-                measurement.repo, measurement.runtime, measurement.runs
+            print("Bench: {0} on {1} ({2} runs{3})".format(
+                measurement.repo, measurement.runtime, measurement.runs,
+                "" if arguments.workload == "chat" else ", {0} workload".format(arguments.workload)
             ))
             ttft = "{0} ms".format(measurement.ttft_ms) if measurement.ttft_ms is not None else "n/a"
             prefill = (
@@ -806,6 +841,12 @@ def _run_bench(arguments):
             print("  decode:  {0} tok/s (spread {1}%)".format(measurement.decode_toks, measurement.spread_pct))
             print("  ttft:    {0}".format(ttft))
             print("  prefill: {0}".format(prefill))
+            if arguments.workload != "chat":
+                details = measurement.to_dict()
+                for label, key, unit in (("first ttft", "first_ttft_ms", " ms"), ("cached", "cached_tokens", " tokens"),
+                                         ("prompt", "prompt_tokens", " tokens"), ("aggregate", "aggregate_decode_toks", " tok/s")):
+                    if details.get(key) is not None:
+                        print("  {0:<8} {1}{2}".format(label + ":", details[key], unit))
         return 0
     except BenchError as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)

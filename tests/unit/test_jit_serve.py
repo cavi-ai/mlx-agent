@@ -420,6 +420,59 @@ class JITServingTests(unittest.TestCase):
         self.assertEqual(body['error'], {'code': 'model_load_failed',
                                          'message': 'Model worker did not become ready in 2 seconds.'})
 
+    def test_bench_cold_workload_measures_one_load_of_an_unloaded_gateway(self):
+        import io
+        import socket
+        from contextlib import redirect_stdout
+        from mlx_agent import cli
+        recipes = load_recipes()
+        recipes['mlx_lm'] = dict(recipes['mlx_lm'], executable=sys.executable,
+            argv=[sys.executable, str(self.worker), '--model', '{repo}', '--port', '{port}', '--trace', str(self.trace), '--keepalive'])
+        with socket.socket() as reservation:
+            reservation.bind(('127.0.0.1', 0))
+            port = reservation.getsockname()[1]
+        plan = plan_start(None, 'mlx_lm', recipes, path=str(self.model), port=port, jit=True, receipts_dir=str(self.root))
+        processes = []
+        def spawn(argv, log_path):
+            process = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            processes.append(process)
+            return process.pid
+        start_serve(plan, receipts_dir=str(self.root), confirm=True, preview_hash=plan['preview_hash'], spawn=spawn)
+        self.addCleanup(lambda: stop_serve(port, str(self.root), pid_alive=lambda _: processes[0].poll() is None))
+
+        def get(target_port):
+            connection = http.client.HTTPConnection('127.0.0.1', target_port, timeout=10)
+            try:
+                connection.request('GET', '/v1/models')
+                response = connection.getresponse()
+                return response.status, json.loads(response.read())
+            finally:
+                connection.close()
+        model = get(port)[1]['data'][0]['id']
+
+        def bench():
+            output = io.StringIO()
+            with redirect_stdout(output), mock.patch('mlx_agent.host.HostInventory.inspect', side_effect=RuntimeError('no host')):
+                code = cli.main(['bench', 'run', '--repo', model, '--runtime', 'mlx_lm', '--base-url',
+                                 'http://127.0.0.1:{}'.format(port), '--workload', 'cold', '--runs', '1',
+                                 '--receipts-dir', str(self.root), '--json'])
+            return code, json.loads(output.getvalue())
+
+        code, result = bench()
+        self.assertEqual(code, 0, result)
+        self.assertEqual(self.trace.read_text().splitlines(), ['start'])
+        self.assertIsNotNone(result['data']['measurement']['ttft_ms'])
+        loaded = status_serve(str(self.root))[0]
+        self.assertEqual(loaded['model_state'], 'loaded')
+        self.assertEqual(get(loaded['worker_port'])[0], 200)
+        code, result = bench()
+        self.assertEqual((code, result['error']['code']), (2, 'model_loaded'))
+        self.assertEqual(self.trace.read_text().splitlines(), ['start'])
+        self.assertEqual(unload_serve(port, str(self.root))['status'], 'unloaded')
+        self.assertIsNone(status_serve(str(self.root))[0]['worker_port'])
+        self.assertEqual(bench()[0], 0)
+        self.assertEqual(self.trace.read_text().splitlines(), ['start', 'start'])
+
     def test_confirmed_engine_gateway_unloads_without_stopping_endpoint(self):
         recipes = load_recipes()
         recipes['mlx_lm'] = dict(recipes['mlx_lm'], executable=sys.executable,

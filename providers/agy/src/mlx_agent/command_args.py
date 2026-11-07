@@ -22,6 +22,7 @@ class CommandArgumentError(ValueError):
 
 
 _RUNTIMES = {"ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm"}
+_BENCH_WORKLOADS = {"chat", "prefix", "prefill", "concurrent", "cold"}
 _ROLES = {role for role, _keywords, _label in ROLES}
 _MODEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,191}$")
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+:-]{0,127}$")
@@ -260,6 +261,10 @@ def _parse_bench(tokens):
         "--gen-tokens": (lambda value: _integer(value, "gen-tokens", 16, 2048), "gen-tokens"),
         "--timeout": (lambda value: _decimal(value, "timeout", 1, 600), "timeout"),
         "--export": (lambda value: _path(value, "export"), "export"),
+        "--base-url": (_endpoint, "base-url"),
+        "--workload": (lambda value: value if value in _BENCH_WORKLOADS else None, "workload"),
+        "--concurrency": (lambda value: _integer(value, "concurrency", 2, 8), "concurrency"),
+        "--receipts-dir": (lambda value: _path(value, "receipts-dir"), "receipts-dir"),
     }
     while index < len(tokens):
         flag = tokens[index]

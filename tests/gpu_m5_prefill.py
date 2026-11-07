@@ -10,12 +10,13 @@ class M5PrefillTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # Discovery must leave the portable core independent of the GPU runtime.
-        global mx, nn, MLP, PrefillLinear, apply, product, supported
+        global mx, nn, MLP, PrefillLinear, apply, product, supported, kernel
         try:
             import mlx.core as mx
             import mlx.nn as nn
             from mlx_lm.models.qwen2 import MLP
             from mlx_agent._m5_prefill import PrefillLinear, apply, product, supported
+            from mlx_agent._m5_prefill import _kernel as kernel
         except ImportError:
             raise unittest.SkipTest("Requires the supported M5/MLX runtime")
         if not runtime_supported(sys.platform, platform.mac_ver()[0], identity()["versions"],
@@ -32,7 +33,7 @@ class M5PrefillTests(unittest.TestCase):
         return x, weights
 
     def test_tail_tiles_strided_and_unaligned_inputs(self):
-        for rows in (128, 129, 145, 191, 192, 193, 257):
+        for rows in (64, 65, 96, 127, 128, 129, 145, 191, 192, 193, 257):
             for layout in ("contiguous", "unaligned", "strided"):
                 with self.subTest(rows=rows, layout=layout):
                     x, weights = self.tensors(rows, unaligned=layout == "unaligned")
@@ -44,10 +45,16 @@ class M5PrefillTests(unittest.TestCase):
                     self.assertLess(relative.item(), 0.001)
 
     def test_short_sequences_are_exactly_native(self):
-        for rows in (1, 17, 63, 64, 65):
+        for rows in (1, 9, 17, 33, 63):
             x, weights = self.tensors(rows)
             expected = mx.quantized_matmul(x, *weights, transpose=True, group_size=64, bits=4)
             self.assertTrue(mx.array_equal(product(x, *weights), expected).item())
+
+    def test_sixty_four_rows_use_the_guarded_kernel(self):
+        x, weights = self.tensors(64)
+        with patch("mlx_agent._m5_prefill._kernel", wraps=kernel) as selected:
+            mx.eval(product(x, *weights))
+            selected.assert_called_once()
 
     def test_empty_dimensions_and_wrong_layout_are_rejected(self):
         for rows, width, outputs in ((128, 0, 128), (128, 128, 0), (0, 128, 128), (128, 128, 65)):
@@ -75,6 +82,14 @@ class M5PrefillTests(unittest.TestCase):
                 self.assertIs(getattr(a, key), getattr(b, key))
         x, _ = self.tensors(1)
         self.assertTrue(mx.array_equal(original(x), adapted(x)).item())
+        x, _ = self.tensors(64)
+        with patch("mlx_agent._m5_prefill.product", wraps=product) as selected:
+            actual = adapted(x)
+            mx.eval(actual)
+            self.assertEqual(selected.call_count, 3)
+        expected = original(x)
+        relative = mx.linalg.norm(actual.astype(mx.float32) - expected.astype(mx.float32)) / mx.linalg.norm(expected.astype(mx.float32))
+        self.assertLess(relative.item(), 0.001)
         self.assertEqual(apply(model), 0)
 
     def test_bad_scales_training_and_compile_failure_leave_model_native(self):

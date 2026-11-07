@@ -26,7 +26,7 @@ def identity():
             versions[name] = None
     root = Path(__file__).resolve().parent
     sources = {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in SOURCE_FILES}
-    facts = {"name": "m5-q4-prefill-v1", "versions": versions, "sources": sources}
+    facts = {"name": "m5-q4-prefill-v2", "versions": versions, "sources": sources}
     facts["fingerprint"] = hashlib.sha256(json.dumps(facts, sort_keys=True).encode()).hexdigest()
     return facts
 

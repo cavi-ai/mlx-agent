@@ -9,6 +9,8 @@ import mlx.core as mx
 import mlx.nn as nn
 from mlx_lm.models.qwen2 import MLP
 
+MIN_ROWS = 64
+
 
 @lru_cache(maxsize=1)
 def _kernel():
@@ -40,7 +42,7 @@ def product(activations, packed, scales, biases):
             or scales.shape != (outputs, width // 64) or biases.shape != scales.shape
             or scales.dtype != mx.float16 or biases.dtype != mx.float16):
         raise ValueError("Unsupported M5 prefill matrix layout")
-    if rows < 128:
+    if rows < MIN_ROWS:
         return mx.quantized_matmul(activations, packed, scales, biases,
                                    transpose=True, group_size=64, bits=4)
     return _kernel()(
@@ -72,7 +74,7 @@ class PrefillLinear(nn.Module):
 
     def __call__(self, x):
         rows = x.size // x.shape[-1]
-        if not self.training and x.dtype == mx.float16 and rows >= 128:
+        if not self.training and x.dtype == mx.float16 and rows >= MIN_ROWS:
             y = product(x.reshape(rows, x.shape[-1]), self.weight, self.scales, self.biases)
             return y.reshape(*x.shape[:-1], self.weight.shape[0])
         return mx.quantized_matmul(x, self.weight, self.scales, self.biases,

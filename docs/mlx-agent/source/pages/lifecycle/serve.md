@@ -59,8 +59,8 @@ and still have to match the recorded content hashes.
 Add `--m5-prefill` to both the preview and confirmation to try the experimental
 Q4 prompt kernel with MLX-LM. The default remains native MLX. The kernel applies
 to inference-only Qwen2 MLP projections with FP16 activations, affine 4-bit weights,
-group size 64 and dimensions divisible by 64, when a batch has at least 128 rows.
-It retains the original quantized weight storage. Inputs with fewer than 128
+group size 64 and dimensions divisible by 64, when a batch has at least 64 rows.
+It retains the original quantized weight storage. Inputs with fewer than 64
 rows use native MLX.
 
 This path requires an M5 GPU (`applegpu_g17s`), macOS 26, MLX and mlx-metal 0.31.1,

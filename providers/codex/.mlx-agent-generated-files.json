@@ -434,7 +434,7 @@
     },
     {
       "path": "src/mlx_agent/_m5_prefill.py",
-      "sha256": "94c2f9391076ad00c81c2a4937dd63401878e2700e563f17e47ee1ab74976cf6"
+      "sha256": "6d005238d0aad6a13193f28b1655115a996d760ed97e184d801065a13bb110bb"
     },
     {
       "path": "src/mlx_agent/_prompt_lookup.py",
@@ -702,7 +702,7 @@
     },
     {
       "path": "src/mlx_agent/prefill_runtime.py",
-      "sha256": "a54a8e320237199a158666d8753442b799d42bca5b4bcb6ed119f7128ede2b41"
+      "sha256": "32d035234a8cba71fa39f063267bdbb9487066a41849586db4b8452b2f1056ed"
     },
     {
       "path": "src/mlx_agent/probe_assets.py",

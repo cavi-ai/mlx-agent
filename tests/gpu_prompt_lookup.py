@@ -63,6 +63,10 @@ class PromptLookupTests(unittest.TestCase):
             with self.subTest(prompt=prompt):
                 self.run_steps(prompt, 16, prefix=len(prompt) - 1)
 
+    def test_first_reply_waits_for_a_complete_generated_lookup_prefix(self):
+        request = self.run_steps(list(range(24)) + [30, 31], 16, clock=FixedCostClock())
+        self.assertGreater(request.accepted_tokens, 0)
+
     def test_native_handoff_after_misses_keeps_cache_exact_on_completion_and_cancel(self):
         prompt = [0, 0, 0, 9, 0, 0, 0]
         for stop in (None, 5, 6, 9):

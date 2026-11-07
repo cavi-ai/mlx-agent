@@ -14,13 +14,14 @@ else:
     from _decode_policy import LookupPolicy
 
 _request = ContextVar("prompt_lookup_request", default=None)
+MIN_MATCH_TOKENS = 3
 
 
 class PromptLookupIndex:
     def __init__(self, tokens):
         self.tokens = list(tokens[-8192:])
         self.index = {}
-        for size in range(3, 9):
+        for size in range(MIN_MATCH_TOKENS, 9):
             for position in range(len(self.tokens) - size):
                 self.index[tuple(self.tokens[position:position + size])] = position + size
 
@@ -29,7 +30,7 @@ class PromptLookupIndex:
         return len(self.index)
 
     def propose(self, history, limit):
-        for size in range(min(8, len(history)), 2, -1):
+        for size in range(min(8, len(history)), MIN_MATCH_TOKENS - 1, -1):
             position = self.index.get(tuple(history[-size:]))
             if position is not None:
                 return self.tokens[position:position + max(0, min(8, limit))]
@@ -130,7 +131,7 @@ def lookup_step(prompt, model, *, full_prompt, max_tokens, prompt_cache,
             started = clock()
             limit = min(policy.proposal_limit, max_tokens - generated - 1)
             proposal = index.propose(history, limit) if limit > 0 else []
-            if policy.native_reason or (limit > 0 and not proposal):
+            if policy.native_reason or (limit > 0 and not proposal and generated >= MIN_MATCH_TOKENS):
                 request.fallback_reason = policy.native_reason or "no_prompt_match"
                 # Native generation pipelines one token ahead and owns its final
                 # cache commit. Hand over the pending token exactly once.

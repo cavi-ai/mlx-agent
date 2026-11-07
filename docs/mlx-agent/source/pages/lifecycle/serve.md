@@ -97,7 +97,8 @@ server's token alignment. Each request first measures two target single-token
 verification calls, then adjusts proposed length between two and eight tokens.
 Two consecutive rejected proposals, four unprofitable verification blocks, a
 single block costing over twice the calibrated per-token target time, or an
-absent prompt match hand the remaining generation to native decoding. Cost
+absent prompt match hand the remaining generation to native decoding. Lookup
+waits for three generated tokens before treating an absent match as final. Cost
 decisions use target verification time per emitted token; they do not establish
 a comparative speedup over native generation. Logs retain proposed/accepted
 tokens, native tokens and the fallback reason. Performance depends on copied

@@ -1,5 +1,8 @@
 """Run explicitly in an MLX child, never during portable test discovery."""
 import unittest
+import threading
+import time
+from types import SimpleNamespace
 
 
 class FixedCostClock:
@@ -18,6 +21,31 @@ class PromptLookupTests(unittest.TestCase):
         from mlx_lm.models.cache import KVCache
         from mlx_agent._prompt_lookup import lookup_step
         from mlx_agent._prompt_lookup import _Request as Request
+
+    def test_idle_native_loop_releases_the_cpu_and_stops(self):
+        from mlx_lm import server
+        from mlx_agent._prompt_lookup import install
+        restore = install(server)
+        owner, observations = None, []
+        original = server.ResponseGenerator._generate
+        def measured(worker):
+            began, cpu = time.monotonic(), time.thread_time()
+            try:
+                original(worker)
+            finally:
+                observations.append((time.monotonic() - began, time.thread_time() - cpu))
+        server.ResponseGenerator._generate = measured
+        try:
+            owner = server.ResponseGenerator(SimpleNamespace(), SimpleNamespace())
+            threading.Event().wait(.2)
+        finally:
+            if owner is not None:
+                owner.stop_and_join()
+            restore()
+        self.assertEqual(len(observations), 1)
+        wall, cpu = observations[0]
+        self.assertLess(cpu / wall, .25, observations)
+        self.assertFalse(owner._generation_thread.is_alive())
 
     def run_steps(self, prompt, maximum, stop=None, prefix=0, constant=False, clock=None):
         # Deterministic next-token model uses real MLX tensors and KVCache writes.

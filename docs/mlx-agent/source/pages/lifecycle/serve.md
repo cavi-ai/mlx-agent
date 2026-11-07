@@ -104,6 +104,9 @@ a comparative speedup over native generation. Logs retain proposed/accepted
 tokens, native tokens and the fallback reason. Performance depends on copied
 text; keep this option off for concurrent chat workloads.
 
+The request loop waits briefly on an empty queue to leave CPU time for response
+delivery and other applications. New arrivals wake the loop immediately.
+
 The supported runtime is macOS with MLX and mlx-metal 0.31.1 and mlx-lm 0.29.1.
 Other dependency versions use native MLX. Like `--m5-prefill`, this option wraps
 only the current interpreter's own entrypoint, records source and dependency

@@ -17,6 +17,21 @@ _request = ContextVar("prompt_lookup_request", default=None)
 MIN_MATCH_TOKENS = 3
 
 
+class _RequestQueue:
+    """Yield the CPU on empty polls without moving queued requests."""
+
+    def __init__(self, original):
+        self.original = original
+
+    def __getattr__(self, name):
+        return getattr(self.original, name)
+
+    def get_nowait(self):
+        # The native loop also polls between active batch slices. Bound that
+        # wait, and wake immediately if a producer submits another request.
+        return self.original.get(timeout=.001)
+
+
 class PromptLookupIndex:
     def __init__(self, tokens):
         self.tokens = list(tokens[-8192:])
@@ -219,6 +234,12 @@ def install(server):
         return context.generator
 
     class ResponseGenerator(original_generator):
+        def _generate(self):
+            # Keep the original storage: a producer may already be using it
+            # while this generation thread starts.
+            self.requests = _RequestQueue(self.requests)
+            return super()._generate()
+
         def _is_batchable(self, args):
             if request_eligible(args, self.model_provider.cli_args):
                 return False

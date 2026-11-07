@@ -3,6 +3,8 @@ import sys
 import os
 from pathlib import Path
 import subprocess
+import time
+from queue import Empty, Queue
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -89,6 +91,9 @@ class PromptLookupHookTests(unittest.TestCase):
                                 insert_cache=Mock())
 
         class NativeGenerator:
+            def _generate(self):
+                return self.requests
+
             def _is_batchable(self, args):
                 return True
 
@@ -114,6 +119,27 @@ class PromptLookupHookTests(unittest.TestCase):
                 restore()
                 self.assertIs(server.ResponseGenerator, NativeGenerator)
                 self.assertIs(generation.generate_step, native_step)
+
+    def test_request_queue_preserves_prequeued_and_later_fifo_items(self):
+        with self.runtime() as (owner, *_):
+            original = Queue()
+            original.put("before")
+            owner.requests = original
+            requests = owner._generate()
+            requests.put("after")
+            original.put("racing producer")
+            self.assertEqual([requests.get_nowait() for _ in range(3)],
+                             ["before", "after", "racing producer"])
+            self.assertEqual(original.qsize(), 0)
+
+    def test_empty_request_queue_yields_instead_of_spinning(self):
+        with self.runtime() as (owner, *_):
+            owner.requests = Queue()
+            requests = owner._generate()
+            started = time.monotonic()
+            with self.assertRaises(Empty):
+                requests.get_nowait()
+            self.assertGreaterEqual(time.monotonic() - started, .0005)
 
     def test_request_closes_before_cache_publication_and_restores_native_owner(self):
         args = PromptLookupEligibilityTests().arguments()

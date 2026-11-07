@@ -266,6 +266,9 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
             raise ServeError("invalid_arguments", str(error), "Correct the memory policy.") from error
         if not jit:
             raise ServeError("jit_required", "Memory policy requires a JIT endpoint.", "Use --jit.")
+        if runtime == "strata" and "context_tokens" in memory_policy:
+            from .jit_serve import STRATA_CONTEXT
+            raise ServeError("invalid_arguments", STRATA_CONTEXT, "Remove --context-tokens.")
     has_repo = isinstance(repo, str) and bool(repo.strip())
     has_path = isinstance(path, str) and bool(path.strip())
     if has_repo == has_path:
@@ -869,7 +872,8 @@ def configure_serve_memory(port, policy, receipts_dir=None, expected_pid=None):
         policy = validate_memory_policy(policy)
     except ValueError as error:
         raise ServeError("invalid_arguments", str(error), "Correct the memory policy.") from error
-    return _configure_owned_jit(port, receipts_dir, expected_pid, "policy", policy)
+    # The gateway merges changes, so a replacement without a context clears it explicitly.
+    return _configure_owned_jit(port, receipts_dir, expected_pid, "policy", dict({"context_tokens": None}, **policy))
 
 
 def _configure_owned_jit(port, receipts_dir, expected_pid, action, policy=None):

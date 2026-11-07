@@ -101,6 +101,20 @@ class StrataProfileTests(unittest.TestCase):
             worker._check_memory()
         self.assertEqual(error.exception.code, "insufficient_headroom")
 
+    def test_policy_context_is_refused_because_strata_sizes_its_own_context(self):
+        self.tensor_model()
+        self.installed()
+        with self.assertRaises(ServeError) as error:
+            plan_start(None, "strata", load_recipes(), path=str(self.root), jit=True,
+                       memory_policy={"minimum_headroom_gb": 2, "context_tokens": 8192})
+        self.assertIn("--strata-context-tokens", str(error.exception))
+        from mlx_agent import jit_serve
+        worker = jit_serve.ModelWorker({"local_path": str(self.root), "runtime": "strata", "strata_context_tokens": 8192})
+        with self.assertRaises(jit_serve.GatewayError) as error:
+            worker.configure({"minimum_headroom_gb": 2, "context_tokens": 8192})
+        self.assertIn("--strata-context-tokens", str(error.exception))
+        self.assertNotIn("context_tokens", worker.status()["memory_policy"])
+
     def test_standalone_helper_can_estimate_explicit_expert_budget(self):
         self.tensor_model()
         program = "import runpy,sys; m=runpy.run_path(sys.argv[1]); assert m[\"memory_estimate\"](m[\"read_model\"](sys.argv[2]), 2, 8192) > 0"

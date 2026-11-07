@@ -365,6 +365,61 @@ class JITServingTests(unittest.TestCase):
         self.assertEqual(self.server.controller.status()['memory_check']['required_available_bytes'], required)
         self.assertFalse(self.trace.exists())
 
+    def write_architecture(self, nested=False):
+        # 2 layers x 2 KV heads x head_dim 8 x key and value x 2 bytes = 128 bytes per token.
+        architecture = {'num_hidden_layers': 2, 'num_attention_heads': 4, 'num_key_value_heads': 2, 'head_dim': 8}
+        (self.model / 'config.json').write_text(json.dumps({'text_config': architecture} if nested else architecture))
+        self.config['fingerprint'] = model_fingerprint(self.model)
+
+    def test_memory_admission_includes_kv_cache_at_the_policy_context(self):
+        import math
+        self.write_architecture()
+        weights = (self.model / 'model.safetensors').stat().st_size
+        required = math.ceil(weights * 1.10 + 128 * 32768 + 1.5e9)
+        self.server.controller.memory_probe = lambda: required - 1
+        self.assertEqual(self.configure({'minimum_headroom_gb': 0, 'context_tokens': 32768})[0], 200)
+        status, body = self.request('POST', '/v1/chat/completions', {'messages': []})
+        self.assertEqual(status, 503)
+        self.assertEqual(body['error']['code'], 'insufficient_headroom')
+        self.assertEqual(self.server.controller.status()['memory_check']['required_available_bytes'], required)
+        self.assertFalse(self.trace.exists())
+        self.server.controller.memory_probe = lambda: required
+        self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
+
+    def test_memory_admission_reads_text_config_and_refuses_unknown_kv_size(self):
+        import math
+        self.server.controller.memory_probe = lambda: 1 << 40
+        self.assertEqual(self.configure({'minimum_headroom_gb': 0, 'context_tokens': 4096})[0], 200)
+        status, body = self.request('POST', '/v1/chat/completions', {'messages': []})
+        self.assertEqual(status, 503)
+        self.assertEqual(body['error']['code'], 'memory_unknown')
+        self.assertFalse(self.trace.exists())
+        self.write_architecture(nested=True)
+        self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
+        weights = (self.model / 'model.safetensors').stat().st_size
+        self.assertEqual(self.server.controller.status()['memory_check']['required_available_bytes'],
+                         math.ceil(weights * 1.10 + 128 * 4096 + 1.5e9))
+
+    def test_policy_context_is_optional_validated_and_cleared(self):
+        self.assertNotIn('context_tokens', self.server.controller.status()['memory_policy'])
+        self.assertEqual(self.configure({'context_tokens': 32768})[0], 400)
+        self.assertEqual(self.configure({'minimum_headroom_gb': 2, 'context_tokens': 32768})[0], 200)
+        self.assertEqual(self.server.controller.status()['memory_policy']['context_tokens'], 32768)
+        for bad in ({'context_tokens': True}, {'context_tokens': 1023}, {'context_tokens': 1048577},
+                    {'context_tokens': 4096.0}, {'context_tokens': '4096'}, {'minimum_headroom_gb': None}):
+            self.assertEqual(self.configure(bad)[0], 400)
+        self.assertEqual(self.server.controller.status()['memory_policy']['context_tokens'], 32768)
+        self.assertEqual(self.configure({'context_tokens': None})[0], 200)
+        self.assertNotIn('context_tokens', self.server.controller.status()['memory_policy'])
+
+    def test_readiness_timeout_names_the_configured_deadline(self):
+        self.config['worker_readiness_seconds'] = 2
+        self.config['worker_argv'] = [sys.executable, '-c', 'import time; time.sleep(30)']
+        status, body = self.request('POST', '/v1/chat/completions', {'messages': []})
+        self.assertEqual(status, 503)
+        self.assertEqual(body['error'], {'code': 'model_load_failed',
+                                         'message': 'Model worker did not become ready in 2 seconds.'})
+
     def test_confirmed_engine_gateway_unloads_without_stopping_endpoint(self):
         recipes = load_recipes()
         recipes['mlx_lm'] = dict(recipes['mlx_lm'], executable=sys.executable,
@@ -392,6 +447,9 @@ class JITServingTests(unittest.TestCase):
                 configure_serve_memory(port, policy, str(self.root), expected_pid=pid + 1)
             self.assertEqual(configure_serve_memory(port, policy, str(self.root), expected_pid=pid)['memory_policy'], policy)
             self.assertEqual(status_serve(str(self.root))[0]['memory_policy'], policy)
+            with_context = dict(policy, minimum_headroom_gb=0, context_tokens=8192)
+            self.assertEqual(configure_serve_memory(port, with_context, str(self.root), expected_pid=pid)['memory_policy'], with_context)
+            self.assertEqual(configure_serve_memory(port, policy, str(self.root), expected_pid=pid)['memory_policy'], policy)
             self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
             self.assertEqual(unload_serve(port, str(self.root))['status'], 'unloaded')
             self.assertEqual(self.request('GET', '/v1/models')[0], 200)

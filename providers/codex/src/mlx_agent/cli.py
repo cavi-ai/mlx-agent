@@ -882,11 +882,16 @@ def _add_memory_arguments(parser):
     parser.add_argument("--idle-timeout", type=int, default=None, help="unload after this many idle seconds (0 disables)")
     parser.add_argument("--keep-loaded", action="store_true", help="prevent automatic idle unload after use")
     parser.add_argument("--min-headroom-gb", type=float, default=None, help="reserve GB beyond estimated weights and runtime allowance")
+    parser.add_argument("--context-tokens", type=int, default=None,
+                        help="also reserve the KV cache for this many context tokens (1024-1048576; needs --min-headroom-gb)")
 
 
 def _memory_arguments(arguments):
-    return {"idle_timeout_seconds": arguments.idle_timeout or 0, "keep_loaded": arguments.keep_loaded,
-            "minimum_headroom_gb": arguments.min_headroom_gb}
+    policy = {"idle_timeout_seconds": arguments.idle_timeout or 0, "keep_loaded": arguments.keep_loaded,
+              "minimum_headroom_gb": arguments.min_headroom_gb}
+    if arguments.context_tokens is not None:
+        policy["context_tokens"] = arguments.context_tokens
+    return policy
 
 
 def _run_serve(arguments):
@@ -943,7 +948,9 @@ def _run_serve(arguments):
             strata_speculation=arguments.strata_speculation == "on",
             strata_expert_memory_gb=arguments.strata_expert_memory_gb,
             strata_context_tokens=arguments.strata_context_tokens,
-            memory_policy=_memory_arguments(arguments) if (arguments.idle_timeout is not None or arguments.keep_loaded or arguments.min_headroom_gb is not None) else None,
+            memory_policy=_memory_arguments(arguments) if (arguments.idle_timeout is not None or arguments.keep_loaded
+                                                           or arguments.min_headroom_gb is not None
+                                                           or arguments.context_tokens is not None) else None,
             thinking=arguments.thinking,
             m5_prefill=arguments.m5_prefill,
             prompt_lookup=arguments.prompt_lookup,

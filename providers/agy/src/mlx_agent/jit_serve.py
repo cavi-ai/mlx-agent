@@ -29,6 +29,7 @@ from pathlib import Path
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from mlx_agent import chat_completions, responses_api
+from mlx_agent.contextfit import CONTEXT_MAX, CONTEXT_MIN, extract_architecture, kv_cache_bytes
 from mlx_agent.messages_api import (MessagesRequestError, StreamTranslator, WorkerResponseError, error_body,
                                     from_chat_response, to_chat_request)
 from mlx_agent.transactions import _atomic_in_directory
@@ -38,13 +39,18 @@ MAX_REQUESTS = 32
 STORED_RESPONSES = 64
 
 
+STRATA_CONTEXT = "Strata JIT admission already includes the KV cache at --strata-context-tokens."
+
+
 def validate_memory_policy(policy=None):
     defaults = {"idle_timeout_seconds": 0, "keep_loaded": False, "minimum_headroom_gb": None}
     if policy is None:
         return defaults
-    if not isinstance(policy, dict) or set(policy) - set(defaults):
+    if not isinstance(policy, dict) or set(policy) - set(defaults) - {"context_tokens"}:
         raise ValueError("Unknown memory policy fields.")
     result = dict(defaults, **policy)
+    # Null and absent both mean no KV term; policies without a context keep their existing form.
+    context = result.pop("context_tokens", None)
     idle, keep, reserve = (result[key] for key in defaults)
     if type(idle) is not int or not 0 <= idle <= 86400:
         raise ValueError("Idle timeout must be an integer between 0 and 86400 seconds.")
@@ -52,7 +58,28 @@ def validate_memory_policy(policy=None):
         raise ValueError("Keep loaded must be a boolean.")
     if reserve is not None and (type(reserve) not in (int, float) or not math.isfinite(reserve) or not 0 <= reserve <= 1024):
         raise ValueError("Headroom reserve must be a finite value between 0 and 1024 GB.")
+    if context is not None:
+        if type(context) is not int or not CONTEXT_MIN <= context <= CONTEXT_MAX:
+            raise ValueError("Context tokens must be an integer between {} and {}.".format(CONTEXT_MIN, CONTEXT_MAX))
+        if reserve is None:
+            raise ValueError("Context tokens require a headroom reserve.")
+        result["context_tokens"] = context
     return result
+
+
+def _kv_cache_bytes(local_path, context_tokens):
+    """KV cache bytes at the context from the local config.json, or None when its architecture is unknown."""
+    try:
+        location = Path(local_path) / "config.json"
+        if location.stat().st_size > 1024 * 1024:
+            return None
+        config = json.loads(location.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(config, dict):
+        return None
+    architecture = extract_architecture(config) or extract_architecture(config.get("text_config"))
+    return kv_cache_bytes(architecture, context_tokens)
 
 
 def available_memory_bytes():
@@ -146,6 +173,8 @@ class ModelWorker:
                 policy = validate_memory_policy(dict(self.memory_policy, **changes))
             except (ValueError, TypeError) as error:
                 raise GatewayError(400, "invalid_policy", str(error)) from error
+            if self.config.get("runtime") == "strata" and "context_tokens" in policy:
+                raise GatewayError(400, "invalid_policy", STRATA_CONTEXT)
             config = dict(self.config, memory_policy=policy)
             if config.get("config_path"):
                 path = Path(config["config_path"])
@@ -162,6 +191,7 @@ class ModelWorker:
     def _check_memory(self):
         with self.condition:
             reserve = self.memory_policy["minimum_headroom_gb"]
+            context = self.memory_policy.get("context_tokens")
             self.load_blocked_reason = None
         if reserve is None:
             return
@@ -169,8 +199,9 @@ class ModelWorker:
                       if item.is_file() and item.suffix in (".safetensors", ".npz", ".bin", ".gguf"))
         if weights and self.config.get("adapter_path") is not None:
             weights += self.config["adapter_identity"]["adapters.safetensors"]["bytes"]
+        kv = 0 if context is None else _kv_cache_bytes(self.config["local_path"], context)
         available = self.memory_probe()
-        required = math.ceil(weights * 1.10 + 1.5e9 + reserve * 1e9) if weights else None
+        required = math.ceil(weights * 1.10 + kv + 1.5e9 + reserve * 1e9) if weights and kv is not None else None
         if self.config.get("runtime") == "strata":
             from mlx_agent.strata_runtime import read_model, memory_estimate
             required = math.ceil(memory_estimate(read_model(self.config["local_path"]),
@@ -179,10 +210,12 @@ class ModelWorker:
             self.memory_check = {"available_bytes": available, "required_available_bytes": required,
                                  "captured_at": time.time(), "estimated": True}
             if type(available) is not int or available < 0 or required is None:
-                self.load_blocked_reason = "Memory headroom or model weight size is unavailable."
+                self.load_blocked_reason = ("The local config.json does not give the KV cache size for the policy context."
+                                            if kv is None else "Memory headroom or model weight size is unavailable.")
                 raise GatewayError(503, "memory_unknown", self.load_blocked_reason)
             if available < required:
-                self.load_blocked_reason = "Insufficient memory headroom for estimated weights, runtime allowance and reserve."
+                self.load_blocked_reason = "Insufficient memory headroom for estimated weights, {}runtime allowance and reserve.".format(
+                    "KV cache, " if context is not None else "")
                 raise GatewayError(503, "insufficient_headroom", self.load_blocked_reason)
 
     def acquire(self):
@@ -265,7 +298,8 @@ class ModelWorker:
                 self._persist()
                 process = self.process
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-            deadline = time.monotonic() + self.config.get("worker_readiness_seconds", 60)
+            readiness_seconds = self.config.get("worker_readiness_seconds", 60)
+            deadline = time.monotonic() + readiness_seconds
             while time.monotonic() < deadline:
                 if process.poll() is not None or self.closed:
                     raise GatewayError(503, "model_load_failed", "Model worker exited before readiness.")
@@ -276,7 +310,8 @@ class ModelWorker:
                 except OSError:
                     time.sleep(0.1)
             else:
-                raise GatewayError(503, "model_load_failed", "Model worker did not become ready in 60 seconds.")
+                raise GatewayError(503, "model_load_failed",
+                                   "Model worker did not become ready in {} seconds.".format(readiness_seconds))
             if model_fingerprint(self.config["local_path"]) != self.config["fingerprint"]:
                 raise GatewayError(503, "model_changed", "Model files changed while loading.")
             self._check_training_receipt()

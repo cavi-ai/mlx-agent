@@ -20,6 +20,8 @@ _PREVIOUS_REVISIONS = ("ac0523f51c9935805904de889747d2b4ce011516", "a0116b2782a5
 MODEL_MARKER = "strata-model.json"
 INSTALL_MARKER = "installed.json"
 _FIRST = re.compile(r"Qwen3\.8-Flash-Next-GSQ-RCO-(Q2_0|IQ3_S)-00001-of-00002\.gguf")
+# Names, shapes, BF16 dtypes and byte sizes of the supported 31-tensor head.
+_MTP_LAYOUT = "c533cc874cc6c8723eeaa55a615de1c5703b1f6639f455455c9eaa04b3590783"
 # GGUF block layouts implemented by the pinned engine. No tensor data is loaded here.
 _BLOCKS = {0: (1, 4), 1: (1, 2), 30: (1, 2), 2: (32, 18), 6: (32, 22), 8: (32, 34),
            11: (256, 110), 12: (256, 144), 13: (256, 176), 14: (256, 210),
@@ -115,6 +117,54 @@ def file_identity(path):
     return {"bytes": stat.st_size, "mtime_ns": stat.st_mtime_ns, "device": stat.st_dev, "inode": stat.st_ino, "header_sha256": header}
 
 
+def _mtp_parameter_bytes(tensors, metadata):
+    """Final float16/4-bit storage in both supported native loaders; unknown layouts stay raw."""
+    if not isinstance(metadata, dict):
+        return None
+    dimensions = {"embedding_length": 2560, "expert_count": 512,
+                  "expert_feed_forward_length": 640, "hyper_connection.count": 4}
+    if any(type(metadata.get("qwen4exp." + key)) is not int
+           or metadata["qwen4exp." + key] != value for key, value in dimensions.items()):
+        return None
+    if not isinstance(tensors, list) or len(tensors) != 31:
+        return None
+    layout = []
+    for tensor in tensors:
+        if not isinstance(tensor, dict):
+            return None
+        shape = tensor.get("shape")
+        if (not isinstance(tensor.get("name"), str) or tensor.get("dtype") != "BF16"
+                or not isinstance(shape, list) or not 1 <= len(shape) <= 3
+                or any(type(n) is not int or n <= 0 for n in shape)
+                or type(tensor.get("bytes")) is not int or tensor["bytes"] != math.prod(shape) * 2):
+            return None
+        if ".mlp.experts." in tensor["name"]:
+            if len(shape) != 3 or shape[-1] % 64 or (tensor["name"].endswith("gate_up_proj") and shape[1] % 2):
+                return None
+        layout.append({key: tensor[key] for key in ("name", "dtype", "shape", "bytes")})
+    if len({item["name"] for item in layout}) != 31:
+        return None
+    encoded = json.dumps(sorted(layout, key=lambda item: item["name"]), sort_keys=True, separators=(",", ":"))
+    if hashlib.sha256(encoded.encode()).hexdigest() != _MTP_LAYOUT:
+        return None
+    total = 0
+    for tensor in layout:
+        if ".mlp.experts." in tensor["name"]:
+            count = math.prod(tensor["shape"])
+            # Four-bit weights, plus one float16 scale and bias per group of 64.
+            total += count // 8 * 4 + count // 64 * 4
+        else:
+            total += tensor["bytes"]
+    return total
+
+
+def _mtp_savings(model, speculation):
+    raw, packed = model.get("mtp_bytes", 0), model.get("mtp_parameter_bytes")
+    if speculation and type(raw) is int and type(packed) is int and 0 < packed <= raw:
+        return raw - packed
+    return 0
+
+
 def read_model(path):
     root = Path(path).expanduser().absolute()
     try:
@@ -133,6 +183,8 @@ def read_model(path):
         from mlx_agent.gguf import read_gguf_header
         for index, weight in enumerate((first, second)):
             header = read_gguf_header(weight)
+            if index == 0:
+                text_metadata = header["metadata"]
             architecture = header["metadata"].get("general.architecture")
             if architecture != "qwen4exp" and not (index == 1 and architecture is None and header["tensor_count"] == 1):
                 raise ValueError("GGUF architecture is not Qwen3.8-Flash-Next")
@@ -142,6 +194,7 @@ def read_model(path):
             assets.append(_local(root, "tokenizer/" + name))
         mtp = None
         mtp_bytes = 0
+        mtp_parameter_bytes = 0
         if profile["mtp"] is not None:
             mtp = _local(root, profile["mtp"], directory=True)
             manifest_path = _local(root, str(mtp.relative_to(root) / "mtp-manifest.json"))
@@ -159,6 +212,7 @@ def read_model(path):
                     raise ValueError("MTP tensor size changed")
                 mtp_bytes += location.stat().st_size
                 assets.append(location)
+            mtp_parameter_bytes = _mtp_parameter_bytes(tensors, text_metadata) or mtp_bytes
         identities = {str(asset.relative_to(root)): file_identity(asset) for asset in assets}
         fingerprint = hashlib.sha256(json.dumps(identities, sort_keys=True).encode()).hexdigest()
         # The second shard is the on-disk n-gram lookup table, not resident
@@ -169,6 +223,7 @@ def read_model(path):
         return {"root": str(root), "gguf": str(first), "tokenizer": str(tokenizer), "mtp": str(mtp) if mtp else None,
                 "quantization": "GSQ-RCO " + _FIRST.fullmatch(first.name).group(1),
                 "mtp_bytes": mtp_bytes,
+                "mtp_parameter_bytes": mtp_parameter_bytes,
                 "fingerprint": fingerprint, "weight_bytes": first.stat().st_size + second.stat().st_size,
                 "memory_estimate_bytes": memory_estimate}
     except StrataError:
@@ -194,7 +249,8 @@ def memory_estimate(model, expert_memory_gb=None, context_tokens=131072, specula
             or not 0.5 <= expert_memory_gb <= 64):
         raise StrataError("invalid_arguments", "Expert memory must be a finite number from 0.5 to 64 GB.")
     fixed, experts = _memory_parts(model, context_tokens, speculation)
-    return math.ceil(min(experts, expert_memory_gb * 1e9) + fixed)
+    steady = fixed - _mtp_savings(model, speculation) + min(experts, expert_memory_gb * 1e9)
+    return math.ceil(max(steady, fixed + min(experts, 500_000_000)))
 
 
 def _memory_parts(model, context_tokens, speculation):
@@ -236,12 +292,17 @@ def memory_allocation(model, budget_gb, context_tokens=131072, speculation=False
     if whole <= budget:
         cap, estimate, mode = None, whole, "resident"
     else:
-        remaining = budget - fixed
-        if remaining < min(experts, 500_000_000):
+        # Native paging loads the head before populating the expert cache. Keep
+        # the raw startup floor and resident threshold, then size the paged
+        # cache beside the packed head. The 5 GB working allowance is retained.
+        startup_floor = fixed + min(experts, 500_000_000)
+        if budget < startup_floor:
             raise StrataError("memory_budget_too_small", "Model memory budget cannot hold fixed weights, context and the minimum expert cache.")
+        fixed -= _mtp_savings(model, speculation)
+        remaining = budget - fixed
         # Round down before converting to native decimal GB; never overspend on rounding.
         cap = max(.5, min(64, remaining // 1_000_000 / 1000))
-        estimate, mode = math.ceil(fixed + min(experts, cap * 1e9)), "paged"
+        estimate, mode = math.ceil(max(fixed + min(experts, cap * 1e9), startup_floor)), "paged"
     return {"budget_bytes": budget, "estimated_resident_bytes": estimate,
             "expert_memory_gb": cap, "mode": mode}
 
@@ -270,7 +331,7 @@ def frontend_config(model, runtime, speculation=False, expert_memory_gb=None, co
         expert_memory_gb = memory_allocation(model, memory_budget_gb, context_tokens, speculation)["expert_memory_gb"]
     else:
         memory_estimate(model, expert_memory_gb, context_tokens, speculation)
-    args = ["--native", model["gguf"], "--spec", "4" if speculation else "1",
+    args = ["--native", model["gguf"], "--dtype", "float16", "--spec", "4" if speculation else "1",
             "--suffix-draft", "1" if mode == "lookup" else "0", "--max-context", str(context_tokens)]
     if expert_memory_gb is not None:
         args += ["--expert-memory", str(expert_memory_gb)]

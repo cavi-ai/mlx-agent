@@ -590,7 +590,7 @@
     },
     {
       "path": "src/mlx_agent/gguf.py",
-      "sha256": "e7ee26cbee37d2cb7865f22805339542c3cd1fc1e2b84ac0e879fbed8e70fbc6"
+      "sha256": "f43bfdde8b8aa566040f5bfbddacf53639c673b871db02e01ae9695f17275232"
     },
     {
       "path": "src/mlx_agent/gguf_runner.py",
@@ -1086,7 +1086,7 @@
     },
     {
       "path": "src/mlx_agent/strata_runtime.py",
-      "sha256": "bb8bf41dca50d32614ca1c5ad2dd9936acaa551762e40eca109a623eae3ec4e2"
+      "sha256": "370a9105aadd6726f2dc557825c9723db25c507b067ab695335a0322c848010d"
     },
     {
       "path": "src/mlx_agent/study_recipes.py",

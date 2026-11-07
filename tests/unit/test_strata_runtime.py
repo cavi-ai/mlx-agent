@@ -309,7 +309,7 @@ for available, code in ((100, 'insufficient_headroom'), (None, 'memory_unknown')
                 code = main(["serve", *args, "--json"])
             return code, json.loads(output.getvalue())
         code, result = run(["profile", "save", "unity", "--receipts-dir", str(self.root),
-            "--memory-budget-gb", "20", "--min-headroom-gb", "32"])
+            "--memory-budget-gb", "20", "--min-headroom-gb", "32", "--strata-decoding", "lookup"])
         self.assertEqual(code, 0, result)
         args = ["start", "--runtime", "strata", "--path", str(self.root), "--jit", "--profile", "unity",
                 "--receipts-dir", str(self.root)]
@@ -330,6 +330,10 @@ for available, code in ((100, 'insufficient_headroom'), (None, 'memory_unknown')
         for command in (["list"], ["show", "unity"], ["delete", "unity"]):
             code, result = run(["profile", *command, "--receipts-dir", str(self.root)])
             self.assertEqual(code, 0, result)
+        code, result = run(["profile", "save", "default", "--receipts-dir", str(self.root),
+            "--memory-budget-gb", "20", "--min-headroom-gb", "32"])
+        self.assertEqual(code, 0, result)
+        self.assertEqual(result["data"]["settings"]["strata_decoding"], "plain")
 
     def test_previous_pinned_installation_remains_source_verified(self):
         runtime = self.installed()

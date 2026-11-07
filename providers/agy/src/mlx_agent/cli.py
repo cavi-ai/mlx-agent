@@ -993,7 +993,7 @@ def _add_serve_arguments(parser):
             action.add_argument("--memory-budget-gb", type=float, required=True)
             action.add_argument("--min-headroom-gb", type=float, required=True)
             action.add_argument("--strata-context-tokens", type=int, default=16384)
-            action.add_argument("--strata-decoding", choices=["plain", "lookup", "mtp"], default="lookup")
+            action.add_argument("--strata-decoding", choices=["plain", "lookup", "mtp"], default="plain")
             action.add_argument("--idle-timeout", type=int, default=300)
             action.add_argument("--keep-loaded", action="store_true")
             action.add_argument("--unload-under-pressure", action=argparse.BooleanOptionalAction, default=True)

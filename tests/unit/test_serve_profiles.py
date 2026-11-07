@@ -66,3 +66,16 @@ class ServeProfileTests(unittest.TestCase):
     def test_missing_store_listing_has_no_side_effect(self):
         self.assertEqual(profiles.list_profiles(self.root), {})
         self.assertEqual(list(self.root.iterdir()), [])
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "POSIX FIFO required")
+    def test_replace_refuses_a_nonregular_target_without_removing_it(self):
+        import stat
+        profiles.save_profile("shared", self.settings, self.root)
+        path = next(self.root.rglob("shared.json"))
+        path.unlink()
+        os.mkfifo(path, 0o600)
+        before = path.lstat().st_ino
+        with self.assertRaises(ValueError):
+            profiles.save_profile("shared", self.settings, self.root, replace=True)
+        self.assertTrue(stat.S_ISFIFO(path.lstat().st_mode))
+        self.assertEqual(path.lstat().st_ino, before)

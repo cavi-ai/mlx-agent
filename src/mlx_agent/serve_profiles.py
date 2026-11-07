@@ -64,7 +64,11 @@ def save_profile(name, settings, root=None, replace=False):
     if type(replace) is not bool:
         raise ValueError("Replace must be a boolean.")
     with _target_locks([path.parent / ".profiles"], create_parents=True):
-        if path.is_symlink() or (path.exists() and not replace):
+        try:
+            existing = path.lstat()
+        except FileNotFoundError:
+            existing = None
+        if existing is not None and (not stat.S_ISREG(existing.st_mode) or not replace):
             raise ValueError("Profile already exists or is a symbolic link; use --replace to update a regular profile.")
         if not path.exists() and len(list_profiles(root)) >= 100:
             raise ValueError("Too many serving profiles (maximum 100).")

@@ -486,7 +486,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "78170192162b6047f63ab0dc2e63f6541c43c9efe477551c24022ab35d816a14"
+      "sha256": "af91290714a0679469fdf32c8d62ab97cda0ad01ca7bbd492be52f85e92099af"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -1070,7 +1070,7 @@
     },
     {
       "path": "src/mlx_agent/serve_profiles.py",
-      "sha256": "84158d931af70bb11e5954e6ceecb63de2981159373b358482ff8bf44fd8d264"
+      "sha256": "e0263035983cfbc1657156fed8bbd75e5ac1005bdc4e5f5a1759c2489c52d2ef"
     },
     {
       "path": "src/mlx_agent/speak.py",

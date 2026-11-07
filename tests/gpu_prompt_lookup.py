@@ -2,6 +2,13 @@
 import unittest
 
 
+class FixedCostClock:
+    ticks = 0
+    def __call__(self):
+        self.ticks += 1
+        return self.ticks * .001
+
+
 class PromptLookupTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -60,7 +67,7 @@ class PromptLookupTests(unittest.TestCase):
         prompt = [0, 0, 0, 9, 0, 0, 0]
         for stop in (None, 5, 6, 9):
             with self.subTest(stop=stop):
-                request = self.run_steps(prompt, 16, stop=stop, prefix=len(prompt) - 1, constant=True)
+                request = self.run_steps(prompt, 16, stop=stop, prefix=len(prompt) - 1, constant=True, clock=FixedCostClock())
                 self.assertEqual(request.fallback_reason, "low_acceptance")
                 self.assertGreater(request.native_tokens, 0)
 
@@ -89,7 +96,8 @@ class PromptLookupTests(unittest.TestCase):
             return mx.where(mx.arange(32)[None, None, :] == 0, 10., -10.) + mx.zeros((*tokens.shape, 1))
         request = Request()
         generator = lookup_step(mx.array([0, 0, 0, 9, 0, 0, 0]), model,
-            full_prompt=[0, 0, 0, 9, 0, 0, 0], max_tokens=16, prompt_cache=[KVCache()], request=request)
+            full_prompt=[0, 0, 0, 9, 0, 0, 0], max_tokens=16, prompt_cache=[KVCache()], request=request,
+            clock=FixedCostClock())
         with self.assertRaisesRegex(RuntimeError, "native target failed"):
             list(generator)
         self.assertTrue(request.failed)

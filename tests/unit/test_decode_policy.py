@@ -45,6 +45,12 @@ class LookupPolicyTests(unittest.TestCase):
         policy.observe(4, 4, .01)
         self.assertEqual(policy.native_reason, "verification_cost")
 
+    def test_one_large_cost_overrun_stops_before_a_short_response_finishes(self):
+        policy = self.calibrated()
+        policy.observe(4, 4, .011)
+        self.assertEqual(policy.native_reason, "verification_cost")
+        self.assertEqual(len(policy.samples), 1)
+
     def test_inexpensive_verified_blocks_keep_only_four_observations(self):
         policy = self.calibrated()
         for _ in range(100):

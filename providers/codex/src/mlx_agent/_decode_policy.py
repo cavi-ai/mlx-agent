@@ -35,6 +35,10 @@ class LookupPolicy:
         self._window = min(8, self._window + 2) if accepted == proposed else max(2, accepted + 1)
         if self._misses >= 2:
             self.native_reason = "low_acceptance"
+        elif len(self.calibration) == 2 and elapsed_seconds > 2 * min(self.calibration) * (accepted + 1):
+            # A single severe loss must not wait for a four-block window: short
+            # replies can finish before that window ever fills.
+            self.native_reason = "verification_cost"
         elif len(self.samples) == 4 and len(self.calibration) == 2:
             cost = sum(seconds for seconds, _ in self.samples) / sum(tokens for _, tokens in self.samples)
             if cost >= .9 * min(self.calibration):

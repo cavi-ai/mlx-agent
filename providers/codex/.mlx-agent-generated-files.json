@@ -58,7 +58,7 @@
     },
     {
       "path": "src/mlx_agent/_decode_policy.py",
-      "sha256": "7922804c909d8a03e9ec82d48bf6b04fdb3f4f842adee067d97116f1399e0793"
+      "sha256": "644de897c776310232ca6e1e1252afb15769ff6653ecee4d5a50ce2579985031"
     },
     {
       "path": "src/mlx_agent/_lab/video_lab/__init__.py",

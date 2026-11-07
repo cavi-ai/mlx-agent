@@ -487,10 +487,17 @@ class ModelWorker:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=3)
-        if self.strata_children:
-            from mlx_agent.process_tree import terminate
-            terminate(self.strata_children)
-            self.strata_children.clear()
+        if self.strata_children or self.owned_session is not None:
+            from mlx_agent.process_tree import remaining, session_children, terminate
+            for _ in range(3):
+                # A launcher can exec or create the engine while the frontend is exiting.
+                self.strata_children.update(session_children(self.owned_session))
+                terminate(self.strata_children)
+                self.strata_children = remaining(session_children(self.owned_session))
+                if not self.strata_children:
+                    break
+            if self.strata_children:
+                raise OSError("The owned Strata session still has live engines; model reload is blocked.")
         with self.condition:
             self.process = None
             if self.log not in (None, subprocess.DEVNULL):

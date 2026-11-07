@@ -245,3 +245,21 @@ class StrataMemoryTests(unittest.TestCase):
             try: os.killpg(helper.pid,signal.SIGKILL)
             except ProcessLookupError: pass
             helper.wait(timeout=3)
+
+    def test_engine_spawned_during_frontend_shutdown_is_rechecked(self):
+        worker = self.worker()
+        worker.owned_session = 2000000000
+        worker.process = Mock()
+        worker.process.pid = 2000000001
+        worker.process.poll.return_value = None
+        captured = []
+        def scan(owner):
+            return {2000000002: 'late engine'} if worker.process.poll.return_value == 0 else {}
+        def waited(timeout=None): worker.process.poll.return_value = 0
+        worker.process.wait.side_effect = waited
+        with patch('mlx_agent.process_tree.session_children', side_effect=scan), \
+                patch('mlx_agent.process_tree.descendants', return_value={}), \
+                patch('mlx_agent.process_tree.terminate', side_effect=lambda children: captured.append(dict(children))), \
+                patch('mlx_agent.process_tree.remaining', return_value={}):
+            worker._stop_worker()
+        self.assertTrue(any(2000000002 in children for children in captured))

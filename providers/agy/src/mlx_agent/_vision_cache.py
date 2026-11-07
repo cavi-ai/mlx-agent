@@ -53,39 +53,55 @@ class FeatureCache:
 
 def apply(model, max_bytes=MAX_BYTES, max_entries=MAX_ENTRIES):
     import mlx.core as mx
-    import numpy as np
-    from mlx_vlm.models.qwen2_5_vl.qwen2_5_vl import Model
+    import mlx.nn as nn
+    from mlx.utils import tree_flatten, tree_map
+    from mlx_vlm.models.qwen3_vl.qwen3_vl import Model
+    from mlx_vlm.models.qwen3_vl.vision import VisionModel
+    from mlx_vlm.models.qwen3_vl_moe.qwen3_vl_moe import Model as MoEModel
+    from mlx_vlm.models.qwen3_vl_moe.vision import VisionModel as MoEVisionModel
 
-    if (type(model) is not Model or model.training or hasattr(model, "_mlx_agent_vision_cache")):
+    towers = {Model: VisionModel, MoEModel: MoEVisionModel}
+    if (type(model) not in towers or model.training or hasattr(model, "_mlx_agent_vision_cache")
+            or type(model.vision_tower) is not towers[type(model)]):
         return False
     cache = FeatureCache(max_bytes, max_entries)
-    original = model.get_input_embeddings
+    original = model.vision_tower
+    base = type(original)
 
-    def embeddings(input_ids=None, pixel_values=None, **kwargs):
-        if model.training or model.vision_tower.training:
-            cache.clear()
-            return original(input_ids, pixel_values, **kwargs)
-        grid = kwargs.get("image_grid_thw")
-        if (pixel_values is None or not isinstance(pixel_values, mx.array)
-                or pixel_values.dtype not in (mx.float16, mx.float32)
-                or not isinstance(grid, mx.array) or grid.ndim != 2 or grid.shape[-1] != 3
-                or kwargs.get("video_grid_thw") is not None or kwargs.get("pixel_values_videos") is not None
-                or kwargs.get("cached_image_features") is not None):
-            return original(input_ids, pixel_values, **kwargs)
-        arrays = [np.ascontiguousarray(value) for value in (pixel_values, grid)]
-        key = content_key((str(a.dtype), a.shape, memoryview(a).cast("B")) for a in arrays)
-        features = cache.get(key)
-        hit = features is not None
-        if features is None:
-            pixels = pixel_values.astype(model.vision_tower.patch_embed.proj.weight.dtype)
-            features = model.vision_tower(pixels, grid, output_hidden_states=False)
-            mx.eval(features)
-            cache.encodings += 1
-            cache.put(key, features, features.nbytes)
-        logging.getLogger(__name__).info("Vision feature cache: hit=%s entries=%d bytes=%d encodings=%d",
-                                         hit, len(cache.entries), cache.bytes, cache.encodings)
-        return original(input_ids, pixel_values, **dict(kwargs, cached_image_features=features))
+    class CachedVisionTower(base):
+        def __init__(self):
+            # Preserve native parameter paths and share their storage without reinitializing weights.
+            nn.Module.__init__(self)
+            dict.update(self, original)
+            self.__dict__.update(original.__dict__)
 
+        def __call__(self, pixels, grid, **kwargs):
+            if model.training or self.training:
+                cache.clear()
+                return base.__call__(self, pixels, grid, **kwargs)
+            if (kwargs or not isinstance(pixels, mx.array)
+                    or pixels.dtype not in (mx.float16, mx.bfloat16, mx.float32)
+                    or not isinstance(grid, mx.array) or grid.ndim != 2 or grid.shape[-1] != 3):
+                return base.__call__(self, pixels, grid, **kwargs)
+            mx.eval(pixels, grid)
+            parts = []
+            for value in (pixels, grid):
+                view = memoryview(value)
+                buffer = view.cast("B") if view.c_contiguous else view.tobytes(order="C")
+                parts.append((str(value.dtype), value.shape, buffer))
+            key = content_key(parts)
+            features = cache.get(key)
+            hit = features is not None
+            if features is None:
+                features = base.__call__(self, pixels, grid)
+                mx.eval(features)
+                cache.encodings += 1
+                cache.put(key, features, sum(v.nbytes for _, v in tree_flatten(features)))
+            logging.getLogger(__name__).info("Vision feature cache: hit=%s entries=%d bytes=%d encodings=%d",
+                                             hit, len(cache.entries), cache.bytes, cache.encodings)
+            # Reuse all DeepStack tensors; native embedding assembly still handles masks and MRoPE.
+            return tree_map(lambda value: value, features)
+
+    model.vision_tower = CachedVisionTower()
     object.__setattr__(model, "_mlx_agent_vision_cache", cache)
-    object.__setattr__(model, "get_input_embeddings", embeddings)
     return True

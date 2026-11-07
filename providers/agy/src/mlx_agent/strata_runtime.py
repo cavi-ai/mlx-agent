@@ -14,8 +14,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-ENGINE_REVISION = "ac0523f51c9935805904de889747d2b4ce011516"
-HTTP_REVISION = "a0116b2782a5b82622358c04a06496485d12b2d6"
+ENGINE_REVISION = "94817fd011fb90d49a66d68c802a8d80bfe2d859"
+HTTP_REVISION = "296b59d2f73c8f04a805df29c2fa97655adace78"
+_PREVIOUS_REVISIONS = ("ac0523f51c9935805904de889747d2b4ce011516", "a0116b2782a5b82622358c04a06496485d12b2d6")
 MODEL_MARKER = "strata-model.json"
 INSTALL_MARKER = "installed.json"
 _FIRST = re.compile(r"Qwen3\.8-Flash-Next-GSQ-RCO-(Q2_0|IQ3_S)-00001-of-00002\.gguf")
@@ -80,12 +81,15 @@ def installed_runtime(root=None):
         python = root / "engine/.venv/bin/python"
         engine = root / "strata-mlx"
         required = (root / "engine/strata_mlx/serve.py", root / "http/serve/server.py", root / "http/tools/strata_tokenizer.py")
-        if (marker.get("engine_revision") != ENGINE_REVISION or marker.get("http_revision") != HTTP_REVISION
+        if ((marker.get("engine_revision"), marker.get("http_revision")) not in
+                ((ENGINE_REVISION, HTTP_REVISION), _PREVIOUS_REVISIONS)
                 or not python.is_file() or not engine.is_file() or engine.is_symlink() or not os.access(engine, os.X_OK)
                 or engine.read_text() != engine_launcher(root) or not all(p.is_file() for p in required)
                 or marker.get("source_sha256") != source_digest(root)):
             raise ValueError("Missing, modified or incompatible Strata installation")
-        return {"root": str(root.absolute()), "python": str(python.absolute()), "engine": str(engine.absolute()), "fingerprint": marker["source_sha256"]}
+        return {"root": str(root.absolute()), "python": str(python.absolute()), "engine": str(engine.absolute()),
+                "fingerprint": marker["source_sha256"], "engine_revision": marker["engine_revision"],
+                "http_revision": marker["http_revision"]}
     except (OSError, ValueError, TypeError) as error:
         raise StrataError("strata_not_installed", str(error)) from error
 
@@ -242,8 +246,24 @@ def memory_allocation(model, budget_gb, context_tokens=131072, speculation=False
             "expert_memory_gb": cap, "mode": mode}
 
 
+def resolve_decoding(model, speculation=False, decoding=None):
+    if type(speculation) is not bool or (decoding is not None and decoding not in ("plain", "lookup", "mtp")):
+        raise StrataError("invalid_arguments", "Strata decoding must be plain, lookup or mtp.")
+    if decoding is not None and speculation:
+        raise StrataError("invalid_arguments", "Choose a decoding mode or legacy speculation, not both.")
+    if decoding == "mtp" and not model.get("mtp"):
+        raise StrataError("strata_draft_required", "MTP decoding requires prepared local draft-head assets.")
+    if decoding is not None:
+        return decoding
+    if speculation:
+        return "mtp" if model.get("mtp") else "lookup"
+    return "plain"
+
+
 def frontend_config(model, runtime, speculation=False, expert_memory_gb=None, context_tokens=131072,
-                    memory_budget_gb=None):
+                    memory_budget_gb=None, decoding=None):
+    mode = resolve_decoding(model, speculation, decoding)
+    speculation = mode == "mtp"
     if memory_budget_gb is not None:
         if expert_memory_gb is not None:
             raise StrataError("invalid_arguments", "Choose a total model memory budget or an expert budget.")
@@ -251,11 +271,10 @@ def frontend_config(model, runtime, speculation=False, expert_memory_gb=None, co
     else:
         memory_estimate(model, expert_memory_gb, context_tokens, speculation)
     args = ["--native", model["gguf"], "--spec", "4" if speculation else "1",
-            "--suffix-draft", "auto" if speculation else "0", "--max-context", str(context_tokens)]
+            "--suffix-draft", "1" if mode == "lookup" else "0", "--max-context", str(context_tokens)]
     if expert_memory_gb is not None:
         args += ["--expert-memory", str(expert_memory_gb)]
-    if memory_budget_gb is not None:
-        args += ["--conversation-cache-mib", "0"]
+    args += ["--conversation-cache-mib", "0", "--keep-awake", "0", "--wired", "off"]
     if speculation and model["mtp"]:
         args += ["--mtp", model["mtp"]]
     return {"exe": runtime["engine"], "args": args, "cwd": runtime["root"], "tokenizer": model["tokenizer"],
@@ -272,6 +291,7 @@ def main():
     parser.add_argument("--host", choices=["127.0.0.1"], default="127.0.0.1")
     parser.add_argument("--max-tokens", type=int, default=8192)
     parser.add_argument("--speculation", choices=["on", "off"], default="off")
+    parser.add_argument("--decoding", choices=["plain", "lookup", "mtp"])
     parser.add_argument("--expert-memory-gb", type=float)
     parser.add_argument("--memory-budget-gb", type=float)
     parser.add_argument("--context-tokens", type=int, default=131072)
@@ -284,8 +304,8 @@ def main():
         raise StrataError("preview_stale", "The model assets or Strata runtime changed after the serving preview.")
     os.environ.update(MLX_AGENT_STRATA_ROOT=runtime["root"], HF_HUB_OFFLINE="1", HF_DATASETS_OFFLINE="1", MLX_ENABLE_TF32="0")
     # The only config reaching the frontend is constructed here; model files cannot supply code or commands.
-    config = frontend_config(model, runtime, args.speculation == "on", args.expert_memory_gb, args.context_tokens,
-                             args.memory_budget_gb)
+    config = frontend_config(model, runtime, args.speculation == "on" if args.decoding is None else False,
+                             args.expert_memory_gb, args.context_tokens, args.memory_budget_gb, args.decoding)
     source = Path(runtime["root"]) / "http"
     sys.path[:0] = [str(source), str(source / "tools")]
     with tempfile.TemporaryDirectory(prefix="mlx-agent-strata-") as directory:

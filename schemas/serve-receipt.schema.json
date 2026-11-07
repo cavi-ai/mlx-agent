@@ -14,6 +14,7 @@
     "path": { "type": ["string", "null"], "minLength": 1 },
     "jit": { "type": "boolean" },
     "runtime": { "enum": ["mlx_lm", "mlx-vlm", "strata"] },
+    "strata_decoding": { "enum": ["plain", "lookup", "mtp"] },
     "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
     "argv": {
       "type": "array",

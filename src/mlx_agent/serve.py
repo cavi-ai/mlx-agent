@@ -279,6 +279,8 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
             raise ServeError("invalid_arguments", str(error), "Correct the memory policy.") from error
         if not jit:
             raise ServeError("jit_required", "Memory policy requires a JIT endpoint.", "Use --jit.")
+        if runtime != "strata" and "model_memory_budget_gb" in memory_policy:
+            raise ServeError("invalid_arguments", "Model memory budgets currently require Strata.", "Select a prepared Strata profile.")
         if runtime == "strata" and "context_tokens" in memory_policy:
             from .jit_serve import STRATA_CONTEXT
             raise ServeError("invalid_arguments", STRATA_CONTEXT, "Remove --context-tokens.")
@@ -348,18 +350,25 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         "max_tokens": str(max_tokens),
         "runtime_adapter": str(Path(__file__).with_name("strata_runtime.py").resolve()),
     }
-    strata_model = strata_runtime = None
+    strata_model = strata_runtime = strata_allocation = None
     if runtime != "strata" and (strata_expert_memory_gb is not None or strata_context_tokens is not None):
         raise ServeError("invalid_arguments", "Strata memory controls require the Strata runtime.",
                          "Select a prepared local Strata profile.")
     if runtime == "strata":
-        from .strata_runtime import StrataError, installed_runtime, read_model, memory_estimate
+        from .strata_runtime import StrataError, installed_runtime, read_model, memory_estimate, memory_allocation
         try:
             if not has_path or adapter_path is not None or type(strata_speculation) is not bool:
                 raise StrataError("strata_model_required", "Strata requires a local GGUF profile without a LoRA adapter.")
             strata_model = read_model(local_path)
             strata_context_tokens = 131072 if strata_context_tokens is None else strata_context_tokens
-            strata_memory_bytes = memory_estimate(strata_model, strata_expert_memory_gb, strata_context_tokens)
+            budget = (memory_policy or {}).get("model_memory_budget_gb")
+            if budget is not None:
+                if strata_expert_memory_gb is not None:
+                    raise StrataError("invalid_arguments", "Choose a total model memory budget or an expert budget.")
+                strata_allocation = memory_allocation(strata_model, budget, strata_context_tokens, strata_speculation)
+                strata_memory_bytes = strata_allocation["estimated_resident_bytes"]
+            else:
+                strata_memory_bytes = memory_estimate(strata_model, strata_expert_memory_gb, strata_context_tokens, strata_speculation)
             strata_runtime = installed_runtime()
             if runtime_executable is not None and runtime_executable != strata_runtime["python"]:
                 raise StrataError("strata_not_installed", "The reviewed Strata executable changed.")
@@ -374,6 +383,8 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                  "--expected-runtime-fingerprint", strata_runtime["fingerprint"]]
         if strata_expert_memory_gb is not None:
             argv += ["--expert-memory-gb", str(strata_expert_memory_gb)]
+        if strata_allocation is not None:
+            argv += ["--memory-budget-gb", str(budget)]
     if adapter_path is not None:
         argv.extend(
             part.format(adapter_path=str(adapter_path)) for part in recipe["adapter_argv"]
@@ -431,6 +442,8 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                     strata_speculation=strata_speculation, strata_expert_memory_gb=strata_expert_memory_gb,
                     strata_context_tokens=strata_context_tokens, strata_memory_estimate_bytes=strata_memory_bytes,
                     readiness_deadline=900)
+        if strata_allocation is not None:
+            plan["strata_memory_allocation"] = strata_allocation
     elif has_path:
         plan.update(_local_weight_evidence(local_path))
     if prefill_kernel is not None:
@@ -666,6 +679,9 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         if plan["runtime"] == "strata":
             config["strata_expert_memory_gb"] = plan.get("strata_expert_memory_gb")
             config["strata_context_tokens"] = plan.get("strata_context_tokens", 131072)
+            config["strata_speculation"] = plan.get("strata_speculation", False)
+            if "strata_memory_allocation" in plan:
+                config["strata_memory_allocation"] = plan["strata_memory_allocation"]
         config.update(model=plan["repo"] or plan["path"], control_token=secrets.token_hex(32),
                       memory_policy=plan.get("memory_policy"), config_path=str(config_path),
                       state_path=str(root.absolute() / "{}.jit-state.json".format(plan["port"])),
@@ -715,6 +731,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         receipt["decode_profile"] = plan["decode_profile"]
     if "vision_profile" in plan:
         receipt["vision_profile"] = plan["vision_profile"]
+    if "strata_memory_allocation" in plan:
+        receipt["strata_memory_allocation"] = plan["strata_memory_allocation"]
     content = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     _atomic_in_directory(root, receipt_path.name, content, 0o600)
     return {"status": "started", "receipt": receipt}
@@ -899,10 +917,13 @@ def unload_serve(port, receipts_dir=None, expected_pid=None):
 
 def configure_serve_memory(port, policy, receipts_dir=None, expected_pid=None):
     from .jit_serve import validate_memory_policy
+    clear_budget = isinstance(policy, dict) and "model_memory_budget_gb" in policy and policy["model_memory_budget_gb"] is None
     try:
         policy = validate_memory_policy(policy)
     except ValueError as error:
         raise ServeError("invalid_arguments", str(error), "Correct the memory policy.") from error
+    if clear_budget:
+        policy["model_memory_budget_gb"] = None
     # The gateway merges changes; replacements must also clear omitted options.
     return _configure_owned_jit(port, receipts_dir, expected_pid, "policy",
                                 dict({"context_tokens": None, "unload_under_pressure": False}, **policy))

@@ -46,12 +46,19 @@ def validate_memory_policy(policy=None):
     defaults = {"idle_timeout_seconds": 0, "keep_loaded": False, "minimum_headroom_gb": None}
     if policy is None:
         return defaults
-    if not isinstance(policy, dict) or set(policy) - set(defaults) - {"context_tokens", "unload_under_pressure"}:
+    if not isinstance(policy, dict) or set(policy) - set(defaults) - {"context_tokens", "unload_under_pressure", "model_memory_budget_gb"}:
         raise ValueError("Unknown memory policy fields.")
     result = dict(defaults, **policy)
     # Null and absent both mean no KV term; policies without a context keep their existing form.
     context = result.pop("context_tokens", None)
     pressure = result.pop("unload_under_pressure", False)
+    budget = result.pop("model_memory_budget_gb", None)
+    if budget is not None:
+        if type(budget) not in (int, float) or not math.isfinite(budget) or not 1 <= budget <= 1024:
+            raise ValueError("Model memory budget must be a finite value from 1 to 1024 GB.")
+        result["model_memory_budget_gb"] = budget
+        if result["minimum_headroom_gb"] is None:
+            result["minimum_headroom_gb"] = 2
     idle, keep, reserve = (result[key] for key in defaults)
     if type(idle) is not int or not 0 <= idle <= 86400:
         raise ValueError("Idle timeout must be an integer between 0 and 86400 seconds.")
@@ -150,6 +157,9 @@ class ModelWorker:
         self.last_activity = None
         self.activity_revision = 0
         self.policy_revision = 0
+        self.memory_budget_pending = False
+        self.strata_children = {}
+        self.owned_session = None
         self.clock = time.monotonic
         self.memory_probe = available_memory_bytes
 
@@ -166,13 +176,28 @@ class ModelWorker:
     def _refresh(self):
         if self.process and self.process.poll() is not None and self.model_state == "loaded":
             self.process = None
+            if self.config.get("runtime") == "strata":
+                from mlx_agent.process_tree import session_children
+                self.strata_children.update(session_children(self.owned_session))
+            if self.strata_children:
+                from mlx_agent.process_tree import remaining
+                try:
+                    self.strata_children = remaining(self.strata_children)
+                except (OSError, subprocess.SubprocessError):
+                    pass
+                if self.strata_children:
+                    self.model_state = "failed"
+                    self.last_error = "The Strata frontend exited while its engine may still be running."
+                    self._persist()
+                    return
             self.model_state = "unloaded"
+            self.memory_budget_pending = False
             self._persist()
 
     def status(self):
         with self.condition:
             self._refresh()
-            return {"model_state": self.model_state, "active_requests": self.active_requests,
+            result = {"model_state": self.model_state, "active_requests": self.active_requests,
                     "worker_pid": self.process.pid if self.process and self.process.poll() is None else None,
                     "worker_port": self.worker_port if self.model_state == "loaded" else None,
                     "last_error": self.last_error, "memory_policy": dict(self.memory_policy),
@@ -180,6 +205,15 @@ class ModelWorker:
                     "resident_memory_check": self.resident_memory_check,
                     "request_blocked_reason": self.request_blocked_reason,
                     "last_unload_reason": self.last_unload_reason}
+            if self.config.get("runtime") == "strata":
+                result.update(memory_allocation=self.config.get("strata_memory_allocation"),
+                              memory_budget_pending=self.memory_budget_pending)
+            return result
+
+    def _strata_speculation(self):
+        argv = self.config.get("worker_argv", [])
+        return self.config.get("strata_speculation", "--speculation" in argv
+                               and argv[argv.index("--speculation") + 1] == "on")
 
     def configure(self, changes):
         with self.condition:
@@ -189,7 +223,31 @@ class ModelWorker:
                 raise GatewayError(400, "invalid_policy", str(error)) from error
             if self.config.get("runtime") == "strata" and "context_tokens" in policy:
                 raise GatewayError(400, "invalid_policy", STRATA_CONTEXT)
+            if self.config.get("runtime") != "strata" and "model_memory_budget_gb" in policy:
+                raise GatewayError(400, "invalid_policy", "Model memory budgets currently require Strata.")
             config = dict(self.config, memory_policy=policy)
+            budget_changed = policy.get("model_memory_budget_gb") != self.memory_policy.get("model_memory_budget_gb")
+            if budget_changed:
+                if self.model_state in ("loading", "unloading"):
+                    raise GatewayError(409, "model_busy", "Finish the current model transition before changing its budget.")
+                from mlx_agent.strata_runtime import StrataError, read_model, memory_allocation
+                budget = policy.get("model_memory_budget_gb")
+                try:
+                    allocation = None if budget is None else memory_allocation(read_model(config["local_path"]), budget,
+                        config.get("strata_context_tokens", 131072), self._strata_speculation())
+                except StrataError as error:
+                    raise GatewayError(400, error.code, str(error)) from error
+                argv, old = [], iter(config["worker_argv"])
+                for value in old:
+                    if value in ("--memory-budget-gb", "--expert-memory-gb"):
+                        next(old)
+                    else:
+                        argv.append(value)
+                if budget is not None:
+                    argv += ["--memory-budget-gb", str(budget)]
+                elif config.get("strata_expert_memory_gb") is not None:
+                    argv += ["--expert-memory-gb", str(config["strata_expert_memory_gb"])]
+                config.update(worker_argv=argv, strata_memory_allocation=allocation)
             if config.get("config_path"):
                 path = Path(config["config_path"])
                 try:
@@ -200,6 +258,8 @@ class ModelWorker:
                     raise GatewayError(503, "policy_not_saved", str(error)) from error
             self.config.update(config)
             self.memory_policy = policy
+            if budget_changed and self.model_state == "loaded":
+                self.memory_budget_pending = True
             self.policy_revision += 1
             return self.status()
 
@@ -218,9 +278,14 @@ class ModelWorker:
         available = self.memory_probe()
         required = math.ceil(weights * 1.10 + kv + 1.5e9 + reserve * 1e9) if weights and kv is not None else None
         if self.config.get("runtime") == "strata":
-            from mlx_agent.strata_runtime import read_model, memory_estimate
-            required = math.ceil(memory_estimate(read_model(self.config["local_path"]),
-                self.config.get("strata_expert_memory_gb"), self.config.get("strata_context_tokens", 131072)) + reserve * 1e9)
+            from mlx_agent.strata_runtime import read_model, memory_estimate, memory_allocation
+            model = read_model(self.config["local_path"])
+            context = self.config.get("strata_context_tokens", 131072)
+            budget = self.memory_policy.get("model_memory_budget_gb")
+            size = (memory_allocation(model, budget, context, self._strata_speculation())["estimated_resident_bytes"]
+                    if budget is not None else memory_estimate(model, self.config.get("strata_expert_memory_gb"),
+                                                              context, self._strata_speculation()))
+            required = math.ceil(size + reserve * 1e9)
         with self.condition:
             self.memory_check = {"available_bytes": available, "required_available_bytes": required,
                                  "captured_at": time.time(), "estimated": True}
@@ -266,6 +331,8 @@ class ModelWorker:
             if self.closed:
                 raise GatewayError(503, "endpoint_stopping", "Endpoint is stopping.")
             self._refresh()
+            if self.memory_budget_pending:
+                raise GatewayError(503, "model_reconfiguring", "The model is applying a memory budget; retry when it is idle.")
             if self.active_requests >= MAX_REQUESTS:
                 raise GatewayError(503, "endpoint_busy", "Too many inference requests.")
             self.active_requests += 1
@@ -323,6 +390,11 @@ class ModelWorker:
 
     def _start(self):
         try:
+            if self.strata_children:
+                from mlx_agent.process_tree import remaining
+                self.strata_children = remaining(self.strata_children)
+                if self.strata_children:
+                    raise GatewayError(503, "model_unload_failed", "A previous Strata engine is still releasing memory.")
             if model_fingerprint(self.config["local_path"]) != self.config["fingerprint"]:
                 raise GatewayError(503, "model_changed", "Model files changed. Stop and review a fresh serve plan.")
             self._check_training_receipt()
@@ -364,6 +436,9 @@ class ModelWorker:
                 raise GatewayError(503, "model_changed", "Model files changed while loading.")
             self._check_training_receipt()
             self._check_adapter()
+            if self.config.get("runtime") == "strata":
+                from mlx_agent.process_tree import descendants
+                self.strata_children.update(descendants(process.pid))
             with self.condition:
                 if self.closed:
                     raise GatewayError(503, "endpoint_stopping", "Endpoint is stopping.")
@@ -371,15 +446,21 @@ class ModelWorker:
                 self._persist()
                 self.condition.notify_all()
         except BaseException as error:
-            self._stop_worker()
+            failure = error
+            try:
+                self._stop_worker()
+            except BaseException as cleanup_error:
+                failure = GatewayError(503, "model_unload_failed", str(cleanup_error))
             with self.condition:
                 self.model_state = "failed"
-                self.last_error = str(error)
+                self.last_error = str(failure)
                 self._persist()
                 self.condition.notify_all()
-            if isinstance(error, GatewayError):
-                raise
-            raise GatewayError(503, "model_load_failed", str(error)) from error
+            if isinstance(failure, GatewayError):
+                if failure is error:
+                    raise
+                raise failure from error
+            raise GatewayError(503, "model_load_failed", str(failure)) from failure
 
     def release(self):
         with self.condition:
@@ -392,13 +473,31 @@ class ModelWorker:
     def _stop_worker(self):
         with self.condition:
             process = self.process
+        if self.config.get("runtime") == "strata":
+            from mlx_agent.process_tree import session_children
+            self.strata_children.update(session_children(self.owned_session))
+        if self.config.get("runtime") == "strata" and process and process.poll() is None:
+            from mlx_agent.process_tree import descendants
+            self.strata_children.update(descendants(process.pid))
         if process and process.poll() is None:
             process.terminate()
             try:
-                process.wait(timeout=3)
+                # Strata's frontend closes its engine in three bounded 20-second stages.
+                process.wait(timeout=65 if self.config.get("runtime") == "strata" else 3)
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=3)
+        if self.strata_children or self.owned_session is not None:
+            from mlx_agent.process_tree import remaining, session_children, terminate
+            for _ in range(3):
+                # A launcher can exec or create the engine while the frontend is exiting.
+                self.strata_children.update(session_children(self.owned_session))
+                terminate(self.strata_children)
+                self.strata_children = remaining(session_children(self.owned_session))
+                if not self.strata_children:
+                    break
+            if self.strata_children:
+                raise OSError("The owned Strata session still has live engines; model reload is blocked.")
         with self.condition:
             self.process = None
             if self.log not in (None, subprocess.DEVNULL):
@@ -409,10 +508,11 @@ class ModelWorker:
         with self.condition:
             self._refresh()
             policy = dict(self.memory_policy)
-            if (self.closed or self.model_state != "loaded" or self.active_requests or policy["keep_loaded"]
-                    or self.last_activity is None):
+            budget_reload = self.memory_budget_pending
+            if (self.closed or self.model_state != "loaded" or self.active_requests
+                    or (not budget_reload and (policy["keep_loaded"] or self.last_activity is None))):
                 return False
-            idle = bool(policy["idle_timeout_seconds"] and
+            idle = budget_reload or bool(policy["idle_timeout_seconds"] and
                         self.clock() - self.last_activity >= policy["idle_timeout_seconds"])
             if idle:
                 self.model_state = "unloading"
@@ -431,7 +531,7 @@ class ModelWorker:
                 if error is None or error.code == "memory_unknown":
                     return False
                 self.model_state = "unloading"
-        self._finish_unload("idle" if idle else "memory_pressure")
+        self._finish_unload("memory_budget" if budget_reload else "idle" if idle else "memory_pressure")
         return True
 
     def unload(self):
@@ -449,6 +549,7 @@ class ModelWorker:
             self._stop_worker()
             with self.condition:
                 self.model_state = "unloaded"
+                self.memory_budget_pending = False
                 self.last_error = None
                 self.load_blocked_reason = None
                 self.last_unload_reason = reason
@@ -813,6 +914,11 @@ def main():
     if args.model != config["model"]:
         raise ValueError("JIT configuration identity changed.")
     server = make_server(config, args.port)
+    if config.get("runtime") == "strata":
+        if os.getpgrp() != os.getpid() or os.getsid(0) != os.getpid():
+            server.server_close()
+            raise ValueError("Launch Strata through serve start in its owned gateway session.")
+        server.controller.owned_session = os.getpid()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: threading.Thread(target=server.shutdown, daemon=True).start())
     try:

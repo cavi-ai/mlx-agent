@@ -974,13 +974,19 @@ def _add_serve_arguments(parser):
     policy.add_argument("--expected-pid", type=int, required=True)
     policy.add_argument("--receipts-dir", default=None)
     policy.add_argument("--json", action="store_true")
-    _add_memory_arguments(policy)
+    _add_memory_arguments(policy, clear_budget=True)
     status = actions.add_parser("status", help="cross-check serve receipts against live processes")
     status.add_argument("--receipts-dir", default=None)
     status.add_argument("--json", action="store_true")
 
 
-def _add_memory_arguments(parser):
+def _add_memory_arguments(parser, clear_budget=False):
+    budgets = parser.add_mutually_exclusive_group()
+    budgets.add_argument("--memory-budget-gb", type=float, default=None,
+                        help="Strata JIT estimated total model-memory allowance in GB; default reserve: 2 GB")
+    if clear_budget:
+        budgets.add_argument("--clear-memory-budget", action="store_true",
+                             help="remove the model budget after active requests finish")
     parser.add_argument("--idle-timeout", type=int, default=None, help="unload after this many idle seconds (0 disables)")
     parser.add_argument("--keep-loaded", action="store_true", help="prevent automatic idle unload after use")
     parser.add_argument("--unload-under-pressure", action="store_true",
@@ -993,6 +999,12 @@ def _add_memory_arguments(parser):
 def _memory_arguments(arguments):
     policy = {"idle_timeout_seconds": arguments.idle_timeout or 0, "keep_loaded": arguments.keep_loaded,
               "minimum_headroom_gb": arguments.min_headroom_gb}
+    if arguments.memory_budget_gb is not None:
+        policy["model_memory_budget_gb"] = arguments.memory_budget_gb
+    if getattr(arguments, "clear_memory_budget", False):
+        if arguments.memory_budget_gb is not None:
+            raise ValueError("Choose --memory-budget-gb or --clear-memory-budget.")
+        policy["model_memory_budget_gb"] = None
     if arguments.context_tokens is not None:
         policy["context_tokens"] = arguments.context_tokens
     if arguments.unload_under_pressure:
@@ -1057,7 +1069,8 @@ def _run_serve(arguments):
             memory_policy=_memory_arguments(arguments) if (arguments.idle_timeout is not None or arguments.keep_loaded
                                                            or arguments.min_headroom_gb is not None
                                                            or arguments.context_tokens is not None
-                                                           or arguments.unload_under_pressure) else None,
+                                                           or arguments.unload_under_pressure
+                                                           or arguments.memory_budget_gb is not None) else None,
             thinking=arguments.thinking,
             m5_prefill=arguments.m5_prefill,
             prompt_lookup=arguments.prompt_lookup,

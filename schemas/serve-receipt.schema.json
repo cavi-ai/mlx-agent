@@ -70,6 +70,17 @@
       },
       "additionalProperties": false
     },
+    "strata_memory_allocation": {
+      "type": "object",
+      "required": ["budget_bytes", "estimated_resident_bytes", "expert_memory_gb", "mode"],
+      "properties": {
+        "budget_bytes": { "type": "integer", "minimum": 1000000000 },
+        "estimated_resident_bytes": { "type": "integer", "minimum": 1 },
+        "expert_memory_gb": { "type": ["number", "null"], "minimum": 0.5, "maximum": 64 },
+        "mode": { "enum": ["resident", "paged"] }
+      },
+      "additionalProperties": false
+    },
     "vision_profile": {
       "type": "object",
       "required": ["name", "fingerprint", "runtime_executable", "runtime_python", "versions", "runtime_sources", "sources", "max_bytes", "max_entries", "adapter_enabled"],

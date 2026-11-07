@@ -14,11 +14,17 @@ else:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from _vision_cache import MAX_BYTES, MAX_ENTRIES
 
-VERSIONS = {"mlx": "0.32.3", "mlx-metal": "0.32.3", "mlx-lm": "0.32.2", "mlx-vlm": "0.7.4", "numpy": "2.5.3"}
+VERSIONS = {"mlx": "0.32.3", "mlx-metal": "0.32.3", "mlx-lm": "0.32.2", "mlx-vlm": "0.7.4",
+            "numpy": "2.5.3", "transformers": "5.18.0"}
 UPSTREAM_SOURCES = {
     "server/generation.py": "c9b7a5468d4cc2660458792f4829f711f02c3c357125c29fbe78a46f881396d4",
     "models/qwen2_5_vl/qwen2_5_vl.py": "5f0c0f5928e248cb14746b59f961bb9b51181536130007db9065da065b331e13",
     "models/qwen2_5_vl/vision.py": "ba936643eb9c468a25afb56eedf5c624d86c9065e43d68fcfa3fa7a790ded83f",
+    "models/qwen3_vl/qwen3_vl.py": "12f0393421918eb1cbaa6daa447d93a405762e997f688676688e5c71d987d3ee",
+    "models/qwen3_vl/vision.py": "664adc00fd0aec192a2a33c52d026f36873f3baab53044bc79660d4072b34afb",
+    "models/qwen3_vl/processing_qwen3_vl.py": "8f8acffe91739016a8829217e8745d66141a37b73a2fd646c3989cef05db855b",
+    "models/qwen3_vl_moe/qwen3_vl_moe.py": "92c0254ce3049899c714d12eb74ef94b67a7c4b77d0d6f6aaa5bd0b88e1b9fd5",
+    "models/qwen3_vl_moe/vision.py": "51ac5a6a3241c5b59b575a680878a5b6115db21e7bf53c768909c7f28d508c1c",
 }
 
 

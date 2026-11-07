@@ -81,18 +81,22 @@ same fingerprint before loading. No runtime source or model code is downloaded.
 
 ## Repeated-image acceleration
 
-Add `--vision-cache` to both preview and confirmation to reuse Qwen2.5-VL image
-features across questions about the same image. It uses the installed MLX-VLM
-0.7.4 backend with MLX/MLX-metal 0.32.3, MLX-LM 0.32.2 and NumPy 2.5.3.
+Add `--vision-cache` to both preview and confirmation to reuse Qwen2.5-VL and
+Qwen3-VL image features across questions about the same image, including dense
+and MoE Qwen3-VL models.
+It preserves all DeepStack features and uses the installed MLX-VLM
+0.7.4 backend with MLX/MLX-metal 0.32.3, MLX-LM 0.32.2, NumPy 2.5.3 and
+Transformers 5.18.0.
 The image encoder and model processor keep their native calculations and
 resolution; text embeddings, position data, KV caches and generation remain
 request-specific.
 
-The cache holds at most 20 entries and 128 MiB of feature tensor data in worker
-memory. Unloading the worker releases it; no image or cache files are written.
+The cache holds at most 20 entries and 128 MiB of feature tensor data, including
+DeepStack tensors, in worker memory. Unloading the worker releases it; no image
+or cache files are written.
 Keys include processed pixel content, dtype, shape and image layout, so changing
 an image at the same URL cannot reuse stale features. Unsupported models,
-videos, training and adapters retain native processing.
+training and adapters retain native processing.
 
 The preview, receipt and status record `vision_profile`. Its fingerprint binds
 the adapter and installed runtime sources. Changed source or dependencies require

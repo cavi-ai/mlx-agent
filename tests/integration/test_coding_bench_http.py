@@ -1,5 +1,6 @@
 """Exercise the coding workload through MCP stdio and real loopback SSE."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -54,12 +55,16 @@ class CodingHTTPTests(unittest.TestCase):
             self.assertFalse(tool["stdout_truncated"])
             result = json.loads(tool["stdout"])["data"]
             self.assertTrue(result["quality_passed"])
+            self.assertEqual(result["gen_tokens"], 512)
             self.assertEqual([t["cached_tokens"] for t in result["turns"]], [0, 100, 200])
             self.assertEqual(len(requests), 3)
             self.assertEqual(requests[1]["messages"][-1]["role"], "tool")
             self.assertEqual(requests[2]["messages"][-2]["content"], first)
             self.assertTrue(json.loads(requests[2]["messages"][-1]["content"])["test_results"]["passed"])
             self.assertTrue(all(r["seed"] == 0 and r["temperature"] == 0 for r in requests))
+            for turn, request in zip(result["turns"], requests):
+                digest = hashlib.sha256(json.dumps(request, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+                self.assertEqual(turn["request_sha256"], digest)
         finally:
             server.shutdown()
             server.server_close()

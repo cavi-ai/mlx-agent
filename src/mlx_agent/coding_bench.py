@@ -11,9 +11,10 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import closing
 
 from .bench import BenchError, _measurement_timeout, _safe_error, _stream_event_usage
-from .verification import _is_installed, installed_model_ids
+from .verification import _chat_request_payload, _is_installed, installed_model_ids
 
 
 BASE_SOURCE = "def clamp(value, lower, upper):\n    return min(value, upper)\n"
@@ -37,37 +38,38 @@ payload = json.load(sys.stdin)
 namespace = {'__builtins__': {'min': min, 'max': max, 'ValueError': ValueError}}
 cases = [((-2, 0, 5), 0), ((10, 0, 5), 5), ((2, 0, 5), 2),
          ((-10, -5, -2), -5), ((20, 3, 3), 3), ((0, -2, 2), 0)]
-passed = 0
+results = []
 try:
     exec(compile(payload['source'], '<coding-workload>', 'exec'), namespace)
-    for args, expected in cases:
-        try:
-            passed += namespace['clamp'](*args) == expected
-        except Exception:
-            pass
     if payload['reversed_bounds']:
-        for args in ((1, 5, 0), (0, 2, -2)):
-            try:
-                namespace['clamp'](*args)
-            except ValueError:
-                passed += 1
-            except Exception:
-                pass
+        cases += [((1, 5, 0), 'ValueError'), ((0, 2, -2), 'ValueError')]
+    for args, expected in cases:
+        actual, error = None, None
+        try:
+            value = namespace['clamp'](*args)
+            actual = value if type(value) in (int, float, str, bool, type(None)) else {'type': type(value).__name__}
+        except Exception as exception:
+            error = type(exception).__name__
+        success = error == 'ValueError' if expected == 'ValueError' else error is None and actual == expected
+        results.append({'arguments': args, 'expected': expected, 'actual': actual, 'error': error, 'passed': success})
 except Exception:
     pass
-total = len(cases) + (2 if payload['reversed_bounds'] else 0)
+total = 8 if payload['reversed_bounds'] else 6
+passed = sum(case['passed'] for case in results)
 print(json.dumps({'passed': passed == total, 'cases_passed': passed, 'cases_total': total,
-                  'reason': 'valid' if passed == total else 'wrong_answer'}))
+                  'cases': results, 'reason': 'valid' if passed == total else 'wrong_answer'}))
 '''
 
 
-def check_edit(content, reversed_bounds=False):
+def check_edit(content, reversed_bounds=False, timeout=3):
     """Run only the fixed, restricted single-function micro-workload.
 
     This grammar and child process are not a general Python sandbox.
     """
     rejected = {"passed": False, "reason": "unsupported_code", "cases_passed": 0,
-                "cases_total": 8 if reversed_bounds else 6}
+                "cases_total": 8 if reversed_bounds else 6, "cases": []}
+    if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0:
+        return dict(rejected, reason="check_timeout")
     if not isinstance(content, str) or len(content) > 4000:
         return rejected
     source = content.strip()
@@ -104,7 +106,7 @@ def check_edit(content, reversed_bounds=False):
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run([sys.executable, "-I", "-S", "-c", _CHECK],
                 input=json.dumps({"source": source, "reversed_bounds": bool(reversed_bounds)}),
-                capture_output=True, text=True, cwd=directory, env={}, timeout=3, start_new_session=True)
+                capture_output=True, text=True, cwd=directory, env={}, timeout=min(3, timeout), start_new_session=True)
         if result.returncode == 0:
             return json.loads(result.stdout)
     except (OSError, ValueError, subprocess.TimeoutExpired):
@@ -122,45 +124,49 @@ def _chat(repo, runtime, messages, tools, gen_tokens, deadline, clock):
         raise _measurement_timeout()
     chunks, calls, usage, progress = [], {}, {}, []
     first = None
-    for event in runtime.stream_chat(repo, messages, gen_tokens, timeout=deadline - started,
-            tools=tools, temperature=0, seed=0, include_progress=True):
-        observed = clock()
-        if observed > deadline:
-            raise _measurement_timeout()
-        if not isinstance(event, dict):
-            continue
-        if "prompt_progress" in event:
-            progress.append(event["prompt_progress"])
-        usage.update(_stream_event_usage(event))
-        choices = event.get("choices")
-        delta = choices[0].get("delta", {}) if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
-        if not isinstance(delta, dict):
-            continue
-        text = delta.get("content")
-        tools_delta = delta.get("tool_calls") or []
-        if not isinstance(tools_delta, list) or any(not isinstance(item, dict) for item in tools_delta):
-            raise BenchError("invalid_response", "The runtime returned malformed tool calls.", "Inspect the runtime response.")
-        if text or tools_delta:
-            first = observed if first is None else first
-        if isinstance(text, str):
-            chunks.append(text)
-        for item in tools_delta:
-            index = item.get("index", 0)
-            if type(index) is not int or not 0 <= index < 8:
-                raise BenchError("invalid_response", "The runtime returned an invalid tool-call index.", "Inspect the runtime response.")
-            call = calls.setdefault(index, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
-            function = item.get("function") or {}
-            if not isinstance(function, dict):
-                raise BenchError("invalid_response", "The runtime returned a malformed function call.", "Inspect the runtime response.")
-            for destination, key, value in ((call, "id", item.get("id")),
-                    (call["function"], "name", function.get("name")),
-                    (call["function"], "arguments", function.get("arguments"))):
-                if isinstance(value, str):
-                    destination[key] += value
-                    if len(destination[key]) > 4000:
-                        raise BenchError("invalid_response", "The tool response exceeds the workload bound.", "Use the fixed workload output format.")
-        if sum(map(len, chunks)) > 8000:
-            raise BenchError("invalid_response", "The coding response exceeds its size bound.", "Use a smaller output-token limit.")
+    native_progress = runtime.name == "mlx_lm"
+    with closing(runtime.stream_chat(repo, messages, gen_tokens, timeout=deadline - started,
+            tools=tools, temperature=0, seed=0, include_progress=native_progress)) as stream:
+        for event in stream:
+            observed = clock()
+            if observed > deadline:
+                raise _measurement_timeout()
+            if not isinstance(event, dict):
+                continue
+            if native_progress and "prompt_progress" in event:
+                progress.append(event["prompt_progress"])
+            usage.update(_stream_event_usage(event))
+            choices = event.get("choices")
+            delta = choices[0].get("delta", {}) if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
+            if not isinstance(delta, dict):
+                continue
+            text = delta.get("content")
+            tools_delta = delta.get("tool_calls") or []
+            if not isinstance(tools_delta, list) or any(not isinstance(item, dict) for item in tools_delta):
+                raise BenchError("invalid_response", "The runtime returned malformed tool calls.", "Inspect the runtime response.")
+            if text or tools_delta:
+                first = observed if first is None else first
+            if isinstance(text, str):
+                chunks.append(text)
+            for item in tools_delta:
+                if "type" in item and item["type"] != "function":
+                    raise BenchError("invalid_response", "The runtime returned an invalid tool-call type.", "Use a function-calling runtime.")
+                index = item.get("index", 0)
+                if type(index) is not int or not 0 <= index < 8:
+                    raise BenchError("invalid_response", "The runtime returned an invalid tool-call index.", "Inspect the runtime response.")
+                call = calls.setdefault(index, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                function = item.get("function") or {}
+                if not isinstance(function, dict):
+                    raise BenchError("invalid_response", "The runtime returned a malformed function call.", "Inspect the runtime response.")
+                for destination, key, value in ((call, "id", item.get("id")),
+                        (call["function"], "name", function.get("name")),
+                        (call["function"], "arguments", function.get("arguments"))):
+                    if isinstance(value, str):
+                        destination[key] += value
+                        if len(destination[key]) > 4000:
+                            raise BenchError("invalid_response", "The tool response exceeds the workload bound.", "Use the fixed workload output format.")
+            if sum(map(len, chunks)) > 8000:
+                raise BenchError("invalid_response", "The coding response exceeds its size bound.", "Use a smaller output-token limit.")
     finished = clock()
     if finished > deadline:
         raise _measurement_timeout()
@@ -184,7 +190,7 @@ def _chat(repo, runtime, messages, tools, gen_tokens, deadline, clock):
                "first_response_ms": round((first - started) * 1000, 1) if first is not None else None,
                "prompt_tokens": prompt, "completion_tokens": usage.get("completion_tokens"),
                "cached_tokens": cached, "cache_source": cache_source,
-               "request_sha256": _digest({"messages": messages, "tools": tools}),
+               "request_sha256": _digest(_chat_request_payload(repo, messages, gen_tokens, tools)),
                "response_sha256": _digest(response)}
     return response, summary
 
@@ -226,14 +232,24 @@ def run_coding_workload(repo, runtime, gen_tokens=512, timeout=180, clock=time.m
             raise BenchError("measurement_failed", "The coding request failed: " + _safe_error(error),
                              "Confirm the model supports streaming chat and tools.") from error
         turns.append(dict(summary, name=name))
-        transcript.append({"messages": json.loads(json.dumps(messages)), "response": response})
+        transcript.append({"request": json.loads(json.dumps(_chat_request_payload(repo, messages, gen_tokens, tools))),
+                           "response": response})
         return response
 
     def result(reason):
         return {"workload": "coding-edit-v1", "repo": repo, "runtime": runtime.name,
-                "quality_passed": reason == "valid", "reason": reason, "turns": turns,
+                "quality_passed": reason == "valid", "reason": reason, "turns": turns, "gen_tokens": gen_tokens,
                 "elapsed_ms": round((clock() - started) * 1000, 1),
                 "sampling": {"temperature": 0, "seed": 0}, "transcript": transcript}
+
+    def evaluate(content, reversed_bounds=False):
+        remaining = deadline - clock()
+        if remaining <= 0:
+            raise _measurement_timeout()
+        quality = check_edit(content, reversed_bounds=reversed_bounds, timeout=remaining)
+        if clock() > deadline:
+            raise _measurement_timeout()
+        return quality
 
     response = request("read_file")
     calls = response.get("tool_calls", [])
@@ -250,14 +266,14 @@ def run_coding_workload(repo, runtime, gen_tokens=512, timeout=180, clock=time.m
     response = request("first_edit")
     if response.get("tool_calls"):
         return result("unexpected_tool_call")
-    quality = check_edit(response["content"])
+    quality = evaluate(response["content"])
     turns[-1]["quality"] = quality
     messages.extend([response, {"role": "user", "content": json.dumps({"test_results": quality,
         "request": "Now also raise ValueError when lower > upper, preserving all passing boundary cases. Return only the complete function."})}])
     response = request("followup_edit")
     if response.get("tool_calls"):
         return result("unexpected_tool_call")
-    turns[-1]["quality"] = check_edit(response["content"], reversed_bounds=True)
+    turns[-1]["quality"] = evaluate(response["content"], reversed_bounds=True)
     if clock() > deadline:
         raise _measurement_timeout()
     return result("valid" if quality["passed"] and turns[-1]["quality"]["passed"] else "wrong_answer")

@@ -482,7 +482,7 @@
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
-      "sha256": "7876e44e13a0d9ffec326ba8d44e075a8dede972ac40417005cf486ae17598d6"
+      "sha256": "5914eee89c34616c5a2dd6c83ee7411bf85e7eb08041cafe0127cc4dfe0fc78c"
     },
     {
       "path": "src/mlx_agent/coding_capture.py",
@@ -1138,7 +1138,7 @@
     },
     {
       "path": "src/mlx_agent/verification.py",
-      "sha256": "91b119bfa419074ebd171c1d64cc935879de8f562afdb8323c828c972d6a8eb0"
+      "sha256": "f81493c124034e8a9df2ccac7b4893a0aba25313e3458514c0012430ce37a960"
     },
     {
       "path": "src/mlx_agent/video.py",

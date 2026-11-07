@@ -67,6 +67,17 @@ class EditQualityTests(unittest.TestCase):
         result = check_edit(SECOND, reversed_bounds=True)
         self.assertTrue(result["passed"])
         self.assertEqual(result["cases_passed"], result["cases_total"])
+        self.assertEqual(len(result["cases"]), 8)
+        self.assertTrue(all(case["passed"] for case in result["cases"]))
+        wrong = check_edit("def clamp(value, lower, upper):\n    return upper")
+        failure = next(case for case in wrong["cases"] if not case["passed"])
+        self.assertEqual(failure["arguments"], [-2, 0, 5])
+        self.assertEqual((failure["actual"], failure["expected"]), (5, 0))
+
+    def test_child_checker_uses_the_remaining_deadline(self):
+        with patch("mlx_agent.coding_bench.subprocess.run", side_effect=TimeoutError()) as run:
+            check_edit(FIRST, timeout=0.25)
+        self.assertEqual(run.call_args.kwargs["timeout"], 0.25)
 
     def test_unsupported_code_is_rejected_before_execution(self):
         sources = ["import os\n" + FIRST,
@@ -135,6 +146,38 @@ class CodingWorkloadTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "measurement_timeout")
         self.assertLessEqual(len(runtime.requests), 2)
 
+    def test_deadline_explicitly_closes_a_retained_transport_stream(self):
+        clock = Clock()
+        class RetainedStream(ChatRuntime):
+            closed = False
+            def stream_chat(self, *args, **kwargs):
+                def events():
+                    try:
+                        yield from super(RetainedStream, self).stream_chat(*args, **kwargs)
+                    finally:
+                        self.closed = True
+                self.retained = events()
+                return self.retained
+        runtime = RetainedStream(clock)
+        try:
+            with self.assertRaises(BenchError):
+                run_coding_workload("org/model", runtime, timeout=0.05, clock=clock)
+            self.assertTrue(runtime.closed)
+        finally:
+            runtime.retained.close()
+
+    def test_correctness_checks_share_the_same_deadline(self):
+        clock = Clock()
+        runtime = ChatRuntime(clock)
+        def slow_check(*args, **kwargs):
+            self.assertLessEqual(kwargs["timeout"], 0.4 + 1e-9)
+            clock.value += 2
+            return {"passed": True}
+        with patch("mlx_agent.coding_bench.check_edit", side_effect=slow_check), self.assertRaises(BenchError) as caught:
+            run_coding_workload("org/model", runtime, timeout=1, clock=clock)
+        self.assertEqual(caught.exception.code, "measurement_timeout")
+        self.assertEqual(len(runtime.requests), 2)
+
     def test_bad_progress_does_not_manufacture_cache_hits(self):
         class BadProgress(ChatRuntime):
             def stream_chat(self, *args, **kwargs):
@@ -154,6 +197,25 @@ class CodingWorkloadTests(unittest.TestCase):
             with patch.object(runtime, method, side_effect=error), self.assertRaises(BenchError) as caught:
                 run_coding_workload("org/model", runtime)
             self.assertEqual(caught.exception.code, code)
+
+    def test_generic_runtime_comments_do_not_establish_mlx_cache_provenance(self):
+        runtime = ChatRuntime(Clock())
+        runtime.name = "lmstudio"
+        result = run_coding_workload("org/model", runtime)
+        self.assertTrue(result["quality_passed"])
+        self.assertTrue(all(t["cached_tokens"] is None and t["cache_source"] is None for t in result["turns"]))
+        self.assertTrue(all(not r["include_progress"] for r in runtime.requests))
+
+    def test_invalid_tool_call_type_is_rejected_without_normalization(self):
+        class BadType(ChatRuntime):
+            def stream_chat(self, *args, **kwargs):
+                for event in super().stream_chat(*args, **kwargs):
+                    if event.get("choices") and event["choices"][0]["delta"].get("tool_calls"):
+                        event["choices"][0]["delta"]["tool_calls"][0]["type"] = "not_function"
+                    yield event
+        with self.assertRaises(BenchError) as caught:
+            run_coding_workload("org/model", BadType(Clock()))
+        self.assertEqual(caught.exception.code, "invalid_response")
 
 
 class CodingTransportTests(unittest.TestCase):

@@ -721,6 +721,15 @@ class OllamaRuntimeClient:
         )
 
 
+def _chat_request_payload(model, messages, max_tokens, tools=None, temperature=0, seed=0):
+    payload = {"model": model, "messages": messages, "max_tokens": max_tokens,
+               "stream": True, "stream_options": {"include_usage": True},
+               "temperature": temperature, "seed": seed}
+    if tools:
+        payload["tools"] = tools
+    return payload
+
+
 class OpenAICompatibleRuntimeClient:
     """Bounded adapter for an existing local OpenAI-compatible runtime."""
 
@@ -779,11 +788,7 @@ class OpenAICompatibleRuntimeClient:
 
     def stream_chat(self, model, messages, max_tokens, timeout=120.0, tools=None,
                     temperature=0, seed=0, include_progress=False):
-        payload = {"model": model, "messages": messages, "max_tokens": max_tokens,
-                   "stream": True, "stream_options": {"include_usage": True},
-                   "temperature": temperature, "seed": seed}
-        if tools:
-            payload["tools"] = tools
+        payload = _chat_request_payload(model, messages, max_tokens, tools, temperature, seed)
         return _http_event_stream("{0}/v1/chat/completions".format(self._base_url), payload,
                                   timeout=timeout, include_progress=include_progress)
 

@@ -100,6 +100,31 @@ def _dictionary_hashmap():
                                                       hashmap_lookup_3d_cuda=lookup)
 
 
+def _uncalled_mesh_backends():
+    """The reference mesh and texture modules import these at load time; decoding never calls them."""
+    def unavailable(*args, **kwargs):
+        raise NotImplementedError("reference operation outside the parity suite")
+
+    def absent(name):
+        def attribute(key):
+            if key.startswith("__"):
+                raise AttributeError(key)
+            return unavailable
+
+        module = types.ModuleType(name)
+        module.__getattr__ = attribute
+        return module
+
+    for name in ("cumesh", "trimesh"):
+        if name not in sys.modules and importlib.util.find_spec(name) is None:
+            sys.modules[name] = absent(name)
+            if name == "trimesh":
+                sys.modules["trimesh.visual"] = sys.modules[name].visual = absent("trimesh.visual")
+    grid_sample = types.SimpleNamespace(grid_sample_3d=unavailable)
+    sys.modules["flex_gemm"].ops.grid_sample = grid_sample
+    sys.modules["flex_gemm.ops.grid_sample"] = grid_sample
+
+
 def use_upstream():
     os.environ["ATTN_BACKEND"] = "sdpa"
     os.environ["SPARSE_ATTN_BACKEND"] = "xformers"
@@ -110,6 +135,7 @@ def use_upstream():
     _dense_conv_backend()
     _dense_attention_backend()
     _dictionary_hashmap()
+    _uncalled_mesh_backends()
 
     class EasyDict(dict):
         __getattr__ = dict.__getitem__

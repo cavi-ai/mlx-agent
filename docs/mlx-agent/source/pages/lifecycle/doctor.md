@@ -21,3 +21,9 @@ python3 scripts/mlx-agent doctor models --prune --confirm --preview-hash <hash>
 ```
 
 Prune deletes only incomplete cache snapshots. The preview names every candidate directory and its size and marks the deletion as irreversible; execution requires the matching preview hash and re-verifies containment inside the cache at delete time.
+
+## Limit inventory checks
+
+Pass `--wired-root` for each configuration file or project to inspect. Use
+`--hf-cache PATH` for a selected cache, or `--no-hf-cache` to check configurations
+without reading a model cache. Cache pruning is unavailable with `--no-hf-cache`.

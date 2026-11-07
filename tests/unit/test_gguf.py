@@ -210,6 +210,13 @@ class DescribeTests(unittest.TestCase):
 
 
 class ScanTests(unittest.TestCase):
+    def test_weight_symlink_cannot_escape_selected_root(self):
+        selected = self.root / 'selected'; selected.mkdir()
+        outside = write_gguf(self.root / 'excluded' / 'model.gguf')
+        (selected / 'model.gguf').symlink_to(outside)
+        self.assertEqual(scan_gguf([selected]), [])
+
+
     def setUp(self):
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -515,6 +522,15 @@ class OllamaTests(unittest.TestCase):
 
 
 class InventoryTests(unittest.TestCase):
+    def test_missing_root_is_reported_without_losing_healthy_inventory(self):
+        selected = self.root / 'selected'
+        write_gguf(selected / 'model.gguf')
+        missing = self.root / 'missing'
+        result = inventory([missing, selected])
+        self.assertEqual(len(result['models']), 1)
+        self.assertEqual(result['root_errors'][0]['path'], str(missing))
+
+
     def setUp(self):
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

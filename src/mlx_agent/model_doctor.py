@@ -300,7 +300,7 @@ def check_endpoint(endpoint, timeout=_HEALTH_TIMEOUT):
 def run_model_doctor(wired_roots, hf_cache, runtime_clients):
     """Run every read-only check and return the doctor report."""
     wired_roots = [Path(root) for root in wired_roots]
-    inventory = inspect_hf_cache(hf_cache)
+    inventory = inspect_hf_cache(hf_cache) if hf_cache is not None else []
     runtime_inventory, runtime_errors = collect_runtime_inventory(runtime_clients)
     inventory.extend(runtime_inventory)
     known_ids = {item["id"].casefold() for item in inventory}

@@ -442,6 +442,33 @@ class StartServeTests(unittest.TestCase):
 
 
 class StatusAndStopTests(unittest.TestCase):
+    def test_symlinked_receipt_is_not_an_owned_service(self):
+        self._start_one()
+        receipt = self.root / '.mlx-agent-receipts/serve/8080.json'
+        outside = self.root / 'outside.json'; outside.write_bytes(receipt.read_bytes())
+        receipt.unlink(); receipt.symlink_to(outside)
+        self.assertEqual(status_serve(str(self.root), pid_alive=lambda _: True, pid_command=lambda _: self._COMMAND), [])
+
+
+    def test_same_pid_with_a_different_start_identity_refuses_stop(self):
+        self._start_one()
+        from unittest.mock import patch
+        with patch('mlx_agent.serve._pid_start', return_value='new-start'):
+            with self.assertRaises(ServeError) as caught:
+                stop_serve(8080, str(self.root), expected_pid=4242, expected_start='old-start')
+        self.assertEqual(caught.exception.code, 'server_changed')
+
+    def test_selected_process_replacement_refuses_stop_without_signalling(self):
+        self._start_one()
+        calls = []
+        with self.assertRaises(ServeError) as caught:
+            stop_serve(8080, str(self.root), expected_pid=99, pid_alive=lambda pid: True,
+                       terminate=lambda *args: calls.append(args))
+        self.assertEqual(caught.exception.code, 'server_changed')
+        self.assertEqual(calls, [])
+        self.assertTrue((self.root / '.mlx-agent-receipts/serve/8080.json').exists())
+
+
     def setUp(self):
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

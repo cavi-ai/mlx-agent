@@ -2,21 +2,253 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/cavi-ai/mlx-agent/schemas/bench-export.schema.json",
   "title": "mlx-agent bench export record",
-  "type": "object",
-  "required": [
-    "schema_version", "repo", "chip", "runtime", "ttft_ms", "decode_toks",
-    "prefill_toks", "measured_at", "tool_version"
+  "oneOf": [
+    {
+      "$ref": "#/$defs/legacy"
+    },
+    {
+      "$ref": "#/$defs/current"
+    }
   ],
-  "properties": {
-    "schema_version": { "const": "1.0" },
-    "repo": { "type": "string", "minLength": 1, "maxLength": 300 },
-    "chip": { "type": "string", "minLength": 1, "maxLength": 120 },
-    "runtime": { "type": "string", "minLength": 1 },
-    "ttft_ms": { "type": ["number", "null"], "minimum": 0, "maximum": 1000000000 },
-    "decode_toks": { "type": "number", "minimum": 0, "maximum": 1000000000 },
-    "prefill_toks": { "type": ["number", "null"], "minimum": 0, "maximum": 1000000000 },
-    "measured_at": { "type": "string", "format": "date-time" },
-    "tool_version": { "type": "string", "minLength": 1 }
-  },
-  "additionalProperties": false
+  "$defs": {
+    "legacy": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "repo",
+        "chip",
+        "runtime",
+        "ttft_ms",
+        "decode_toks",
+        "prefill_toks",
+        "measured_at",
+        "tool_version"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "repo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "chip": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "runtime": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ttft_ms": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "decode_toks": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "prefill_toks": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "measured_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "tool_version": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "current": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "repo",
+        "chip",
+        "runtime",
+        "ttft_ms",
+        "decode_toks",
+        "prefill_toks",
+        "measured_at",
+        "tool_version",
+        "probe_id",
+        "measurement_method",
+        "gen_tokens",
+        "prompt_tokens",
+        "end_to_end_toks"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "2.0"
+        },
+        "repo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "chip": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "runtime": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ttft_ms": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "decode_toks": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "prefill_toks": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "measured_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "tool_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "probe_id": {
+          "const": "bench-v2"
+        },
+        "measurement_method": {
+          "enum": [
+            "server_timings",
+            "client_wall_clock",
+            "latency_only",
+            "mixed"
+          ]
+        },
+        "gen_tokens": {
+          "type": "integer",
+          "minimum": 16,
+          "maximum": 2048
+        },
+        "prompt_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "end_to_end_toks": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000000
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "measurement_method": {
+                "const": "server_timings"
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              {
+                "properties": {
+                  "decode_toks": {
+                    "type": "number"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "prefill_toks": {
+                    "type": "number"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "measurement_method": {
+                "const": "client_wall_clock"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "decode_toks": {
+                "type": "null"
+              },
+              "prefill_toks": {
+                "type": "null"
+              },
+              "end_to_end_toks": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "measurement_method": {
+                "const": "latency_only"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "decode_toks": {
+                "type": "null"
+              },
+              "prefill_toks": {
+                "type": "null"
+              },
+              "end_to_end_toks": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
 }

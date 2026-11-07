@@ -1,7 +1,6 @@
 import io
 import json
 import tempfile
-import types
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -9,12 +8,14 @@ from unittest.mock import patch
 
 from mlx_agent import __version__, cli
 from mlx_agent.bench import BenchError
+from mlx_agent.host import HostInventory
+from tests.unit.test_bench import FakeStreamingRuntime
 
 
 def run(argv, inspect=None):
     output = io.StringIO()
     with redirect_stdout(output), patch("mlx_agent.host.HostInventory.inspect", side_effect=inspect,
-                                        return_value=types.SimpleNamespace(chip="Apple M4")):
+                                        return_value=(HostInventory(chip="Apple M4"), [])):
         code = cli.main(argv)
     return code, output.getvalue()
 
@@ -27,8 +28,10 @@ class _Evidence:
 class _Measurement:
     repo, runtime, runs, decode_toks, spread_pct = "org/model", "mlx_lm", 3, 41.5, 2.0
 
-    def __init__(self, ttft_ms=None, prefill_toks=None):
+    def __init__(self, ttft_ms=None, prefill_toks=None, end_to_end_toks=None):
         self.ttft_ms, self.prefill_toks = ttft_ms, prefill_toks
+        self.end_to_end_toks = end_to_end_toks
+        self.measurement_method = "server_timings"
 
     def to_dict(self):
         return {"repo": self.repo, "decode_toks": self.decode_toks}
@@ -39,6 +42,23 @@ class _Measurement:
 
 
 class BenchCliTests(unittest.TestCase):
+    def test_real_host_inventory_contract_reaches_the_exported_chip(self):
+        def sysctl(command, **kwargs):
+            return "Apple M4" if command[-1] == "machdep.cpu.brand_string" else b"8589934592"
+
+        runtime = FakeStreamingRuntime(["org/model"], include_ollama_usage=True)
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory, redirect_stdout(output), \
+                patch("mlx_agent.host.subprocess.check_output", side_effect=sysctl), \
+                patch("mlx_agent.verification._http_json_get", return_value={}), \
+                patch("mlx_agent.cli._bench_runtime_client", return_value=runtime):
+            destination = Path(directory) / "export.jsonl"
+            code = cli.main(["bench", "run", "--repo", "org/model", "--runtime", "ollama",
+                             "--runs", "1", "--export", str(destination), "--json"])
+            self.assertEqual(code, 0, output.getvalue())
+            self.assertEqual(json.loads(output.getvalue())["data"]["measurement"]["chip"], "Apple M4")
+            self.assertEqual(json.loads(destination.read_text())["chip"], "Apple M4")
+
     def test_runtime_clients_cover_every_supported_runtime(self):
         for name in cli._BENCH_RUNTIMES:
             with self.subTest(name=name):
@@ -58,11 +78,24 @@ class BenchCliTests(unittest.TestCase):
             self.assertEqual("coding", measurement.role)
             code, text = run(["bench", "run", "--repo", "org/model", "--runtime", "mlx_lm"])
         self.assertEqual(["Bench: org/model on mlx_lm (3 runs)", "  decode:  41.5 tok/s (spread 2.0%)",
-                          "  ttft:    120 ms", "  prefill: 900.0 tok/s"], text.strip().splitlines())
+                          "  ttft:    120 ms", "  prefill: 900.0 tok/s", "  end-to-end: n/a",
+                          "  method:  server_timings"], text.strip().splitlines())
         with patch("mlx_agent.bench.measure_runtime", return_value=_Measurement()):
             text = run(["bench", "run", "--repo", "org/model", "--runtime", "ollama"])[1]
         self.assertIn("  ttft:    n/a", text)
         self.assertIn("  prefill: n/a", text)
+
+    def test_run_distinguishes_wall_clock_throughput_from_unavailable_decode(self):
+        measurement = _Measurement(ttft_ms=250, end_to_end_toks=12.5)
+        measurement.decode_toks = measurement.spread_pct = None
+        measurement.measurement_method = "client_wall_clock"
+        with patch("mlx_agent.bench.measure_runtime", return_value=measurement):
+            code, text = run(["bench", "run", "--repo", "org/model", "--runtime", "mlx_lm"])
+        self.assertEqual(code, 0)
+        self.assertIn("  decode:  n/a", text)
+        self.assertIn("  end-to-end: 12.5 tok/s", text)
+        self.assertIn("  method:  client_wall_clock", text)
+        self.assertNotIn("None tok/s", text)
 
     def test_run_can_export_an_anonymized_record(self):
         with tempfile.TemporaryDirectory() as directory, \

@@ -6,11 +6,11 @@
     },
     {
       "path": ".claude-plugin/marketplace.json",
-      "sha256": "6fb2d0f288efb8ad63908f95d668c829e748626570b3487903e21668173ba4db"
+      "sha256": "b3f4e0329f20f4c33133ef20933452f8ffc3f29024fcda78a40b1f6b4474b473"
     },
     {
       "path": ".claude-plugin/plugin.json",
-      "sha256": "ffefa5895a4aad177e8b2ad497670d8aa75191821c797ae73895ebefb71dd7dd"
+      "sha256": "bdf9092910d7546ebd98e5c18125bd39864b69264f0265eb1c09bc688da9b1d3"
     },
     {
       "path": ".mcp.json",

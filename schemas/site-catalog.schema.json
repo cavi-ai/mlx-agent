@@ -21,7 +21,7 @@
   ],
   "properties": {
     "$schema": {"const": "../schemas/site-catalog.schema.json"},
-    "schema_version": {"const": "1.0"},
+    "schema_version": {"enum": ["1.0", "1.1"]},
     "product": {
       "type": "object",
       "additionalProperties": false,
@@ -121,7 +121,7 @@
     "verification_evidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["compatibility_matrix", "core", "provider_contracts"],
+      "required": ["compatibility_matrix", "provider_contracts"],
       "properties": {
         "compatibility_matrix": {"const": "compatibility/providers.json"},
         "core": {"$ref": "#/$defs/coreEvidence"},
@@ -142,6 +142,10 @@
       }
     }
   },
+  "allOf": [{
+    "if": {"properties": {"schema_version": {"const": "1.0"}}},
+    "then": {"properties": {"verification_evidence": {"required": ["core"]}}}
+  }],
   "$defs": {
     "capability": {
       "type": "object",

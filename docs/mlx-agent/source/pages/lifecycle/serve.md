@@ -265,7 +265,7 @@ limit. OS headroom remains a separate admission and pressure guard.
 
 ### Saved Strata settings
 
-Save named settings for shared work, Unity tests or dedicated inference. Profiles
+Save named settings for shared work or dedicated inference. Profiles
 contain memory, headroom, context, decoding and idle settings; choose the model
 and endpoint when starting. Settings stay under the selected receipts directory.
 

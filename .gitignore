@@ -15,3 +15,4 @@ data/
 .venv/
 .run/
 .run-*.log
+.mlx-agent-receipts/

@@ -74,22 +74,17 @@ class DocumentationContractTests(unittest.TestCase):
     def test_release_evidence_is_redacted_and_covers_every_matrix_provider(self):
         self.assertTrue(RELEASE_EVIDENCE_PATH.is_file())
         evidence = json.loads(RELEASE_EVIDENCE_PATH.read_text(encoding="utf-8"))
-        self.assertEqual("1.0", evidence["schema_version"])
+        self.assertEqual("1.1", evidence["schema_version"])
         self.assertEqual(self.matrix["plugin_version"], evidence["plugin_version"])
         self.assertEqual(self.matrix["allowed_evidence_statuses"], evidence["allowed_evidence_statuses"])
         self.assertEqual(set(PROVIDERS), set(evidence["providers"]))
         for provider_id, matrix_entry in self.matrix["providers"].items():
             with self.subTest(provider=provider_id):
                 self.assertEqual(matrix_entry["release_evidence"], evidence["providers"][provider_id])
-        self.assertTrue(evidence["commands"])
-        commands = {item["id"]: item for item in evidence["commands"]}
-        self.assertEqual(0, commands["diff-check"]["exit_status"])
-        self.assertEqual(0, commands["git-status"]["exit_status"])
-        self.assertEqual("", commands["git-status"]["output"])
-        self.assertTrue(commands["git-status"]["clean"])
-        self.assertIn("before_sha256", evidence["wire_transaction"])
-        self.assertIn("after_sha256", evidence["wire_transaction"])
-        self.assertTrue(evidence["wire_transaction"]["receipt_secret_scan"]["passed"])
+        self.assertEqual(
+            {"schema_version", "plugin_version", "allowed_evidence_statuses", "providers"},
+            set(evidence),
+        )
         serialized = json.dumps(evidence).lower()
         self.assertNotIn("auth.json", serialized)
         self.assertNotIn("secret-value", serialized)
@@ -306,6 +301,20 @@ class DocumentationContractTests(unittest.TestCase):
             )
         self.assertNotEqual(0, result.returncode)
         self.assertIn("release evidence", result.stderr)
+
+    def test_compatibility_renderer_accepts_known_evidence_versions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "release-evidence.json"
+            evidence = json.loads(RELEASE_EVIDENCE_PATH.read_text(encoding="utf-8"))
+            for version in ("1.0", "1.1", "2.0"):
+                with self.subTest(version=version):
+                    evidence["schema_version"] = version
+                    path.write_text(json.dumps(evidence), encoding="utf-8")
+                    result = subprocess.run(
+                        ["python3", str(RENDERER_PATH), "--check", "--release-evidence", str(path)],
+                        cwd=ROOT, text=True, capture_output=True,
+                    )
+                    self.assertEqual(result.returncode == 0, version in ("1.0", "1.1"), result.stderr)
 
     def test_wire_docs_do_not_claim_model_download_or_pull_behavior(self):
         text = "\n".join(

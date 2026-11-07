@@ -1,6 +1,6 @@
 # Version and support
 
-Package version in this checkout: **0.11.1** (release tag `v0.11.1`).
+Package version in this checkout: **0.12.0** (release tag `v0.12.0`).
 Source documentation can include changes made after a published release. Use
 the artifact attached to a specific release when you need that version's docs.
 
@@ -26,7 +26,7 @@ execution. Optional backend dependency installation requires Python 3.12.
 - Issues and PRs: the `cavi-ai/mlx-agent` repository on GitHub.
 - The core is a dependency-free Python package; adapters are generated deterministically from `plugin.json` and verified byte-for-byte in CI.
 
-## What is stable in 0.6.x
+## Stable interfaces
 
 - The seven provider capabilities (`mlx-scout`, `mlx-adopt`, `mlx-wire`, `mlx-bench`, `mlx-doctor`, `mlx-watch`, `mlx-fleet`) and their argument grammars.
 - The confirmation-gated transaction contract (preview hash, receipts, rollback).

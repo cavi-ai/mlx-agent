@@ -242,7 +242,7 @@ def _require_vision_identity(plan):
 
 def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                adapter_path=None, path=None, jit=False, receipts_dir=None, hf_cache=None, memory_policy=None,
-               runtime_executable=None, strata_speculation=False,
+               runtime_executable=None, strata_speculation=False, strata_decoding=None,
                strata_expert_memory_gb=None, strata_context_tokens=None, training_receipt=None, thinking="default",
                m5_prefill=False, prompt_lookup=False, vision_cache=False):
     """Render the start plan and local file identities without side effects."""
@@ -351,24 +351,26 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         "runtime_adapter": str(Path(__file__).with_name("strata_runtime.py").resolve()),
     }
     strata_model = strata_runtime = strata_allocation = None
-    if runtime != "strata" and (strata_expert_memory_gb is not None or strata_context_tokens is not None):
+    if runtime != "strata" and (strata_expert_memory_gb is not None or strata_context_tokens is not None or strata_decoding is not None):
         raise ServeError("invalid_arguments", "Strata memory controls require the Strata runtime.",
                          "Select a prepared local Strata profile.")
     if runtime == "strata":
-        from .strata_runtime import StrataError, installed_runtime, read_model, memory_estimate, memory_allocation
+        from .strata_runtime import StrataError, installed_runtime, read_model, memory_estimate, memory_allocation, resolve_decoding
         try:
             if not has_path or adapter_path is not None or type(strata_speculation) is not bool:
                 raise StrataError("strata_model_required", "Strata requires a local GGUF profile without a LoRA adapter.")
             strata_model = read_model(local_path)
             strata_context_tokens = 131072 if strata_context_tokens is None else strata_context_tokens
+            strata_decoding = resolve_decoding(strata_model, strata_speculation, strata_decoding)
+            uses_draft = strata_decoding == "mtp"
             budget = (memory_policy or {}).get("model_memory_budget_gb")
             if budget is not None:
                 if strata_expert_memory_gb is not None:
                     raise StrataError("invalid_arguments", "Choose a total model memory budget or an expert budget.")
-                strata_allocation = memory_allocation(strata_model, budget, strata_context_tokens, strata_speculation)
+                strata_allocation = memory_allocation(strata_model, budget, strata_context_tokens, uses_draft)
                 strata_memory_bytes = strata_allocation["estimated_resident_bytes"]
             else:
-                strata_memory_bytes = memory_estimate(strata_model, strata_expert_memory_gb, strata_context_tokens, strata_speculation)
+                strata_memory_bytes = memory_estimate(strata_model, strata_expert_memory_gb, strata_context_tokens, uses_draft)
             strata_runtime = installed_runtime()
             if runtime_executable is not None and runtime_executable != strata_runtime["python"]:
                 raise StrataError("strata_not_installed", "The reviewed Strata executable changed.")
@@ -378,6 +380,7 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
     argv = [part.format(**values) for part in recipe["argv"]]
     if strata_model:
         argv += ["--runtime-root", strata_runtime["root"], "--speculation", "on" if strata_speculation else "off",
+                 "--decoding", strata_decoding,
                  "--context-tokens", str(strata_context_tokens),
                  "--expected-model-fingerprint", strata_model["fingerprint"],
                  "--expected-runtime-fingerprint", strata_runtime["fingerprint"]]
@@ -439,7 +442,8 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         plan.update(strata_model_fingerprint=strata_model["fingerprint"],
                     strata_runtime_fingerprint=strata_runtime["fingerprint"],
                     weight_format="gguf", weight_quantization=strata_model["quantization"], weights_preserved=True,
-                    strata_speculation=strata_speculation, strata_expert_memory_gb=strata_expert_memory_gb,
+                    strata_speculation=strata_speculation, strata_decoding=strata_decoding,
+                    strata_expert_memory_gb=strata_expert_memory_gb,
                     strata_context_tokens=strata_context_tokens, strata_memory_estimate_bytes=strata_memory_bytes,
                     readiness_deadline=900)
         if strata_allocation is not None:
@@ -680,6 +684,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             config["strata_expert_memory_gb"] = plan.get("strata_expert_memory_gb")
             config["strata_context_tokens"] = plan.get("strata_context_tokens", 131072)
             config["strata_speculation"] = plan.get("strata_speculation", False)
+            config["strata_decoding"] = plan["strata_decoding"]
             if "strata_memory_allocation" in plan:
                 config["strata_memory_allocation"] = plan["strata_memory_allocation"]
         config.update(model=plan["repo"] or plan["path"], control_token=secrets.token_hex(32),
@@ -731,6 +736,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         receipt["decode_profile"] = plan["decode_profile"]
     if "vision_profile" in plan:
         receipt["vision_profile"] = plan["vision_profile"]
+    if "strata_decoding" in plan:
+        receipt["strata_decoding"] = plan["strata_decoding"]
     if "strata_memory_allocation" in plan:
         receipt["strata_memory_allocation"] = plan["strata_memory_allocation"]
     content = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")

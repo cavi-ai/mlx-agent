@@ -253,6 +253,99 @@ for available, code in ((100, 'insufficient_headroom'), (None, 'memory_unknown')
         self.assertEqual(config["args"][config["args"].index("--spec") + 1], "1")
         self.assertEqual(config["args"][config["args"].index("--suffix-draft") + 1], "0")
 
+    def test_frontend_never_inherits_unbudgeted_residency_defaults(self):
+        self.valid_model()
+        config = strata.frontend_config(strata.read_model(self.root),
+            {"engine": "/engine", "root": "/runtime"})
+        args = config["args"]
+        for flag, value in (("--conversation-cache-mib", "0"), ("--keep-awake", "0"), ("--wired", "off")):
+            self.assertIn(flag, args)
+            self.assertEqual(args[args.index(flag) + 1], value)
+
+    def test_lookup_uses_target_verification_without_loading_draft_weights(self):
+        self.tensor_model()
+        self.installed()
+        model = strata.read_model(self.root)
+        model.update(mtp="/draft", mtp_bytes=5_000_000_000)
+        config = strata.frontend_config(model, {"engine": "/engine", "root": "/runtime"}, decoding="lookup")
+        self.assertNotIn("--mtp", config["args"])
+        self.assertEqual(config["args"][config["args"].index("--spec") + 1], "1")
+        self.assertEqual(config["args"][config["args"].index("--suffix-draft") + 1], "1")
+        plan = plan_start(None, "strata", load_recipes(), path=str(self.root), strata_decoding="lookup", jit=True)
+        plain = plan_start(None, "strata", load_recipes(), path=str(self.root), jit=True)
+        self.assertEqual(plan["strata_decoding"], "lookup")
+        self.assertEqual(plan["strata_memory_estimate_bytes"], plain["strata_memory_estimate_bytes"])
+        self.assertNotEqual(plan["preview_hash"], plain["preview_hash"])
+        self.assertEqual(plan["worker_argv"][plan["worker_argv"].index("--decoding") + 1], "lookup")
+        from mlx_agent.jit_serve import ModelWorker
+        worker = ModelWorker(dict(plan, local_path=str(self.root)))
+        self.assertEqual(worker.status()["strata_decoding"], "lookup")
+        self.assertFalse(worker._strata_speculation())
+
+    def test_explicit_mtp_requires_assets_and_legacy_on_preserves_lookup_fallback(self):
+        self.valid_model()
+        model = strata.read_model(self.root)
+        self.assertEqual(strata.resolve_decoding(model, True), "lookup")
+        self.assertEqual(strata.resolve_decoding(model, False), "plain")
+        for mode in ("mtp", "unknown", True, 1):
+            with self.subTest(mode=mode), self.assertRaises(strata.StrataError):
+                strata.resolve_decoding(model, decoding=mode)
+        model["mtp"] = "/draft"
+        self.assertEqual(strata.resolve_decoding(model, True), "mtp")
+        config = strata.frontend_config(model, {"engine": "/engine", "root": "/runtime"}, decoding="mtp")
+        self.assertIn("--mtp", config["args"])
+        with self.assertRaises(strata.StrataError):
+            strata.resolve_decoding(model, True, "lookup")
+
+    def test_saved_profile_launch_binds_settings_and_explicit_overrides(self):
+        import io
+        from contextlib import redirect_stdout
+        from mlx_agent.cli import main
+        self.tensor_model()
+        self.installed()
+        def run(args):
+            output = io.StringIO()
+            with redirect_stdout(output):
+                code = main(["serve", *args, "--json"])
+            return code, json.loads(output.getvalue())
+        code, result = run(["profile", "save", "unity", "--receipts-dir", str(self.root),
+            "--memory-budget-gb", "20", "--min-headroom-gb", "32", "--strata-decoding", "lookup"])
+        self.assertEqual(code, 0, result)
+        args = ["start", "--runtime", "strata", "--path", str(self.root), "--jit", "--profile", "unity",
+                "--receipts-dir", str(self.root)]
+        code, result = run(args)
+        self.assertEqual(code, 2)
+        plan = result["data"]["plan"]
+        self.assertEqual(plan["memory_policy"]["model_memory_budget_gb"], 20)
+        self.assertEqual(plan["memory_policy"]["minimum_headroom_gb"], 32)
+        self.assertEqual(plan["strata_decoding"], "lookup")
+        _, other = run(args + ["--memory-budget-gb", "24", "--strata-decoding", "plain", "--idle-timeout", "0"])
+        changed = other["data"]["plan"]
+        self.assertEqual(changed["memory_policy"]["model_memory_budget_gb"], 24)
+        self.assertEqual(changed["memory_policy"]["idle_timeout_seconds"], 0)
+        self.assertEqual(changed["strata_decoding"], "plain")
+        self.assertNotEqual(plan["preview_hash"], changed["preview_hash"])
+        _, legacy = run(args + ["--strata-speculation", "off"])
+        self.assertEqual(legacy["data"]["plan"]["strata_decoding"], "plain")
+        for command in (["list"], ["show", "unity"], ["delete", "unity"]):
+            code, result = run(["profile", *command, "--receipts-dir", str(self.root)])
+            self.assertEqual(code, 0, result)
+        code, result = run(["profile", "save", "default", "--receipts-dir", str(self.root),
+            "--memory-budget-gb", "20", "--min-headroom-gb", "32"])
+        self.assertEqual(code, 0, result)
+        self.assertEqual(result["data"]["settings"]["strata_decoding"], "plain")
+
+    def test_previous_pinned_installation_remains_source_verified(self):
+        runtime = self.installed()
+        marker = json.loads((runtime / strata.INSTALL_MARKER).read_text())
+        marker.update(engine_revision="ac0523f51c9935805904de889747d2b4ce011516",
+                      http_revision="a0116b2782a5b82622358c04a06496485d12b2d6")
+        (runtime / strata.INSTALL_MARKER).write_text(json.dumps(marker))
+        self.assertEqual(strata.installed_runtime(runtime)["engine"], str(runtime / "strata-mlx"))
+        (runtime / "engine/strata_mlx/serve.py").write_text("changed")
+        with self.assertRaises(strata.StrataError):
+            strata.installed_runtime(runtime)
+
     def installed(self):
         runtime = self.root / "runtime"
         for folder in ("engine/strata_mlx", "engine/.venv/bin", "http/serve", "http/tools"):

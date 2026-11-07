@@ -233,8 +233,11 @@ with `store` (the default) are kept in gateway memory, the most recent 64, and
 
 For a prepared Strata GGUF profile, add `--memory-budget-gb` to its JIT preview
 and confirmation. The estimated total includes dense weights, expert storage,
-context and runtime working memory. The MTP draft head is loaded and budgeted
-only with `--strata-speculation on`.
+context and runtime working memory. Choose `--strata-decoding plain` (the default),
+`lookup` (verified guesses copied from earlier prompt text), or `mtp` (verified
+guesses from prepared draft-head weights). Lookup loads no draft-head weights;
+MTP is loaded and budgeted only when selected. The legacy
+`--strata-speculation on|off` switch remains available.
 
 ```bash
 python3 scripts/mlx-agent serve start --path /absolute/strata/profile --runtime strata --jit --memory-budget-gb 24 --strata-context-tokens 16384 --min-headroom-gb 24 --unload-under-pressure --json
@@ -242,9 +245,28 @@ python3 scripts/mlx-agent serve start --path /absolute/strata/profile --runtime 
 
 Use different budgets for shared work or dedicated inference. The planner keeps
 the faster resident path when it fits; otherwise it assigns a fixed expert cache
-and reads other experts from disk. Budgeted workers disable the separate parked
-conversation cache. A budget is an allocation estimate, not a hard process-RAM
+and reads other experts from disk. Workers disable separate conversation parking,
+GPU keepalive and array wiring. A budget is an allocation estimate, not a hard process-RAM
 limit. OS headroom remains a separate admission and pressure guard.
+
+### Saved Strata settings
+
+Save named settings for shared work, Unity tests or dedicated inference. Profiles
+contain memory, headroom, context, decoding and idle settings; choose the model
+and endpoint when starting. Settings stay under the selected receipts directory.
+
+```bash
+python3 scripts/mlx-agent serve profile save shared --memory-budget-gb 24 --min-headroom-gb 24 --strata-decoding lookup --json
+python3 scripts/mlx-agent serve profile list --json
+python3 scripts/mlx-agent serve start --path /absolute/strata/profile --runtime strata --jit --profile shared --json
+```
+
+Launch uses the usual preview and confirmation. Explicit launch options override
+saved settings. Use `serve profile show shared`, `save shared --replace` with the
+updated values, or `delete shared` to manage them. Saved changes apply to future
+launches; use `serve policy` to change a running endpoint's memory budget.
+Add `--no-unload-under-pressure` when saving a profile that uses `--keep-loaded`.
+Each launch still checks available memory; a saved profile does not reserve RAM.
 
 Change the budget on the same endpoint using its gateway PID:
 

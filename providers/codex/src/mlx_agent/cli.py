@@ -935,8 +935,11 @@ def _add_serve_arguments(parser):
     )
     start.add_argument("--repo", default=None, help="publisher/model present in the local Hugging Face cache")
     start.add_argument("--path", default=None, help="local model directory to serve instead of a cache repo id")
+    start.add_argument("--profile", help="saved Strata settings; explicit options override the profile")
     start.add_argument("--runtime", required=True, choices=["auto", "mlx_lm", "mlx-vlm", "strata"])
-    start.add_argument("--strata-speculation", choices=["on", "off"], help="opt-in draft-and-verify decoding for Strata profiles (default: off)")
+    decoding = start.add_mutually_exclusive_group()
+    decoding.add_argument("--strata-speculation", choices=["on", "off"], help="legacy Strata draft-and-verify switch (default: off)")
+    decoding.add_argument("--strata-decoding", choices=["plain", "lookup", "mtp"], help="Strata verified decoding mode; lookup needs no draft weights")
     start.add_argument("--strata-expert-memory-gb", type=float, help="Strata resident expert budget in decimal GB (0.5–64); other experts remain on disk")
     start.add_argument("--strata-context-tokens", type=int, help="Strata context capacity (512–131072 tokens)")
     start.add_argument("--port", type=int, default=None, help="loopback port (defaults per runtime recipe)")
@@ -978,6 +981,23 @@ def _add_serve_arguments(parser):
     status = actions.add_parser("status", help="cross-check serve receipts against live processes")
     status.add_argument("--receipts-dir", default=None)
     status.add_argument("--json", action="store_true")
+    profiles = actions.add_parser("profile", help="save and reuse local Strata memory and decoding settings")
+    profile_actions = profiles.add_subparsers(dest="profile_command", required=True)
+    for command in ("save", "show", "list", "delete"):
+        action = profile_actions.add_parser(command)
+        if command != "list":
+            action.add_argument("name")
+        action.add_argument("--receipts-dir", default=None)
+        action.add_argument("--json", action="store_true")
+        if command == "save":
+            action.add_argument("--memory-budget-gb", type=float, required=True)
+            action.add_argument("--min-headroom-gb", type=float, required=True)
+            action.add_argument("--strata-context-tokens", type=int, default=16384)
+            action.add_argument("--strata-decoding", choices=["plain", "lookup", "mtp"], default="plain")
+            action.add_argument("--idle-timeout", type=int, default=300)
+            action.add_argument("--keep-loaded", action="store_true")
+            action.add_argument("--unload-under-pressure", action=argparse.BooleanOptionalAction, default=True)
+            action.add_argument("--replace", action="store_true")
 
 
 def _add_memory_arguments(parser, clear_budget=False):
@@ -988,8 +1008,8 @@ def _add_memory_arguments(parser, clear_budget=False):
         budgets.add_argument("--clear-memory-budget", action="store_true",
                              help="remove the model budget after active requests finish")
     parser.add_argument("--idle-timeout", type=int, default=None, help="unload after this many idle seconds (0 disables)")
-    parser.add_argument("--keep-loaded", action="store_true", help="prevent automatic idle unload after use")
-    parser.add_argument("--unload-under-pressure", action="store_true",
+    parser.add_argument("--keep-loaded", action=argparse.BooleanOptionalAction, default=None, help="prevent automatic idle unload after use")
+    parser.add_argument("--unload-under-pressure", action=argparse.BooleanOptionalAction, default=None,
                         help="guard loaded requests and unload idle workers below --min-headroom-gb")
     parser.add_argument("--min-headroom-gb", type=float, default=None, help="reserve GB beyond estimated weights and runtime allowance")
     parser.add_argument("--context-tokens", type=int, default=None,
@@ -997,7 +1017,7 @@ def _add_memory_arguments(parser, clear_budget=False):
 
 
 def _memory_arguments(arguments):
-    policy = {"idle_timeout_seconds": arguments.idle_timeout or 0, "keep_loaded": arguments.keep_loaded,
+    policy = {"idle_timeout_seconds": arguments.idle_timeout or 0, "keep_loaded": bool(arguments.keep_loaded),
               "minimum_headroom_gb": arguments.min_headroom_gb}
     if arguments.memory_budget_gb is not None:
         policy["model_memory_budget_gb"] = arguments.memory_budget_gb
@@ -1019,6 +1039,24 @@ def _run_serve(arguments):
     )
     operation = "serve-{0}".format(arguments.serve_command)
     try:
+        if arguments.serve_command == "profile":
+            from . import serve_profiles
+            command = arguments.profile_command
+            if command == "save":
+                keys = ("memory_budget_gb", "min_headroom_gb", "strata_context_tokens", "strata_decoding",
+                        "idle_timeout", "keep_loaded", "unload_under_pressure")
+                settings = {key: getattr(arguments, key) for key in keys}
+                result = {"name": arguments.name, "settings": serve_profiles.save_profile(
+                    arguments.name, settings, arguments.receipts_dir, replace=arguments.replace)}
+            elif command == "show":
+                result = {"name": arguments.name, "settings": serve_profiles.load_profile(arguments.name, arguments.receipts_dir)}
+            elif command == "list":
+                result = {"profiles": serve_profiles.list_profiles(arguments.receipts_dir)}
+            else:
+                serve_profiles.delete_profile(arguments.name, arguments.receipts_dir)
+                result = {"name": arguments.name, "deleted": True}
+            return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json,
+                                      human=json.dumps(result, indent=2))
         if arguments.serve_command == "status":
             entries = status_serve(arguments.receipts_dir)
             return _emit_serve_result(
@@ -1042,12 +1080,25 @@ def _run_serve(arguments):
             return _emit_serve_result(ResultEnvelope.ok(operation, outcome), arguments.json,
                                       human="JIT memory policy saved and applied on port {}.".format(arguments.port))
         recipes = load_recipes()
+        if arguments.profile:
+            from .serve_profiles import load_profile
+            settings = load_profile(arguments.profile, arguments.receipts_dir)
+            for key, value in settings.items():
+                if key == "strata_decoding" and arguments.strata_speculation is not None:
+                    continue
+                if key == "memory_budget_gb" and arguments.strata_expert_memory_gb is not None:
+                    continue
+                if getattr(arguments, key) is None:
+                    setattr(arguments, key, value)
         if arguments.training_receipt and arguments.launchd:
             raise ServeError("invalid_arguments", "Receipt-bound adapter serving requires supervised startup.",
                              "Use serve start without --launchd.")
         selected_runtime = "mlx_lm" if arguments.training_receipt and arguments.runtime == "auto" else arguments.runtime
         runtime, executable = resolve_serve_runtime(
             arguments.repo, arguments.path, selected_runtime, recipes, hf_cache=arguments.hf_cache)
+        if arguments.profile and runtime != "strata":
+            raise ServeError("invalid_arguments", "Saved serving profiles currently require Strata.",
+                             "Select a prepared Strata model or omit --profile.")
         if arguments.strata_speculation is not None and runtime != "strata":
             raise ServeError("invalid_arguments", "--strata-speculation requires the Strata runtime.", "Select a prepared local Strata profile.")
         plan = plan_start(
@@ -1064,6 +1115,7 @@ def _run_serve(arguments):
             hf_cache=arguments.hf_cache,
             runtime_executable=executable,
             strata_speculation=arguments.strata_speculation == "on",
+            strata_decoding=arguments.strata_decoding,
             strata_expert_memory_gb=arguments.strata_expert_memory_gb,
             strata_context_tokens=arguments.strata_context_tokens,
             memory_policy=_memory_arguments(arguments) if (arguments.idle_timeout is not None or arguments.keep_loaded

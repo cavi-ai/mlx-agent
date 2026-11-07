@@ -207,10 +207,13 @@ class ModelWorker:
                     "last_unload_reason": self.last_unload_reason}
             if self.config.get("runtime") == "strata":
                 result.update(memory_allocation=self.config.get("strata_memory_allocation"),
+                              strata_decoding=self.config.get("strata_decoding"),
                               memory_budget_pending=self.memory_budget_pending)
             return result
 
     def _strata_speculation(self):
+        if "strata_decoding" in self.config:
+            return self.config["strata_decoding"] == "mtp"
         argv = self.config.get("worker_argv", [])
         return self.config.get("strata_speculation", "--speculation" in argv
                                and argv[argv.index("--speculation") + 1] == "on")

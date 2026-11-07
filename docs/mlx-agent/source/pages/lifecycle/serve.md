@@ -89,11 +89,18 @@ model or new weights are required. Native batching remains the default when the
 option is omitted.
 
 In this mode, plain greedy requests run one at a time. Sampling, logit penalties or
-biases, seeds, logprobs, adapters and draft models retain native generation. Only
+biases, logprobs, adapters and draft models retain native generation. Seeds retain
+the pinned runtime's temperature-zero argmax behavior. Only
 ordinary KVCache states use lookup; rotating, quantized and hybrid caches retain
 native generation. Prompt cache reuse, stop tokens and cancellation retain the
-server's token alignment. Performance depends on copied text; ordinary chat may
-be slower. Keep this option off for concurrent chat workloads.
+server's token alignment. Each request first measures two target single-token
+verification calls, then adjusts proposed length between two and eight tokens.
+Two consecutive rejected proposals, four unprofitable verification blocks, or
+an absent prompt match hand the remaining generation to native decoding. Cost
+decisions use target verification time per emitted token; they do not establish
+a comparative speedup over native generation. Logs retain proposed/accepted
+tokens, native tokens and the fallback reason. Performance depends on copied
+text; keep this option off for concurrent chat workloads.
 
 The supported runtime is macOS with MLX and mlx-metal 0.31.1 and mlx-lm 0.29.1.
 Other dependency versions use native MLX. Like `--m5-prefill`, this option wraps

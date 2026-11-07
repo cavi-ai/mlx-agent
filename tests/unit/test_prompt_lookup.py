@@ -42,7 +42,7 @@ class PromptLookupEligibilityTests(unittest.TestCase):
             (args.logits, "repetition_penalty", 1.1),
             (args.model, "draft", "/models/draft"),
             (args.model, "adapter", "/models/adapter"),
-            (args, "seed", 3), (args, "logprobs", 2),
+            (args, "logprobs", 2),
             (cli, "draft_model", "/models/draft"),
             (cli, "adapter_path", "/models/adapter"),
         ):
@@ -51,6 +51,13 @@ class PromptLookupEligibilityTests(unittest.TestCase):
                 setattr(parent, name, value)
                 self.assertFalse(request_eligible(args, cli))
                 setattr(parent, name, previous)
+
+    def test_seed_does_not_change_the_pinned_temperature_zero_argmax(self):
+        args = self.arguments()
+        cli = SimpleNamespace(draft_model=None, adapter_path=None)
+        for seed in (None, 0, 3):
+            args.seed = seed
+            self.assertTrue(request_eligible(args, cli))
 
 
 class PromptLookupHookTests(unittest.TestCase):

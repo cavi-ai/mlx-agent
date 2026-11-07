@@ -83,6 +83,8 @@ _INTERESTING_KEYS = (
     "general.parameter_count",
     "clip.projector_type",
     "clip.vision.projection_dim",
+    "qwen4exp.expert_count",
+    "qwen4exp.expert_feed_forward_length",
 )
 _STRUCTURE_SUFFIXES = (
     ".block_count",

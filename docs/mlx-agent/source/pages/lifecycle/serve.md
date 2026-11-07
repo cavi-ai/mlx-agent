@@ -253,6 +253,11 @@ guesses from prepared draft-head weights). Lookup loads no draft-head weights;
 MTP is loaded and budgeted only when selected. The legacy
 `--strata-speculation on|off` switch remains available.
 
+Paged MTP budgets use the supported draft head's packed weights and float16
+scales to size the expert cache. The minimum startup allowance still covers
+head loading before the cache is populated. Resident loading retains its full
+draft-file allowance; unrecognized head layouts use that allowance for paging too.
+
 ```bash
 python3 scripts/mlx-agent serve start --path /absolute/strata/profile --runtime strata --jit --memory-budget-gb 24 --strata-context-tokens 16384 --min-headroom-gb 24 --unload-under-pressure --json
 ```

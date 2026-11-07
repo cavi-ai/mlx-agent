@@ -99,6 +99,23 @@ class PromptLookupTests(unittest.TestCase):
         request = self.run_steps(list(range(24)) + [30, 31], 16, clock=FixedCostClock())
         self.assertGreater(request.accepted_tokens, 0)
 
+    def test_m5_copy_uses_wide_blocks_with_exact_tokens_probabilities_and_cache(self):
+        if mx.device_info().get("architecture") != "applegpu_g17s":
+            self.skipTest("Requires the M5 proposal profile")
+        prompt = list(range(32)) * 3 + [0, 1, 2]
+        request = self.run_steps(prompt, 48, clock=FixedCostClock())
+        self.assertLessEqual(request.verification_calls, 5)
+        for maximum in (33, 48, 64, 96):
+            for stop in (3, 9, 31, 33):
+                with self.subTest(maximum=maximum, stop=stop):
+                    self.run_steps(prompt, maximum, stop=stop, clock=FixedCostClock())
+
+    def test_m5_lookup_finds_copied_content_after_a_short_unmatched_prefix(self):
+        if mx.device_info().get("architecture") != "applegpu_g17s":
+            self.skipTest("Requires the M5 proposal profile")
+        request = self.run_steps(list(range(24)) + [27, 28], 48, clock=FixedCostClock())
+        self.assertGreater(request.accepted_tokens, 0)
+
     def test_native_handoff_after_misses_keeps_cache_exact_on_completion_and_cancel(self):
         prompt = [0, 0, 0, 9, 0, 0, 0]
         for stop in (None, 5, 6, 9):

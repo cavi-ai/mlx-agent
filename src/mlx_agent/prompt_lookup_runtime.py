@@ -17,7 +17,7 @@ SOURCE_FILES = ("prompt_lookup_runtime.py", "_prompt_lookup.py", "_decode_policy
 
 def identity():
     root = Path(__file__).resolve().parent
-    facts = {"name": "prompt-lookup-v2", "versions": prefill_identity()["versions"],
+    facts = {"name": "prompt-lookup-v3", "versions": prefill_identity()["versions"],
              "sources": {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
                          for name in SOURCE_FILES}}
     facts["fingerprint"] = hashlib.sha256(json.dumps(facts, sort_keys=True).encode()).hexdigest()

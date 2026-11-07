@@ -58,7 +58,7 @@
     },
     {
       "path": "src/mlx_agent/_decode_policy.py",
-      "sha256": "644de897c776310232ca6e1e1252afb15769ff6653ecee4d5a50ce2579985031"
+      "sha256": "8a261dfcddacd57afbc20be75d932413a2adb0933eed026bc729631c5510d2a5"
     },
     {
       "path": "src/mlx_agent/_lab/video_lab/__init__.py",
@@ -434,11 +434,11 @@
     },
     {
       "path": "src/mlx_agent/_m5_prefill.py",
-      "sha256": "94c2f9391076ad00c81c2a4937dd63401878e2700e563f17e47ee1ab74976cf6"
+      "sha256": "6d005238d0aad6a13193f28b1655115a996d760ed97e184d801065a13bb110bb"
     },
     {
       "path": "src/mlx_agent/_prompt_lookup.py",
-      "sha256": "208f8db4c5be9fba4b541f6274482a4dbcd2353b0e65c981b3e0b6979dc9f5e4"
+      "sha256": "2db64bc5e652b9729a0bcdf9af7ff4dbf61737506dcdb52d8bc29aff9786a514"
     },
     {
       "path": "src/mlx_agent/adoption.py",
@@ -702,7 +702,7 @@
     },
     {
       "path": "src/mlx_agent/prefill_runtime.py",
-      "sha256": "a54a8e320237199a158666d8753442b799d42bca5b4bcb6ed119f7128ede2b41"
+      "sha256": "32d035234a8cba71fa39f063267bdbb9487066a41849586db4b8452b2f1056ed"
     },
     {
       "path": "src/mlx_agent/probe_assets.py",
@@ -714,7 +714,7 @@
     },
     {
       "path": "src/mlx_agent/prompt_lookup_runtime.py",
-      "sha256": "0211e96cd93db042a01e5bae2151eebd73394ae69d2524f3bf7a892c92d3305f"
+      "sha256": "822933d9d240f777e7e23da0ba035627985d7d3694f8b6e0e24662afab1a924f"
     },
     {
       "path": "src/mlx_agent/providers.py",

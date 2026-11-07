@@ -26,6 +26,12 @@ class PromptLookupProcessTests(unittest.TestCase):
 
 
 class PromptLookupIndexTests(unittest.TestCase):
+    def test_long_continuations_do_not_require_a_longer_matching_suffix(self):
+        index = PromptLookupIndex(list(range(64)) + [1, 2, 3])
+        self.assertEqual(index.propose([1, 2, 3], 32), list(range(4, 36)))
+        self.assertEqual(index.propose([1, 2, 3], 100), list(range(4, 36)))
+        self.assertEqual(index.propose([1, 2, 3], 16), list(range(4, 20)))
+
     def test_proposals_use_the_longest_matching_suffix_and_respect_limits(self):
         index = PromptLookupIndex([1, 2, 3, 4, 5, 6, 1, 2, 9, 8])
         self.assertEqual(index.propose([0, 1, 2, 3], 2), [4, 5])

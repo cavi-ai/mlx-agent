@@ -59,8 +59,8 @@ and still have to match the recorded content hashes.
 Add `--m5-prefill` to both the preview and confirmation to try the experimental
 Q4 prompt kernel with MLX-LM. The default remains native MLX. The kernel applies
 to inference-only Qwen2 MLP projections with FP16 activations, affine 4-bit weights,
-group size 64 and dimensions divisible by 64, when a batch has at least 128 rows.
-It retains the original quantized weight storage. Inputs with fewer than 128
+group size 64 and dimensions divisible by 64, when a batch has at least 64 rows.
+It retains the original quantized weight storage. Inputs with fewer than 64
 rows use native MLX.
 
 This path requires an M5 GPU (`applegpu_g17s`), macOS 26, MLX and mlx-metal 0.31.1,
@@ -94,11 +94,14 @@ the pinned runtime's temperature-zero argmax behavior. Only
 ordinary KVCache states use lookup; rotating, quantized and hybrid caches retain
 native generation. Prompt cache reuse, stop tokens and cancellation retain the
 server's token alignment. Each request first measures two target single-token
-verification calls, then adjusts proposed length between two and eight tokens.
+verification calls. M5 GPUs (`applegpu_g17s`) then start with up to 32 proposed
+tokens; other GPUs start with four and retain an eight-token limit. Partial
+acceptance shrinks the window; full acceptance grows it within the device limit.
 Two consecutive rejected proposals, four unprofitable verification blocks, a
 single block costing over twice the calibrated per-token target time, or an
-absent prompt match hand the remaining generation to native decoding. Lookup
-waits for three generated tokens before treating an absent match as final. Cost
+absent prompt match hand the remaining generation to native decoding. M5 lookup
+searches up to eight initial output tokens for a copied prefix, allowing short
+output wrappers before code. Other GPUs retain a three-token search. Cost
 decisions use target verification time per emitted token; they do not establish
 a comparative speedup over native generation. Logs retain proposed/accepted
 tokens, native tokens and the fallback reason. Performance depends on copied

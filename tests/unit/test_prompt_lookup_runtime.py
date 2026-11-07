@@ -12,7 +12,7 @@ from mlx_agent.serve import ServeError, load_recipes, plan_start, start_serve, s
 class PromptLookupRuntimeTests(unittest.TestCase):
     def test_profile_binds_adaptive_policy_source(self):
         current = identity()
-        self.assertEqual(current["name"], "prompt-lookup-v2")
+        self.assertEqual(current["name"], "prompt-lookup-v3")
         self.assertIn("_decode_policy.py", current["sources"])
         original = Path.read_bytes
         with patch.object(Path, "read_bytes", new=lambda path: b"changed policy" if path.name == "_decode_policy.py" else original(path)):

@@ -714,6 +714,13 @@
               "required": false
             },
             {
+              "name": "no_hf_cache",
+              "flag": "--no-hf-cache",
+              "kind": "option",
+              "type": "boolean",
+              "required": false
+            },
+            {
               "name": "prune",
               "flag": "--prune",
               "kind": "option",

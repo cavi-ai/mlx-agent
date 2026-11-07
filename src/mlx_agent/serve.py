@@ -760,12 +760,15 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
 
 def _read_receipt(path):
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         with os.fdopen(descriptor, "rb") as source:
             metadata = os.fstat(source.fileno())
             if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 1024 * 1024:
                 return None
-            value = json.load(source)
+            raw = source.read(1024 * 1024 + 1)
+            if len(raw) > 1024 * 1024:
+                return None
+            value = json.loads(raw)
     except (OSError, ValueError, json.JSONDecodeError):
         return None
     if not isinstance(value, dict) or value.get("kind") != SERVE_RECEIPT_KIND:
@@ -774,10 +777,14 @@ def _read_receipt(path):
         return None
     if not isinstance(value.get("argv"), list) or not isinstance(value.get("port"), int):
         return None
+    if (not value["argv"] or any(not isinstance(item, str) for item in value["argv"])
+            or not isinstance(value.get("runtime"), str) or "repo" not in value
+            or not (value.get("repo") or value.get("path"))):
+        return None
     return value
 
 
-def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_command, deadline=None):
+def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_command, deadline=None, errors=None):
     """Cross-check serve receipts against live processes; read-only."""
     root = receipts_root(receipts_dir)
     entries = []
@@ -785,7 +792,9 @@ def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_comma
         return entries
     for path in sorted(root.glob("*.json")):
         if deadline is not None and time.monotonic() >= deadline:
-            raise TimeoutError("Service status deadline reached")
+            if errors is not None:
+                errors.append({"source": str(root.absolute().parent.parent), "message": "Service status deadline reached"})
+            break
         if len(entries) >= MAX_RECEIPTS:
             break
         receipt = _read_receipt(path)

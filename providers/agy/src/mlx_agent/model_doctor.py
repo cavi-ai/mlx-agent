@@ -311,7 +311,7 @@ def run_model_doctor(wired_roots, hf_cache, runtime_clients):
     findings = []
     for config in wired:
         model = config.get("model")
-        if model and model.casefold() not in known_ids:
+        if hf_cache is not None and model and model.casefold() not in known_ids:
             findings.append({
                 "code": "drift_missing_model",
                 "path": config["path"],
@@ -401,6 +401,7 @@ def run_model_doctor(wired_roots, hf_cache, runtime_clients):
         "summary": {
             "models": len(inventory),
             "hf_cache_bytes": total_bytes,
+            "hf_cache_checked": hf_cache is not None,
             "wired_configs": len(wired),
             "findings": len(findings),
         },

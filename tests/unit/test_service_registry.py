@@ -12,6 +12,23 @@ from mlx_agent.service_registry import register_receipts, registered_roots, disc
 
 
 class ServiceRegistryTests(unittest.TestCase):
+    def test_non_object_records_are_errors_without_aborting_discovery(self):
+        for value in ([], None, 17, 'record'):
+            with self.subTest(value=value), TemporaryDirectory() as folder:
+                registry = Path(folder) / 'registry'; registry.mkdir()
+                (registry / 'bad.json').write_text(json.dumps(value))
+                result = discover_services(registry=registry, process_roots=[], inspect=lambda _: [])
+                self.assertEqual(result['services'], [])
+                self.assertEqual(len(result['errors']), 1)
+
+    @unittest.skipUnless(hasattr(os, 'mkfifo'), 'requires named pipes')
+    def test_registry_fifo_is_rejected_without_blocking(self):
+        with TemporaryDirectory() as folder:
+            registry = Path(folder) / 'registry'; registry.mkdir()
+            os.mkfifo(registry / 'fifo.json')
+            code = "from mlx_agent.service_registry import discover_services; import sys; r=discover_services(registry=sys.argv[1], process_roots=[]); assert len(r['errors']) == 1"
+            subprocess.run([sys.executable, '-c', code, str(registry)], timeout=3, check=True)
+
     def test_live_gateway_arguments_preserve_spaces(self):
         with TemporaryDirectory(prefix='service space ') as folder:
             config = str(Path(folder) / '.mlx-agent-receipts/serve/19081.jit-config.json')

@@ -682,7 +682,7 @@
     },
     {
       "path": "src/mlx_agent/model_doctor.py",
-      "sha256": "1c923e2a03e1c7f8f924dccc4cc1d7e6e2504e05b6f35958e5333a74283748c7"
+      "sha256": "b0e07d72468e11b52f8721b6324275d14d7774ab1f28684858a7ad35919608f3"
     },
     {
       "path": "src/mlx_agent/models.py",
@@ -1066,7 +1066,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "8e14936c0a528d953376f33efe4882b616e9e5e16eca0388edddc773f45240d8"
+      "sha256": "9e45a6f38f7605095287aa5ed5ff02e3677122baa515e7ae319be3669c2d19d7"
     },
     {
       "path": "src/mlx_agent/serve_profiles.py",
@@ -1074,7 +1074,7 @@
     },
     {
       "path": "src/mlx_agent/service_registry.py",
-      "sha256": "50d571aeb6f5ab337ec5150311d438f00f1af39424248c805bcccfd1fd5f1aa1"
+      "sha256": "272e004a5664e3e48fd34e8ad4a1e65b4e899951dae5bd653fdc0ed4b7fb8e83"
     },
     {
       "path": "src/mlx_agent/speak.py",

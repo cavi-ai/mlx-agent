@@ -48,13 +48,16 @@ def _read_roots(registry, errors):
         errors.append({'source': str(index), 'message': 'Service location limit reached.'})
     for location in locations[:MAX_ROOTS]:
         try:
-            descriptor = os.open(location, os.O_RDONLY | os.O_NOFOLLOW)
+            descriptor = os.open(location, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
             with os.fdopen(descriptor, 'rb') as source:
                 metadata = os.fstat(source.fileno())
                 if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid() or metadata.st_size > MAX_RECORD_BYTES:
                     raise ValueError('Invalid service location record')
-                record = json.load(source)
-            if record.get('schema_version') != 1 or not isinstance(record.get('receipts_dir'), str):
+                raw = source.read(MAX_RECORD_BYTES + 1)
+                if len(raw) > MAX_RECORD_BYTES:
+                    raise ValueError('Service location record is too large')
+                record = json.loads(raw)
+            if not isinstance(record, dict) or record.get('schema_version') != 1 or not isinstance(record.get('receipts_dir'), str):
                 raise ValueError('Unsupported service location record')
             roots.append(str(_safe_root(record['receipts_dir'])))
         except (OSError, ValueError, TypeError) as error:
@@ -165,7 +168,7 @@ def discover_services(receipts_dirs=(), registry=None, process_roots=None, inspe
                 receipts = Path(root) / '.mlx-agent-receipts/serve'
                 if receipts.exists() or receipts.is_symlink():
                     _assert_safe_directory(receipts)
-            entries = inspect(root) if inspect else status_serve(root, deadline=deadline)
+            entries = inspect(root) if inspect else status_serve(root, deadline=deadline, errors=errors)
             for entry in entries:
                 receipt = Path(entry['receipt'])
                 if receipt.parent.resolve() != Path(root) / '.mlx-agent-receipts/serve':

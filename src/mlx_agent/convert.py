@@ -5,7 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import subprocess
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -28,7 +30,7 @@ from .backends import (
     spawn_with_env,
     sync_ports,
 )
-from .gguf import GGUF_PORT_BITS, GGUFError, describe_gguf, find_projector
+from .gguf import GGUF_PORT_BITS, GGUFError, describe_gguf, find_projector, file_signature, read_gguf_header, PORT_PROJECTORS
 from .intake_source import validate_subfolder
 from .serve import (
     _argv_matches,
@@ -38,6 +40,7 @@ from .serve import (
 )
 from .transactions import _atomic_in_directory
 from .wiring import _MODEL
+from .source_evidence import completed_fetch, fingerprint, safe_path, read_json
 
 
 CONVERT_RECEIPT_SCHEMA_VERSION = "1.0"
@@ -104,7 +107,8 @@ def cached_subfolder(repo, subfolder, hf_cache=None):
 
 
 def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backends_root_dir=None, model_type=None,
-                 subfolder=None, hf_cache=None, source_path=None, downloads_dir=None):
+                 subfolder=None, hf_cache=None, source_path=None, downloads_dir=None, fetch_receipt=None,
+                 dependency_fetch_receipts=None, require_completion=False):
     """Render the exact conversion plan; side-effect free (a subfolder is looked up in the cache).
 
     ``model_type`` (from intake) selects a port's own converter when the port
@@ -129,6 +133,11 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
             validate_subfolder(subfolder)
         except ValueError as error:
             raise ConvertError("invalid_arguments", str(error), "Pass --subfolder as the folder path inside the repository.") from error
+    primary, dependencies = _source_records(fetch_receipt, dependency_fetch_receipts, source_path)
+    if primary:
+        if primary["origin"]["repo"] != repo or primary["origin"].get("file") is not None or primary["origin"].get("subfolder") != subfolder:
+            raise ConvertError("source_mismatch", "The completed fetch does not match this repo checkpoint.", "Select the exact downloaded checkpoint.")
+        source_path = primary["path"]
     name = repo.split("/", 1)[1] + ("-" + subfolder.replace("/", "-") if subfolder else "")
     if out is None:
         out = "{0}-MLX-{1}bit".format(name, q_bits)
@@ -159,19 +168,15 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
         source = Path(hf_path)
         # Bind the reviewed plan to the local source, including config contents
         # and weight identities. Snapshot links may point to cache-owned blobs.
-        entries = []
-        for item in sorted(source.rglob("*")):
-            if item.is_file():
-                stat = item.stat()
-                content = hashlib.sha256(item.read_bytes()).hexdigest() if item.name.endswith(".json") and stat.st_size <= 1024 * 1024 else ""
-                entries.append([str(item.relative_to(source)), stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, content])
         plan["source"]["path"] = str(source)
-        plan["source"]["fingerprint"] = hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest()
+        plan["source"]["fingerprint"] = local_source_fingerprint(source)
     if q_bits == UNQUANTIZED_BITS and backend in (None, "mlx-lm"):
         raise ConvertError("invalid_arguments", "This conversion has no unquantized recipe.", _bits_hint(Q_BITS_CHOICES))
+    if model_type is not None:
+        plan["model_type"] = model_type
     if backend in (None, "mlx-lm"):
         plan["argv"] = [EXECUTABLE] + flags
-        return _finalize_plan(plan)
+        return _finish_source_plan(plan, primary, dependencies, require_completion)
     try:
         manifests = load_manifests() if manifests is None else manifests
     except BackendError as error:
@@ -205,18 +210,26 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
     converter = port_converter(model_type, backend, manifests)
     recipe = recipe_for(repo, manifests) if converter else None
     if recipe and recipe["backend"] == backend and recipe["port"] == model_type:
-        flags = _recipe_flags(recipe, flags, hf_cache)
+        flags = _recipe_flags(recipe, flags, hf_cache, local_source=local_source if source_path is not None else None, dependencies=dependencies)
         plan["recipe"] = {key: recipe[key] for key in ("base", "base_revision", "lora", "lora_scale")}
-    requires = _required_sources(repo, model_type, manifests, hf_cache) if converter else {}
+    requires = _required_sources(repo, model_type, manifests, hf_cache, dependencies=dependencies if source_path is not None else None) if converter else {}
     for name, path in requires.items():
         flags += ["--requires", "{0}={1}".format(name, path)]
     if requires:
         plan["requires"] = requires
+    if primary and primary.get("support"):
+        recorded_support = primary["support"]["downloads_dir"]
+        if downloads_dir is not None and safe_path(downloads_dir) != safe_path(recorded_support):
+            raise ConvertError("source_mismatch", "The support directory differs from the completed managed fetch.", "Use the support directory recorded by that fetch.")
+        downloads_dir = recorded_support
+    if source_path is not None and converter and port_downloads(model_type, manifests) and downloads_dir is None:
+        raise ConvertError("requirement_not_cached", "Managed conversion needs an explicit support directory.", "Download support into the managed source and pass its fetch receipt or --downloads-dir.")
     downloads = _required_downloads(repo, model_type, manifests, downloads_dir) if converter else {}
     for name, path in downloads.items():
         flags += ["--download", "{0}={1}".format(name, path)]
     if downloads:
         plan["downloads"] = downloads
+        plan["downloads_dir"] = str(downloads_dir) if downloads_dir is not None else None
     if backend == "mlx-audio" and _is_quantized_music_source(hf_path):
         plan["argv"] = [str(python), str(MUSIC_REQUANTIZE_RUNNER)] + flags
     else:
@@ -226,7 +239,7 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
         plan["ports"] = ports
     if converter:
         plan["port_converter"] = converter
-    return _finalize_plan(plan)
+    return _finish_source_plan(plan, primary, dependencies, require_completion)
 
 
 def _is_quantized_music_source(path):
@@ -239,11 +252,15 @@ def _is_quantized_music_source(path):
             and isinstance(config.get("quantization"), dict) and bool(config["quantization"]))
 
 
-def _required_sources(repo, model_type, manifests, hf_cache):
+def _required_sources(repo, model_type, manifests, hf_cache, dependencies=None):
     """Cached snapshots of the other repositories a port's converter reads, each holding the files it needs."""
     found = {}
     for name, files in sorted(port_requirements(model_type, manifests).items()):
-        snapshot = cached_snapshot(name, hf_cache)
+        if dependencies is not None:
+            proof = next((item for item in dependencies if item["origin"]["repo"] == name), None)
+            snapshot = Path(proof["path"]) if proof else None
+        else:
+            snapshot = cached_snapshot(name, hf_cache)
         missing = [item for item in files if snapshot is None or not (snapshot / item).is_file()]
         if missing:
             raise ConvertError(
@@ -270,10 +287,17 @@ def _required_downloads(repo, model_type, manifests, downloads_dir):
     return found
 
 
-def _recipe_flags(recipe, flags, hf_cache):
+def _recipe_flags(recipe, flags, hf_cache, local_source=None, dependencies=()):
     """Converter flags for a recipe: the cached base snapshot and the cached LoRA, both local."""
-    base = cached_snapshot(recipe["base"], hf_cache, revision=recipe["base_revision"])
-    snapshot = cached_snapshot(recipe["repo"], hf_cache)
+    if local_source is not None:
+        proof = next((item for item in dependencies if item["origin"]["repo"] == recipe["base"]
+                      and item["origin"]["revision"].lower() == recipe["base_revision"].lower()
+                      and item["origin"].get("subfolder") is None), None)
+        base = Path(proof["path"]) if proof else None
+        snapshot = Path(local_source)
+    else:
+        base = cached_snapshot(recipe["base"], hf_cache, revision=recipe["base_revision"])
+        snapshot = cached_snapshot(recipe["repo"], hf_cache)
     lora = snapshot / recipe["lora"] if snapshot is not None else None
     if base is None or lora is None or not lora.is_file():
         raise ConvertError(
@@ -285,6 +309,48 @@ def _recipe_flags(recipe, flags, hf_cache):
     flags = list(flags)
     flags[flags.index("--hf-path") + 1] = str(base)
     return flags + ["--lora", str(lora), "--lora-scale", repr(float(recipe["lora_scale"]))]
+
+
+def local_source_fingerprint(path):
+    source = Path(path)
+    entries = []
+    for item in sorted(source.rglob("*")):
+        if item.is_file():
+            info = item.stat()
+            content = hashlib.sha256(item.read_bytes()).hexdigest() if item.name.endswith(".json") and info.st_size <= 1024 * 1024 else ""
+            entries.append([str(item.relative_to(source)), info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, content])
+    return hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest()
+
+
+def _source_records(fetch_receipt, dependency_fetch_receipts, selected_path=None):
+    try:
+        primary = completed_fetch(fetch_receipt, selected_path) if fetch_receipt else None
+        dependencies = [completed_fetch(value, bundle_root=True) for value in dependency_fetch_receipts or []]
+        repos = [item["origin"]["repo"].casefold() for item in dependencies]
+        if len(dependencies) > 32 or len(set(repos)) != len(repos):
+            raise ValueError("Dependency fetch receipts must name distinct repositories (at most 32).")
+        return primary, dependencies
+    except (OSError, ValueError) as error:
+        raise ConvertError("source_evidence_invalid", str(error), "Download the exact immutable source and dependencies into fresh managed folders.") from error
+
+
+def _finish_source_plan(plan, primary, dependencies, require_completion):
+    if primary:
+        plan["source"].update(origin=primary["origin"], fetch_receipt=primary["fetch_receipt"], fingerprint=primary["fingerprint"])
+        if primary.get("support"):
+            plan["source"]["support"] = primary["support"]
+    if dependencies:
+        for dependency in dependencies:
+            if not any(value == dependency["path"] or value.endswith("=" + dependency["path"]) for value in plan["argv"]):
+                raise ConvertError("unused_dependency", "A dependency receipt is not used by this conversion plan.", "Pass only this converter's reviewed dependencies.")
+        plan["source"]["dependencies"] = dependencies
+    if plan.get("projector"):
+        plan["source"]["projector"] = dict(plan["projector"])
+    if plan.get("recipe"):
+        plan["source"]["recipe"] = dict(plan["recipe"])
+    if require_completion:
+        plan["require_completion"] = True
+    return _finalize_plan(plan)
 
 
 def _finalize_plan(plan):
@@ -318,7 +384,9 @@ def _slugify(value, q_bits):
     return "{0}-{1}bit".format(slug[:96], q_bits)
 
 
-def plan_gguf_convert(gguf_path, q_bits=4, out=None, runner=None, describe=describe_gguf):
+def plan_gguf_convert(gguf_path, q_bits=4, out=None, runner=None, describe=describe_gguf,
+                      projector=None, require_projector=False, fetch_receipt=None,
+                      dependency_fetch_receipts=None, require_completion=False):
     """Render the exact GGUF to MLX conversion plan; pure and side-effect free."""
     _validate_q_bits(q_bits)
     location = Path(str(gguf_path)).expanduser()
@@ -402,11 +470,44 @@ def plan_gguf_convert(gguf_path, q_bits=4, out=None, runner=None, describe=descr
     if port is not None:
         plan["port_converter"] = port
         plan["argv"].extend(["--port", port])
-        projector = find_projector(location, port)
-        if projector is not None:
-            plan["projector"] = projector
-            plan["argv"].extend(["--projector", projector["path"]])
-    return _finalize_plan(plan)
+        selected_projector = _explicit_projector(location, port, projector) if projector else find_projector(location, port)
+        if selected_projector is not None:
+            selected_projector["signature"] = file_signature(selected_projector["path"])
+            selected_projector["fingerprint"] = fingerprint(Path(selected_projector["path"]).resolve())
+            plan["projector"] = selected_projector
+            plan["argv"].extend(["--projector", selected_projector["path"]])
+    elif projector:
+        raise ConvertError("invalid_projector", "This GGUF converter does not support a projector.", "Select a supported vision model.")
+    if require_projector:
+        if "projector" not in plan:
+            raise ConvertError("projector_required", "The reviewed vision projector is missing or ambiguous.", "Download and select the exact matching projector before updating.")
+        plan["require_projector"] = True
+    primary, dependencies = _source_records(fetch_receipt, dependency_fetch_receipts, str(location))
+    if primary and plan.get("projector"):
+        proof = read_json(primary["fetch_receipt"])
+        root = safe_path(proof["local_dir"])
+        target = safe_path(plan["projector"]["path"])
+        relative = str(target.relative_to(root)) if target.is_relative_to(root) else None
+        if relative not in primary["origin"].get("additional_files", []):
+            raise ConvertError("source_mismatch", "The projector is outside the reviewed download file set.", "Include it with --additional-file at the same immutable revision.")
+        plan["projector"]["origin"] = dict(primary["origin"], file=relative, additional_files=[])
+        plan["projector"]["fetch_receipt"] = primary["fetch_receipt"]
+    return _finish_source_plan(plan, primary, dependencies, require_completion)
+
+
+def _explicit_projector(model, port, projector):
+    target = safe_path(projector)
+    try:
+        source = read_gguf_header(model)["metadata"]
+        candidate = read_gguf_header(target)["metadata"]
+        width = source.get("{0}.embedding_length".format(source.get("general.architecture")))
+        if (target == Path(model).resolve() or candidate.get("general.architecture") != "clip"
+                or candidate.get("clip.projector_type") != PORT_PROJECTORS.get(port)
+                or candidate.get("clip.vision.projection_dim") != width):
+            raise ValueError("The selected projector does not match this model's vision type and embedding width.")
+    except (GGUFError, OSError, ValueError) as error:
+        raise ConvertError("invalid_projector", str(error), "Select the matching projector from the reviewed download.") from error
+    return {"path": str(target), "name": target.name, "bytes": target.stat().st_size, "signature": file_signature(target), "fingerprint": fingerprint(target.resolve())}
 
 
 def _slug(value):
@@ -434,9 +535,15 @@ def _read_receipt(path, kind=CONVERT_RECEIPT_KIND):
     return value
 
 
-def _write_receipt(root, receipt, filename):
-    content = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
-    _atomic_in_directory(root, filename, content, 0o600)
+def _write_receipt(root, receipt, filename, expected=None):
+    from .conversion_monitor import receipt_lock
+    path = Path(root) / filename
+    with receipt_lock(path):
+        if expected is not None and _read_receipt(path) != expected:
+            return False
+        content = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+        _atomic_in_directory(root, filename, content, 0o600)
+    return True
 
 
 def _source_kind(value):
@@ -454,7 +561,7 @@ def _default_module_present(names):
 
 def start_convert(plan, receipts_dir=None, confirm=False, preview_hash=None,
                   which=None, model_present=None, spawn=None, now=_utc_now,
-                  pid_alive=None, module_present=None):
+                  pid_alive=None, module_present=None, wait_for_compute_lease=False, attempt_id=None):
     """Execute a reviewed conversion plan; the only mutating entry point."""
     from .serve import _default_spawn, _default_which
 
@@ -476,6 +583,9 @@ def start_convert(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "The supplied preview hash does not match this convert plan.",
             "Re-run convert start without --confirm and review the fresh plan.",
         )
+    if attempt_id is not None and (not plan.get("require_completion") or not isinstance(attempt_id, str)
+                                   or re.fullmatch(r"[0-9a-f]{32}", attempt_id) is None):
+        raise ConvertError("invalid_arguments", "A conversion attempt requires --require-completion and a 32-character hexadecimal token.", "Use the durable queue to create a new attempt.")
     backend = plan.get("backend")
     if backend:
         manifest = load_manifests().get(backend)
@@ -531,6 +641,8 @@ def start_convert(plan, receipts_dir=None, confirm=False, preview_hash=None,
         )
     for receipt_path in sorted(root.glob("*.json")) if root.is_dir() else []:
         existing = _read_receipt(receipt_path)
+        if attempt_id is not None and existing and existing.get("attempt_id") == attempt_id:
+            raise ConvertError("attempt_exists", "This conversion attempt already has a receipt.", "Inspect its existing receipt before retrying with a new attempt.")
         if existing is None or existing.get("completed_at"):
             continue
         if pid_alive(existing["pid"]):
@@ -546,7 +658,11 @@ def start_convert(plan, receipts_dir=None, confirm=False, preview_hash=None,
         except BackendError as error:
             raise ConvertError(error.code, str(error), error.remediation) from error
     root.mkdir(parents=True, exist_ok=True)
-    slug = _slug(plan)
+    launch_id = uuid.uuid4().hex if plan.get("require_completion") else None
+    slug = _slug(plan) + ("-" + launch_id if launch_id else "")
+    receipt_path = root / (slug + ".json")
+    if receipt_path.is_symlink() or (launch_id and receipt_path.exists()):
+        raise ConvertError("receipt_exists", "This conversion launch already has a receipt.", "Inspect conversion status before retrying.")
     log_path = root / "{0}.log".format(slug)
     if spawn is None:
         environment = backend_environment()
@@ -557,7 +673,17 @@ def start_convert(plan, receipts_dir=None, confirm=False, preview_hash=None,
             return spawn_with_env(argv, log_path, environment)
 
     spawn = spawn or _default_spawn
-    pid = spawn(plan["argv"], str(log_path))
+    started_at = now()
+    monitor_argv = None
+    if launch_id:
+        request_path = root / (".monitor-" + launch_id + ".json")
+        request = {"launch_id": launch_id, "started_at": started_at,
+                   "attempt_id": attempt_id,
+                   "wait_for_compute_lease": wait_for_compute_lease,
+                   "receipt_path": str(receipt_path.absolute()), "plan": plan}
+        _atomic_in_directory(root, request_path.name, (json.dumps(request, sort_keys=True) + "\n").encode(), 0o600)
+        monitor_argv = [sys.executable, str(Path(__file__).with_name("conversion_monitor.py")), "--request", str(request_path.absolute())]
+    pid = spawn(monitor_argv or plan["argv"], str(log_path))
     receipt = {
         "schema_version": CONVERT_RECEIPT_SCHEMA_VERSION,
         "kind": CONVERT_RECEIPT_KIND,
@@ -569,15 +695,40 @@ def start_convert(plan, receipts_dir=None, confirm=False, preview_hash=None,
         "argv": list(plan["argv"]),
         "pid": pid,
         "log_path": str(log_path),
-        "started_at": now(),
+        "started_at": started_at,
         "preview_hash": plan["preview_hash"],
         "completed_at": None,
         "exit_status": None,
     }
     if backend:
         receipt["backend"] = backend
+    if plan.get("model_type"):
+        receipt["model_type"] = plan["model_type"]
+    if plan.get("downloads_dir"):
+        receipt["downloads_dir"] = plan["downloads_dir"]
+    if launch_id:
+        receipt.update(require_completion=True, launch_id=launch_id, monitor_argv=monitor_argv,
+                       wait_for_compute_lease=wait_for_compute_lease, compute_lease_registered=False,
+                       completion_observed=False, exit_code=None)
+    if attempt_id is not None:
+        receipt["attempt_id"] = attempt_id
     _write_receipt(root, receipt, "{0}.json".format(slug))
-    return {"status": "started", "receipt": receipt}
+    result = {"status": "started", "receipt": receipt}
+    if launch_id:
+        result["receipt_path"] = str(receipt_path.absolute())
+    return result
+
+
+def register_monitor_lease(path, expected):
+    from .conversion_monitor import receipt_lock
+    with receipt_lock(path):
+        current = read_json(path)
+        keys = ("launch_id", "attempt_id", "pid", "source", "argv", "preview_hash", "out", "started_at")
+        if any(current.get(key) != expected.get(key) for key in keys) or not current.get("wait_for_compute_lease"):
+            raise ConvertError("receipt_changed", "The conversion receipt changed before compute registration.", "Inspect conversion status before retrying.")
+        current["compute_lease_registered"] = True
+        _atomic_in_directory(Path(path).parent, Path(path).name, (json.dumps(current, sort_keys=True) + "\n").encode(), 0o600)
+        expected.update(current)
 
 
 def load_receipts(receipts_dir=None):
@@ -591,6 +742,36 @@ def load_receipts(receipts_dir=None):
         if receipt is not None:
             receipts.append(receipt)
     return receipts
+
+
+def _processes_quiescent(receipt):
+    """Prove the recorded isolated group has no live members without signalling."""
+    from .compute import group_members
+    group = receipt.get("execution_group")
+    if (not receipt.get("require_completion") or not isinstance(group, dict)
+            or type(group.get("pgid")) is not int or group["pgid"] != receipt["pid"]
+            or not isinstance(group.get("leader_identity"), str) or not group["leader_identity"]):
+        return False
+    try:
+        return not group_members(group["pgid"])
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
+
+
+def _check_completed_output(receipt):
+    if receipt.get("completion_observed") is not True or receipt.get("exit_code") != 0:
+        raise ValueError("The conversion has no observed successful worker completion.")
+    output = safe_path(receipt["out"])
+    evidence = read_json(output / "mlx-converter.json")
+    expected = {"schema_version": "1.1", "tool": "mlx-agent.convert", "source": receipt["source"],
+                "q_bits": receipt["q_bits"], "backend": receipt.get("backend", "mlx-lm"),
+                "model_type": receipt.get("model_type"), "preview_hash": receipt.get("preview_hash"),
+                "launch_id": receipt["launch_id"], "attempt_id": receipt.get("attempt_id"),
+                "out": str(output)}
+    if any(evidence.get(key) != value for key, value in expected.items()):
+        raise ValueError("The output provenance does not match its completed conversion receipt.")
+    if evidence.get("output_fingerprint") != fingerprint(output, exclude=("mlx-converter.json",)):
+        raise ValueError("The converted output changed after observed completion.")
 
 
 def status_convert(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_command,
@@ -607,7 +788,12 @@ def status_convert(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_com
         entry = {
             "receipt": str(path),
             "repo": receipt["repo"],
-            "source": _source_kind(receipt),
+            "source": _source_kind(receipt), "source_details": dict(receipt.get("source") or {}),
+            "preview_hash": receipt.get("preview_hash"), "backend": receipt.get("backend", "mlx-lm"),
+            "model_type": receipt.get("model_type"), "downloads_dir": receipt.get("downloads_dir"), "completion_observed": receipt.get("completion_observed", False),
+            "exit_code": receipt.get("exit_code"), "exit_status": receipt.get("exit_status"),
+            "attempt_id": receipt.get("attempt_id"),
+            "processes_quiescent": _processes_quiescent(receipt),
             "q_bits": receipt["q_bits"],
             "out": receipt["out"],
             "pid": receipt["pid"],
@@ -617,21 +803,37 @@ def status_convert(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_com
         }
         if receipt.get("completed_at"):
             entry["state"] = receipt.get("exit_status") or "done"
+            if receipt.get("require_completion") and entry["state"] == "done":
+                try:
+                    _check_completed_output(receipt)
+                except (OSError, ValueError, KeyError, TypeError) as error:
+                    entry["state"] = "failed"
+                    entry["error"] = str(error)
             entries.append(entry)
             continue
         if pid_alive(receipt["pid"]):
             command = pid_command(receipt["pid"])
             entry["state"] = "running" if _argv_matches(
-                {"argv": receipt["argv"], "port": None, "repo": receipt["repo"]},
+                {"argv": receipt.get("monitor_argv") or receipt["argv"], "port": None,
+                 "repo": receipt["monitor_argv"][-1] if receipt.get("monitor_argv") else receipt["repo"]},
                 command,
                 require_port=False,
             ) else "unknown"
             entries.append(entry)
             continue
+        if receipt.get("require_completion"):
+            entry["state"] = "failed"
+            entry["error"] = "The conversion monitor exited without observed worker completion."
+            entries.append(entry)
+            continue
         exit_status = "done" if Path(receipt["out"]).exists() else "failed"
+        original = dict(receipt)
         receipt["completed_at"] = now()
         receipt["exit_status"] = exit_status
-        _write_receipt(root, receipt, "{0}.json".format(_slug(receipt)))
+        if not _write_receipt(root, receipt, "{0}.json".format(_slug(receipt)), expected=original):
+            entry["state"] = "unknown"
+            entries.append(entry)
+            continue
         entry["state"] = exit_status
         entry["completed_at"] = receipt["completed_at"]
         entries.append(entry)

@@ -15,7 +15,7 @@ python3 scripts/mlx-agent convert status
 - Fresh output path (never overwrites).
 - Conversion receipt checks and a shared compute lease prevent conflicting heavy jobs.
 
-The preview renders the exact `mlx_lm.convert` argv before anything runs. `convert status` cross-checks the receipt against the live process and records the exit once (`done` when the output directory exists, `failed` otherwise).
+The preview renders the exact `mlx_lm.convert` argv before anything runs. Legacy `convert status` cross-checks the receipt against the live process and infers `done` from an output directory. Managed updates use `--require-completion` to record the worker's observed exit and output provenance instead.
 
 MLX-LM, MLX-VLM, MLX-Audio and MLX-Embeddings conversions and GGUF files without a port accept 4, 5, 6 and 8 bits.
 MLX-Video and mflux converters, exported music checkpoints and the GGUF ports
@@ -195,3 +195,81 @@ Providing `--mlx-root` contains the scan to those folders without adding default
 GGUF locations. Add `--gguf-root` for other weight folders you want included.
 GGUF file links outside the selected roots are excluded. The report keeps
 results from readable folders and lists unavailable locations in `root_errors`.
+
+## Complete a managed revision update
+
+Bind conversion to a completed managed download and record the actual worker
+outcome with `--require-completion`:
+
+```bash
+python3 scripts/mlx-agent convert start --repo org/model \
+  --source-path /path/to/selected-checkpoint \
+  --fetch-receipt /path/to/fetch-receipt.json \
+  --backend mlx-lm --q-bits 4 --out /path/to/new-output \
+  --receipts-dir /path/to/state --require-completion --json
+```
+
+Preview first, then repeat the arguments with `--confirm --preview-hash`.
+For a subfolder checkpoint, `--source-path` names the physical checkpoint
+folder and `--subfolder` retains its original repository-relative selection.
+For GGUF, use `--gguf` instead of `--repo`. Select a vision projector explicitly
+with `--projector PATH --require-projector`; a missing, incompatible or
+ambiguous required projector is refused. Its identity is part of the preview.
+A managed GGUF projector must belong to the primary fetch's reviewed additional
+file set.
+
+Repeat `--dependency-fetch-receipt PATH` for declared converter dependencies.
+Managed recipe conversion reads the LoRA from the primary local source and its
+base from a matching pinned dependency receipt. It does not fall back to the
+Hugging Face cache. Dependency choices and fingerprints are included in the
+preview and receipt.
+
+With `--require-completion`, `convert status` reports `done` only after the worker
+exits successfully, its owned descendants finish and output provenance is saved. It adds `completion_observed`,
+`exit_code`, `preview_hash`, `backend`, `model_type` and structured
+`source_details`; the existing `source` string remains available. An interrupted
+monitor cannot establish success from an output folder. Canary verification is
+still a separate step.
+Observed conversions retain a distinct receipt and log for each launch; use the
+returned `receipt_path` or the matching status entry rather than deriving a path
+from the preview slug.
+
+`processes_quiescent` is true only when a fresh process-table check proves the
+recorded isolated group has no live members. It remains false while the monitor
+or a surviving worker is alive, and when group evidence or inspection is
+unavailable. Require it before moving incomplete output. Status also rechecks
+the recorded output fingerprint before reporting `done`; changed output or
+provenance reports `failed`.
+
+`source_details.origin` records the validated HF `repo`, immutable `revision`,
+`file`, `subfolder` and `additional_files`. `source_details.projector` and
+`source_details.dependencies` retain their own source identities. A dependency
+file bundle's `path` is its container directory; its `origin.file` and
+`origin.additional_files` preserve the exact selection. HTTP support is recorded
+separately in `source_details.support`. Use `--downloads-dir` for its reviewed
+managed location; the value is also recoverable from the matching fetch receipt. Successful
+observed conversion writes `mlx-converter.json` with this source evidence,
+recipe, backend, quantization, preview hash and separate output path. Historical
+outputs without retained evidence are not assigned an inferred original revision.
+
+### Durable conversion queue
+
+`lab queue` accepts schema `1.2` preparation fields on an `enqueue` request:
+`backend`, `model_type`, `subfolder`, `source_path`, `projector`,
+`require_projector`, `fetch_receipt`, `dependency_fetch_receipts`, `downloads_dir`
+and `require_completion`. Unset strings default to null, booleans to false and the
+dependency receipt list to empty. Existing `1.0` and `1.1` state remains readable.
+The queue saves the reviewed intent before launch and forwards it to the same
+conversion entry point and shared compute lease. Use `run` to advance queued
+work, then poll the matching conversion receipt; a queue entry disappearing is
+not completion evidence.
+Prepared starts persist an `attempt_id` before launch and carry it through the
+receipt and status. Retries receive a new token; reconciliation requires the
+exact starting token and never consumes an older completed or failed attempt.
+The queue supplies this transport token through `--attempt-id`; enqueue requests
+do not supply it, and it is excluded from the conversion preview hash. A `run`
+response includes the actual receipt path in `result.receipt_path`, including
+recovered starts.
+
+`serve discover` advertises `capabilities.model_update_preparation: true` when
+these bundle, provenance, queue and observed-completion contracts are supported.

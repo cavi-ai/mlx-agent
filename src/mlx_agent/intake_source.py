@@ -33,8 +33,8 @@ def validate_revision(text):
     return text
 
 
-def validate_file(text):
-    if not isinstance(text, str) or not text.lower().endswith(".gguf"):
+def validate_file(text, allow_support=False):
+    if not isinstance(text, str) or (not allow_support and not text.lower().endswith(".gguf")):
         raise IntakeSourceError("Only .gguf files can be picked: {0!r}".format(text))
     parts = text.split("/")
     if not all(_FILE_SEGMENT.fullmatch(part) for part in parts):

@@ -78,6 +78,49 @@ class ComputeLeaseTests(unittest.TestCase):
             with factory():
                 pass
 
+    def test_unknown_launched_group_identity_retains_lease_before_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve() / "compute"
+            def identity(pid):
+                return "launcher" if pid == os.getpid() else None
+            factory = lambda: ComputeLease("convert", root, inspector=identity, alive=lambda _: True,
+                group_probe=lambda _: [4242, 4343])
+            with self.assertRaises(ComputeBusy):
+                with factory() as lease:
+                    lease.handoff(4242, process_group=True)
+            record = json.loads((root / "owner.json").read_text())
+            self.assertEqual(record["schema"], 2)
+            self.assertEqual(record["execution_group"]["pgid"], 4242)
+            with self.assertRaises(ComputeBusy):
+                with factory():
+                    pass
+
+    def test_dead_launched_leader_cannot_release_surviving_group(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve() / "compute"
+            def identity(pid):
+                return "launcher" if pid == os.getpid() else None
+            factory = lambda: ComputeLease("convert", root, inspector=identity,
+                alive=lambda pid: pid == os.getpid(), group_probe=lambda _: [4343])
+            with factory() as lease:
+                lease.handoff(4242, process_group=True)
+            with self.assertRaises(ComputeBusy):
+                with factory():
+                    pass
+
+    def test_unknown_handoff_preserves_an_already_bound_execution_group(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve() / "compute"
+            identities = {os.getpid(): "launcher", 4242: "monitor"}
+            with self.assertRaises(ComputeBusy):
+                with ComputeLease("convert", root, inspector=identities.get, alive=lambda _: True,
+                                  group_probe=lambda _: [4242]) as lease:
+                    with patch("mlx_agent.compute.os.getpgid", return_value=4242):
+                        lease.bind_process_group(4242)
+                    del identities[4242]
+                    lease.handoff(4242)
+            self.assertEqual(json.loads((root / "owner.json").read_text())["execution_group"]["pgid"], 4242)
+
     def test_uninspectable_execution_group_never_releases_compute(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve() / "compute"

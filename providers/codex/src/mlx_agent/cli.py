@@ -1589,9 +1589,11 @@ def _add_intake_arguments(parser):
     )
     fetch.add_argument("source")
     fetch.add_argument("--file", default=None)
+    fetch.add_argument("--additional-file", action="append", default=[], help="exact companion or shard at the same immutable revision (repeatable)")
     fetch.add_argument("--revision", default=None)
     fetch.add_argument("--hf-cache", default=None)
     fetch.add_argument("--local-dir", default=None)
+    fetch.add_argument("--downloads-dir", default=None, help="reviewed support-file location (inside a managed local destination)")
     fetch.add_argument(
         "--model-type", default=None,
         help="model_type from intake resolve; a ported type downloads only the port's files",
@@ -1666,9 +1668,9 @@ def _run_intake(arguments):
             jobs = status_fetch(arguments.receipts_dir)
             return _emit_serve_result(ResultEnvelope.ok(operation, {"jobs": jobs}), arguments.json)
         if arguments.intake_command == "fetch":
-            plan = plan_fetch(arguments.source, revision=arguments.revision, file=arguments.file,
+            plan = plan_fetch(arguments.source, revision=arguments.revision, file=arguments.file, additional_files=arguments.additional_file,
                               hf_cache=arguments.hf_cache, local_dir=arguments.local_dir,
-                              model_type=arguments.model_type)
+                              model_type=arguments.model_type, downloads_dir=arguments.downloads_dir)
             outcome = start_fetch(plan, receipts_dir=arguments.receipts_dir,
                                   confirm=arguments.confirm, preview_hash=arguments.preview_hash)
             if outcome["status"] == "preview":
@@ -1814,6 +1816,13 @@ def _add_convert_arguments(parser):
     start.add_argument("--receipts-dir", default=None)
     start.add_argument("--hf-cache", default=None)
     start.add_argument("--source-path", default=None, help="exact downloaded checkpoint directory for --repo; no second download")
+    start.add_argument("--downloads-dir", default=None, help="exact reviewed support-file directory for --repo")
+    start.add_argument("--projector", help="exact matching local vision projector GGUF")
+    start.add_argument("--require-projector", action="store_true", help="refuse a missing or ambiguous vision projector")
+    start.add_argument("--fetch-receipt", help="completed immutable managed fetch receipt for the primary source")
+    start.add_argument("--dependency-fetch-receipt", action="append", default=[], help="completed managed dependency fetch receipt (repeatable)")
+    start.add_argument("--require-completion", action="store_true", help="record actual worker exit and normalized output provenance")
+    start.add_argument("--attempt-id", default=None, help=argparse.SUPPRESS)
     start.add_argument("--json", action="store_true")
     status = actions.add_parser("status", help="cross-check convert receipts against live processes")
     status.add_argument("--receipts-dir", default=None)
@@ -2040,13 +2049,19 @@ def _run_convert(arguments):
                     "Drop --backend when converting a GGUF file.",
                 )
             plan = plan_gguf_convert(
-                arguments.gguf, q_bits=arguments.q_bits, out=arguments.out
+                arguments.gguf, q_bits=arguments.q_bits, out=arguments.out, projector=arguments.projector,
+                require_projector=arguments.require_projector, fetch_receipt=arguments.fetch_receipt,
+                dependency_fetch_receipts=arguments.dependency_fetch_receipt, require_completion=arguments.require_completion,
             )
         else:
             plan = plan_convert(arguments.repo, q_bits=arguments.q_bits, out=arguments.out,
                                 backend=arguments.backend, model_type=arguments.model_type,
                                 subfolder=arguments.subfolder, hf_cache=arguments.hf_cache,
-                                source_path=arguments.source_path)
+                                source_path=arguments.source_path, fetch_receipt=arguments.fetch_receipt, downloads_dir=arguments.downloads_dir,
+                                dependency_fetch_receipts=arguments.dependency_fetch_receipt,
+                                require_completion=arguments.require_completion)
+            if arguments.projector or arguments.require_projector:
+                raise ConvertError("invalid_arguments", "Projector selection is only valid with --gguf.", "Use the GGUF conversion source.")
         if not arguments.confirm:
             result = ResultEnvelope.ok(
                 operation, {"plan": plan, "requires_confirmation": True}
@@ -2067,6 +2082,7 @@ def _run_convert(arguments):
             receipts_dir=arguments.receipts_dir,
             confirm=True,
             preview_hash=arguments.preview_hash,
+            attempt_id=arguments.attempt_id,
             model_present=None if arguments.gguf else default_model_present(arguments.hf_cache),
         )
         receipt = outcome["receipt"]

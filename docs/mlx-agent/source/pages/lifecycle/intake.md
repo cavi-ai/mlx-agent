@@ -81,3 +81,47 @@ python3 scripts/mlx-agent intake port-analysis /path/to/TripoSG --json
 `port-plan` sends architecture context to an already-running local model and
 writes a Markdown proposal. Review this generated guidance before implementing
 a port; it does not add a backend or establish architecture support.
+
+## Pinned model updates
+
+For a managed update, use an immutable 40-character commit and a new absolute
+`--local-dir`. The destination must not exist. Repeat `--additional-file` to
+include exact GGUF companions or shards beside the primary `--file`:
+
+```bash
+python3 scripts/mlx-agent intake fetch org/model --revision "$REVISION" \
+  --file model.gguf --additional-file mmproj.gguf \
+  --local-dir /path/to/new-source --receipts-dir /path/to/state --json
+```
+
+Inspect the preview, then repeat its arguments with `--confirm --preview-hash`.
+The file set, revision and destination are bound to that hash. Additional files
+require a pinned revision and local destination; shared-cache downloads are not
+used for this mode. Existing `--file` requests remain supported. The same pinned file-set interface accepts configuration, tokenizer and weight files for declared HF dependencies, including safetensors and binary assets.
+
+`intake status` includes `additional_files`, `preview_hash` and completed `files`
+entries containing relative `path`, `bytes` and `signature`. These signatures
+bind local metadata and bounded file samples; they are not full-file checksums.
+Status rechecks managed files before reporting `done`; changed, missing or linked
+payloads report `failed` with no completed path or files. The returned `path`
+is the download container; append the selected `file` or `subfolder` when needed.
+A completed managed fetch receipt can be passed to conversion with
+`--fetch-receipt`. Changed files or a marker belonging to another launch are
+refused. Managed fetch receipts and markers have immutable per-launch paths;
+use the actual receipt returned by start/status, preserving older queued sources.
+
+A pinned managed recipe fetch downloads its primary repository's files only.
+Fetch each required base or dependency separately at an explicit immutable
+revision, then pass its completed receipt through
+`--dependency-fetch-receipt`. Recipe bases must match the declared base commit;
+a mutable dependency reference is not relabeled as a resolved commit.
+
+`required_dependencies` lists each declared HF support repository, its known
+immutable revision or null, and its required files. A null revision needs an
+explicit resolved commit; an empty file list denotes a snapshot dependency.
+The managed primary fetch never downloads those repositories implicitly.
+Manifest-declared HTTP assets are downloaded beneath `<local_dir>/support`,
+checked against their declared size and SHA-256, and included in completed file
+identities. Plan, receipt and status expose `downloads` and `downloads_dir`.
+Pass that support directory through conversion or use the matching completed
+fetch receipt; existing shared download/cache locations are not substituted.

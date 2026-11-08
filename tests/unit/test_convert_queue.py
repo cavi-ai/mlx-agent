@@ -165,7 +165,7 @@ class ConvertQueueTests(unittest.TestCase):
         store.save(items)
         self.assertEqual(store.load(), items)
         payload = json.loads(path.read_text(encoding="utf-8"))
-        self.assertEqual(payload["schema_version"], "1.1")
+        self.assertEqual(payload["schema_version"], "1.2")
 
     def test_store_migrates_schema_1_0_items_in_memory(self):
         path = self.root / "legacy" / "convert-queue.json"

@@ -52,8 +52,21 @@ def unwrap(envelope):
         error.get("remediation", "Inspect the agent output and retry."),
     )
 
+def _preparation_arguments(values):
+    result = []
+    for name in ("backend", "model_type", "subfolder", "source_path", "projector", "fetch_receipt", "downloads_dir", "attempt_id"):
+        if values.get(name) is not None:
+            result += ["--" + name.replace("_", "-"), values[name]]
+    for name in ("require_projector", "require_completion"):
+        if values.get(name):
+            result.append("--" + name.replace("_", "-"))
+    for value in values.get("dependency_fetch_receipts") or []:
+        result += ["--dependency-fetch-receipt", value]
+    return result
+
+
 def start(agent_path, gguf_path, preview_hash, q_bits=4, out=None,
-          timeout=DEFAULT_TIMEOUT, runner=None):
+          timeout=DEFAULT_TIMEOUT, runner=None, **preparation):
     """Start a reviewed GGUF conversion. The hash must come from a preview."""
     argv = [
         "convert", "start", "--gguf", gguf_path, "--q-bits", str(q_bits),
@@ -61,10 +74,10 @@ def start(agent_path, gguf_path, preview_hash, q_bits=4, out=None,
     ]
     if out:
         argv.extend(["--out", out])
-    return unwrap(run(agent_path, argv, timeout=timeout, runner=runner))
+    return unwrap(run(agent_path, argv + _preparation_arguments(preparation), timeout=timeout, runner=runner))
 
 def start_repo(agent_path, repo, preview_hash, q_bits=4, out=None, hf_cache=None,
-               timeout=DEFAULT_TIMEOUT, runner=None):
+               timeout=DEFAULT_TIMEOUT, runner=None, **preparation):
     """Start a reviewed HF-cache conversion. The hash must come from a preview."""
     argv = [
         "convert", "start", "--repo", repo, "--q-bits", str(q_bits),
@@ -74,13 +87,13 @@ def start_repo(agent_path, repo, preview_hash, q_bits=4, out=None, hf_cache=None
         argv.extend(["--out", out])
     if hf_cache:
         argv.extend(["--hf-cache", hf_cache])
-    return unwrap(run(agent_path, argv, timeout=timeout, runner=runner))
+    return unwrap(run(agent_path, argv + _preparation_arguments(preparation), timeout=timeout, runner=runner))
 
 def jobs(agent_path, timeout=DEFAULT_TIMEOUT, runner=None):
     """Cross-check conversion receipts against live processes."""
     return unwrap(run(agent_path, ["convert", "status"], timeout=timeout, runner=runner))
 
-def read_convert_receipts(entries, max_bytes=MAX_LOG_BYTES):
+def read_convert_receipts(entries, max_bytes=MAX_LOG_BYTES, include_path=False):
     """Read bounded receipt JSON from paths advertised by convert status."""
     receipts = []
     for entry in entries or []:
@@ -135,5 +148,7 @@ def read_convert_receipts(entries, max_bytes=MAX_LOG_BYTES):
                 "A conversion receipt is not a JSON object.",
                 "Inspect or remove the malformed receipt in the mlx-agent state directory.",
             )
+        if include_path:
+            receipt["_receipt_path"] = str(location)
         receipts.append(receipt)
     return receipts

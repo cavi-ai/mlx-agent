@@ -40,13 +40,21 @@ def group_members(pgid):
     """Return live members, excluding zombies which no longer own compute."""
     if type(pgid) is not int or pgid <= 0:
         raise ValueError("A process group requires a positive ID.")
-    result = subprocess.run(["/bin/ps", "-axo", "pid=,pgid=,stat="], capture_output=True, text=True, timeout=5)
-    if result.returncode != 0:
+    probe = subprocess.Popen(["/bin/ps", "-axo", "pid=,pgid=,stat="], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        output, _ = probe.communicate(timeout=5)
+    except BaseException:
+        probe.kill()
+        probe.wait()
+        raise
+    if probe.returncode != 0:
         raise OSError("The process table is unavailable.")
     members = []
-    for line in result.stdout.splitlines():
+    for line in output.splitlines():
         fields = line.split()
-        if len(fields) >= 3 and int(fields[1]) == pgid and not fields[2].startswith("Z"):
+        # A probe executed inside the target group observes itself. Its own
+        # short-lived PID must not keep that group permanently non-quiescent.
+        if len(fields) >= 3 and int(fields[0]) != probe.pid and int(fields[1]) == pgid and not fields[2].startswith("Z"):
             members.append(int(fields[0]))
     return members
 
@@ -136,18 +144,31 @@ class ComputeLease:
         self.execution_group = {"pgid": pid, "leader_identity": identity}
         self._write(dict(self.record, schema=2, execution_group=self.execution_group))
 
-    def handoff(self, pid):
+    def handoff(self, pid, process_group=False):
         if type(pid) is not int or pid <= 0:
             raise ValueError("Detached compute owner requires a positive PID.")
-        identity = self.inspector(pid)
+        if process_group:
+            self.execution_group = {"pgid": pid, "leader_identity": "unverified"}
+        record = {"schema": 1, "pid": pid, "identity": None, "operation": self.operation}
+        if self.execution_group is not None:
+            record.update(schema=2, execution_group=dict(self.execution_group))
+        # Persist ownership before asking ps about a process that already exists.
+        # Missing identity or a lost leader must never release surviving children.
+        self._write(record)
+        self.detached = True
+        try:
+            identity = self.inspector(pid)
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            raise ComputeBusy("The launched process cannot be inspected; its ownership is retained.") from error
         if identity is None:
             if not self.alive(pid):
-                return  # A process that already exited owns no compute.
-            self._write({"schema": 1, "pid": pid, "identity": None, "operation": self.operation})
-            self.detached = True
+                return
             raise ComputeBusy("The launched process identity could not be established; its ownership is retained.")
-        self._write({"schema": 1, "pid": pid, "identity": identity, "operation": self.operation})
-        self.detached = True
+        record["identity"] = identity
+        if record.get("execution_group", {}).get("pgid") == pid:
+            record["execution_group"]["leader_identity"] = identity
+            self.execution_group = record["execution_group"]
+        self._write(record)
 
     def __exit__(self, *_):
         if self.descriptor is not None:
@@ -167,8 +188,14 @@ class ComputeLease:
 
 def guarded_start(operation, launch, *args, **kwargs):
     with ComputeLease(operation) as lease:
+        observed_conversion = operation == "convert" and bool(args and args[0].get("require_completion"))
+        if observed_conversion:
+            kwargs["wait_for_compute_lease"] = True
         result = launch(*args, **kwargs)
         pid = result.get("receipt", {}).get("pid")
         if pid is not None:
-            lease.handoff(pid)
+            lease.handoff(pid, process_group=observed_conversion)
+            if observed_conversion:
+                from .convert import register_monitor_lease
+                register_monitor_lease(result["receipt_path"], result["receipt"])
         return result

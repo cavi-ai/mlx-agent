@@ -13,7 +13,7 @@ import sys
 
 from mlx_agent.compute import compute_root
 from mlx_agent.convert import load_receipts, status_convert
-from mlx_agent.convert_queue import ConvertQueue, QueueStore, QueueOperationError, QueuePersistenceError, _validated_items
+from mlx_agent.convert_queue import ConvertQueue, QueueStore, QueueOperationError, QueuePersistenceError, _validated_items, PREPARATION_FIELDS
 from mlx_agent import queue_bridge
 from mlx_agent.transactions import _assert_safe_directory, _assert_safe_target, _open_directory
 
@@ -21,7 +21,7 @@ MAXIMUM_BYTES = 8 * 1024 * 1024
 _FIELDS = {
     "snapshot": set(), "run": set(), "clear": set(),
     "cancel": {"id"}, "retry": {"id"}, "move": {"id", "direction"},
-    "enqueue": {"kind", "preview_hash", "q_bits", "out", "path", "repo", "hf_cache", "label"},
+    "enqueue": {"kind", "preview_hash", "q_bits", "out", "path", "repo", "hf_cache", "label"} | PREPARATION_FIELDS,
     "adopt-preview": {"source"}, "adopt": {"source", "preview_hash"},
 }
 
@@ -127,7 +127,7 @@ def execute(request, path=None, receipts_dir=None):
                     location.unlink()
                 raise
             return {**plan, "status": "adopted", "backup": str(backup),
-                    "conversion_queue": {"schema_version": "1.1", "items": items}}
+                    "conversion_queue": {"schema_version": "1.2", "items": items}}
         if location.exists() and location.stat().st_size > MAXIMUM_BYTES:
             raise ValueError("Queue state exceeds the supported size.")
         queue = ConvertQueue(location)
@@ -154,7 +154,7 @@ def execute(request, path=None, receipts_dir=None):
                     queue.cancel(item["id"])
             result = queue.try_start_next(str(Path(__file__).resolve().parents[2])) or {"status": "waiting"}
         return {**result, "queue_path": str(location),
-                "conversion_queue": {"schema_version": "1.1", "items": queue.snapshot()}}
+                "conversion_queue": {"schema_version": "1.2", "items": queue.snapshot()}}
 
 
 def _write_backup(backup, original):

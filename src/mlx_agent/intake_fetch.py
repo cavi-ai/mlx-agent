@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from .backends import (
 from .convert import _default_module_present, _write_receipt, receipts_root
 from .intake_source import parse_hf_source, validate_file, validate_revision
 from .serve import _pid_alive
+from .source_evidence import completed_fetch, immutable_revision, safe_path
 
 FETCH_RECEIPT_KIND = "fetch"
 FETCH_RUNNER = Path(__file__).resolve().with_name("fetch_runner.py")
@@ -39,26 +41,38 @@ def _utc_now():
 
 
 def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, python=None, model_type=None,
-               manifests=None, downloads_dir=None):
+               manifests=None, downloads_dir=None, additional_files=None):
     """A download plan. A snapshot of a ported model type (``model_type`` from intake) takes only the
     port's files; any other snapshot skips formats MLX never reads. A subfolder source takes only that folder."""
     source = parse_hf_source(text)
     if revision:
         source["revision"] = validate_revision(revision)
     if file is not None:
-        source["file"] = validate_file(file)
+        source["file"] = validate_file(file, allow_support=True)
     local = None
     if local_dir is not None:
         local = Path(str(local_dir)).expanduser()
         if not local.is_absolute():
             raise FetchError("invalid_arguments", "--local-dir must be an absolute path.",
                              "Pass the full destination directory.")
+    extra = sorted(additional_files or [])
+    if extra and (not source["file"] or source.get("subfolder") or not immutable_revision(source["revision"]) or local is None or hf_cache is not None):
+        raise FetchError("invalid_arguments", "Additional files require a primary file, immutable revision and new local destination without a shared cache.",
+                         "Select the exact files at one commit and pass --local-dir.")
+    if len(extra) > 64 or len(set(extra)) != len(extra) or source["file"] in extra:
+        raise FetchError("invalid_arguments", "The additional file set is duplicated or exceeds its limit.", "Select each companion or shard once (at most 64).")
+    for name in extra:
+        validate_file(name, allow_support=True)
+    fresh = local is not None and hf_cache is None and immutable_revision(source["revision"])
+    if fresh and source["file"] and source.get("subfolder"):
+        raise FetchError("invalid_arguments", "A managed file selection must name its repository-relative path without a separate subfolder.", "Use org/name with --file folder/name instead.")
     python = str(python or sys.executable)
     argv = [python, str(FETCH_RUNNER), "--repo", source["repo"], "--revision", source["revision"]]
     ignore_patterns, allow_patterns = [], []
     prefix = source["subfolder"] + "/" if source.get("subfolder") else ""
     ported = recipe = None
     requires, downloads = {}, []
+    support_dir = None
     if not source["file"] and model_type:
         manifests = load_manifests() if manifests is None else manifests
         ported = snapshot_files(model_type, manifests)
@@ -66,13 +80,17 @@ def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, py
         recipe = recipe if recipe and recipe["port"] == model_type else None
     if source["file"]:
         argv += ["--file", source["file"]]
+        for name in extra:
+            argv += ["--additional-file", name]
     elif recipe:
         # The recipe's model is its pinned base snapshot plus the LoRA this repository ships.
         allow_patterns = [recipe["lora"]]
         ignore_patterns = list(FETCH_IGNORE_PATTERNS)
-        argv += ["--allow", recipe["lora"], "--base-repo", recipe["base"], "--base-revision", recipe["base_revision"]]
-        for pattern in ignore_patterns:
-            argv += ["--base-ignore", pattern]
+        argv += ["--allow", recipe["lora"]]
+        if not fresh:
+            argv += ["--base-repo", recipe["base"], "--base-revision", recipe["base_revision"]]
+            for pattern in ignore_patterns:
+                argv += ["--base-ignore", pattern]
     else:
         if ported:
             allow_patterns = [prefix + name for name in ported]
@@ -85,22 +103,35 @@ def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, py
         for pattern in ignore_patterns:
             argv += ["--ignore", pattern]
         requires = port_requirements(model_type, manifests) if ported and not prefix else {}
-        for repo, names in sorted(requires.items()):
-            argv += [item for name in names for item in ("--require", repo + "=" + name)]
+        if not fresh:
+            for repo, names in sorted(requires.items()):
+                argv += [item for name in names for item in ("--require", repo + "=" + name)]
         downloads = port_downloads(model_type, manifests) if ported and not prefix else []
         for entry in downloads:
             argv += ["--download", "{0}={1}={2}".format(entry["sha256"], entry["size"], entry["url"])]
         if downloads:
-            argv += ["--downloads-dir", str(downloads_dir if downloads_dir is not None else downloads_root())]
+            if fresh:
+                support_dir = safe_path(downloads_dir) if downloads_dir is not None else safe_path(local) / "support"
+                if support_dir == safe_path(local) or not support_dir.is_relative_to(safe_path(local)):
+                    raise FetchError("invalid_arguments", "Managed support files must stay beneath the reviewed local destination.", "Choose a support folder inside --local-dir.")
+            else:
+                support_dir = Path(downloads_dir) if downloads_dir is not None else downloads_root()
+            argv += ["--downloads-dir", str(support_dir)]
     if hf_cache:
         argv += ["--cache-dir", str(hf_cache)]
     if local is not None:
         argv += ["--local-dir", str(local)]
+    if fresh:
+        argv += ["--fresh-destination", "--capture-identities"]
+        if source.get("subfolder"):
+            argv += ["--source-subfolder", source["subfolder"]]
     slug = _UNSAFE.sub("-", "{0}--{1}".format(
         source["repo"].replace("/", "--"), source["file"] or (source.get("subfolder") or "snapshot").replace("/", "--")
     )).strip("-.")[:160]
     plan = {
         "repo": source["repo"], "revision": source["revision"], "file": source["file"],
+        "additional_files": extra, "fresh_destination": fresh,
+        "downloads_dir": str(support_dir) if support_dir is not None else None,
         "subfolder": source.get("subfolder"),
         "base": {"repo": recipe["base"], "revision": recipe["base_revision"]} if recipe else None,
         "cache_dir": str(hf_cache) if hf_cache else None,
@@ -109,6 +140,10 @@ def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, py
         "allow_patterns": allow_patterns,
         "slug": slug, "argv": argv, "network": ["huggingface.co"],
     }
+    dependencies = {repo: {"repo": repo, "revision": None, "files": list(names)} for repo, names in sorted(requires.items())}
+    if recipe:
+        dependencies[recipe["base"]] = {"repo": recipe["base"], "revision": recipe["base_revision"], "files": []}
+    plan["required_dependencies"] = list(dependencies.values())
     if requires:
         plan["requires"] = {repo: list(names) for repo, names in sorted(requires.items())}
     if downloads:
@@ -142,25 +177,37 @@ def start_fetch(plan, receipts_dir=None, confirm=False, preview_hash=None, spawn
         raise FetchError("runtime_not_installed",
                          "Downloads need {0} in this interpreter.".format(", ".join(missing)),
                          "Run mlx-agent from the workbench .venv; fetch never installs runtimes.")
+    if plan.get("fresh_destination"):
+        destination = safe_path(plan["local_dir"])
+        if destination.exists():
+            raise FetchError("destination_exists", "The managed download destination already exists.", "Choose a fresh destination; existing files are never replaced.")
     root = receipts_root(receipts_dir, kind=FETCH_RECEIPT_KIND)
-    receipt_path = root / "{0}.json".format(plan["slug"])
+    slug = plan["slug"] + ("-" + uuid.uuid4().hex if plan.get("fresh_destination") else "")
+    receipt_path = root / "{0}.json".format(slug)
     existing = _read_json(receipt_path)
     if existing and not existing.get("completed_at") and isinstance(existing.get("pid"), int) \
             and pid_alive(existing["pid"]) and not Path(existing.get("marker", "")).exists():
         raise FetchError("job_in_progress", "A download of {0} is still running.".format(plan["repo"]),
                          "Wait for it to finish (intake status).")
     root.mkdir(parents=True, exist_ok=True)
-    marker = root / "{0}.done.json".format(plan["slug"])
+    marker = root / "{0}.done.json".format(slug)
     if marker.exists():
         marker.unlink()
-    log_path = root / "{0}.log".format(plan["slug"])
+    log_path = root / "{0}.log".format(slug)
+    started_at = now()
+    proof_token = uuid.uuid4().hex if plan.get("fresh_destination") else None
     argv = list(plan["argv"]) + ["--marker", str(marker)]
+    if proof_token:
+        argv += ["--proof-token", proof_token, "--preview-hash", plan["preview_hash"], "--started-at", started_at]
     pid = (spawn or spawn_with_env)(argv, str(log_path), backend_environment(env))
     receipt = {
         "schema_version": "1.0", "kind": FETCH_RECEIPT_KIND, "repo": plan["repo"],
         "revision": plan["revision"], "file": plan["file"], "subfolder": plan.get("subfolder"),
-        "local_dir": plan["local_dir"], "cache_dir": plan["cache_dir"], "slug": plan["slug"], "argv": argv, "pid": pid,
-        "log_path": str(log_path), "marker": str(marker), "started_at": now(),
+        "additional_files": plan.get("additional_files", []), "fresh_destination": plan.get("fresh_destination", False), "proof_token": proof_token,
+        "downloads_dir": plan.get("downloads_dir"), "downloads": plan.get("downloads", []),
+        "required_dependencies": plan.get("required_dependencies", []),
+        "local_dir": plan["local_dir"], "cache_dir": plan["cache_dir"], "slug": slug, "argv": argv, "pid": pid,
+        "log_path": str(log_path), "marker": str(marker), "started_at": started_at,
         "preview_hash": plan["preview_hash"], "completed_at": None, "exit_status": None,
     }
     _write_receipt(root, receipt, receipt_path.name)
@@ -181,14 +228,25 @@ def status_fetch(receipts_dir=None, pid_alive=_pid_alive):
         entry = {
             "receipt": str(path), "repo": receipt.get("repo"), "revision": receipt.get("revision"),
             "file": receipt.get("file"), "subfolder": receipt.get("subfolder"), "local_dir": receipt.get("local_dir"),
+            "additional_files": receipt.get("additional_files", []), "preview_hash": receipt.get("preview_hash"), "files": [],
+            "downloads_dir": receipt.get("downloads_dir"), "downloads": receipt.get("downloads", []),
+            "required_dependencies": receipt.get("required_dependencies", []),
             "state": "failed",
             "path": None, "log_path": receipt.get("log_path"), "started_at": receipt.get("started_at"),
             "completed_at": None,
         }
         marker = _read_json(receipt.get("marker", ""))
         if marker:
-            entry["state"] = "done" if marker.get("exit_status") == "done" else "failed"
-            entry["path"] = marker.get("path")
+            bound = not receipt.get("fresh_destination") or all(marker.get(key) == receipt.get(key) for key in (
+                "repo", "revision", "file", "subfolder", "additional_files", "local_dir", "preview_hash", "proof_token", "started_at", "downloads_dir", "downloads"))
+            if receipt.get("fresh_destination") and bound and marker.get("exit_status") == "done":
+                try:
+                    completed_fetch(path)
+                except (OSError, ValueError, KeyError, TypeError):
+                    bound = False
+            entry["state"] = "done" if marker.get("exit_status") == "done" and bound else "failed"
+            entry["files"] = marker.get("files", []) if bound else []
+            entry["path"] = marker.get("path") if bound else None
             entry["completed_at"] = marker.get("finished_at")
         elif pid_alive(receipt["pid"]):
             entry["state"] = "running"

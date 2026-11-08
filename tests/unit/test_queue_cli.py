@@ -32,7 +32,7 @@ class QueueCliTests(unittest.TestCase):
     def test_snapshot_and_clear_report_the_queue(self):
         code, payload = self.cli({"operation": "snapshot"})
         self.assertEqual(0, code)
-        self.assertEqual({"schema_version": "1.1", "items": []}, payload["data"]["conversion_queue"])
+        self.assertEqual({"schema_version": "1.2", "items": []}, payload["data"]["conversion_queue"])
         self.assertEqual(str(self.queue), payload["data"]["queue_path"])
         code, payload = self.cli({"operation": "clear"})
         self.assertEqual((0, 0), (code, payload["data"]["removed_count"]))

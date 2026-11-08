@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import itertools
 import os
+import re
 import threading
+import uuid
 from pathlib import Path
 
 from . import queue_bridge as bridge
@@ -13,7 +15,7 @@ from .atomicio import write_text_atomic
 from .backends import QUANTIZED_BITS
 
 
-QUEUE_SCHEMA_VERSION = "1.1"
+QUEUE_SCHEMA_VERSION = "1.2"
 LEGACY_QUEUE_SCHEMA_VERSION = "1.0"
 QUEUE_FILENAME = "convert-queue.json"
 ITEM_STATES = ("queued", "starting", "failed")
@@ -22,6 +24,8 @@ QUEUE_ITEM_KEYS = {
     "hf_cache", "label", "state", "failure",
 }
 LEGACY_QUEUE_ITEM_KEYS = QUEUE_ITEM_KEYS - {"failure"}
+PREPARATION_FIELDS = {"backend", "model_type", "subfolder", "source_path", "projector", "require_projector",
+                      "fetch_receipt", "dependency_fetch_receipts", "require_completion", "downloads_dir"}
 FAILURE_KEYS = {"code", "message", "remediation"}
 
 
@@ -81,8 +85,21 @@ def _optional_string(value):
 
 def _validate_item(item, legacy=False):
     expected_keys = LEGACY_QUEUE_ITEM_KEYS if legacy else QUEUE_ITEM_KEYS
-    if not isinstance(item, dict) or set(item) != expected_keys:
+    if (not isinstance(item, dict) or not expected_keys <= set(item)
+            or set(item) - (expected_keys | PREPARATION_FIELDS | {"attempt_id"})):
         raise ValueError("queue item fields do not match schema")
+    if "attempt_id" in item and (item.get("require_completion") is not True
+            or not isinstance(item["attempt_id"], str) or re.fullmatch(r"[0-9a-f]{32}", item["attempt_id"]) is None):
+        raise ValueError("queue item attempt_id is invalid")
+    for field in PREPARATION_FIELDS - {"require_projector", "require_completion", "dependency_fetch_receipts"}:
+        if not _optional_string(item.get(field)):
+            raise ValueError("queue item {0} is invalid".format(field))
+    for field in ("require_projector", "require_completion"):
+        if field in item and type(item[field]) is not bool:
+            raise ValueError("queue item {0} is invalid".format(field))
+    dependencies = item.get("dependency_fetch_receipts", [])
+    if not isinstance(dependencies, list) or len(dependencies) > 32 or any(not isinstance(value, str) or not value for value in dependencies):
+        raise ValueError("queue item dependency fetch receipts are invalid")
     item_id = item["id"]
     if (
         not isinstance(item_id, str)
@@ -94,7 +111,7 @@ def _validate_item(item, legacy=False):
         raise ValueError("queue item kind is invalid")
     if not isinstance(item["preview_hash"], str) or not item["preview_hash"]:
         raise ValueError("queue item preview_hash is invalid")
-    if isinstance(item["q_bits"], bool) or item["q_bits"] not in QUANTIZED_BITS:
+    if isinstance(item["q_bits"], bool) or item["q_bits"] not in QUANTIZED_BITS + (32,):
         raise ValueError("queue item q_bits is invalid")
     for field in ("out", "path", "repo", "hf_cache"):
         if not _optional_string(item[field]):
@@ -128,7 +145,7 @@ def _validated_items(payload):
     if set(payload) != {"schema_version", "items"}:
         raise ValueError("queue state fields do not match schema")
     version = payload["schema_version"]
-    if version not in (LEGACY_QUEUE_SCHEMA_VERSION, QUEUE_SCHEMA_VERSION):
+    if version not in (LEGACY_QUEUE_SCHEMA_VERSION, "1.1", QUEUE_SCHEMA_VERSION):
         raise ValueError("queue schema version is unsupported")
     if not isinstance(payload["items"], list):
         raise ValueError("queue items must be a list")
@@ -248,7 +265,9 @@ class ConvertQueue:
         self.last_error = None
 
     def enqueue(self, kind, preview_hash, q_bits, out=None, path=None, repo=None,
-                label=None, hf_cache=None):
+                label=None, hf_cache=None, backend=None, model_type=None, subfolder=None,
+                source_path=None, projector=None, require_projector=False, fetch_receipt=None,
+                dependency_fetch_receipts=None, require_completion=False, downloads_dir=None):
         if kind not in ("gguf", "repo"):
             raise ValueError("kind must be gguf or repo")
         if not isinstance(preview_hash, str) or not preview_hash:
@@ -266,6 +285,10 @@ class ConvertQueue:
             "state": "queued",
             "failure": None,
         }
+        additions = dict(backend=backend, model_type=model_type, subfolder=subfolder, source_path=source_path,
+                         projector=projector, require_projector=require_projector, fetch_receipt=fetch_receipt,
+                         dependency_fetch_receipts=dependency_fetch_receipts, require_completion=require_completion, downloads_dir=downloads_dir)
+        item.update({key: value for key, value in additions.items() if value not in (None, False, [])})
         with self._lock:
             self._publish_locked(self._items + [item])
         return dict(item)
@@ -357,6 +380,7 @@ class ConvertQueue:
                         "Wait for the current operation or choose a failed item.",
                     )
                 retried = dict(item, state="queued", failure=None)
+                retried.pop("attempt_id", None)
                 candidate = self._items[:index] + self._items[index + 1:] + [retried]
                 self._publish_locked(candidate)
                 return dict(retried)
@@ -424,7 +448,7 @@ class ConvertQueue:
 
         if item["state"] == "starting":
             try:
-                receipts = bridge.read_convert_receipts(entries)
+                receipts = bridge.read_convert_receipts(entries, include_path=True)
             except bridge.BridgeError as error:
                 payload = {
                     "status": "waiting_recovery",
@@ -433,12 +457,16 @@ class ConvertQueue:
                 }
                 self.last_error = payload
                 return payload
-            if any(self._receipt_matches(item, receipt) for receipt in receipts):
+            matched = next((receipt for receipt in receipts if self._receipt_matches(item, receipt)), None)
+            if matched is not None:
                 with self._lock:
                     self._remove_locked(item["id"])
                 self.last_error = None
-                return {"status": "recovered", "item": item}
+                return {"status": "recovered", "item": item, "result": {
+                    "status": "recovered", "receipt_path": matched["_receipt_path"],
+                    "receipt": {key: value for key, value in matched.items() if key != "_receipt_path"}}}
             queued = dict(item, state="queued", failure=None)
+            queued.pop("attempt_id", None)
             with self._lock:
                 if not self._replace_locked(item["id"], queued):
                     return None
@@ -448,6 +476,8 @@ class ConvertQueue:
             return None
 
         starting = dict(item, state="starting", failure=None)
+        if starting.get("require_completion"):
+            starting["attempt_id"] = uuid.uuid4().hex
         with self._lock:
             if not self._replace_locked(item["id"], starting):
                 return None
@@ -460,6 +490,8 @@ class ConvertQueue:
                     q_bits=starting["q_bits"],
                     out=starting.get("out"),
                     runner=runner,
+                    **{key: starting[key] for key in PREPARATION_FIELDS if key in starting},
+                    **({"attempt_id": starting["attempt_id"]} if "attempt_id" in starting else {}),
                 )
             else:
                 result = bridge.start_repo(
@@ -470,6 +502,8 @@ class ConvertQueue:
                     out=starting.get("out"),
                     hf_cache=starting.get("hf_cache"),
                     runner=runner,
+                    **{key: starting[key] for key in PREPARATION_FIELDS if key in starting},
+                    **({"attempt_id": starting["attempt_id"]} if "attempt_id" in starting else {}),
                 )
             try:
                 with self._lock:
@@ -493,6 +527,7 @@ class ConvertQueue:
             if error.code in ("job_in_progress", "compute_busy"):
                 with self._lock:
                     queued = dict(starting, state="queued", failure=None)
+                    queued.pop("attempt_id", None)
                     self._replace_locked(starting["id"], queued)
                 return None
             failure = error.to_dict()
@@ -519,15 +554,24 @@ class ConvertQueue:
     def _receipt_matches(item, receipt):
         if not isinstance(receipt, dict):
             return False
+        if item.get("require_completion") and (item.get("state") != "starting"
+                or not item.get("attempt_id") or receipt.get("attempt_id") != item["attempt_id"]):
+            return False
         if receipt.get("preview_hash") != item["preview_hash"]:
             return False
         if item.get("out") is not None and receipt.get("out") != item.get("out"):
             return False
         if receipt.get("q_bits") != item["q_bits"]:
             return False
+        for field in ("backend", "model_type", "require_completion", "downloads_dir"):
+            if field in item and receipt.get(field, "mlx-lm" if field == "backend" else None) != item[field]:
+                return False
         source = receipt.get("source")
         if not isinstance(source, dict):
             return False
+        for field in ("source_path", "fetch_receipt"):
+            if item.get(field) is not None and source.get("path" if field == "source_path" else field) != item[field]:
+                return False
         if item["kind"] == "gguf":
             return source.get("path") == item["path"]
         return source.get("repo") == item["repo"]

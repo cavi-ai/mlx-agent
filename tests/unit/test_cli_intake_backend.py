@@ -31,6 +31,21 @@ def run(argv):
 
 
 class IntakeCliTests(unittest.TestCase):
+    def test_local_destinations_refuse_unresolved_revisions(self):
+        with patch("mlx_agent.intake_fetch.start_fetch") as start:
+            code, output = run(["intake", "fetch", "org/model", "--local-dir", "/models/new", "--json"])
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(output)["error"]["code"], "immutable_revision_required")
+        start.assert_not_called()
+    def test_managed_fetch_defaults_to_shared_source_admission(self):
+        with patch("mlx_agent.intake_fetch.plan_fetch", return_value=PLAN) as preview, \
+                patch("mlx_agent.intake_fetch.start_fetch", return_value={"status": "preview"}), \
+                patch("mlx_agent.fetch_storage.default_root", return_value="/state/storage"):
+            code, _ = run(["intake", "fetch", "org/model", "--revision", "a" * 40,
+                           "--local-dir", "/models/model", "--json"])
+        self.assertEqual(code, 2)
+        self.assertEqual(preview.call_args.kwargs["storage_root"], "/state/storage")
+
     def test_resolve_prints_a_summary_or_json(self):
         with patch("mlx_agent.intake.resolve", return_value=RESOLVED) as resolve:
             code, text = run(["intake", "resolve", "org/model", "--revision", "main"])

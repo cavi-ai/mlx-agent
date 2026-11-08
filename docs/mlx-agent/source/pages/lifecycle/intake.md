@@ -85,7 +85,7 @@ a port; it does not add a backend or establish architecture support.
 ## Pinned model updates
 
 For a managed update, use an immutable 40-character commit and a new absolute
-`--local-dir`. The destination must not exist. Repeat `--additional-file` to
+`--local-dir`. A new destination must not exist; an indexed completed source can be reused in place. Repeat `--additional-file` to
 include exact GGUF companions or shards beside the primary `--file`:
 
 ```bash
@@ -125,3 +125,34 @@ checked against their declared size and SHA-256, and included in completed file
 identities. Plan, receipt and status expose `downloads` and `downloads_dir`.
 Pass that support directory through conversion or use the matching completed
 fetch receipt; existing shared download/cache locations are not substituted.
+
+## Reuse managed sources
+
+Immutable fetches with `--local-dir` use a shared source index under
+`$XDG_STATE_HOME/mlx-agent/model-storage` (default `~/.local/state`).
+`--storage-root` selects another owned index. Preview is read-only.
+
+The index coordinates processes across receipt directories. A verified completed
+source is reused at its original location; preview reports `storage.mode: reuse`
+and the effective `local_dir`. Confirmation returns `status: reused`, the original
+`receipt`, and a freshly validated `reused_fetch` status record. No worker or
+second destination is created. Keep the original receipt and marker for conversion.
+
+Source identity includes the repository, immutable revision and selected file or
+checkpoint. Different revisions remain separate. Overlapping snapshots, files or
+companion selections are refused rather than copied again. Confirmation rechecks
+admission and current file evidence. Equal, parent and child destinations cannot
+be claimed by different sources. Download approval hashes bind source, recipe
+and actions independently of admission state, so a reviewed failed download can
+retry after Quarantine without silently approving another source. Running, changed or invalid sources block a
+second download. If a stopped source has been removed or moved to quarantine, a
+new preview can download it again at its original location.
+
+A snapshot already present in the configured Hugging Face cache blocks a new
+managed copy. Use that cache in place, or inspect incomplete cache files before
+retrying. The index does not search arbitrary folders, migrate provider caches,
+or delete model files.
+
+`serve discover` advertises this interface as `model_storage_admission`. Managed
+local destinations require immutable commits; `--hf-cache` selects cache storage
+instead of copying it into a second local destination.

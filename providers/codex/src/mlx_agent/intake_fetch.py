@@ -18,6 +18,7 @@ from .convert import _default_module_present, _write_receipt, receipts_root
 from .intake_source import parse_hf_source, validate_file, validate_revision
 from .serve import _pid_alive
 from .source_evidence import completed_fetch, immutable_revision, safe_path
+from . import fetch_storage
 
 FETCH_RECEIPT_KIND = "fetch"
 FETCH_RUNNER = Path(__file__).resolve().with_name("fetch_runner.py")
@@ -41,7 +42,7 @@ def _utc_now():
 
 
 def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, python=None, model_type=None,
-               manifests=None, downloads_dir=None, additional_files=None):
+               manifests=None, downloads_dir=None, additional_files=None, storage_root=None):
     """A download plan. A snapshot of a ported model type (``model_type`` from intake) takes only the
     port's files; any other snapshot skips formats MLX never reads. A subfolder source takes only that folder."""
     source = parse_hf_source(text)
@@ -149,7 +150,40 @@ def plan_fetch(text, revision=None, file=None, hf_cache=None, local_dir=None, py
     if downloads:
         plan["downloads"] = [dict(entry) for entry in downloads]
         plan["network"] = plan["network"] + sorted({entry["url"].split("/")[2] for entry in downloads})
-    canonical = json.dumps(plan, sort_keys=True, separators=(",", ":"))
+    if storage_root is not None:
+        if not fresh:
+            raise FetchError("invalid_arguments", "Storage admission requires an immutable managed destination.",
+                             "Resolve the commit and pass --local-dir without --hf-cache.")
+        try:
+            storage = fetch_storage.inspect(plan, storage_root)
+        except fetch_storage.StorageError as error:
+            raise FetchError(error.code, str(error), "Inspect the registered source receipt; preserve existing files.") from error
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise FetchError("storage_invalid", str(error), "Repair the storage index without replacing model files.") from error
+        if storage.get("local_dir"):
+            previous = plan["local_dir"]
+            plan["local_dir"] = storage["local_dir"]
+            argv[argv.index("--local-dir") + 1] = storage["local_dir"]
+            if support_dir is not None:
+                plan["downloads_dir"] = str(Path(storage["local_dir"]) / Path(support_dir).relative_to(previous))
+                argv[argv.index("--downloads-dir") + 1] = plan["downloads_dir"]
+        plan["storage"] = storage
+        if storage["mode"] == "reuse":
+            plan["argv"] = []
+            plan["network"] = []
+        if storage["mode"] == "download":
+            from .convert import cached_snapshot
+            cached = cached_snapshot(source["repo"], revision=source["revision"])
+            if cached is not None:
+                raise FetchError("source_already_cached", "This revision already has a Hugging Face cache snapshot at {0}.".format(cached),
+                                 "Scan or register that cache and use its existing source; inspect incomplete files before retrying.")
+    # Approval binds the source, recipe and filesystem/network action. Admission
+    # state is independently rechecked under the lock and must not invalidate a
+    # saved source approval merely because its own first launch registered it.
+    approval = {key: value for key, value in plan.items() if key != "storage"}
+    if plan.get("storage", {}).get("mode") == "reuse":
+        approval["reuse"] = {key: plan["storage"][key] for key in ("receipt", "fetch_preview_hash")}
+    canonical = json.dumps(approval, sort_keys=True, separators=(",", ":"))
     plan["preview_hash"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return plan
 
@@ -172,6 +206,24 @@ def start_fetch(plan, receipts_dir=None, confirm=False, preview_hash=None, spawn
     if preview_hash != plan["preview_hash"]:
         raise FetchError("preview_stale", "The supplied preview hash does not match this fetch plan.",
                          "Re-run intake fetch without --confirm and review the fresh plan.")
+    if plan.get("storage"):
+        try:
+            with fetch_storage.admission(plan) as index:
+                if plan["storage"]["mode"] == "reuse":
+                    return fetch_storage.reuse_outcome(plan)
+                return _launch_fetch(plan, receipts_dir, spawn, pid_alive, module_present, now, env, index)
+        except fetch_storage.StorageError as error:
+            raise FetchError(error.code, str(error), "Review a fresh preview before retrying; preserve the registered source.") from error
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise FetchError("storage_invalid", str(error), "Inspect the storage index and source receipt before retrying.") from error
+    return _launch_fetch(plan, receipts_dir, spawn, pid_alive, module_present, now, env)
+
+
+def _launch_fetch(plan, receipts_dir, spawn, pid_alive, module_present, now, env, index=None):
+    if index is not None:
+        from .convert import cached_snapshot
+        if cached_snapshot(plan["repo"], revision=plan["revision"]) is not None:
+            raise FetchError("source_already_cached", "This revision now exists in the Hugging Face cache.", "Use the existing cache source instead of creating another copy.")
     missing = (module_present or _default_module_present)(FETCH_MODULES)
     if missing:
         raise FetchError("runtime_not_installed",
@@ -199,17 +251,25 @@ def start_fetch(plan, receipts_dir=None, confirm=False, preview_hash=None, spawn
     argv = list(plan["argv"]) + ["--marker", str(marker)]
     if proof_token:
         argv += ["--proof-token", proof_token, "--preview-hash", plan["preview_hash"], "--started-at", started_at]
-    pid = (spawn or spawn_with_env)(argv, str(log_path), backend_environment(env))
     receipt = {
         "schema_version": "1.0", "kind": FETCH_RECEIPT_KIND, "repo": plan["repo"],
         "revision": plan["revision"], "file": plan["file"], "subfolder": plan.get("subfolder"),
         "additional_files": plan.get("additional_files", []), "fresh_destination": plan.get("fresh_destination", False), "proof_token": proof_token,
         "downloads_dir": plan.get("downloads_dir"), "downloads": plan.get("downloads", []),
         "required_dependencies": plan.get("required_dependencies", []),
-        "local_dir": plan["local_dir"], "cache_dir": plan["cache_dir"], "slug": slug, "argv": argv, "pid": pid,
+        "local_dir": plan["local_dir"], "cache_dir": plan["cache_dir"], "slug": slug, "argv": argv, "pid": None,
         "log_path": str(log_path), "marker": str(marker), "started_at": started_at,
         "preview_hash": plan["preview_hash"], "completed_at": None, "exit_status": None,
     }
+    for key in ("allow_patterns", "ignore_patterns", "base", "requires"):
+        if key in plan:
+            receipt[key] = plan[key]
+    if index is not None:
+        # Publish intent before launching. A crash cannot lose the only pointer
+        # to a potentially running worker and admit a duplicate source.
+        _write_receipt(root, receipt, receipt_path.name)
+        fetch_storage.register(index, plan, receipt_path)
+    receipt["pid"] = (spawn or spawn_with_env)(argv, str(log_path), backend_environment(env))
     _write_receipt(root, receipt, receipt_path.name)
     return {"status": "started", "receipt": receipt}
 
@@ -232,6 +292,7 @@ def status_fetch(receipts_dir=None, pid_alive=_pid_alive):
             "downloads_dir": receipt.get("downloads_dir"), "downloads": receipt.get("downloads", []),
             "required_dependencies": receipt.get("required_dependencies", []),
             "state": "failed",
+            "processes_quiescent": not pid_alive(receipt["pid"]),
             "path": None, "log_path": receipt.get("log_path"), "started_at": receipt.get("started_at"),
             "completed_at": None,
         }

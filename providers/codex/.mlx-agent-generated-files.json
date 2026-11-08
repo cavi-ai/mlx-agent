@@ -486,7 +486,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "616e67e3767b27633e203269463554925d774ae4c105005a2f01b83cf93f694d"
+      "sha256": "4808ad2c7fd85153e229cae7843351f0c2b9252059c46fbde4f49bb03f81d45d"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -577,6 +577,10 @@
       "sha256": "3817261579c13d5362e6b276e2e0af172a7074f042e367e2f5c4d881c87438f3"
     },
     {
+      "path": "src/mlx_agent/fetch_storage.py",
+      "sha256": "a385c15cf365e2f5360a3eb3c5721ab13642cd4e65f775a250b5a4162efd4fdd"
+    },
+    {
       "path": "src/mlx_agent/fleet.py",
       "sha256": "edc541aed67e8b8bebf5ffae1cf77e7f0dc30f0cca22387f1e96b6903c392c39"
     },
@@ -626,7 +630,7 @@
     },
     {
       "path": "src/mlx_agent/intake_fetch.py",
-      "sha256": "ae5d4e8364c0baa5988b93b1458522efa9d919d8ef9e8f159ee27887b08c159a"
+      "sha256": "7065991f604c1e9d1c26855f52a8ea93be0286c33483f99afa01065647150116"
     },
     {
       "path": "src/mlx_agent/intake_source.py",
@@ -1078,7 +1082,7 @@
     },
     {
       "path": "src/mlx_agent/service_registry.py",
-      "sha256": "a5f2bd453f19cf48d9190e60dc7d92f7851ddc6eb2a0238c084ec2584efcf950"
+      "sha256": "f2989440adf4e5440e4e92089547dce8716f3eb3f1a664c2c8cf3512f5017685"
     },
     {
       "path": "src/mlx_agent/source_evidence.py",

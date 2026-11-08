@@ -1593,6 +1593,7 @@ def _add_intake_arguments(parser):
     fetch.add_argument("--revision", default=None)
     fetch.add_argument("--hf-cache", default=None)
     fetch.add_argument("--local-dir", default=None)
+    fetch.add_argument("--storage-root", default=None, help="owned source-admission index (defaults to XDG state for immutable managed fetches)")
     fetch.add_argument("--downloads-dir", default=None, help="reviewed support-file location (inside a managed local destination)")
     fetch.add_argument(
         "--model-type", default=None,
@@ -1668,9 +1669,23 @@ def _run_intake(arguments):
             jobs = status_fetch(arguments.receipts_dir)
             return _emit_serve_result(ResultEnvelope.ok(operation, {"jobs": jobs}), arguments.json)
         if arguments.intake_command == "fetch":
+            from .fetch_storage import default_root
+            from .source_evidence import immutable_revision
+            storage = arguments.storage_root
+            if arguments.local_dir:
+                from .intake_source import parse_hf_source
+                requested_revision = arguments.revision or parse_hf_source(arguments.source)["revision"]
+                if not immutable_revision(requested_revision):
+                    raise FetchError("immutable_revision_required", "A local model destination requires an immutable resolved commit.",
+                                     "Resolve the source, then pass its resolved_revision through --revision.")
+                if arguments.hf_cache:
+                    raise FetchError("invalid_arguments", "A managed destination cannot copy a shared Hugging Face cache.",
+                                     "Use the existing cache in place, or omit --hf-cache for source-admitted managed storage.")
+                if storage is None:
+                    storage = default_root()
             plan = plan_fetch(arguments.source, revision=arguments.revision, file=arguments.file, additional_files=arguments.additional_file,
                               hf_cache=arguments.hf_cache, local_dir=arguments.local_dir,
-                              model_type=arguments.model_type, downloads_dir=arguments.downloads_dir)
+                              model_type=arguments.model_type, downloads_dir=arguments.downloads_dir, storage_root=storage)
             outcome = start_fetch(plan, receipts_dir=arguments.receipts_dir,
                                   confirm=arguments.confirm, preview_hash=arguments.preview_hash)
             if outcome["status"] == "preview":

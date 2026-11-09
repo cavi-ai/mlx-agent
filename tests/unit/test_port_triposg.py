@@ -98,6 +98,78 @@ class TripoSGNativeTests(unittest.TestCase):
                         np.testing.assert_allclose(np.array(output), fixture[name], atol=1e-5 if device == mx.cpu else 2e-3,
                                                    rtol=2e-3)
 
+    def test_decoder_reuses_fixed_context_projections_across_point_chunks(self):
+        import mlx.core as mx
+        import numpy as np
+        from collections import Counter
+        from triposg.weights import Weights
+        from triposg.transformer import Decoder
+        root = Path(__file__).parents[1] / 'fixtures' / 'triposg'
+        config = json.loads((root / 'parity-config.json').read_text())['vae']
+
+        class RecordingWeights(Weights):
+            def linear(self, name, x):
+                calls[name] += 1
+                return super().linear(name, x)
+
+        calls = Counter()
+        with np.load(root / 'vae-weights.npz') as source:
+            weights = RecordingWeights({name: mx.array(value) for name, value in source.items()})
+        with np.load(root / 'parity.npz') as fixture:
+            decoder = Decoder(weights, config, mx.array(fixture['latents']))
+            first = np.array(decoder(mx.array(fixture['queries'])))
+            second = np.array(decoder(mx.array(fixture['queries'])))
+            np.testing.assert_allclose(first, fixture['vae'], atol=1e-5, rtol=2e-3)
+        np.testing.assert_array_equal(first, second)
+        prefix = 'decoder.blocks.' + str(config['num_layers_decoder']) + '.attn2'
+        self.assertEqual(calls[prefix + '.to_k'], 1)
+        self.assertEqual(calls[prefix + '.to_v'], 1)
+
+    def test_denoising_reuses_each_layers_fixed_image_keys_and_values(self):
+        import mlx.core as mx
+        import numpy as np
+        from collections import Counter
+        from triposg.weights import Weights
+        from triposg.transformer import denoise, _CrossAttentionCache
+        root = Path(__file__).parents[1] / 'fixtures' / 'triposg'
+        config = json.loads((root / 'parity-config.json').read_text())['transformer']
+
+        class RecordingWeights(Weights):
+            def linear(self, name, x):
+                calls[name] += 1
+                return super().linear(name, x)
+
+        for device in (mx.cpu, mx.gpu):
+            mx.set_default_device(device)
+            calls = Counter()
+            with np.load(root / 'transformer-weights.npz') as source:
+                weights = RecordingWeights({name: mx.array(value) for name, value in source.items()})
+            with np.load(root / 'parity.npz') as fixture:
+                features = mx.array(fixture['features'])
+                cache = _CrossAttentionCache(weights, features)
+                for _ in range(2):
+                    try:
+                        actual = denoise(weights, config, mx.array(fixture['latents']),
+                                         fixture['times'].tolist(), features, context_cache=cache)
+                    except TypeError as error:
+                        self.fail('Denoising cannot reuse fixed conditioning: ' + str(error))
+                    np.testing.assert_allclose(np.array(actual), fixture['transformer'],
+                                               atol=1e-5 if device == mx.cpu else 2e-3, rtol=2e-3)
+            for i in range(config['num_layers']):
+                name = 'blocks.' + str(i) + '.attn2'
+                self.assertEqual(calls[name + '.to_k'], 1)
+                self.assertEqual(calls[name + '.to_v'], 1)
+
+    def test_cross_attention_cache_refuses_another_image_or_model(self):
+        import mlx.core as mx
+        from triposg.transformer import _CrossAttentionCache
+        weights, context = object(), mx.zeros((1, 2, 8))
+        cache = _CrossAttentionCache(weights, context)
+        with self.assertRaisesRegex(ValueError, 'conditioning'):
+            cache.get(object(), 'unused', context, 2, 4, True, False)
+        with self.assertRaisesRegex(ValueError, 'conditioning'):
+            cache.get(weights, 'unused', mx.ones((1, 2, 8)), 2, 4, True, False)
+
     def test_seeded_noise_reproduces_the_reference_generator(self):
         import numpy as np
         from triposg.pipeline import initial_latents

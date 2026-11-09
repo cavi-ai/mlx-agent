@@ -718,7 +718,11 @@
     },
     {
       "path": "src/mlx_agent/music_runner.py",
-      "sha256": "bde5411d587cad3189812c9eaed07c425b365745ac899553bb0e7c59292c4b28"
+      "sha256": "6e48af81c598d9d8c2f54ff2785c8f157812377b5f4dbaa3f40550b454853a3f"
+    },
+    {
+      "path": "src/mlx_agent/music_speed.py",
+      "sha256": "59444f83dc52e07dd403a2ab7ebc34a513488e252939390098b3f5751083c788"
     },
     {
       "path": "src/mlx_agent/port_analysis.py",
@@ -1002,11 +1006,11 @@
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/pipeline.py",
-      "sha256": "6206efa522c7e34f415fa24b2ce85a3561c6d5ecc78b73e3a055f86f2bd6d3c3"
+      "sha256": "8b318a1f8297ebbcccd50c285234c95900979c7c1a51650b7d134e6aaa3cb22a"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/transformer.py",
-      "sha256": "5129b561c5e371a92f656291461ce10ac251d5dfedc5635551076b4f6d81567c"
+      "sha256": "80baefcde4e9c8df47c4881d8698f79539b21fc7f9d324de8e1b37069413ba70"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/weights.py",

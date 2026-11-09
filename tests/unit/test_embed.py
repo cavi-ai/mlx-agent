@@ -22,3 +22,20 @@ class EmbedTests(unittest.TestCase):
             with self.subTest(vectors=vectors), self.assertRaises(ValueError):
                 embed.validate_vectors(vectors, 1)
         self.assertEqual(embed.validate_vectors([[1, 2.0]], 1), [[1.0, 2.0]])
+
+    def test_hyphenated_embedding_architecture_matches_the_backend(self):
+        from mlx_agent.backends import load_manifests, with_ports
+        from mlx_agent.task_serving import resolve_model
+        with tempfile.TemporaryDirectory() as directory:
+            model = Path(directory).resolve()
+            (model / 'config.json').write_text('{"model_type":"xlm-roberta"}')
+            request = model / 'request.json'
+            request.write_text('{"input":["hello"]}')
+            manifest = load_manifests()['mlx-embeddings']
+            manifests = {'mlx-embeddings': manifest}
+            registries = {'mlx-embeddings': {'installed': True, 'registry': with_ports(manifest['registry'], manifest)}}
+            with patch('mlx_agent.embed.is_installed', return_value=True):
+                plan = embed.plan_embed(str(model), str(request), manifests=manifests, registries=registries)
+            self.assertEqual(plan['backend'], 'mlx-embeddings')
+            self.assertEqual(plan['count'], 1)
+            self.assertEqual(resolve_model(model, manifests, registries, capture=False)[0], ['embedding'])

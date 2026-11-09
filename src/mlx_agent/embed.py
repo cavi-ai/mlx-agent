@@ -4,7 +4,7 @@ import math
 from pathlib import Path
 import subprocess
 
-from .backends import backend_python, is_installed, load_manifests, load_registries, lookup
+from .backends import backend_python, is_installed, load_manifests, load_registries, lookup, normalize_type
 from .inference_runner import InferenceError, RunnerContract, invoke
 
 TEXT_MODELS = frozenset(('bert', 'modernbert', 'qwen3', 'xlm_roberta', 'lfm2', 'llama_bidirec', 'gemma3_text'))
@@ -42,7 +42,7 @@ def plan_embed(model_path, request_path, manifests=None, registries=None, root=N
             raise ValueError('An existing absolute local model directory is required.')
         config = json.loads((model / 'config.json').read_text())
         parameters = validate_parameters(json.loads(request.read_text()))
-        if config.get('model_type') not in TEXT_MODELS:
+        if normalize_type(config.get('model_type')) not in TEXT_MODELS:
             raise ValueError('No vetted text embedding adapter implements this architecture.')
     except (OSError, ValueError, AttributeError) as error:
         raise EmbedError('model_unreadable', str(error), 'Select a supported local text embedding checkpoint.') from error

@@ -43,6 +43,7 @@ def main():
     threading.Thread(target=watch_parent, daemon=True).start()
     runner_model_cache._enabled = True
     with os.fdopen(args.response_fd, "wb", buffering=0) as response:
+        response.write(json.dumps({"ready": os.getpid()}).encode() + b"\n")
         while True:
             raw = sys.stdin.buffer.readline(MAX_MESSAGE + 1)
             if not raw:

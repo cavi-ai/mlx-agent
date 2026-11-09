@@ -51,6 +51,28 @@ def predict(model, tokenizer, state, questions):
         self.assertEqual(self.worker.process.pid, pid)
         self.assertTrue(self.worker.loaded)
 
+    def test_launcher_exec_binds_the_ready_worker_identity(self):
+        from mlx_agent.compute import process_identity
+        launcher = self.root / 'python-launcher'
+        launcher.write_text('#!' + sys.executable + '\nimport os,sys,time\ntime.sleep(.5)\nos.execv(sys.executable, [sys.executable, *sys.argv[1:]])\n')
+        launcher.chmod(0o700)
+        worker = resident_runner.ResidentRunner(str(launcher), str(self.model),
+            environment=dict(os.environ, PYTHONPATH=str(self.root)))
+        try:
+            response = worker.run([str(launcher), *self.argv[1:]], timeout=5)
+            self.assertEqual(response.returncode, 0, response.stderr)
+            self.assertEqual(worker.identity, process_identity(worker.process.pid))
+            worker.close()
+            self.assertIsNone(worker.process)
+        finally:
+            try:
+                worker.close()
+            except OSError:
+                # Test fixture cleanup if the regression leaves the launched child unbound.
+                worker.process.terminate()
+                worker.process.wait(timeout=5)
+                worker.close()
+
     def test_release_reaps_worker_and_next_job_loads_fresh(self):
         self.assertEqual(self.invoke(), 1)
         process = self.worker.process

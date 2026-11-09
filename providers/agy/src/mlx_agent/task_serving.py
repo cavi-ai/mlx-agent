@@ -9,7 +9,7 @@ import tempfile
 import threading
 
 from . import task_kinds
-from .backends import backend_environment, backend_python, load_manifests, load_registries, lookup
+from .backends import backend_environment, backend_python, load_manifests, load_registries, lookup, normalize_type
 from .compute import ComputeBusy, ComputeLease, process_identity
 from .inference_runner import InferenceError
 from .jit_serve import GatewayError, ModelWorker, model_fingerprint, validate_memory_policy
@@ -64,7 +64,7 @@ def resolve_model(path, manifests=None, registries=None, root=None, capture=True
             raise ValueError('No vetted task adapter implements this model type.')
         if task_type == 'embedding':
             from .embed import TEXT_MODELS
-            if config.get('model_type') not in TEXT_MODELS:
+            if normalize_type(config.get('model_type')) not in TEXT_MODELS:
                 raise ValueError('No vetted text embedding adapter implements this architecture.')
         manifest = manifests[sorted(hits, key=lambda hit: hit['backend'])[0]['backend']]
         if not manifest['builtin'] and not registries.get(manifest['id'], {}).get('installed'):
@@ -131,10 +131,12 @@ class TaskModelWorker(ModelWorker):
         return super().configure(changes)
 
     def _stop_worker(self):
-        self.resident.close()
-        with self.condition:
-            self.process = None
-            self.worker_argv = None
+        try:
+            self.resident.close()
+        finally:
+            with self.condition:
+                self.process = self.resident.process
+                self.worker_argv = list(self.process.args) if self.process is not None else None
 
     def submit(self, body):
         if set(body) != {'kind', 'parameters'} or body['kind'] not in self.config['task_kinds']:
@@ -211,8 +213,11 @@ class TaskModelWorker(ModelWorker):
                 if self.closed:
                     raise InterruptedError('Endpoint stopping.')
                 self.model_state = 'loading' if not self.resident.loaded else 'loaded'
-                if self.resident.process is None:
-                    self.resident._start()
+            if self.resident.process is None:
+                self.resident._start(cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'])
+            with self.condition:
+                if self.closed:
+                    raise InterruptedError('Endpoint stopping.')
                 self.process = self.resident.process
                 self.worker_argv = list(self.process.args)
                 self._persist()

@@ -102,6 +102,25 @@ class JITServingTests(unittest.TestCase):
     def unload(self):
         return self.request('POST', '/_mlx/unload', {}, {'Authorization': 'Bearer test-control-token'})
 
+    def test_protected_gateway_rejects_unauthenticated_calls_without_loading(self):
+        from mlx_agent.serving_access import read_access_key
+        key = self.root / 'access-key'
+        key.write_text('private-inference-key-0123456789abcdef')
+        key.chmod(0o600)
+        _, digest = read_access_key(str(key))
+        from mlx_agent.private_serve import identity
+        self.config.update(access_key_file=str(key), access_key_sha256=digest,
+                           private_worker=identity())
+        for method, path in [('GET', '/v1/models'), ('GET', '/v1/responses/unknown'), ('POST', '/v1/chat/completions')]:
+            self.assertEqual(self.request(method, path, {'messages': []} if method == 'POST' else None)[0], 401)
+        self.assertEqual(self.request('GET', '/v1/models', headers={'Authorization': 'Bearer test-control-token'})[0], 401)
+        self.assertEqual(self.request('GET', '/v1/models', headers={'Authorization': 'Bearer ' + key.read_text()})[0], 200)
+        self.assertEqual(self.request('GET', '/health')[0], 200)
+        self.assertFalse(self.trace.exists())
+        key.write_text('rotated-inference-key-0123456789abcdef')
+        self.assertEqual(self.request('GET', '/v1/models')[0], 503)
+        self.assertFalse(self.trace.exists())
+
     def configure(self, policy):
         return self.request('POST', '/_mlx/policy', policy, {'Authorization': 'Bearer test-control-token'})
 

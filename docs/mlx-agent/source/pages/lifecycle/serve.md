@@ -383,3 +383,32 @@ model repository. Review the resolved runtime and executable before confirmation
 `com.mlx-agent.serve.<port>` label. Review and confirm its plan, then run the
 printed `launchctl bootstrap` command yourself. JIT does not support direct
 `--launchd`; supervise the gateway through an existing process manager instead.
+
+## Protected text serving
+
+For a shared MLX-LM JIT endpoint, add `--api-key-file /absolute/private/key`
+to both preview and confirmation. The file must be an owned regular file
+readable only by its owner, containing a 32–256 character URL-safe API key.
+Use `Authorization: Bearer <key>` in inference clients. Keep the key out of
+URLs, command arguments and reports. Gateway control uses a separate generated
+credential; an inference key cannot unload a model or change memory policy.
+
+The reviewed plan binds the key digest and private worker source. Startup
+rechecks both, and later key or source changes require a fresh preview. The
+gateway authenticates metadata, stored responses and inference; its small
+`GET /health` response remains available without a key. Host and Origin checks
+also apply. Its worker uses an inherited Unix listener rather than a second
+TCP port, so calling the original model port cannot bypass the gateway.
+
+Protected serving currently requires `--runtime mlx_lm --jit` without prompt
+or vision acceleration adapters. It accepts text chat within a 1 MiB request
+limit. Unsupported runtimes are refused. Existing serving configurations keep
+their current behavior; they are not automatically upgraded or protected.
+
+For a supervisor such as Secure Agent, `mlx-agent serve private-worker`
+accepts `--model` and an inherited `--socket-fd` instead of opening a public
+listener. `--describe` reports its protocol without importing MLX or starting
+a model. The supervisor owns lifecycle and socket cleanup. This path requires
+an installed MLX-LM virtual environment and existing local weights; it never
+downloads models or installs a runtime. The Unix directory controls access
+by user and does not isolate other processes already running as that user.

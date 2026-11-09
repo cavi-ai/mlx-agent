@@ -1,5 +1,13 @@
 # Security and recovery boundaries
 
+Protected MLX-LM JIT serving uses an owner-only API-key file at its gateway and
+an inherited Unix listener for the worker. A separate credential protects model
+unload and memory-policy changes. The reviewed plan binds the key digest and
+worker source; unknown runtimes and changed inputs fail closed. The supervisor
+`serve private-worker` path opens no TCP listener and requires existing local
+weights. See [protected serving](mlx-agent/source/pages/lifecycle/serve.md#protected-text-serving).
+Existing servers retain their configured access controls until explicitly changed.
+
 The universal installer and Wire are confirmation-gated. Installer `--dry-run`
 produces a plan; install, update, uninstall, and Wire apply require a current
 reviewed `--preview-hash`. Provider CLIs are installed separately. Discovery and

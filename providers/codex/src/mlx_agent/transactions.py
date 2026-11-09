@@ -864,7 +864,13 @@ class Receipt:
         validations_redacted = False
         if isinstance(value["validations"], dict):
             try:
-                validations_redacted = json.loads(redact_secrets(json.dumps(value["validations"]))) == value["validations"]
+                # Declared target paths are labels, not credential field names.
+                # Check their values and all other validation metadata for secrets.
+                probe = {
+                    "artifacts": [{"path": name, "result": checks} for name, checks in value["validations"].items() if name in targets],
+                    "metadata": {name: checks for name, checks in value["validations"].items() if name not in targets},
+                }
+                validations_redacted = json.loads(redact_secrets(json.dumps(probe))) == probe
             except (TypeError, ValueError, json.JSONDecodeError):
                 validations_redacted = False
         if not isinstance(value["validations"], dict) or not validations_redacted or not isinstance(value["preview"], str) or len(value["preview"]) > MAX_PREVIEW_CHARS + 32 or redact_secrets(value["preview"]) != value["preview"] or not isinstance(value["preview_hash"], str) or not _HASH.fullmatch(value["preview_hash"]):

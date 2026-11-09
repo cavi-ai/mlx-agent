@@ -212,7 +212,8 @@ class ModelWorker:
                     "memory_check": self.memory_check, "load_blocked_reason": self.load_blocked_reason,
                     "resident_memory_check": self.resident_memory_check,
                     "request_blocked_reason": self.request_blocked_reason,
-                    "last_unload_reason": self.last_unload_reason}
+                    "last_unload_reason": self.last_unload_reason,
+                    "api_key_sha256": self.config.get("api_key_sha256")}
             if self.config.get("runtime") == "strata":
                 result.update(memory_allocation=self.config.get("strata_memory_allocation"),
                               strata_decoding=self.config.get("strata_decoding"),
@@ -416,6 +417,15 @@ class ModelWorker:
                 port = reservation.getsockname()[1]
             argv = [str(port) if value == "{worker_port}" else value for value in self.config["worker_argv"]]
             environment = dict(os.environ, HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_DATASETS_OFFLINE="1")
+            if self.config.get("api_key_sha256") is not None:
+                from mlx_agent.inference_auth import runtime_fingerprint
+                from mlx_agent.protected_worker import command, WORKER_DIGEST
+                if self.config.get("auth_runtime_sha256") != runtime_fingerprint():
+                    raise GatewayError(503, "authentication_changed", "Authentication runtime changed. Review a fresh serve plan.")
+                import secrets
+                self.worker_key = secrets.token_urlsafe(32)
+                environment[WORKER_DIGEST] = hashlib.sha256(self.worker_key.encode()).hexdigest()
+                argv = command(argv, self.config.get("runtime") or "mlx_lm")
             log = open(self.config["log_path"], "ab", buffering=0) if self.config.get("log_path") else subprocess.DEVNULL
             with self.condition:
                 if self.closed:
@@ -428,14 +438,17 @@ class ModelWorker:
                 self.worker_port, self.worker_argv = port, argv
                 self._persist()
                 process = self.process
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            from mlx_agent.inference_auth import loopback_opener
+            opener = loopback_opener()
             readiness_seconds = self.config.get("worker_readiness_seconds", 60)
             deadline = time.monotonic() + readiness_seconds
             while time.monotonic() < deadline:
                 if process.poll() is not None or self.closed:
                     raise GatewayError(503, "model_load_failed", "Model worker exited before readiness.")
                 try:
-                    with opener.open("http://127.0.0.1:{}/v1/models".format(port), timeout=1) as response:
+                    request = urllib.request.Request("http://127.0.0.1:{}/v1/models".format(port),
+                        headers={"Authorization": "Bearer " + self.worker_key} if self.config.get("api_key_sha256") is not None else {})
+                    with opener.open(request, timeout=1) as response:
                         if response.status == 200:
                             break
                 except OSError:
@@ -592,6 +605,9 @@ class GatewayServer(ThreadingHTTPServer):
     block_on_close = False
 
     def __init__(self, address, config):
+        if config.get("api_key_sha256") is not None:
+            from mlx_agent.inference_auth import validate_digest
+            validate_digest(config["api_key_sha256"])
         self.controller = ModelWorker(config)
         self.config = config
         self.slots = threading.BoundedSemaphore(MAX_REQUESTS + 4)
@@ -675,11 +691,17 @@ class GatewayHandler(BaseHTTPRequestHandler):
         if control and not hmac.compare_digest(self.headers.get("Authorization", "").encode(),
                                                ("Bearer " + self.server.config["control_token"]).encode()):
             raise GatewayError(403, "control_denied", "Endpoint control authorization required.")
+        if not control and self.server.config.get("api_key_sha256") is not None:
+            from mlx_agent.inference_auth import authorized_headers
+            if not authorized_headers(self.headers, self.server.config["api_key_sha256"]):
+                raise GatewayError(401, "authentication_required", "A valid API key is required.")
 
     def _json(self, status, value):
         encoded = json.dumps(value).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        if status == 401:
+            self.send_header("WWW-Authenticate", "Bearer")
         self.send_header("Content-Length", str(len(encoded)))
         self.send_header("Connection", "close")
         self.end_headers()
@@ -854,7 +876,8 @@ class GatewayHandler(BaseHTTPRequestHandler):
             leased = True
             connection = http.client.HTTPConnection("127.0.0.1", port, timeout=120)
             connection.request("POST", "/v1/chat/completions" if translated else self.path, json.dumps(body),
-                               {"Content-Type": "application/json"})
+                               dict({"Content-Type": "application/json"}, **({"Authorization": "Bearer " + self.server.controller.worker_key}
+                                   if self.server.config.get("api_key_sha256") is not None else {})))
             # MLX-LM writes nothing until an unstreamed answer is complete or a queued request starts.
             if not self._worker_replied(connection.sock):
                 return

@@ -955,6 +955,9 @@ def _add_serve_arguments(parser):
     start.add_argument("--vision-cache", action="store_true",
                        help="opt-in bounded Qwen2.5-VL and Qwen3-VL image feature reuse with MLX-VLM")
     start.add_argument("--jit", action="store_true", help="keep endpoint reachable; load local weights on inference requests")
+    authentication = start.add_mutually_exclusive_group()
+    authentication.add_argument("--api-key-file", help="private file containing the API key required for inference")
+    authentication.add_argument("--api-key-sha256", help="API key verification digest for clients using a secure credential store")
     _add_memory_arguments(start)
     start.add_argument("--launchd", action="store_true", help="install a launchd agent plist instead of spawning now")
     start.add_argument("--launchd-dir", default=None, help="launchd target directory (defaults to ~/Library/LaunchAgents)")
@@ -1120,6 +1123,12 @@ def _run_serve(arguments):
                              "Select a prepared Strata model or omit --profile.")
         if arguments.strata_speculation is not None and runtime != "strata":
             raise ServeError("invalid_arguments", "--strata-speculation requires the Strata runtime.", "Select a prepared local Strata profile.")
+        from .inference_auth import configuration_digest
+        try:
+            api_key_sha256 = configuration_digest(arguments.api_key_file, arguments.api_key_sha256)
+        except (OSError, ValueError):
+            raise ServeError("invalid_arguments", "The API key configuration is invalid or unavailable.",
+                             "Use a private 32–512 character key file or a valid SHA-256 verification digest.") from None
         plan = plan_start(
             arguments.repo,
             runtime,
@@ -1146,6 +1155,7 @@ def _run_serve(arguments):
             m5_prefill=arguments.m5_prefill,
             prompt_lookup=arguments.prompt_lookup,
             vision_cache=arguments.vision_cache,
+            api_key_sha256=api_key_sha256,
         )
         if arguments.launchd:
             if plan.get("jit"):

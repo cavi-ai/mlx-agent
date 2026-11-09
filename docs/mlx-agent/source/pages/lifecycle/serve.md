@@ -421,3 +421,31 @@ interruption is recorded as interrupted when its job is next inspected.
 Typed endpoint history lives in `.mlx-agent-receipts/tasks/PORT` under the chosen
 `--receipts-dir`. CLI inspection uses that exact path as `task --state-dir`.
 These endpoints do not implement chat completions, Messages or Responses.
+
+## Optional API key authentication
+
+Use a private API key to restrict access to a supervised loopback endpoint:
+
+```sh
+mlx-agent serve start --runtime auto --path /path/to/model --jit --api-key-file /path/to/endpoint.key
+```
+
+Review the preview, then repeat the command with `--confirm --preview-hash HASH`.
+The key file must belong to your user, have no group or other permissions
+(`chmod 600`), and contain a 32–512 character printable key without spaces.
+Generate a random key; keep it outside the model directory. The native app
+instead keeps its generated keys in Keychain and passes `--api-key-sha256`.
+Plans, receipts and process arguments contain the verification digest, never
+the API key.
+
+Send `Authorization: Bearer KEY` or `x-api-key: KEY` on every request.
+Authentication covers model discovery, chat, Messages, Responses, typed jobs,
+cancellation, results and artifacts. Missing, wrong or ambiguous credentials
+receive HTTP 401 before inference starts. The private chat worker uses a
+separate, mandatory upstream key, including MLX-LM, MLX-VLM and Strata workers.
+Control operations continue to use their separate owner credential.
+
+API keys authorize their holders. Loopback keeps the endpoint local to this
+machine; it does not identify an executable or provide a process allowlist.
+Stop and review a fresh endpoint with a new key to revoke the previous key.
+Omitting authentication preserves existing local access.

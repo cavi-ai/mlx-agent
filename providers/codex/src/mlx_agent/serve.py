@@ -253,13 +253,21 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                adapter_path=None, path=None, jit=False, receipts_dir=None, hf_cache=None, memory_policy=None,
                runtime_executable=None, strata_speculation=False, strata_decoding=None,
                strata_expert_memory_gb=None, strata_context_tokens=None, training_receipt=None, thinking="default",
-               m5_prefill=False, prompt_lookup=False, vision_cache=False):
+               m5_prefill=False, prompt_lookup=False, vision_cache=False, api_key_sha256=None):
     """Render the start plan and local file identities without side effects."""
+    if api_key_sha256 is not None:
+        from .inference_auth import validate_digest
+        try:
+            validate_digest(api_key_sha256)
+        except ValueError as error:
+            raise ServeError("invalid_arguments", str(error), "Use a private --api-key-file or a SHA-256 verification digest.") from error
+        if not jit and runtime != "tasks":
+            raise ServeError("jit_required", "Authenticated serving requires a supervised endpoint.", "Use --jit.")
     if runtime == "tasks":
         if adapter_path is not None or training_receipt is not None or m5_prefill or prompt_lookup or vision_cache or strata_decoding is not None or strata_speculation or strata_expert_memory_gb is not None or strata_context_tokens is not None or thinking != "default":
             raise ServeError("invalid_arguments", "Task endpoints accept local models and their memory policy.", "Remove chat, adapter and Strata options.")
         from .task_serving import plan_start as plan_task_endpoint
-        return plan_task_endpoint(repo, path, port, receipts_dir, hf_cache, memory_policy)
+        return _authenticated_plan(plan_task_endpoint(repo, path, port, receipts_dir, hf_cache, memory_policy), api_key_sha256)
     if thinking not in ("default", "off"):
         raise ServeError("invalid_arguments", "thinking must be default or off.", "Pass --thinking off or omit it.")
     if type(m5_prefill) is not bool or (m5_prefill and runtime != "mlx_lm"):
@@ -499,8 +507,27 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                         "--config", plan["control_config"]]
         if memory_policy is not None:
             plan["memory_policy"] = memory_policy
-    plan["preview_hash"] = _preview_hash(plan)
+    return _authenticated_plan(plan, api_key_sha256)
+
+
+def _authenticated_plan(plan, digest):
+    if digest is not None:
+        from .inference_auth import runtime_fingerprint
+        plan.update(api_key_sha256=digest, auth_runtime_sha256=runtime_fingerprint(),
+                    readiness="http://127.0.0.1:{}/_mlx/status".format(plan["port"]))
+    plan["preview_hash"] = _preview_hash({key: value for key, value in plan.items() if key != "preview_hash"})
     return plan
+
+
+def _require_auth_identity(plan):
+    if plan.get("api_key_sha256") is not None:
+        from .inference_auth import runtime_fingerprint, validate_digest
+        try:
+            validate_digest(plan["api_key_sha256"])
+            if not plan.get("jit") or plan.get("auth_runtime_sha256") != runtime_fingerprint():
+                raise ValueError("Authentication configuration changed after preview.")
+        except ValueError as error:
+            raise ServeError("preview_stale", str(error), "Review a fresh authenticated serving plan.") from error
 
 
 def _default_which(executable):
@@ -531,7 +558,7 @@ def _default_spawn(argv, log_path):
     return process.pid
 
 
-def _default_readiness(url, deadline_seconds, clock=time.monotonic, sleep=time.sleep, child_pid=None):
+def _default_readiness(url, deadline_seconds, clock=time.monotonic, sleep=time.sleep, child_pid=None, headers=None):
     validate_health_endpoint(url)
     deadline = clock() + deadline_seconds
     while clock() < deadline:
@@ -543,8 +570,9 @@ def _default_readiness(url, deadline_seconds, clock=time.monotonic, sleep=time.s
                 if not _pid_alive(child_pid):
                     return False
         try:
-            request = urllib.request.Request(url, method="GET")
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            from .inference_auth import loopback_opener
+            request = urllib.request.Request(url, method="GET", headers=headers or {})
+            opener = loopback_opener()
             with opener.open(request, timeout=2.0) as response:
                 if 200 <= response.status < 400:
                     return True
@@ -615,7 +643,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
     which = which or _default_which
     port_free = port_free or _default_port_free
     spawn = spawn or _default_spawn
-    readiness = readiness or (lambda url, deadline: _default_readiness(url, deadline, child_pid=pid if spawn is _default_spawn else None))
+    readiness_headers = {}
+    readiness = readiness or (lambda url, deadline: _default_readiness(url, deadline, child_pid=pid if spawn is _default_spawn else None, headers=readiness_headers))
     pid_alive = pid_alive or _pid_alive
     root = receipts_root(receipts_dir)
 
@@ -633,6 +662,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "The supplied preview hash does not match this start plan.",
             "Re-run serve start without --confirm and review the fresh plan.",
         )
+    _require_auth_identity(plan)
     _require_task_identity(plan)
     _require_training_binding(plan)
     _require_adapter_identity(plan)
@@ -714,6 +744,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         if config_path.parent != root.absolute() or config_path.is_symlink():
             raise ServeError("invalid_arguments", "Unsafe JIT configuration path.", "Review a fresh serve plan.")
         config = {key: plan[key] for key in ("local_path", "fingerprint", "worker_argv", "max_tokens")}
+        if plan.get("api_key_sha256") is not None:
+            config.update(api_key_sha256=plan["api_key_sha256"], auth_runtime_sha256=plan["auth_runtime_sha256"])
         config["runtime"] = plan["runtime"]
         if plan["runtime"] == "tasks":
             config.update(task_identity=plan["task_identity"], task_kinds=plan["task_kinds"], port=plan["port"],
@@ -737,6 +769,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
                       state_path=str(root.absolute() / "{}.jit-state.json".format(plan["port"])),
                       log_path=str(root.absolute() / "{}.worker.log".format(plan["port"])))
         _atomic_in_directory(root, config_path.name, json.dumps(config).encode(), 0o600)
+        if plan.get("api_key_sha256") is not None:
+            readiness_headers["Authorization"] = "Bearer " + config["control_token"]
     pid = spawn(plan["argv"], str(log_path))
     if not readiness(plan["readiness"], plan.get("readiness_deadline", readiness_deadline)):
         _terminate_pid(pid)
@@ -746,6 +780,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "Inspect the serve log at {0}.".format(log_path),
         )
     try:
+        _require_auth_identity(plan)
         _require_task_identity(plan)
         _require_training_binding(plan)
         _require_adapter_identity(plan)
@@ -772,6 +807,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
     }
     if plan.get("jit"):
         receipt["jit"] = True
+    if plan.get("api_key_sha256") is not None:
+        receipt["api_key_sha256"] = plan["api_key_sha256"]
     if plan.get("task_kinds"):
         receipt["task_kinds"] = plan["task_kinds"]
     if plan.get("adapter_path") is not None:
@@ -842,6 +879,7 @@ def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_comma
             "repo": receipt["repo"],
             "path": receipt.get("path"),
             "runtime": receipt["runtime"],
+            "api_key_sha256": receipt.get("api_key_sha256"),
             "port": receipt["port"],
             "pid": receipt["pid"],
             "alive": alive,
@@ -949,7 +987,8 @@ def _jit_control(receipt, root, action, policy=None, timeout=None):
     request = urllib.request.Request("http://127.0.0.1:{}/_mlx/{}".format(receipt["port"], action),
         data=json.dumps(policy or {}).encode() if action in ("unload", "policy") else None,
         headers={"Authorization": "Bearer " + config["control_token"], "Content-Type": "application/json"})
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    from .inference_auth import loopback_opener
+    opener = loopback_opener()
     try:
         with opener.open(request, timeout=timeout if timeout is not None else (10 if action == "unload" else 2)) as response:
             state = json.load(response)

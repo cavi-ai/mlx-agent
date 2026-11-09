@@ -13,6 +13,7 @@
     "repo": { "type": ["string", "null"], "minLength": 1 },
     "path": { "type": ["string", "null"], "minLength": 1 },
     "jit": { "type": "boolean" },
+    "api_key_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "runtime": { "enum": ["mlx_lm", "mlx-vlm", "strata", "tasks"] },
     "task_kinds": { "type": "array", "minItems": 1, "items": { "type": "string" } },
     "strata_decoding": { "enum": ["plain", "lookup", "mtp"] },
@@ -114,6 +115,10 @@
       "additionalProperties": false
     }
   },
+  "allOf": [{
+    "if": { "required": ["api_key_sha256"] },
+    "then": { "required": ["jit"], "properties": { "jit": { "const": true } } }
+  }],
   "oneOf": [
     { "properties": { "repo": { "type": "string" } } },
     { "required": ["path"], "properties": { "repo": { "type": "null" }, "path": { "type": "string" } } }

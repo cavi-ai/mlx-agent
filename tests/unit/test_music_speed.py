@@ -5,6 +5,7 @@ import unittest
 
 HAS_MLX = importlib.util.find_spec('mlx') is not None
 HAS_AUDIO = HAS_MLX and importlib.util.find_spec('mlx_audio') is not None
+HAS_NUMPY = importlib.util.find_spec('numpy') is not None
 
 
 @unittest.skipUnless(HAS_AUDIO, 'requires the native music backend')
@@ -126,8 +127,7 @@ class MusicDepthTests(unittest.TestCase):
         self.assertIs(model.rvq_depth_decoder,decoder)
         self.assertEqual(model.rvq_depth_decoder(None),'custom')
 
-@unittest.skipUnless(HAS_MLX, 'requires MLX on Apple Silicon')
-class MusicMLXTests(unittest.TestCase):
+class _MusicCacheCases:
     def setUp(self):
         import mlx.core as mx
         import mlx.nn as nn
@@ -158,7 +158,7 @@ class MusicMLXTests(unittest.TestCase):
         from mlx_agent.music_speed import _DepthCache
         # Zero Q/K make causal attention the mean of preceding values. This
         # closed-form oracle is independent of the cached attention implementation.
-        for device in (mx.cpu,mx.gpu):
+        for device in getattr(self,'devices',(mx.cpu,mx.gpu)):
             mx.set_default_device(device)
             decoder = self.decoder_type()
             calls = []
@@ -226,3 +226,67 @@ class MusicMLXTests(unittest.TestCase):
                         np.testing.assert_array_equal(np.frombuffer(audio.readframes(2),dtype='<i2'),
                                                       [0,8191,-16383,24575])
                 self.assertEqual(encode.call_count,1)
+
+
+@unittest.skipUnless(HAS_MLX, 'requires MLX on Apple Silicon')
+class MusicMLXTests(_MusicCacheCases, unittest.TestCase):
+    pass
+
+
+@unittest.skipUnless(HAS_NUMPY, 'requires NumPy')
+class MusicNumpyTests(_MusicCacheCases, unittest.TestCase):
+    """Exercise cache policy and WAV export without the optional inference stack."""
+
+    def setUp(self):
+        import sys
+        from pathlib import Path
+        from types import ModuleType
+        from unittest.mock import patch
+        import numpy as np
+        from mlx_agent import music_runner
+
+        def attention(q,k,v,scale,mask=None):
+            scores = (q @ k.transpose(0,1,3,2))*scale
+            if mask == 'causal':
+                scores = np.where(np.triu(np.ones(scores.shape[-2:],dtype=bool),1),-np.inf,scores)
+            weights = np.exp(scores-scores.max(axis=-1,keepdims=True))
+            weights /= weights.sum(axis=-1,keepdims=True)
+            return weights @ v
+
+        class Embedding:
+            def __init__(self,count,width):
+                self.weight = np.zeros((count,width),dtype=np.float32)
+            def __call__(self,indices):
+                return self.weight[indices]
+
+        core = ModuleType('mlx.core')
+        for name in ('arange','array','broadcast_to','concatenate','cumsum','float32','zeros_like','ones_like'):
+            setattr(core,name,getattr(np,name))
+        core.fast = SimpleNamespace(scaled_dot_product_attention=attention)
+        core.cpu, core.gpu = 'cpu', 'gpu'
+        core.default_device = lambda:core.cpu
+        core.set_default_device = lambda device:None
+        core.eval = lambda *values:None
+        core.reset_peak_memory = lambda:None
+        core.get_peak_memory = lambda:0
+        nn = ModuleType('mlx.nn')
+        nn.Module = object
+        nn.Embedding = Embedding
+        nn.Identity = lambda:lambda x:x
+        nn.Linear = lambda *shape:lambda x:x
+        nn.silu = lambda x:x/(1+np.exp(-x))
+        package = ModuleType('mlx')
+        package.__path__ = []
+        package.core, package.nn = core, nn
+        patcher = patch.dict(sys.modules,{'mlx':package,'mlx.core':core,'mlx.nn':nn})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        path = Path(music_runner.__file__).with_name('music_speed.py')
+        spec = importlib.util.spec_from_file_location('mlx_agent._numpy_music_speed',path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        source = patch.dict(sys.modules,{'mlx_agent.music_speed':module})
+        source.start()
+        self.addCleanup(source.stop)
+        self.devices = (core.cpu,)
+        super().setUp()

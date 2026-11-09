@@ -967,7 +967,9 @@ def _add_serve_arguments(parser):
     start.add_argument("--vision-cache", action="store_true",
                        help="opt-in bounded Qwen2.5-VL and Qwen3-VL image feature reuse with MLX-VLM")
     start.add_argument("--jit", action="store_true", help="keep endpoint reachable; load local weights on inference requests")
-    start.add_argument("--api-key-file", help="protect a plain MLX-LM JIT gateway and use a private worker; requires an owned mode-0600 key file")
+    authentication = start.add_mutually_exclusive_group()
+    authentication.add_argument("--api-key-file", help="private API key file for a supervised inference endpoint")
+    authentication.add_argument("--api-key-sha256", help="verification digest for an API key held in a secure credential store")
     _add_memory_arguments(start)
     start.add_argument("--launchd", action="store_true", help="install a launchd agent plist instead of spawning now")
     start.add_argument("--launchd-dir", default=None, help="launchd target directory (defaults to ~/Library/LaunchAgents)")
@@ -1144,6 +1146,7 @@ def _run_serve(arguments):
             path=arguments.path,
             jit=arguments.jit,
             api_key_file=arguments.api_key_file,
+            api_key_sha256=arguments.api_key_sha256,
             receipts_dir=arguments.receipts_dir,
             hf_cache=arguments.hf_cache,
             runtime_executable=executable,

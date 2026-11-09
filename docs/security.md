@@ -1,11 +1,13 @@
 # Security and recovery boundaries
 
-Protected MLX-LM JIT serving uses an owner-only API-key file at its gateway and
-an inherited Unix listener for the worker. A separate credential protects model
-unload and memory-policy changes. The reviewed plan binds the key digest and
-worker source; unknown runtimes and changed inputs fail closed. The supervisor
-`serve private-worker` path opens no TCP listener and requires existing local
-weights. See [protected serving](mlx-agent/source/pages/lifecycle/serve.md#protected-text-serving).
+Supervised loopback serving can require an API key from a private file or a
+verification digest supplied by a credential store. A separate credential
+protects model unload and memory-policy changes. The reviewed plan binds the
+key digest and authentication source; changed inputs fail closed. Plain MLX-LM
+uses an authenticated inherited Unix worker. Vision, Strata and accelerated
+chat workers use separately authenticated loopback ports. Typed jobs use a
+resident-task transport without a private inference HTTP port. See
+[API key authentication](mlx-agent/source/pages/lifecycle/serve.md#api-key-authentication).
 Existing servers retain their configured access controls until explicitly changed.
 
 The universal installer and Wire are confirmation-gated. Installer `--dry-run`

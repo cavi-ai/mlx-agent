@@ -1,7 +1,11 @@
 import os
+import hashlib
+import http.client
+import json
 from pathlib import Path
 import socket
 import sys
+import threading
 from tempfile import TemporaryDirectory
 from types import ModuleType, SimpleNamespace
 import unittest
@@ -76,6 +80,57 @@ class PrivateRuntimeTests(unittest.TestCase):
                 patch.object(private_serve, 'private_server_class', return_value=object):
             with self.assertRaisesRegex(ValueError, 'local cache'):
                 private_serve.run_runtime('missing/model', 99, [])
+
+    def test_inherited_worker_requires_its_own_key_before_inference(self):
+        worker_key, client_key = 'worker-' + 'w' * 40, 'client-' + 'c' * 40
+        calls = []
+
+        class InferenceHandler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                calls.append((json.loads(self.rfile.read(int(self.headers['Content-Length']))),
+                              self.headers.get('Authorization'), self.headers.get('x-api-key')))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{}')
+
+        def request(headers):
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+                connection.settimeout(3)
+                connection.connect(str(self.root / 'worker.sock'))
+                payload = b'{"messages":[]}'
+                lines = ['POST /v1/chat/completions HTTP/1.1', 'Host: 127.0.0.1',
+                         'Content-Type: application/json', f'Content-Length: {len(payload)}']
+                lines.extend(f'{name}: {value}' for name, value in headers.items())
+                connection.sendall(('\r\n'.join(lines) + '\r\n\r\n').encode() + payload)
+                with http.client.HTTPResponse(connection) as response:
+                    response.begin()
+                    response.read()
+                    return response.status
+
+        def run(server_class=None, handler_class=None):
+            server = server_class(('127.0.0.1', 0), handler_class)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                for headers in ({}, {'Authorization': 'Bearer ' + client_key},
+                                {'Authorization': 'Bearer ' + worker_key, 'x-api-key': worker_key}):
+                    self.assertEqual(request(headers), 401)
+                self.assertEqual(calls, [])
+                self.assertEqual(request({'Authorization': 'Bearer ' + worker_key}), 200)
+                self.assertEqual(calls, [({'messages': [], 'model': str(self.model), 'max_tokens': 8192}, None, None)])
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(2)
+
+        mlx = ModuleType('mlx_lm')
+        mlx.server = SimpleNamespace(run=run, APIHandler=InferenceHandler)
+        mlx.server.main = lambda: mlx.server.run()
+        with patch.dict(sys.modules, {'mlx_lm': mlx}), \
+                patch.dict(os.environ, MLX_AGENT_WORKER_KEY_SHA256=hashlib.sha256(worker_key.encode()).hexdigest()), \
+                patch.object(BaseHTTPRequestHandler, 'parse_request', BaseHTTPRequestHandler.parse_request):
+            private_serve.run_runtime(str(self.model), os.dup(self.listener.fileno()), [])
+            self.assertNotIn('MLX_AGENT_WORKER_KEY_SHA256', os.environ)
 
     def test_supervisor_reexec_retains_only_the_explicit_descriptor(self):
         entry, python = self.runtime()

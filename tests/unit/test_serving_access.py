@@ -63,10 +63,12 @@ class ServingAccessTests(unittest.TestCase):
                         jit=True, api_key_file=str(key), receipts_dir=str(root))
             plan = plan_start(**args)
             self.assertIn('private_worker', plan)
-            self.assertEqual(plan['readiness'], 'http://127.0.0.1:8080/health')
+            self.assertEqual(plan['readiness'], 'http://127.0.0.1:8080/_mlx/status')
             self.assertNotIn(key.read_text(), str(plan))
             key.write_text('different-key-for-local-inference-0123456789')
             self.assertNotEqual(plan_start(**args)['preview_hash'], plan['preview_hash'])
-            for changes in ({'jit': False}, {'runtime': 'mlx-vlm'}, {'runtime': 'tasks'}, {'prompt_lookup': True}):
-                with self.assertRaises(ServeError):
-                    plan_start(**dict(args, **changes))
+            with self.assertRaises(ServeError):
+                plan_start(**dict(args, jit=False))
+            accelerated = plan_start(**dict(args, prompt_lookup=True))
+            self.assertNotIn('private_worker', accelerated)
+            self.assertEqual(accelerated['api_key_sha256'], plan_start(**args)['api_key_sha256'])

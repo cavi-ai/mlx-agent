@@ -14,13 +14,27 @@ from unittest.mock import patch
 from mlx_agent.installer import Installer, InstallerConflictError, InstallerPathError
 from mlx_agent.providers import ProviderRegistry
 from mlx_agent.cli import _installer_registry, main
-from mlx_agent.transactions import Transaction, _target_lock_name, rollback
+from mlx_agent.transactions import Transaction, Receipt, load_receipt, _target_lock_name, rollback
 
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class InstallerRoundTripTests(unittest.TestCase):
+    def test_auth_source_path_preserves_validation_but_secret_fields_are_rejected(self):
+        plan = self.installer.plan('install', ['agy'], 'project', self.project)
+        installed = self.installer.execute(plan, confirmed=plan.preview['preview_hash'])
+        receipt = load_receipt(installed.receipt_path)
+        value = receipt.to_dict()
+        target = next(name for name in value['targets'] if name.endswith('/inference_auth.py'))
+        self.assertEqual(value['validations'][target]['passed'], True)
+        for where in ('artifact', 'metadata'):
+            invalid = json.loads(json.dumps(value))
+            if where == 'artifact': invalid['validations'][target]['token'] = 'unredacted-test-secret'
+            else: invalid['validations']['api_key'] = 'unredacted-test-secret'
+            with self.subTest(where=where), self.assertRaisesRegex(ValueError, 'validation or preview'):
+                Receipt.from_dict(invalid, installed.receipt_path)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)

@@ -14,6 +14,15 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ServeReceiptSchemaTests(unittest.TestCase):
+    def test_authentication_requires_a_supervised_receipt_and_valid_digest(self):
+        receipt, validator = self.receipt(), self.validator()
+        receipt['api_key_sha256'] = 'a' * 64
+        self.assertTrue(validator.is_valid(receipt))
+        receipt['jit'] = False
+        self.assertFalse(validator.is_valid(receipt))
+        receipt['jit'] = True; receipt['api_key_sha256'] = 'plaintext-key'
+        self.assertFalse(validator.is_valid(receipt))
+
     def receipt(self):
         with TemporaryDirectory() as folder, \
                 patch("mlx_agent.prefill_runtime.can_wrap_runtime", return_value=True), \

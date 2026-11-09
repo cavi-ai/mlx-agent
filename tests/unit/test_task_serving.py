@@ -58,6 +58,18 @@ class TaskServingTests(unittest.TestCase):
 
 
 class TaskHTTPTests(unittest.TestCase):
+    def test_authentication_covers_jobs_results_artifacts_and_cancellation(self):
+        import hashlib
+        token = 'client-' + 'a' * 40
+        self.server.config['api_key_sha256'] = hashlib.sha256(token.encode()).hexdigest()
+        for method, path in [('GET', '/v1/models'), ('POST', '/v1/tasks'), ('GET', '/v1/tasks/unknown'),
+                             ('GET', '/v1/tasks/unknown/result'), ('GET', '/v1/tasks/unknown/artifacts/output'),
+                             ('POST', '/v1/tasks/unknown/cancel')]:
+            with self.subTest(path=path):
+                self.assertEqual(self.request(method, path, {} if method == 'POST' else None)[0], 401)
+        self.assertEqual(self.request('GET', '/v1/models', headers={'Authorization': 'Bearer ' + token})[0], 200)
+        self.assertIsNone(self.server.controller.resident.process)
+
     def setUp(self):
         import os
         import threading

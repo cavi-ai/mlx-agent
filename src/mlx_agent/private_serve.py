@@ -230,6 +230,13 @@ def runtime_python(executable):
 
 
 def run_runtime(model, descriptor, forwarded):
+    digest = os.environ.pop('MLX_AGENT_WORKER_KEY_SHA256', None)
+    if digest is not None:
+        if __package__:
+            from .inference_auth import protect_worker
+        else:
+            from inference_auth import protect_worker
+        protect_worker(digest)
     # Adopt the listener before importing a runtime that could load weights.
     server_class = private_server_class(descriptor)
     os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_DATASETS_OFFLINE="1")

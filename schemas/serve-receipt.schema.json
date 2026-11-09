@@ -13,6 +13,7 @@
     "repo": { "type": ["string", "null"], "minLength": 1 },
     "path": { "type": ["string", "null"], "minLength": 1 },
     "jit": { "type": "boolean" },
+    "api_key_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "protection": {
       "type": "object",
       "required": ["access", "worker_transport", "worker_source_sha256"],
@@ -124,6 +125,10 @@
       "additionalProperties": false
     }
   },
+  "allOf": [{
+    "if": { "required": ["api_key_sha256"] },
+    "then": { "required": ["jit"], "properties": { "jit": { "const": true } } }
+  }],
   "oneOf": [
     { "properties": { "repo": { "type": "string" } } },
     { "required": ["path"], "properties": { "repo": { "type": "null" }, "path": { "type": "string" } } }

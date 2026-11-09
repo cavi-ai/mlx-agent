@@ -6,6 +6,11 @@ import json
 import sys
 import time
 
+if __package__:
+    from .runner_model_cache import load_model
+else:
+    from runner_model_cache import load_model
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
@@ -18,7 +23,7 @@ def main(argv=None):
         request = json.load(handle)
     port = importlib.import_module(arguments.module)
     started = time.time()
-    model, tokenizer = port.load(arguments.model)
+    model, tokenizer = load_model(port.load, arguments.model)
     loaded = time.time()
     result = port.predict(model, tokenizer, request["state"], request["questions"])
     result["seconds"] = round(time.time() - loaded, 3)

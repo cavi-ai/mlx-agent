@@ -7,6 +7,11 @@ import time
 from types import MethodType
 import wave
 
+if __package__:
+    from .runner_model_cache import load_model
+else:
+    from runner_model_cache import load_model
+
 
 def tokenizer_directory(model_path):
     """Resolve the real tokenizer in raw and exported MiniMax checkpoint layouts."""
@@ -49,7 +54,7 @@ def main(argv=None):
     from mlx_audio.music import load
 
     started = time.perf_counter()
-    model = load(args.model)
+    model = load_model(load, args.model)
     configure_tokenizer(model, args.model)
     load_seconds = time.perf_counter() - started
     mx.reset_peak_memory()

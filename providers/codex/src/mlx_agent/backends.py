@@ -20,12 +20,13 @@ MANIFEST_SCHEMA = "backend/1"
 INSTALL_MARKER = ".mlx-agent-backend.json"
 PORT_MARKER = ".mlx-agent-port.json"
 CATEGORIES = ("text_llm", "vision_language", "speech_to_text", "text_to_speech", "classification", "image_generation",
-              "video_generation", "music_generation", "mesh_generation")
+              "video_generation", "music_generation", "mesh_generation", "embedding")
 MAX_PROBE_FILES = 4000
 MAX_PROBE_FILE_BYTES = 1024 * 1024
 QUANTIZED_BITS = (4, 5, 6, 8)
 UNQUANTIZED_BITS = 32  # full-precision weights; only ports that declare it in port_bits accept it
 TYPE_PREFERENCE = {
+    "embedding": ("mlx-embeddings",),
     "speech_to_text": ("mlx-audio",),
     "text_to_speech": ("mlx-audio",),
     "music_generation": ("mlx-audio",),

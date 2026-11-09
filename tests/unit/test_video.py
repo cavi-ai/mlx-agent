@@ -10,6 +10,7 @@ from unittest import mock
 from mlx_agent import cli
 from mlx_agent.backends import INSTALL_MARKER, load_manifests, with_ports
 from mlx_agent.video import VIDEO_RUNNER, VideoError, plan_video, run_video
+from mlx_agent import video_runner
 
 from .backend_fixtures import synthetic_manifests, synthetic_registries
 
@@ -73,6 +74,41 @@ class VideoTests(unittest.TestCase):
         self.assertEqual((plan["steps"], plan["fps"], plan["width"], plan["height"], plan["frames"]), (30, 24, 832, 480, 81))
         bare = self.plan(self.model({"model_type": "t2v"}))
         self.assertEqual((bare["steps"], bare["fps"]), (50, 16))
+
+    def test_adaptive_cache_options_and_model_boundary(self):
+        model = self.model(dict(WAN_CONFIG, model_version="2.1", dual_model=False))
+        argv = self.plan(model, denoiser_cache="adaptive", cache_memory_mib=64)["argv"]
+        self.assertEqual(argv[-4:], ["--denoiser-cache", "adaptive", "--cache-memory-mib", "64"])
+        self.assertNotIn("--denoiser-cache", self.plan(model)["argv"])
+        for options in ({"denoiser_cache": "invalid"}, {"cache_memory_mib": True},
+                        {"cache_memory_mib": 7}, {"cache_memory_mib": 4097}):
+            with self.subTest(options=options), self.assertRaises(VideoError):
+                self.plan(model, **options)
+        for config in (dict(WAN_CONFIG, model_version="2.2"),
+                       dict(WAN_CONFIG, model_version="2.1", dual_model=True)):
+            with self.subTest(config=config), self.assertRaises(VideoError):
+                self.plan(self.model(config), denoiser_cache="adaptive")
+
+    def test_cache_statistics_survive_the_result_envelope(self):
+        model = self.model(dict(WAN_CONFIG, model_version="2.1"))
+        plan = self.plan(model, denoiser_cache="adaptive")
+        stats = {"mode": "adaptive", "reused_steps": 12, "full_steps": 38}
+        with mock.patch("mlx_agent.inference_runner.sync_ports"):
+            result = run_video(plan, manifests=self.manifests, root=self.root / "backends",
+                               runner=lambda *a, **k: Completed(stdout=json.dumps(dict(RESULT, path=self.out, denoiser_cache=stats))))
+        self.assertEqual(result["denoiser_cache"], stats)
+
+    def test_runner_forwards_adaptive_options(self):
+        port = mock.Mock()
+        port.generate.return_value = {"path": self.out}
+        args = ["--module", "test_port", "--model", "/model", "--prompt", "A pan.", "--out", self.out,
+                "--width", "320", "--height", "192", "--frames", "33", "--fps", "16", "--steps", "50",
+                "--seed", "42", "--denoiser-cache", "adaptive", "--cache-memory-mib", "64"]
+        with mock.patch.object(video_runner.importlib, "import_module", return_value=port), \
+                mock.patch.object(video_runner, "load_model", return_value=mock.Mock()), redirect_stdout(io.StringIO()):
+            self.assertEqual(video_runner.main(args), 0)
+        self.assertEqual(port.generate.call_args.kwargs["denoiser_cache"], "adaptive")
+        self.assertEqual(port.generate.call_args.kwargs["cache_memory_mib"], 64)
 
     def test_bounds_follow_the_model_strides(self):
         wide = self.model(dict(WAN_CONFIG, vae_stride=[4, 16, 16]))

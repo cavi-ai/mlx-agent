@@ -10,6 +10,51 @@ from unittest.mock import patch
 
 
 class VideoResidencyTests(unittest.TestCase):
+    def test_adaptive_session_closes_on_pipeline_failure_and_budget_falls_back(self):
+        path = Path(__file__).resolve().parents[2] / 'src/mlx_agent/resources/ports/mlx-video/t2v/t2v.py'
+        package = types.ModuleType('adaptive_port_fixture')
+        package.__path__ = [str(path.parent)]
+        spec = importlib.util.spec_from_file_location('adaptive_port_fixture.t2v', path)
+        port = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(port)
+        sessions = []
+
+        class Session:
+            def __init__(self, *args):
+                self.closed = False
+                sessions.append(self)
+
+            def close(self):
+                self.closed = True
+
+        cache_module = types.SimpleNamespace(WanDenoiserCache=Session, required_cache_bytes=lambda *a: 128 * 1024 ** 2)
+        wan = types.ModuleType('mlx_video.generate_wan')
+        for name in port.LOADERS:
+            setattr(wan, name, lambda: None)
+        wan.save_video = lambda *a, **k: None
+        calls = []
+
+        def fail(**kwargs):
+            calls.append(kwargs)
+            raise RuntimeError('generation failed')
+
+        wan.generate_video = fail
+        core = types.SimpleNamespace(reset_peak_memory=lambda: None)
+        modules = {'adaptive_port_fixture': package, 'adaptive_port_fixture.denoiser_cache': cache_module,
+                   'mlx': types.SimpleNamespace(core=core), 'mlx.core': core,
+                   'mlx_video': types.SimpleNamespace(generate_wan=wan), 'mlx_video.generate_wan': wan,
+                   'transformers': types.SimpleNamespace(AutoTokenizer=types.SimpleNamespace(from_pretrained=lambda *a, **k: None))}
+        with tempfile.TemporaryDirectory() as directory, patch.dict(sys.modules, modules):
+            model = port.Model(Path(directory), {'model_version':'2.1', 'model_type':'t2v'})
+            for budget in (256, 8):
+                with self.assertRaisesRegex(RuntimeError, 'generation failed'):
+                    port.generate(model, 'A pan.', str(Path(directory) / 'out.mp4'),
+                                  denoiser_cache='adaptive', cache_memory_mib=budget)
+            self.assertEqual(len(sessions), 1)
+            self.assertTrue(sessions[0].closed)
+            self.assertTrue(calls[0]['no_compile'])
+            self.assertNotIn('no_compile', calls[1])
+
     def test_repeated_generations_reuse_components_only_in_resident_mode(self):
         path = Path(__file__).resolve().parents[2] / 'src/mlx_agent/resources/ports/mlx-video/t2v/t2v.py'
         spec = importlib.util.spec_from_file_location('video_residency_fixture', path)

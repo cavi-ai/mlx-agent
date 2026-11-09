@@ -65,6 +65,8 @@ class TaskContractTests(unittest.TestCase):
         requests = [
             {"schema": "task-request/2", "kind": "video_generation", "model_path": "/models/video",
              "parameters": {"prompt": "A slow camera pan."}},
+            {"schema": "task-request/2", "kind": "video_generation", "model_path": "/models/video",
+             "parameters": {"prompt": "A slow camera pan.", "denoiser_cache": "adaptive", "cache_memory_mib": 64}},
             {"schema": "task-request/2", "kind": "video_understanding", "model_path": "/models/vision",
              "parameters": {"video_path": "/clips/input.mp4", "prompt": "What changes?"}},
         ]
@@ -76,6 +78,9 @@ class TaskContractTests(unittest.TestCase):
         base = {"schema": "task-request/2", "kind": "video_generation", "model_path": "/models/video",
                 "parameters": {"prompt": "A slow camera pan."}}
         invalid = [dict(base, schema="task-request/1"), dict(base, parameters={"prompt": "x", "frames": True}),
+                   dict(base, parameters={"prompt": "x", "denoiser_cache": "always"}),
+                   dict(base, parameters={"prompt": "x", "cache_memory_mib": 7}),
+                   dict(base, parameters={"prompt": "x", "cache_memory_mib": True}),
                    dict(base, parameters={"prompt": "x", "fps": float("nan")}),
                    dict(base, parameters={"prompt": "x", "timeout": 1}),
                    {"schema": "task-request/2", "kind": "video_understanding", "model_path": "/models/vision",

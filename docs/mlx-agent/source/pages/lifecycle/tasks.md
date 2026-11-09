@@ -137,6 +137,11 @@ canonical input reference. A backend that cannot decode video reports
 }
 ```
 
+Video generation also accepts `denoiser_cache` (`off` or `adaptive`) and
+`cache_memory_mib` (8..4096, default 256). Adaptive residual reuse applies to
+single-model Wan2.1 T2V and may change generated frames. Its result metadata
+reports actual reuse; jobs above the feature budget use full computation.
+
 Video generation accepts a prompt and optional `width`, `height`, `frames`,
 `fps`, `steps` and `seed`. Omitted values use the existing video planner's
 defaults; model-specific size alignment, frame rules, limits and defaults stay

@@ -95,6 +95,8 @@
             "width": {"type": "integer"},
             "height": {"type": "integer"},
             "frames": {"type": "integer"},
+            "denoiser_cache": {"enum": ["off", "adaptive"]},
+            "cache_memory_mib": {"type": "integer", "minimum": 8, "maximum": 4096},
             "steps": {"type": "integer"},
             "seed": {"type": "integer"},
             "fps": {"type": "number"}

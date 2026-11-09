@@ -1974,6 +1974,10 @@ def _add_convert_arguments(parser):
     video.add_argument("--fps", type=int, default=None, help="playback rate written to the MP4 (default: the model's, 16 for Wan2.1)")
     video.add_argument("--steps", type=int, default=None, help="denoising steps (default: the model's, 50 for Wan2.1)")
     video.add_argument("--seed", type=int, default=42)
+    video.add_argument("--denoiser-cache", choices=("off", "adaptive"), default="off",
+                       help="adaptive residual reuse for Wan2.1 T2V; may change generated frames")
+    video.add_argument("--cache-memory-mib", type=int, default=256,
+                       help="adaptive feature-memory cap in MiB, 8..4096 (default: 256)")
     video.add_argument("--timeout", type=int, default=3600, help="seconds before the backend run is stopped")
     video.add_argument("--json", action="store_true")
 
@@ -2064,7 +2068,8 @@ def _run_convert(arguments):
                 raise ValueError("--timeout must be 1..14400 seconds")
             plan = plan_video(arguments.path, arguments.prompt, arguments.out, width=arguments.width,
                               height=arguments.height, frames=arguments.frames, fps=arguments.fps,
-                              steps=arguments.steps, seed=arguments.seed)
+                              steps=arguments.steps, seed=arguments.seed,
+                              denoiser_cache=arguments.denoiser_cache, cache_memory_mib=arguments.cache_memory_mib)
             from .compute import guarded_start
             result = guarded_start("video", run_video, plan, timeout=arguments.timeout)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])

@@ -54,6 +54,16 @@ interchangeable with these task-specific models.
 
 ## Image and video generation
 
+Wan2.1 T2V supports optional adaptive denoiser caching. Add
+`--denoiser-cache adaptive` to reuse transformer residuals during sufficiently
+stable steps. This approximation can change generated frames. Caching is off
+by default. `--cache-memory-mib 256` sets the retained-feature budget; jobs
+that exceed it use full computation. JSON results include `denoiser_cache`
+statistics with full and reused step counts, reserved bytes and refresh reasons.
+For example, a short Wan2.1 clip can use
+`--width 320 --height 192 --frames 33 --denoiser-cache adaptive --cache-memory-mib 256`.
+Higher resolutions or frame counts need a larger feature budget to enable reuse.
+
 ```bash
 python3 scripts/mlx-agent convert generate --path /absolute/local/image-model --prompt "A green apple on a table" --out /absolute/output/image.png --json
 python3 scripts/mlx-agent convert video --path /absolute/local/video-model --prompt "A green apple rolling across a table" --out /absolute/output/video.mp4 --json

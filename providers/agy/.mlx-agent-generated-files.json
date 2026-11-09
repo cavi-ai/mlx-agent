@@ -486,7 +486,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "b09ae3e3503f32ef79d9706757cd3d4aa49f3acc0a44c4c96b346809de6feb08"
+      "sha256": "d1ffea7834c5ce77a87a14a3787898135ad9df19f259f04a833aebe5adf75c65"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -1061,8 +1061,12 @@
       "sha256": "ef9b42bd3746a3fc2576e0a9bf0189e60772c1527b5b5bd41b2e665571a9410c"
     },
     {
+      "path": "src/mlx_agent/resources/ports/mlx-video/t2v/denoiser_cache.py",
+      "sha256": "47de7e59a143259f72bba86f2a5c950a71c3006917924f49842880813c69b24e"
+    },
+    {
       "path": "src/mlx_agent/resources/ports/mlx-video/t2v/t2v.py",
-      "sha256": "f75905efaa87cdbc3af4f27e09a32651e10448712a349fa20977d6bc80507512"
+      "sha256": "43a5b664e128ce16e21ed53b40dcb9b40bced4fe485e83ea1e0fac9cceb9ac89"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-video/t2v/training.py",
@@ -1162,7 +1166,7 @@
     },
     {
       "path": "src/mlx_agent/task_kinds.py",
-      "sha256": "c586d13cdf99fab92d9928a55fdfc327bd470b4267a4160b65c2d0be24634482"
+      "sha256": "c189a6c37bd0ca98f712eea2c96513dc71ad27ab765dfdb7a0253e8e0be25c17"
     },
     {
       "path": "src/mlx_agent/task_mp4_validator.py",
@@ -1230,11 +1234,11 @@
     },
     {
       "path": "src/mlx_agent/video.py",
-      "sha256": "78a5ec68047a9a2cf7015f1d9fbd2b46d3a1bd4f737bfa7b766835977289322b"
+      "sha256": "7b6db3b1b2c1bea28563a96aff830270b20686ecb4dae8495fc417f4ddd236c0"
     },
     {
       "path": "src/mlx_agent/video_runner.py",
-      "sha256": "901d91a2da094bd2c56f5c0f434916a00282e9de6298dad008fb9ce0bea3def2"
+      "sha256": "77ef43932d9d7dde99bd75cbb667de3c3b643b603ba5e7d3a802af1248cadf43"
     },
     {
       "path": "src/mlx_agent/vision_runtime.py",

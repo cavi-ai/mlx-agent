@@ -166,6 +166,10 @@ def predict(model, tokenizer, state, questions):
         headers = {'Authorization': 'Bearer ' + 'a' * 32}
         status, policy = self.request('POST', '/_mlx/policy', {'keep_loaded': False, 'release_after_request': True}, headers)
         self.assertEqual(status, 200, policy)
+        with self.server.controller.condition:
+            self.assertTrue(self.server.controller.condition.wait_for(
+                lambda: self.server.controller.model_state == 'unloaded', timeout=5),
+                'The idle worker did not finish applying release mode.')
         identifier = self.start()
         self.assertEqual(self.wait(identifier)['state'], 'succeeded')
         self.assertEqual(self.server.controller.status()['model_state'], 'unloaded')

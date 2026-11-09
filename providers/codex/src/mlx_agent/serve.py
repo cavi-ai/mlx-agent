@@ -144,6 +144,14 @@ def resolve_serve_runtime(repo, path, runtime, recipes, hf_cache=None,
             return "strata", installed_runtime()["python"]
         except StrataError as error:
             raise ServeError(error.code, str(error), error.remediation) from error
+    if runtime in ("auto", "tasks"):
+        from .task_serving import resolve_model
+        try:
+            _, executable, _ = resolve_model(local, manifests, registries, backend_root, capture=False)
+            return "tasks", executable
+        except ServeError as error:
+            if runtime == "tasks" or error.code != "unsupported_runtime":
+                raise
     hits = lookup(config.get("model_type"), manifests, registries) if config.get("model_type") else []
     if runtime == "auto":
         backend = choose_backend(hits, "text_llm", "vision_config" in config)
@@ -277,6 +285,11 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         except (OSError, ValueError, TypeError):
             raise ServeError("invalid_access_key", "The serving key file is unavailable or not private.",
                              "Use an owned mode-0600 regular file containing a 32–256 character API key.") from None
+    if runtime == "tasks":
+        if adapter_path is not None or training_receipt is not None or m5_prefill or prompt_lookup or vision_cache or strata_decoding is not None or strata_speculation or strata_expert_memory_gb is not None or strata_context_tokens is not None or thinking != "default":
+            raise ServeError("invalid_arguments", "Task endpoints accept local models and their memory policy.", "Remove chat, adapter and Strata options.")
+        from .task_serving import plan_start as plan_task_endpoint
+        return plan_task_endpoint(repo, path, port, receipts_dir, hf_cache, memory_policy)
     if thinking not in ("default", "off"):
         raise ServeError("invalid_arguments", "thinking must be default or off.", "Pass --thinking off or omit it.")
     if type(m5_prefill) is not bool or (m5_prefill and runtime != "mlx_lm"):
@@ -615,6 +628,20 @@ def _default_path_present(path):
     return Path(path).is_dir()
 
 
+def _require_task_identity(plan):
+    if plan.get("task_identity") is None:
+        return
+    from .task_contracts import TaskError
+    from .task_identity import check_identity
+    from .task_serving import runtime_fingerprint
+    try:
+        check_identity(plan["task_identity"])
+        if runtime_fingerprint(plan["task_identity"]["backend"]) != plan["task_runtime_fingerprint"]:
+            raise TaskError("runtime_changed", "The accepted inference adapter changed.")
+    except (TaskError, OSError) as error:
+        raise ServeError("preview_stale", str(error), "Review a fresh task serving plan.") from error
+
+
 def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
                 which=None, model_present=None, path_present=None, port_free=None,
                 wired_claims=None, spawn=None, readiness=None,
@@ -642,6 +669,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "The supplied preview hash does not match this start plan.",
             "Re-run serve start without --confirm and review the fresh plan.",
         )
+    _require_task_identity(plan)
     _require_training_binding(plan)
     _require_adapter_identity(plan)
     _require_prefill_identity(plan)
@@ -727,6 +755,10 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         config["runtime"] = plan["runtime"]
         if "private_worker" in plan:
             config.update({key: plan[key] for key in ("private_worker", "access_key_file", "access_key_sha256")})
+        if plan["runtime"] == "tasks":
+            config.update(task_identity=plan["task_identity"], task_kinds=plan["task_kinds"], port=plan["port"],
+                          task_runtime_fingerprint=plan["task_runtime_fingerprint"],
+                          task_state_dir=str(root.absolute().parent / "tasks" / str(plan["port"])))
         if plan.get("adapter_path") is not None:
             config.update(adapter_path=plan["adapter_path"], adapter_identity=plan["adapter_identity"])
         if plan.get("training_binding") is not None:
@@ -754,6 +786,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "Inspect the serve log at {0}.".format(log_path),
         )
     try:
+        _require_task_identity(plan)
         _require_training_binding(plan)
         _require_adapter_identity(plan)
         _require_prefill_identity(plan)
@@ -783,6 +816,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
     if "private_worker" in plan:
         receipt["protection"] = {"access": "api_key", "worker_transport": plan["private_worker"]["protocol"],
                                  "worker_source_sha256": plan["private_worker"]["source_sha256"]}
+    if plan.get("task_kinds"):
+        receipt["task_kinds"] = plan["task_kinds"]
     if plan.get("adapter_path") is not None:
         receipt.update(adapter_path=plan["adapter_path"], adapter_identity=plan["adapter_identity"])
     if plan.get("training_binding") is not None:
@@ -860,6 +895,8 @@ def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_comma
             "process_started_at": _pid_start(receipt["pid"]) if alive and pid_command is _pid_command else None,
         })
         entries[-1].update(_adapter_metadata(receipt, root))
+        if receipt.get("task_kinds"):
+            entries[-1]["task_kinds"] = receipt["task_kinds"]
         if receipt.get("training_binding") is not None:
             entries[-1]["training_binding"] = receipt["training_binding"]
         if "prefill_kernel" in receipt:
@@ -990,6 +1027,10 @@ def _owned_jit_worker(receipt, root):
         config = _jit_config(receipt, root)
         expected = {"repo": None, "path": config["local_path"], "argv": argv,
                     "port": int(argv[argv.index("--port") + 1])}
+        if config.get("runtime") == "tasks":
+            if _pid_alive(pid) and os.getpgid(pid) == pid and state.get("worker_started_at") == _pid_start(pid) and _argv_matches(expected, _pid_command(pid)):
+                return pid
+            return None
         if _pid_alive(pid) and os.getpgid(pid) == receipt["pid"] and _argv_matches(expected, _pid_command(pid)):
             return pid
     except (OSError, ValueError, TypeError, KeyError, ServeError):

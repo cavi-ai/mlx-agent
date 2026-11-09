@@ -67,6 +67,6 @@ class ServingAccessTests(unittest.TestCase):
             self.assertNotIn(key.read_text(), str(plan))
             key.write_text('different-key-for-local-inference-0123456789')
             self.assertNotEqual(plan_start(**args)['preview_hash'], plan['preview_hash'])
-            for changes in ({'jit': False}, {'runtime': 'mlx-vlm'}, {'prompt_lookup': True}):
+            for changes in ({'jit': False}, {'runtime': 'mlx-vlm'}, {'runtime': 'tasks'}, {'prompt_lookup': True}):
                 with self.assertRaises(ServeError):
                     plan_start(**dict(args, **changes))

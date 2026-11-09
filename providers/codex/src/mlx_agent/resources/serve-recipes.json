@@ -3,7 +3,18 @@
   "recipes": {
     "strata": {
       "executable": "python",
-      "argv": ["{executable}", "{runtime_adapter}", "--model", "{repo}", "--port", "{port}", "--host", "127.0.0.1", "--max-tokens", "{max_tokens}"],
+      "argv": [
+        "{executable}",
+        "{runtime_adapter}",
+        "--model",
+        "{repo}",
+        "--port",
+        "{port}",
+        "--host",
+        "127.0.0.1",
+        "--max-tokens",
+        "{max_tokens}"
+      ],
       "adapter_argv": null,
       "default_port": 8084,
       "readiness": "http://127.0.0.1:{port}/v1/models",
@@ -11,20 +22,52 @@
     },
     "mlx_lm": {
       "executable": "mlx_lm.server",
-      "argv": ["{executable}", "--model", "{repo}", "--port", "{port}", "--max-tokens", "{max_tokens}"],
-      "adapter_argv": ["--adapter-path", "{adapter_path}"],
-      "thinking_off_argv": ["--chat-template-args", "{\"enable_thinking\":false}"],
+      "argv": [
+        "{executable}",
+        "--model",
+        "{repo}",
+        "--port",
+        "{port}",
+        "--max-tokens",
+        "{max_tokens}"
+      ],
+      "adapter_argv": [
+        "--adapter-path",
+        "{adapter_path}"
+      ],
+      "thinking_off_argv": [
+        "--chat-template-args",
+        "{\"enable_thinking\":false}"
+      ],
       "default_port": 8080,
       "readiness": "http://127.0.0.1:{port}/v1/models",
       "install_hint": "pip install mlx-lm"
     },
     "mlx-vlm": {
       "executable": "mlx_vlm.server",
-      "argv": ["{executable}", "--model", "{repo}", "--port", "{port}", "--host", "127.0.0.1"],
+      "argv": [
+        "{executable}",
+        "--model",
+        "{repo}",
+        "--port",
+        "{port}",
+        "--host",
+        "127.0.0.1"
+      ],
       "adapter_argv": null,
       "default_port": 8083,
       "readiness": "http://127.0.0.1:{port}/v1/models",
       "install_hint": "pip install mlx-vlm"
+    },
+    "tasks": {
+      "executable": "python",
+      "argv": [
+        "{executable}"
+      ],
+      "adapter_argv": null,
+      "default_port": 8085,
+      "readiness": "http://127.0.0.1:{port}/v1/models",
+      "install_hint": "install the local model backend with mlx-agent backend install"
     }
   }
 }

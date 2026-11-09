@@ -25,6 +25,8 @@ class Model:
     def __init__(self, path: Path, config: dict):
         self.path = path
         self.config = config
+        self.retain_weights = False
+        self.components = {}
 
 
 def load(path) -> Model:
@@ -94,7 +96,14 @@ def generate(model: Model, prompt: str, out: str, width: int = 832, height: int 
         def wrapper(*arguments, **keywords):
             started = time.time()
             try:
-                return function(*arguments, **keywords)
+                key = repr((arguments, sorted(keywords.items())))
+                retained = model.components.get(function.__name__) if model.retain_weights else None
+                if retained is not None and retained[0] == key:
+                    return retained[1]
+                value = function(*arguments, **keywords)
+                if model.retain_weights:
+                    model.components[function.__name__] = (key, value)
+                return value
             finally:
                 spent["load"] += time.time() - started
         return wrapper
@@ -104,7 +113,15 @@ def generate(model: Model, prompt: str, out: str, width: int = 832, height: int 
         try:
             if name == TOKENIZER_REPO and local_tokenizer.is_dir():
                 name = str(local_tokenizer)
-            return from_pretrained(name, *arguments, **keywords)
+            keywords.update(local_files_only=True, trust_remote_code=False)
+            key = repr((name, arguments, sorted(keywords.items())))
+            retained = model.components.get("tokenizer") if model.retain_weights else None
+            if retained is not None and retained[0] == key:
+                return retained[1]
+            value = from_pretrained(name, *arguments, **keywords)
+            if model.retain_weights:
+                model.components["tokenizer"] = (key, value)
+            return value
         finally:
             spent["load"] += time.time() - started
 

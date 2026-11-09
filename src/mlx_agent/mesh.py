@@ -88,10 +88,12 @@ CONTRACT = RunnerContract(
 )
 
 
-def run_mesh(plan, manifests=None, root=None, timeout=3600, runner=subprocess.run):
-    result = invoke(plan, CONTRACT, manifests, root, timeout, runner)
-    output = Path(plan["out"])
+def validate_glb(path):
+    """Check the owned output's GLB container before publishing its artifact."""
+    output = Path(path)
     try:
+        if output.is_symlink():
+            raise ValueError("A mesh output cannot be a symbolic link")
         with output.open("rb") as stream:
             header = stream.read(12)
         magic, version, length = struct.unpack("<III", header)
@@ -99,4 +101,9 @@ def run_mesh(plan, manifests=None, root=None, timeout=3600, runner=subprocess.ru
             raise ValueError("Invalid GLB header")
     except (OSError, ValueError, struct.error) as error:
         raise MeshError("mesh_failed", "The backend did not write a valid GLB file.", "Retry with a new output path.") from error
+
+
+def run_mesh(plan, manifests=None, root=None, timeout=3600, runner=subprocess.run):
+    result = invoke(plan, CONTRACT, manifests, root, timeout, runner)
+    validate_glb(plan["out"])
     return dict(result, schema=MESH_SCHEMA, backend=plan["backend"], model=plan["model"])

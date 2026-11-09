@@ -101,6 +101,8 @@ def use_cases_for(task_type, haystack):
 def _type_from_hits(hits, config_keys, haystack, vision_module=False, allow_vision=True):
     preferred = [hit for hit in hits if hit["match"] != "remap"] or hits
     categories = {hit["category"] for hit in preferred}
+    if "embedding" in categories and (not categories & {"text_llm", "vision_language"} or _EMBEDDING_NAME.search(haystack)):
+        return "embedding"
     if "music_generation" in categories:
         return "music_generation"
     if "text_llm" in categories and categories & {"speech_to_text", "text_to_speech"}:

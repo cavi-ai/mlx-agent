@@ -10,6 +10,13 @@ from mlx_agent.cli import main
 
 
 class ConvertCliTests(unittest.TestCase):
+    def setUp(self):
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        compute_root = patch('mlx_agent.compute.compute_root', return_value=Path(temporary.name).resolve() / 'compute')
+        compute_root.start()
+        self.addCleanup(compute_root.stop)
+
     def test_explicit_mlx_root_does_not_expand_to_default_gguf_folders(self):
         with TemporaryDirectory() as folder:
             selected = Path(folder) / 'selected'; selected.mkdir()

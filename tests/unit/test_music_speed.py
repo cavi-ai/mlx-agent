@@ -3,7 +3,8 @@ import importlib.util
 from types import SimpleNamespace
 import unittest
 
-HAS_AUDIO = importlib.util.find_spec('mlx') is not None and importlib.util.find_spec('mlx_audio') is not None
+HAS_MLX = importlib.util.find_spec('mlx') is not None
+HAS_AUDIO = HAS_MLX and importlib.util.find_spec('mlx_audio') is not None
 
 
 @unittest.skipUnless(HAS_AUDIO, 'requires the native music backend')
@@ -125,21 +126,76 @@ class MusicDepthTests(unittest.TestCase):
         self.assertIs(model.rvq_depth_decoder,decoder)
         self.assertEqual(model.rvq_depth_decoder(None),'custom')
 
+@unittest.skipUnless(HAS_MLX, 'requires MLX on Apple Silicon')
+class MusicMLXTests(unittest.TestCase):
+    def setUp(self):
+        import mlx.core as mx
+        import mlx.nn as nn
+        self.previous = mx.default_device()
+        self.addCleanup(mx.set_default_device, self.previous)
+        self.config = object()
+
+        class UniformDecoder(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.pos_embedding = nn.Embedding(16,4)
+                self.pos_embedding.weight = mx.broadcast_to(mx.arange(16)[:,None],(16,4)).astype(mx.float32)/8
+                self.projection = nn.Identity()
+                self.audio_embeddings = nn.Embedding(4,4)
+                self.audio_heads = [nn.Linear(4,4)]
+                self.norm = nn.Identity()
+                attention = SimpleNamespace(heads=1,head_dim=4,to_q=mx.zeros_like,to_k=mx.zeros_like,
+                                            to_v=nn.Identity(),to_out=nn.Identity())
+                self.layers = [SimpleNamespace(input_layernorm=nn.Identity(),attn=attention,
+                    post_attention_layernorm=nn.Identity(),gate_proj=mx.zeros_like,
+                    up_proj=mx.ones_like,down_proj=nn.Identity())]
+
+        self.decoder_type = UniformDecoder
+
+    def test_cached_prefix_matches_closed_form_causal_means(self):
+        import mlx.core as mx
+        import numpy as np
+        from mlx_agent.music_speed import _DepthCache
+        # Zero Q/K make causal attention the mean of preceding values. This
+        # closed-form oracle is independent of the cached attention implementation.
+        for device in (mx.cpu,mx.gpu):
+            mx.set_default_device(device)
+            decoder = self.decoder_type()
+            calls = []
+            def keys(x):
+                calls.append(x.shape[1])
+                return mx.zeros_like(x)
+            decoder.layers[0].attn.to_k = keys
+            cached = _DepthCache(decoder)
+            for shift in (0,3):
+                values = mx.arange(64).reshape(2,8,4).astype(mx.float32)/32+shift
+                positioned = values+decoder.pos_embedding(mx.arange(8))
+                expected = positioned+mx.cumsum(positioned,axis=1)/mx.arange(1,9)[None,:,None]
+                calls.clear()
+                for length in range(2,9):
+                    rtol = np.finfo(np.float16).eps if device == mx.gpu else 2e-5
+                    np.testing.assert_allclose(np.array(cached(values[:,:length])),
+                                               np.array(expected[:,:length]),atol=2e-5,rtol=rtol)
+                self.assertEqual(calls,[2,1,1,1,1,1,1])
+            self.assertIs(cached.projection,decoder.projection)
+            self.assertIs(cached.audio_embeddings,decoder.audio_embeddings)
+            self.assertIs(cached.audio_heads,decoder.audio_heads)
+
     def test_runner_reuses_the_caches_and_exports_valid_stereo_pcm(self):
         import io
         import json
         from contextlib import redirect_stdout
         from pathlib import Path
         from tempfile import TemporaryDirectory
-        from unittest.mock import patch
+        import sys
+        from unittest.mock import Mock, patch
         import wave
         import mlx.core as mx
         import numpy as np
-        from mlx_audio.music.models.minimax_music3.depth import RVQDepthDecoder
         from mlx_agent import music_runner
         from mlx_agent.music_speed import _DepthCache
         model = SimpleNamespace(model_type='minimax_music3',config=self.config,
-                                rvq_depth_decoder=RVQDepthDecoder(self.config))
+                                rvq_depth_decoder=self.decoder_type())
         def generate(**kwargs):
             self.assertIsInstance(model.rvq_depth_decoder,_DepthCache)
             self.assertEqual((kwargs['duration'],kwargs['steps'],kwargs['seed']),(2,30,7))
@@ -149,9 +205,14 @@ class MusicDepthTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             (root/'tokenizer.json').write_text('{}')
-            encoder = 'mlx_audio.music.models.minimax_music3.minimax_music3._encode_official_text_pair'
-            with patch.object(music_runner,'load_model',return_value=model), \
-                    patch(encoder,return_value=mx.array([[1,2],[1,2]])) as encode:
+            encode = Mock(return_value=mx.array([[1,2],[1,2]]))
+            modules = {
+                'mlx_audio.music':SimpleNamespace(load=lambda path:model),
+                'mlx_audio.music.models.minimax_music3.depth':SimpleNamespace(RVQDepthDecoder=self.decoder_type),
+                'mlx_audio.music.models.minimax_music3.minimax_music3':SimpleNamespace(_encode_official_text_pair=encode),
+                'mlx_audio.music.models.minimax_music3.prompt':SimpleNamespace(assemble_prompt=lambda c,l:c+'|'+l),
+            }
+            with patch.object(music_runner,'load_model',return_value=model), patch.dict(sys.modules,modules):
                 for index in range(2):
                     out = root/f'{index}.wav'
                     buffer = io.StringIO()

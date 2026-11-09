@@ -1,6 +1,7 @@
 """Run inside the isolated music backend; write a new WAV and measured metrics."""
 
 import argparse
+from functools import lru_cache
 import json
 from pathlib import Path
 import time
@@ -32,12 +33,22 @@ def configure_tokenizer(model, model_path):
     if model.model_type != "minimax_music3":
         return
     directory = tokenizer_directory(model_path)
+    existing = getattr(getattr(model, "_text_ids", None), "__func__", None)
+    if getattr(existing, "_mlx_agent_tokenizer_directory", None) == directory:
+        return
     from mlx_audio.music.models.minimax_music3.minimax_music3 import _encode_official_text_pair
     from mlx_audio.music.models.minimax_music3.prompt import assemble_prompt
 
-    def text_ids(instance, caption, lyrics):
-        return _encode_official_text_pair(assemble_prompt(caption, lyrics), instance.config, directory)
+    config = model.config
 
+    @lru_cache(maxsize=8)
+    def encode(caption, lyrics):
+        return _encode_official_text_pair(assemble_prompt(caption, lyrics), config, directory)
+
+    def text_ids(instance, caption, lyrics):
+        return encode(caption, lyrics)
+
+    text_ids._mlx_agent_tokenizer_directory = directory
     model._text_ids = MethodType(text_ids, model)
 
 
@@ -56,6 +67,11 @@ def main(argv=None):
     started = time.perf_counter()
     model = load_model(load, args.model)
     configure_tokenizer(model, args.model)
+    if __package__:
+        from .music_speed import configure_depth_cache
+    else:
+        from music_speed import configure_depth_cache
+    configure_depth_cache(model)
     load_seconds = time.perf_counter() - started
     mx.reset_peak_memory()
     started = time.perf_counter()

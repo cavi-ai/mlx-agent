@@ -9,7 +9,7 @@ import numpy as np
 
 from .dinov2 import encode, preprocess
 from .geometry import decimate, extract_mesh, write_glb
-from .transformer import Decoder, denoise
+from .transformer import Decoder, denoise, _CrossAttentionCache
 from .weights import Weights
 
 
@@ -82,15 +82,17 @@ def generate(model, image, out, steps=50, seed=42, resolution=512, guidance=7.0,
     stages["conditioning"] = cursor - started
     transformer = config["components"]["transformer"]
     latents = initial_latents(seed, transformer["in_channels"])
+    context_cache = _CrossAttentionCache(weights["transformer"], features)
     for timestep, delta in flow_schedule(config["scheduler"], steps):
         inputs = mx.concatenate([latents, latents], axis=0) if guidance > 1 else latents
         prediction = denoise(weights["transformer"], transformer, inputs,
-                             [timestep] * inputs.shape[0], features)
+                             [timestep] * inputs.shape[0], features, context_cache=context_cache)
         if guidance > 1:
             unconditioned, conditioned = mx.split(prediction, 2, axis=0)
             prediction = unconditioned + guidance * (conditioned - unconditioned)
         latents = latents + delta * prediction
         mx.eval(latents)
+    del context_cache
     previous, cursor = cursor, time.perf_counter()
     stages["sampling"] = cursor - previous
     decoder = Decoder(weights["vae"], config["components"]["vae"], latents)

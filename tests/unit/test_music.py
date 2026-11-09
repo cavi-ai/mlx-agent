@@ -67,9 +67,11 @@ class MusicTests(unittest.TestCase):
     def test_caption_and_lyrics_use_real_encoder_without_synthetic_fallback(self):
         model = SimpleNamespace(model_type="minimax_music3", config=object(),
                                 _text_ids=lambda *args: "synthetic")
+        calls = []
         def encode(text, config, directory):
             self.assertEqual(directory, self.model)
             self.assertIs(config, model.config)
+            calls.append(text)
             return text
         modules = {
             "mlx_audio.music.models.minimax_music3.minimax_music3": SimpleNamespace(_encode_official_text_pair=encode),
@@ -80,6 +82,36 @@ class MusicTests(unittest.TestCase):
             self.assertEqual(model._text_ids("jazz piano", "[instrumental]"), "jazz piano|[instrumental]")
             self.assertNotEqual(model._text_ids("jazz piano", "[instrumental]"),
                                 model._text_ids("metal guitar", "[instrumental]"))
+            music_runner.configure_tokenizer(model, self.model)
+            self.assertEqual(model._text_ids("jazz piano", "[instrumental]"), "jazz piano|[instrumental]")
+            self.assertEqual(calls, ["jazz piano|[instrumental]", "metal guitar|[instrumental]"])
+
+    def test_prompt_cache_is_bounded_and_isolated_by_model_and_tokenizer_directory(self):
+        calls = []
+        def encode(text, config, directory):
+            calls.append((text, config, directory))
+            return text
+        modules = {
+            "mlx_audio.music.models.minimax_music3.minimax_music3": SimpleNamespace(_encode_official_text_pair=encode),
+            "mlx_audio.music.models.minimax_music3.prompt": SimpleNamespace(assemble_prompt=lambda c,l: c + "|" + l),
+        }
+        a = SimpleNamespace(model_type="minimax_music3", config=object())
+        b = SimpleNamespace(model_type="minimax_music3", config=object())
+        with mock.patch.dict(sys.modules, modules):
+            for model in (a,b):
+                music_runner.configure_tokenizer(model, self.model)
+                model._text_ids("piano", "[instrumental]")
+            self.assertEqual(len(calls),2)
+            for index in range(8):
+                a._text_ids(str(index), "[instrumental]")
+            a._text_ids("piano", "[instrumental]")
+            self.assertEqual(len(calls),11)
+            nested = self.model / "tokenizer"
+            nested.mkdir()
+            (nested / "tokenizer.json").write_text("{}")
+            music_runner.configure_tokenizer(a, self.model)
+            a._text_ids("piano", "[instrumental]")
+            self.assertEqual(calls[-1][2], nested)
 
     def test_requantization_preserves_assets_without_copying_old_weights_or_config(self):
         for name in ("tokenizer.json", "scheduler_config.json", "chat_template.jinja",

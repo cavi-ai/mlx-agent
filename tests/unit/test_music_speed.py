@@ -1,0 +1,126 @@
+"""Causal depth reuse against the pinned native MiniMax decoder."""
+import importlib.util
+from types import SimpleNamespace
+import unittest
+
+HAS_AUDIO = importlib.util.find_spec('mlx') is not None and importlib.util.find_spec('mlx_audio') is not None
+
+
+@unittest.skipUnless(HAS_AUDIO, 'requires the native music backend')
+class MusicDepthTests(unittest.TestCase):
+    def setUp(self):
+        import mlx.core as mx
+        from mlx_audio.music.models.minimax_music3.config import ModelConfig
+        self.previous = mx.default_device()
+        self.addCleanup(mx.set_default_device, self.previous)
+        self.config = ModelConfig(hidden_size=64, depth_num_layers=2, depth_num_heads=4,
+                                  depth_intermediate_size=128, audio_vocab_size=64,
+                                  num_codebooks=8, vocab_size=256, audio_code_offset=32)
+
+    def cached(self, decoder):
+        from mlx_agent.music_speed import configure_depth_cache
+        model = SimpleNamespace(model_type='minimax_music3', rvq_depth_decoder=decoder)
+        self.assertTrue(configure_depth_cache(model))
+        return model.rvq_depth_decoder
+
+    def test_prefix_parity_on_cpu_gpu_float32_bfloat16_and_quantized_weights(self):
+        import mlx.core as mx
+        import mlx.nn as nn
+        import numpy as np
+        from mlx_audio.music.models.minimax_music3.depth import RVQDepthDecoder
+        for device in (mx.cpu, mx.gpu):
+            mx.set_default_device(device)
+            for dtype in (mx.float32, mx.bfloat16):
+                for quantized in (False, True):
+                    with self.subTest(device=device, dtype=dtype, quantized=quantized):
+                        mx.random.seed(9)
+                        decoder = RVQDepthDecoder(self.config)
+                        decoder.apply(lambda x: x.astype(dtype))
+                        if quantized:
+                            nn.quantize(decoder, group_size=32, bits=8,
+                                        class_predicate=lambda p,m: isinstance(m,nn.Linear))
+                        values = mx.random.normal((2,8,64)).astype(dtype)
+                        expected = [np.array(decoder(values[:,:n]).astype(mx.float32)) for n in range(2,9)]
+                        lengths = []
+                        original = decoder.layers[0].attn.to_k
+                        class RecordingLinear(nn.Module):
+                            def __call__(self,x):
+                                lengths.append(x.shape[1])
+                                return original(x)
+                        decoder.layers[0].attn.to_k = RecordingLinear()
+                        cached = self.cached(decoder)
+                        for n,reference in zip(range(2,9),expected):
+                            actual = np.array(cached(values[:,:n]).astype(mx.float32))
+                            if dtype == mx.float32:
+                                np.testing.assert_allclose(actual,reference,atol=2e-5,rtol=2e-4)
+                            else:
+                                self.assertTrue(np.isfinite(actual).all())
+                                relative_rms = np.sqrt(np.mean((actual-reference)**2)/np.mean(reference**2))
+                                self.assertLess(relative_rms,.02)
+                        self.assertEqual(lengths,[2,1,1,1,1,1,1])
+
+    def test_new_frames_and_nonconsecutive_prefixes_discard_old_context(self):
+        import mlx.core as mx
+        import numpy as np
+        from mlx_audio.music.models.minimax_music3.depth import RVQDepthDecoder
+        decoder = RVQDepthDecoder(self.config)
+        cached = self.cached(decoder)
+        for seed in (3,7):
+            mx.random.seed(seed)
+            values = mx.random.normal((2,8,64))
+            for n in (2,3,8,2,3):
+                np.testing.assert_allclose(np.array(cached(values[:,:n])),np.array(decoder(values[:,:n])),
+                                           atol=2e-5,rtol=2e-4)
+
+    def test_configuration_is_idempotent_and_other_models_are_untouched(self):
+        from mlx_agent.music_speed import configure_depth_cache
+        from mlx_audio.music.models.minimax_music3.depth import RVQDepthDecoder
+        decoder = RVQDepthDecoder(self.config)
+        model = SimpleNamespace(model_type='minimax_music3',rvq_depth_decoder=decoder)
+        self.assertTrue(configure_depth_cache(model))
+        wrapper = model.rvq_depth_decoder
+        self.assertTrue(configure_depth_cache(model))
+        self.assertIs(wrapper,model.rvq_depth_decoder)
+        other = SimpleNamespace(model_type='other',rvq_depth_decoder=decoder)
+        self.assertFalse(configure_depth_cache(other))
+        self.assertIs(other.rvq_depth_decoder,decoder)
+
+    def test_runtime_prefixes_do_not_become_model_parameters(self):
+        import mlx.core as mx
+        from mlx.utils import tree_flatten
+        from mlx_audio.music.models.minimax_music3.depth import RVQDepthDecoder
+        cached = self.cached(RVQDepthDecoder(self.config))
+        before = [(k,v.shape) for k,v in tree_flatten(cached.parameters())]
+        values = mx.random.normal((2,8,64))
+        for n in range(2,9):mx.eval(cached(values[:,:n]))
+        self.assertEqual(before,[(k,v.shape) for k,v in tree_flatten(cached.parameters())])
+
+    def test_native_ar_codes_and_rng_match_for_float32_reference_frames(self):
+        import mlx.core as mx
+        import mlx.nn as nn
+        import numpy as np
+        from mlx_audio.music.models.minimax_music3.ar import generate_depth_codes
+        from mlx_audio.music.models.minimax_music3.depth import RVQDepthDecoder
+        decoder = RVQDepthDecoder(self.config)
+        cached = self.cached(decoder)
+        language = SimpleNamespace(model=SimpleNamespace(embed_tokens=nn.Embedding(256,64)))
+        for seed in (0,17,42):
+            hidden = mx.random.normal((2,64))
+            args = self.config, hidden, mx.array([3,3]), mx.random.key(seed)
+            expected = generate_depth_codes(language,decoder,*args)
+            actual = generate_depth_codes(language,cached,*args)
+            np.testing.assert_array_equal(np.array(actual[0]),np.array(expected[0]))
+            np.testing.assert_array_equal(np.array(actual[2]),np.array(expected[2]))
+            np.testing.assert_allclose(np.array(actual[1]),np.array(expected[1]),atol=2e-5,rtol=2e-4)
+
+    def test_custom_decoder_keeps_its_native_behavior(self):
+        from mlx_agent.music_speed import configure_depth_cache
+        from mlx_audio.music.models.minimax_music3.depth import RVQDepthDecoder
+        class CustomDecoder(RVQDepthDecoder):
+            def __call__(self,embeddings):
+                return 'custom'
+        decoder = CustomDecoder(self.config)
+        model = SimpleNamespace(model_type='minimax_music3',rvq_depth_decoder=decoder)
+        self.assertFalse(configure_depth_cache(model))
+        self.assertIs(model.rvq_depth_decoder,decoder)
+        self.assertEqual(model.rvq_depth_decoder(None),'custom')

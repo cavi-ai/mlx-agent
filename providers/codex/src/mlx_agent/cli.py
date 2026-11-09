@@ -929,6 +929,18 @@ def _run_coding_bench(arguments):
 def _add_serve_arguments(parser):
     from .serve import MAX_TOKENS_DEFAULT
     actions = parser.add_subparsers(dest="serve_command", required=True)
+    service = actions.add_parser("protected-service", help="run an authenticated private-worker gateway in the foreground")
+    service.add_argument("--describe", action="store_true")
+    service.add_argument("--model")
+    service.add_argument("--api-key-file")
+    service.add_argument("--port", type=int)
+    service.add_argument("--runtime-executable", default="mlx_lm.server")
+    service.add_argument("--max-tokens", type=int, default=8192)
+    private = actions.add_parser("private-worker", help="serve an existing model over a supervisor-owned Unix listener")
+    private.add_argument("--describe", action="store_true", help="report the private transport protocol without starting a model")
+    private.add_argument("--model")
+    private.add_argument("--socket-fd", type=int)
+    private.add_argument("--runtime-executable", default="mlx_lm.server")
     start = actions.add_parser(
         "start",
         help="preview, then confirmation-gated launch of a local MLX server",
@@ -955,6 +967,7 @@ def _add_serve_arguments(parser):
     start.add_argument("--vision-cache", action="store_true",
                        help="opt-in bounded Qwen2.5-VL and Qwen3-VL image feature reuse with MLX-VLM")
     start.add_argument("--jit", action="store_true", help="keep endpoint reachable; load local weights on inference requests")
+    start.add_argument("--api-key-file", help="protect a plain MLX-LM JIT gateway and use a private worker; requires an owned mode-0600 key file")
     _add_memory_arguments(start)
     start.add_argument("--launchd", action="store_true", help="install a launchd agent plist instead of spawning now")
     start.add_argument("--launchd-dir", default=None, help="launchd target directory (defaults to ~/Library/LaunchAgents)")
@@ -1130,6 +1143,7 @@ def _run_serve(arguments):
             training_receipt=arguments.training_receipt,
             path=arguments.path,
             jit=arguments.jit,
+            api_key_file=arguments.api_key_file,
             receipts_dir=arguments.receipts_dir,
             hf_cache=arguments.hf_cache,
             runtime_executable=executable,
@@ -2772,6 +2786,20 @@ def build_parser(command=None):
 
 def main(argv=None):
     raw = list(sys.argv[1:] if argv is None else argv)
+    if raw[:2] == ["serve", "protected-service"]:
+        from .protected_service import main as service_main
+        try:
+            return service_main(raw[2:])
+        except (OSError, ValueError, ImportError, RuntimeError):
+            print("Protected MLX service unavailable; verify its runtime, private key and local model.", file=sys.stderr)
+            return 1
+    if raw[:2] == ["serve", "private-worker"]:
+        from .private_serve import main as private_main
+        try:
+            return private_main(raw[2:])
+        except (OSError, ValueError, ImportError):
+            print("Private MLX worker unavailable; verify the installed runtime and local model.", file=sys.stderr)
+            return 1
     if raw and raw[0] == "lab":
         from .lab import run
         return run(raw[1:])

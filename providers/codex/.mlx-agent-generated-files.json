@@ -486,7 +486,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "08adf66af71838f136f955a34cd341867905077f99120b2a714cdf95d1e50327"
+      "sha256": "9404a7d5d42a8cfd88065c2c12929888564c613bb151efc1d4ace6eb1cc6b564"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -650,7 +650,7 @@
     },
     {
       "path": "src/mlx_agent/jit_serve.py",
-      "sha256": "581bdbfd6cb0c798005ff40743d7a54c5dd2b743b19ef7aaa3073a7df185c5ae"
+      "sha256": "290420c67a6485f26d00172f08e809dd1bcb55865e314d2736a34060c50b867d"
     },
     {
       "path": "src/mlx_agent/kokoro_runtime.py",
@@ -729,6 +729,10 @@
       "sha256": "32d035234a8cba71fa39f063267bdbb9487066a41849586db4b8452b2f1056ed"
     },
     {
+      "path": "src/mlx_agent/private_serve.py",
+      "sha256": "77794c617927103cf89d1f8962bade0b42b5f4c4dadd9b2cd52c69b4f6621728"
+    },
+    {
       "path": "src/mlx_agent/probe_assets.py",
       "sha256": "17c39982e6bec5c8742dfb8707de536e688922d3aad6496113f8b9beeb44478d"
     },
@@ -743,6 +747,10 @@
     {
       "path": "src/mlx_agent/prompt_lookup_runtime.py",
       "sha256": "822933d9d240f777e7e23da0ba035627985d7d3694f8b6e0e24662afab1a924f"
+    },
+    {
+      "path": "src/mlx_agent/protected_service.py",
+      "sha256": "c69ded015b4dae4aa940a679fd66153ae34730e9eae72e0da333ad664502e995"
     },
     {
       "path": "src/mlx_agent/providers.py",
@@ -1094,7 +1102,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "c6cb92db8ab954fe58f13f978a20442efe942daddfa103d93357a75e6acda06d"
+      "sha256": "4fef1a33dd657324b20698c02f0a3bb85c411d7f3f1c67601e99c27cb11f8184"
     },
     {
       "path": "src/mlx_agent/serve_profiles.py",
@@ -1103,6 +1111,10 @@
     {
       "path": "src/mlx_agent/service_registry.py",
       "sha256": "f2989440adf4e5440e4e92089547dce8716f3eb3f1a664c2c8cf3512f5017685"
+    },
+    {
+      "path": "src/mlx_agent/serving_access.py",
+      "sha256": "8ef86727a0bcf34d7161f497ac5ce59b67063bdb4e99cec348ac124f6aed41c5"
     },
     {
       "path": "src/mlx_agent/source_evidence.py",

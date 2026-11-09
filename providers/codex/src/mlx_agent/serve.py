@@ -1,7 +1,8 @@
 """Confirmation-gated launcher for local MLX serving runtimes.
 
-Serve is the only component that spawns processes, so every mutation goes
-through the wire-style preview -> confirm -> receipt flow. Serve never
+Receipt-owned launches use the wire-style preview -> confirm -> receipt
+flow. The protected-service foreground entry point delegates lifecycle to
+its existing service manager. Serve never
 installs runtimes, never downloads models, binds only to 127.0.0.1, and stops
 only processes that it started itself, verified against their receipts.
 """
@@ -19,6 +20,7 @@ import subprocess
 import sys
 import secrets
 import time
+import threading
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -249,12 +251,40 @@ def _require_vision_identity(plan):
                              "Review a fresh serving preview.")
 
 
+def _require_access_identity(plan):
+    if "private_worker" not in plan:
+        return
+    from .private_serve import identity
+    from .serving_access import read_access_key
+    try:
+        read_access_key(plan["access_key_file"], plan["access_key_sha256"])
+        if plan["private_worker"] != identity():
+            raise ValueError("Private worker source changed.")
+    except (OSError, ValueError):
+        raise ServeError("preview_stale", "Protected serving inputs changed after preview.",
+                         "Review a fresh serve plan.") from None
+
+
 def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                adapter_path=None, path=None, jit=False, receipts_dir=None, hf_cache=None, memory_policy=None,
                runtime_executable=None, strata_speculation=False, strata_decoding=None,
                strata_expert_memory_gb=None, strata_context_tokens=None, training_receipt=None, thinking="default",
-               m5_prefill=False, prompt_lookup=False, vision_cache=False):
+               m5_prefill=False, prompt_lookup=False, vision_cache=False, api_key_file=None):
     """Render the start plan and local file identities without side effects."""
+    access = None
+    if api_key_file is not None:
+        if not jit or runtime != "mlx_lm" or m5_prefill or prompt_lookup or vision_cache:
+            raise ServeError("unsupported_protection", "Protected serving requires plain MLX-LM with --jit.",
+                             "Use --runtime mlx_lm --jit without acceleration adapters.")
+        try:
+            from .serving_access import read_access_key
+            from .private_serve import identity
+            _, digest = read_access_key(api_key_file)
+            access = {"access_key_file": str(Path(api_key_file).absolute()), "access_key_sha256": digest,
+                      "private_worker": identity()}
+        except (OSError, ValueError, TypeError):
+            raise ServeError("invalid_access_key", "The serving key file is unavailable or not private.",
+                             "Use an owned mode-0600 regular file containing a 32–256 character API key.") from None
     if runtime == "tasks":
         if adapter_path is not None or training_receipt is not None or m5_prefill or prompt_lookup or vision_cache or strata_decoding is not None or strata_speculation or strata_expert_memory_gb is not None or strata_context_tokens is not None or thinking != "default":
             raise ServeError("invalid_arguments", "Task endpoints accept local models and their memory policy.", "Remove chat, adapter and Strata options.")
@@ -497,6 +527,9 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         plan["argv"] = [sys.executable, str(Path(__file__).with_name("jit_serve.py").resolve()),
                         "--model", model_value, "--port", str(selected_port),
                         "--config", plan["control_config"]]
+        if access is not None:
+            plan.update(access)
+            plan["readiness"] = "http://127.0.0.1:{}/health".format(selected_port)
         if memory_policy is not None:
             plan["memory_policy"] = memory_policy
     plan["preview_hash"] = _preview_hash(plan)
@@ -519,15 +552,18 @@ def _default_port_free(port):
 
 
 def _default_spawn(argv, log_path):
-    handle = open(log_path, "ab", buffering=0)
-    process = subprocess.Popen(
-        argv,
-        stdin=subprocess.DEVNULL,
-        stdout=handle,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-        env={**os.environ, "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"},
-    )
+    with open(log_path, "ab", buffering=0) as handle:
+        process = subprocess.Popen(
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            env={**os.environ, "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"},
+        )
+    # API/MCP callers outlive a CLI invocation: retain and reap each child so
+    # an exited zombie cannot be mistaken for a live serving process.
+    threading.Thread(target=process.wait, name="mlx-serve-reaper", daemon=True).start()
     return process.pid
 
 
@@ -640,6 +676,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
     _require_decode_identity(plan)
     _require_vision_identity(plan)
 
+    _require_access_identity(plan)
+
     if plan["runtime"] == "strata" and not plan.get("jit"):
         from .jit_serve import available_memory_bytes
         available = available_memory_bytes()
@@ -715,6 +753,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             raise ServeError("invalid_arguments", "Unsafe JIT configuration path.", "Review a fresh serve plan.")
         config = {key: plan[key] for key in ("local_path", "fingerprint", "worker_argv", "max_tokens")}
         config["runtime"] = plan["runtime"]
+        if "private_worker" in plan:
+            config.update({key: plan[key] for key in ("private_worker", "access_key_file", "access_key_sha256")})
         if plan["runtime"] == "tasks":
             config.update(task_identity=plan["task_identity"], task_kinds=plan["task_kinds"], port=plan["port"],
                           task_runtime_fingerprint=plan["task_runtime_fingerprint"],
@@ -752,6 +792,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         _require_prefill_identity(plan)
         _require_decode_identity(plan)
         _require_vision_identity(plan)
+        _require_access_identity(plan)
     except ServeError:
         _terminate_pid(pid)
         raise
@@ -772,6 +813,9 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
     }
     if plan.get("jit"):
         receipt["jit"] = True
+    if "private_worker" in plan:
+        receipt["protection"] = {"access": "api_key", "worker_transport": plan["private_worker"]["protocol"],
+                                 "worker_source_sha256": plan["private_worker"]["source_sha256"]}
     if plan.get("task_kinds"):
         receipt["task_kinds"] = plan["task_kinds"]
     if plan.get("adapter_path") is not None:
@@ -861,6 +905,8 @@ def status_serve(receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_comma
             entries[-1]["decode_profile"] = receipt["decode_profile"]
         if "vision_profile" in receipt:
             entries[-1]["vision_profile"] = receipt["vision_profile"]
+        if "protection" in receipt:
+            entries[-1]["protection"] = receipt["protection"]
         if receipt.get("jit"):
             entries[-1]["jit"] = True
             if alive and entries[-1]["argv_match"]:

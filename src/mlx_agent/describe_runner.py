@@ -5,6 +5,11 @@ import json
 import sys
 import time
 
+if __package__:
+    from .runner_model_cache import load_model
+else:
+    from runner_model_cache import load_model
+
 
 def _fit(image, max_pixels):
     """Shrink a PIL image, keeping its aspect ratio, until it holds at most max_pixels pixels."""
@@ -58,7 +63,7 @@ def main(argv=None):
     from mlx_vlm.prompt_utils import MODEL_CONFIG
 
     started = time.time()
-    model, processor = load(arguments.model)
+    model, processor = load_model(load, arguments.model)
     load_seconds = time.time() - started
     config = model.config
     model_type = str(getattr(config, "model_type", None) or "")

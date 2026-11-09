@@ -39,12 +39,25 @@
     }
   },
   "categories": {
-    "classification": "classifiers"
+    "classification": "classifiers",
+    "embedding": "models"
   },
   "remap_files": {},
   "registry": {
     "classification": {
       "model_types": [],
+      "remapping": {}
+    },
+    "embedding": {
+      "model_types": [
+        "bert",
+        "modernbert",
+        "qwen3",
+        "xlm_roberta",
+        "lfm2",
+        "llama_bidirec",
+        "gemma3_text"
+      ],
       "remapping": {}
     }
   }

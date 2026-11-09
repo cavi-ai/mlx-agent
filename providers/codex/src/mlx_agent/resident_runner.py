@@ -1,0 +1,102 @@
+"""Bounded, cancellable calls to one isolated backend retaining one local model."""
+import json
+import os
+from pathlib import Path
+import selectors
+import subprocess
+import time
+
+from .resident_worker import MAX_MESSAGE, RUNNERS
+from .compute import process_identity
+from .task_runtime import _stop
+
+
+class ResidentRunner:
+    def __init__(self, executable, model, environment=None, log_path=None, port=0):
+        self.executable, self.model = str(executable), str(model)
+        self.environment, self.log_path, self.port = environment, log_path, port
+        self.process, self.response, self.log = None, None, None
+        self.loaded = False
+        self.identity = None
+
+    def _start(self):
+        read_fd, write_fd = os.pipe()
+        try:
+            if self.log_path:
+                descriptor = os.open(self.log_path, os.O_CREAT | os.O_APPEND | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0), 0o600)
+                self.log = os.fdopen(descriptor, "ab", buffering=0)
+            self.process = subprocess.Popen([self.executable, str(Path(__file__).with_name("resident_worker.py")),
+                "--response-fd", str(write_fd), "--model", self.model, "--port", str(self.port)], stdin=subprocess.PIPE,
+                stdout=self.log or subprocess.DEVNULL, stderr=subprocess.STDOUT,
+                env=self.environment, pass_fds=(write_fd,), start_new_session=True, umask=0o077)
+            self.response = read_fd
+            self.identity = process_identity(self.process.pid)
+        except BaseException:
+            os.close(read_fd)
+            if self.log:
+                self.log.close()
+                self.log = None
+            raise
+        finally:
+            os.close(write_fd)
+
+    def run(self, argv, timeout=3600, cancelled=lambda: False, **options):
+        script = Path(argv[1]) if len(argv) > 1 else Path("")
+        if (argv[0] != self.executable or script.parent.resolve() != Path(__file__).parent.resolve()
+                or script.stem not in RUNNERS or script.suffix != ".py"
+                or "--model" not in argv or argv[argv.index("--model") + 1] != self.model):
+            raise ValueError("Resident requests must use the selected local model and an engine inference runner.")
+        if self.process is not None and self.process.poll() is not None:
+            self.close()
+        started = time.monotonic()
+        try:
+            if cancelled():
+                raise InterruptedError("Inference cancelled.")
+            if self.process is None:
+                self._start()
+            raw = json.dumps({"runner": script.stem, "arguments": argv[2:]}).encode() + b"\n"
+            if len(raw) > MAX_MESSAGE:
+                raise ValueError("Runner request exceeded its limit.")
+            self.process.stdin.write(raw)
+            self.process.stdin.flush()
+            chunks = bytearray()
+            with selectors.DefaultSelector() as selector:
+                selector.register(self.response, selectors.EVENT_READ)
+                while True:
+                    if cancelled():
+                        raise InterruptedError("Inference cancelled.")
+                    remaining = timeout - (time.monotonic() - started)
+                    if remaining <= 0:
+                        raise subprocess.TimeoutExpired(argv, timeout)
+                    if not selector.select(min(.1, remaining)):
+                        continue
+                    chunk = os.read(self.response, 65536)
+                    if not chunk:
+                        raise OSError("Resident inference worker exited without a result.")
+                    chunks.extend(chunk)
+                    if len(chunks) > MAX_MESSAGE:
+                        raise ValueError("Runner response exceeded its limit.")
+                    if chunks.endswith(b"\n"):
+                        result = json.loads(chunks)
+                        self.loaded = result["loaded"] is True
+                        return subprocess.CompletedProcess(argv, result["returncode"], result["stdout"], result["stderr"])
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self):
+        process = self.process
+        if process is not None:
+            known = {process.pid: self.identity} if self.identity else {}
+            if not _stop(process, self.identity, known, grace=3):
+                raise OSError("The owned inference process group has not stopped safely.")
+            if process.stdin:
+                process.stdin.close()
+        self.process = None
+        if self.response is not None:
+            os.close(self.response)
+            self.response = None
+        if self.log:
+            self.log.close()
+            self.log = None
+        self.loaded = False

@@ -144,6 +144,15 @@ class ComputeLease:
         self.execution_group = {"pgid": pid, "leader_identity": identity}
         self._write(dict(self.record, schema=2, execution_group=self.execution_group))
 
+    def release_idle_process_group(self, pid):
+        """Release compute after a resident worker acknowledges a job and has no child processes."""
+        if (self.descriptor is None or self.execution_group is None or self.execution_group['pgid'] != pid
+                or self.inspector(pid) != self.execution_group['leader_identity']
+                or set(self.group_probe(pid)) != {pid}):
+            raise ComputeBusy("The resident worker has not returned to an inspected idle state.")
+        self.execution_group = None
+        self._write({key: value for key, value in self.record.items() if key != 'execution_group'} | {'schema': 1})
+
     def handoff(self, pid, process_group=False):
         if type(pid) is not int or pid <= 0:
             raise ValueError("Detached compute owner requires a positive PID.")

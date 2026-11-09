@@ -14,14 +14,14 @@ class TaskKindTests(unittest.TestCase):
         self.root = Path(temporary.name)
 
     def test_each_kind_declares_its_media_input_and_output(self):
-        self.assertEqual(list(KINDS), ["classification", "music_generation", "transcribe", "speak", "image_generation",
-                                       "image_understanding", "video_generation", "video_understanding"])
+        self.assertEqual(list(KINDS), ["embedding", "classification", "music_generation", "transcribe", "speak", "image_generation",
+                                       "image_understanding", "video_generation", "video_understanding", "mesh_generation"])
         inputs = {name: (kind.input_field, kind.input_media) for name, kind in KINDS.items() if kind.input_media}
         self.assertEqual(inputs, {"transcribe": ("audio_path", "audio"), "image_understanding": ("image_path", "image"),
-                                  "video_understanding": ("video_path", "video")})
+                                  "video_understanding": ("video_path", "video"), "mesh_generation": ("image_path", "image")})
         outputs = {name: kind.output for name, kind in KINDS.items() if kind.output}
         self.assertEqual(outputs, {"music_generation": "output.wav", "speak": "output.wav",
-                                   "image_generation": "output.png", "video_generation": "output.mp4"})
+                                   "image_generation": "output.png", "video_generation": "output.mp4", "mesh_generation": "output.glb"})
         for kind in KINDS.values():
             with self.subTest(kind=kind.name):
                 self.assertIn(kind.input_media, (None, *MEDIA_SUFFIXES))

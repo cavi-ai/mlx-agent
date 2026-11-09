@@ -1,7 +1,8 @@
 # Serve
 
 Serve launches local MLX servers from a reviewed plan. Use `mlx_lm` for text
-or `mlx-vlm` for vision/language models. Ollama and LM Studio manage their
+or `mlx-vlm` for vision/language models. `auto` selects typed job serving for
+supported classifiers, text embeddings, speech, music, image, video and 3D models. Ollama and LM Studio manage their
 own servers.
 
 ## Start and inspect
@@ -383,3 +384,40 @@ model repository. Review the resolved runtime and executable before confirmation
 `com.mlx-agent.serve.<port>` label. Review and confirm its plan, then run the
 printed `launchctl bootstrap` command yourself. JIT does not support direct
 `--launchd`; supervise the gateway through an existing process manager instead.
+
+## Typed model endpoints
+
+For a supported local non-chat model, preview with `--runtime auto` or `tasks`.
+The selected backend must already be installed. The endpoint binds one local
+model and advertises its supported `task_kinds` at `GET /v1/models`. It never
+executes code from a model repository or downloads weights.
+
+```bash
+python3 scripts/mlx-agent serve start --path /absolute/local/model --runtime auto --release-after-request --port 8085 --json
+```
+
+Confirm with the same arguments and the returned preview hash. Use
+`--keep-loaded --no-release-after-request` to retain the loaded model between
+jobs instead. The default for typed endpoints releases weights after each job.
+`serve policy` can change either mode on an owned endpoint. Manual `serve unload`
+releases idle weights without closing its port; active jobs must finish or be
+cancelled first. Status reports residency, worker PID, active jobs and memory policy.
+Headroom admission and optional idle/pressure handling use the same controls as
+chat JIT endpoints. Text KV estimates and Strata budgets apply to their own runtimes.
+
+Submit `POST /v1/tasks` with `{"kind":"...","parameters":{...}}`, using a kind
+advertised by that endpoint and the parameters in the [task contract](tasks.md).
+The model path is bound by the endpoint, not selectable in the request. One job
+runs at a time; another submission while busy is refused. Accepted jobs have
+private durable input snapshots and validated, hashed results.
+
+Read `GET /v1/tasks/ID` and `GET /v1/tasks/ID/result`; cancel with
+`POST /v1/tasks/ID/cancel` and `{}`. Download generated WAV, PNG, MP4 or GLB files
+from `GET /v1/tasks/ID/artifacts/output`. The complete result JSON is available
+at `GET /v1/tasks/ID/artifacts/result`, including results too large to return
+inline. The server retains accepted jobs if the client disconnects. Endpoint
+interruption is recorded as interrupted when its job is next inspected.
+
+Typed endpoint history lives in `.mlx-agent-receipts/tasks/PORT` under the chosen
+`--receipts-dir`. CLI inspection uses that exact path as `task --state-dir`.
+These endpoints do not implement chat completions, Messages or Responses.

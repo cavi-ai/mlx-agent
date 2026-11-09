@@ -1,8 +1,8 @@
 # Durable inference tasks
 
-Use `task` for classification, music generation, transcription, speech
-synthesis, image generation and understanding, and video generation and
-understanding that must outlive the calling process. The engine retains
+Use `task` for classification, text embeddings, music generation, transcription, speech
+synthesis, image generation and understanding, video generation and
+understanding, and 3D mesh generation that must outlive the calling process. The engine retains
 accepted inputs, status, results and output files.
 CLI and MCP clients use the same task IDs and storage. Existing synchronous
 `convert decide` and `convert music` commands remain available.
@@ -247,3 +247,30 @@ backend manifest and executable identity. The engine checks these before work
 and before success. This metadata fingerprint does not hash every weight byte
 or promise identical outputs across runs. Unavailable runtime version facts are
 left absent.
+
+## Generate a 3D mesh
+
+Use `task-request/2` with kind `mesh_generation`, a compatible local model,
+and an absolute `image_path`. Optional `steps`, `seed`, `resolution`,
+`guidance` and `max_faces` use the same model-specific settings as
+`convert mesh`. Omitted settings keep the model's defaults.
+
+The engine retains a verified copy of the input image and publishes an owned
+`output.glb` artifact with the `mesh/1` result. Status, cancellation and result
+verification use the same task commands as the other media kinds. Tasks never
+download model weights or install a backend.
+
+## Text embeddings
+
+Use `task-request/2`, kind `embedding`, and parameters `input` (1–128 nonempty
+text strings) and optional `max_length` (1–8192 tokens, default 512). The pinned
+MLX Embeddings backend supports BERT, ModernBERT, Qwen3, XLM-RoBERTa, LFM2,
+Llama bidirectional and Gemma3 text embedding adapters. The checkpoint must be an
+embedding model compatible with its adapter; a shared architecture name alone
+does not establish the model's intended task. Image and multimodal embeddings
+are not exposed by this text operation.
+
+Results use `embed/1` with a finite rectangular `embeddings` array and its
+`dimensions`. The backend's trained pooling and normalization are retained.
+Existing local tokenizer files are required; remote code and downloads are refused.
+For repeated requests with selectable weight residency, use a [typed endpoint](serve.md#typed-model-endpoints).

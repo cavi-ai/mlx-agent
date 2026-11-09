@@ -46,10 +46,15 @@ def validate_memory_policy(policy=None):
     defaults = {"idle_timeout_seconds": 0, "keep_loaded": False, "minimum_headroom_gb": None}
     if policy is None:
         return defaults
-    if not isinstance(policy, dict) or set(policy) - set(defaults) - {"context_tokens", "unload_under_pressure", "model_memory_budget_gb"}:
+    if not isinstance(policy, dict) or set(policy) - set(defaults) - {"context_tokens", "unload_under_pressure", "model_memory_budget_gb", "release_after_request"}:
         raise ValueError("Unknown memory policy fields.")
     result = dict(defaults, **policy)
     # Null and absent both mean no KV term; policies without a context keep their existing form.
+    release = result.pop("release_after_request", False)
+    if type(release) is not bool or (release and result["keep_loaded"]):
+        raise ValueError("Release after each request cannot be combined with keep loaded.")
+    if "release_after_request" in policy:
+        result["release_after_request"] = release
     context = result.pop("context_tokens", None)
     pressure = result.pop("unload_under_pressure", False)
     budget = result.pop("model_memory_budget_gb", None)
@@ -171,6 +176,9 @@ class ModelWorker:
                 raise OSError("Refusing a symbolic-link worker state file.")
             state = {"gateway_pid": os.getpid(), "worker_pid": self.process.pid if self.process else None,
                      "worker_argv": self.worker_argv, "model_state": self.model_state}
+            if self.config.get("runtime") == "tasks" and self.process:
+                from mlx_agent.serve import _pid_start
+                state["worker_started_at"] = _pid_start(self.process.pid)
             _atomic_in_directory(path.parent, path.name, json.dumps(state).encode(), 0o600)
 
     def _refresh(self):
@@ -471,7 +479,12 @@ class ModelWorker:
             self.activity_revision += 1
             if self.active_requests == 0:
                 self.last_activity = self.clock()
+            release = self.active_requests == 0 and self.model_state == "loaded" and self.memory_policy.get("release_after_request", False)
+            if release:
+                self.model_state = "unloading"
             self.condition.notify_all()
+        if release:
+            self._finish_unload("request_complete")
 
     def _stop_worker(self):
         with self.condition:
@@ -515,7 +528,7 @@ class ModelWorker:
             if (self.closed or self.model_state != "loaded" or self.active_requests
                     or (not budget_reload and (policy["keep_loaded"] or self.last_activity is None))):
                 return False
-            idle = budget_reload or bool(policy["idle_timeout_seconds"] and
+            idle = budget_reload or policy.get("release_after_request", False) or bool(policy["idle_timeout_seconds"] and
                         self.clock() - self.last_activity >= policy["idle_timeout_seconds"])
             if idle:
                 self.model_state = "unloading"

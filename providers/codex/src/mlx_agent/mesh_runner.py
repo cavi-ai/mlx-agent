@@ -5,6 +5,11 @@ import importlib
 import json
 import time
 
+if __package__:
+    from .runner_model_cache import load_model
+else:
+    from runner_model_cache import load_model
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
@@ -16,7 +21,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     port = importlib.import_module(args.module)
     started = time.monotonic()
-    model = port.load(args.model)
+    model = load_model(port.load, args.model)
     load_seconds = time.monotonic() - started
     result = port.generate(model, args.image, args.out, steps=args.steps, seed=args.seed,
                            resolution=args.resolution, guidance=args.guidance,

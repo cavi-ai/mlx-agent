@@ -41,7 +41,7 @@ class TaskContractTests(unittest.TestCase):
         result = capabilities()
         self.assertEqual({item["kind"] for item in result["tasks"]},
                          {"classification", "music_generation", "transcribe", "speak", "image_generation", "image_understanding",
-                          "video_generation", "video_understanding"})
+                          "video_generation", "video_understanding", "mesh_generation", "embedding"})
         self.assertTrue(all(item["cancellation"] for item in result["tasks"]))
         self.assertNotIn("ready", result)
 

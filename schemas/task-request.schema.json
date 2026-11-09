@@ -50,7 +50,7 @@
       "required": ["schema", "kind", "model_path", "parameters"],
       "properties": {
         "schema": {"const": "task-request/2"},
-        "kind": {"enum": ["transcribe", "speak", "image_generation", "image_understanding", "video_generation", "video_understanding"]},
+        "kind": {"enum": ["transcribe", "speak", "image_generation", "image_understanding", "video_generation", "video_understanding", "mesh_generation", "embedding"]},
         "model_path": {"type": "string", "pattern": "^/[^\\u0000-\\u001f]*$"},
         "parameters": {"type": "object"}
       },
@@ -110,7 +110,9 @@
             "max_tokens": {"type": "integer"},
             "max_pixels": {"type": "integer"}
           }
-        }}}}
+        }}}},
+        {"if": {"properties": {"kind": {"const": "mesh_generation"}}}, "then": {"properties": {"parameters": {"type": "object", "additionalProperties": false, "required": ["image_path"], "properties": {"image_path": {"type": "string", "pattern": "^/[^\\u0000-\\u001f]*$"}, "steps": {"type": "integer"}, "seed": {"type": "integer"}, "resolution": {"type": "integer"}, "guidance": {"type": "number"}, "max_faces": {"type": "integer"}}}}}},
+        {"if": {"properties": {"kind": {"const": "embedding"}}}, "then": {"properties": {"parameters": {"type": "object", "additionalProperties": false, "required": ["input"], "properties": {"input": {"type": "array", "minItems": 1, "maxItems": 128, "items": {"type": "string", "minLength": 1, "maxLength": 32768, "pattern": "\\S"}}, "max_length": {"type": "integer", "minimum": 1, "maximum": 8192}}}}}}
       ]
     }
   }

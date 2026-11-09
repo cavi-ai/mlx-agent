@@ -7,6 +7,11 @@ import sys
 import time
 import wave
 
+if __package__:
+    from .runner_model_cache import load_model
+else:
+    from runner_model_cache import load_model
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
@@ -36,7 +41,7 @@ def _synthesize(arguments):
     from mlx_audio.tts.utils import load
 
     started = time.time()
-    model = load(arguments.model, model_type=arguments.model_type)
+    model = load_model(load, arguments.model, model_type=arguments.model_type)
     load_seconds = time.time() - started
 
     kwargs = {"text": arguments.text, "speed": arguments.speed, "verbose": False}

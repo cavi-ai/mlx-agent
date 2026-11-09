@@ -936,7 +936,7 @@ def _add_serve_arguments(parser):
     start.add_argument("--repo", default=None, help="publisher/model present in the local Hugging Face cache")
     start.add_argument("--path", default=None, help="local model directory to serve instead of a cache repo id")
     start.add_argument("--profile", help="saved Strata settings; explicit options override the profile")
-    start.add_argument("--runtime", required=True, choices=["auto", "mlx_lm", "mlx-vlm", "strata"])
+    start.add_argument("--runtime", required=True, choices=["auto", "mlx_lm", "mlx-vlm", "strata", "tasks"])
     decoding = start.add_mutually_exclusive_group()
     decoding.add_argument("--strata-speculation", choices=["on", "off"], help="legacy Strata draft-and-verify switch (default: off)")
     decoding.add_argument("--strata-decoding", choices=["plain", "lookup", "mtp"], help="Strata verified decoding mode; lookup needs no draft weights")
@@ -1015,6 +1015,7 @@ def _add_memory_arguments(parser, clear_budget=False):
         budgets.add_argument("--clear-memory-budget", action="store_true",
                              help="remove the model budget after active requests finish")
     parser.add_argument("--idle-timeout", type=int, default=None, help="unload after this many idle seconds (0 disables)")
+    parser.add_argument("--release-after-request", action=argparse.BooleanOptionalAction, default=None, help="release model weights after each completed inference request")
     parser.add_argument("--keep-loaded", action=argparse.BooleanOptionalAction, default=None, help="prevent automatic idle unload after use")
     parser.add_argument("--unload-under-pressure", action=argparse.BooleanOptionalAction, default=None,
                         help="guard loaded requests and unload idle workers below --min-headroom-gb")
@@ -1026,6 +1027,8 @@ def _add_memory_arguments(parser, clear_budget=False):
 def _memory_arguments(arguments):
     policy = {"idle_timeout_seconds": arguments.idle_timeout or 0, "keep_loaded": bool(arguments.keep_loaded),
               "minimum_headroom_gb": arguments.min_headroom_gb}
+    if getattr(arguments, "release_after_request", None) is not None:
+        policy["release_after_request"] = arguments.release_after_request
     if arguments.memory_budget_gb is not None:
         policy["model_memory_budget_gb"] = arguments.memory_budget_gb
     if getattr(arguments, "clear_memory_budget", False):
@@ -1134,7 +1137,7 @@ def _run_serve(arguments):
             strata_decoding=arguments.strata_decoding,
             strata_expert_memory_gb=arguments.strata_expert_memory_gb,
             strata_context_tokens=arguments.strata_context_tokens,
-            memory_policy=_memory_arguments(arguments) if (arguments.idle_timeout is not None or arguments.keep_loaded
+            memory_policy=_memory_arguments(arguments) if (arguments.release_after_request is not None or arguments.idle_timeout is not None or arguments.keep_loaded
                                                            or arguments.min_headroom_gb is not None
                                                            or arguments.context_tokens is not None
                                                            or arguments.unload_under_pressure
@@ -1145,7 +1148,7 @@ def _run_serve(arguments):
             vision_cache=arguments.vision_cache,
         )
         if arguments.launchd:
-            if arguments.jit:
+            if plan.get("jit"):
                 raise ServeError("invalid_arguments", "JIT endpoints require the supervised serve lifecycle.",
                                  "Use the app's endpoint supervisor instead of --launchd.")
             return _run_serve_launchd(arguments, plan, operation)

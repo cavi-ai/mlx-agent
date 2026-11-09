@@ -6,6 +6,11 @@ import json
 import sys
 import time
 
+if __package__:
+    from .runner_model_cache import load_model as retained_load
+else:
+    from runner_model_cache import load_model as retained_load
+
 
 def _restore_whisper_end_token(model):
     """Give a Whisper tokenizer the no-speech token its vocabulary has.
@@ -46,7 +51,7 @@ def main(argv=None):
     from mlx_audio.stt.utils import load_audio, load_model
 
     started = time.time()
-    model = load_model(arguments.model)
+    model = retained_load(load_model, arguments.model)
     _restore_whisper_end_token(model)
     samples = load_audio(arguments.audio)
     kwargs = {}

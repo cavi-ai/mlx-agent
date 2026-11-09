@@ -1,7 +1,8 @@
 """Confirmation-gated launcher for local MLX serving runtimes.
 
-Serve is the only component that spawns processes, so every mutation goes
-through the wire-style preview -> confirm -> receipt flow. Serve never
+Receipt-owned launches use the wire-style preview -> confirm -> receipt
+flow. The protected-service foreground entry point delegates lifecycle to
+its existing service manager. Serve never
 installs runtimes, never downloads models, binds only to 127.0.0.1, and stops
 only processes that it started itself, verified against their receipts.
 """

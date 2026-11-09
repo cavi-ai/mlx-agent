@@ -412,3 +412,19 @@ a model. The supervisor owns lifecycle and socket cleanup. This path requires
 an installed MLX-LM virtual environment and existing local weights; it never
 downloads models or installs a runtime. The Unix directory controls access
 by user and does not isolate other processes already running as that user.
+
+## Foreground protected service
+
+Existing service managers can run an authenticated gateway in the foreground:
+
+```sh
+mlx-agent serve protected-service --model /absolute/local/model --port 8080 --api-key-file /absolute/private/model.key
+```
+
+The key must be an owned, owner-only file. Weights must already exist locally.
+The gateway uses a private Unix worker, refuses unrelated browser Host/Origin
+headers and checks credentials before inference. SIGTERM closes its worker and
+private temporary state. The existing service manager owns restart and stop;
+this command does not create a launchd job or a serve receipt. Retire any old
+raw model listener before claiming backend isolation. `--describe` reports the
+`protected-service-v1` capability and source identity without loading a model.

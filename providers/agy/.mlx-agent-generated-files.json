@@ -486,7 +486,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "0fb9dcd8bfed36fb4fbbdf93764e70bbd20fc5b8c698666bd27319ca33dd01cb"
+      "sha256": "0addbb5258ab000e638e32b60e606b8c02ebdf3158c0387aaf067575aff1e161"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -739,6 +739,10 @@
     {
       "path": "src/mlx_agent/prompt_lookup_runtime.py",
       "sha256": "822933d9d240f777e7e23da0ba035627985d7d3694f8b6e0e24662afab1a924f"
+    },
+    {
+      "path": "src/mlx_agent/protected_service.py",
+      "sha256": "c69ded015b4dae4aa940a679fd66153ae34730e9eae72e0da333ad664502e995"
     },
     {
       "path": "src/mlx_agent/providers.py",
@@ -1078,7 +1082,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "a65eb217a7fac974913491e7a28dd28597dcd81d4960c58d35cacb6560184a74"
+      "sha256": "b3b0deb814f2da64ebefb97f5b2b293633aaf8b0628e3aac151aa13279bd76c6"
     },
     {
       "path": "src/mlx_agent/serve_profiles.py",

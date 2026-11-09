@@ -929,6 +929,13 @@ def _run_coding_bench(arguments):
 def _add_serve_arguments(parser):
     from .serve import MAX_TOKENS_DEFAULT
     actions = parser.add_subparsers(dest="serve_command", required=True)
+    service = actions.add_parser("protected-service", help="run an authenticated private-worker gateway in the foreground")
+    service.add_argument("--describe", action="store_true")
+    service.add_argument("--model")
+    service.add_argument("--api-key-file")
+    service.add_argument("--port", type=int)
+    service.add_argument("--runtime-executable", default="mlx_lm.server")
+    service.add_argument("--max-tokens", type=int, default=8192)
     private = actions.add_parser("private-worker", help="serve an existing model over a supervisor-owned Unix listener")
     private.add_argument("--describe", action="store_true", help="report the private transport protocol without starting a model")
     private.add_argument("--model")
@@ -2776,6 +2783,13 @@ def build_parser(command=None):
 
 def main(argv=None):
     raw = list(sys.argv[1:] if argv is None else argv)
+    if raw[:2] == ["serve", "protected-service"]:
+        from .protected_service import main as service_main
+        try:
+            return service_main(raw[2:])
+        except (OSError, ValueError, ImportError, RuntimeError):
+            print("Protected MLX service unavailable; verify its runtime, private key and local model.", file=sys.stderr)
+            return 1
     if raw[:2] == ["serve", "private-worker"]:
         from .private_serve import main as private_main
         try:

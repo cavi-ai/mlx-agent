@@ -147,6 +147,7 @@ class ModelWorker:
         self.condition = threading.Condition()
         self.process = None
         self.worker_port = None
+        self.private_endpoint = None
         self.worker_argv = None
         self.model_state = "unloaded"
         self.active_requests = 0
@@ -184,6 +185,9 @@ class ModelWorker:
     def _refresh(self):
         if self.process and self.process.poll() is not None and self.model_state == "loaded":
             self.process = None
+            if self.private_endpoint is not None:
+                self.private_endpoint.close()
+                self.private_endpoint = None
             if self.config.get("runtime") == "strata":
                 from mlx_agent.process_tree import session_children
                 self.strata_children.update(session_children(self.owned_session))
@@ -213,7 +217,9 @@ class ModelWorker:
                     "resident_memory_check": self.resident_memory_check,
                     "request_blocked_reason": self.request_blocked_reason,
                     "last_unload_reason": self.last_unload_reason,
-                    "api_key_sha256": self.config.get("api_key_sha256")}
+                    "api_key_sha256": self.config.get("api_key_sha256", self.config.get("access_key_sha256"))}
+            if self.config.get("private_worker"):
+                result["worker_transport"] = "inherited-unix-v1"
             if self.config.get("runtime") == "strata":
                 result.update(memory_allocation=self.config.get("strata_memory_allocation"),
                               strata_decoding=self.config.get("strata_decoding"),
@@ -412,20 +418,35 @@ class ModelWorker:
             self._check_training_receipt()
             self._check_adapter()
             self._check_memory()
-            with socket.socket() as reservation:
-                reservation.bind(("127.0.0.1", 0))
-                port = reservation.getsockname()[1]
+            private = self.config.get("private_worker")
+            if private:
+                from mlx_agent.private_serve import PrivateEndpoint, identity
+                if self.config.get("runtime") != "mlx_lm" or private != identity():
+                    raise GatewayError(503, "private_worker_changed", "Private worker inputs changed; review a fresh serve plan.")
+                self.private_endpoint = PrivateEndpoint()
+                port = 0
+            else:
+                with socket.socket() as reservation:
+                    reservation.bind(("127.0.0.1", 0))
+                    port = reservation.getsockname()[1]
             argv = [str(port) if value == "{worker_port}" else value for value in self.config["worker_argv"]]
+            extra = {}
+            if private:
+                from mlx_agent.private_serve import worker_command
+                descriptor = self.private_endpoint.listener.fileno()
+                argv = worker_command(argv, self.config["local_path"], descriptor)
+                extra["pass_fds"] = (descriptor,)
             environment = dict(os.environ, HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_DATASETS_OFFLINE="1")
-            if self.config.get("api_key_sha256") is not None:
+            if private or self.config.get("api_key_sha256") is not None:
                 from mlx_agent.inference_auth import runtime_fingerprint
                 from mlx_agent.protected_worker import command, WORKER_DIGEST
-                if self.config.get("auth_runtime_sha256") != runtime_fingerprint():
+                if self.config.get("api_key_sha256") is not None and self.config.get("auth_runtime_sha256") != runtime_fingerprint():
                     raise GatewayError(503, "authentication_changed", "Authentication runtime changed. Review a fresh serve plan.")
                 import secrets
                 self.worker_key = secrets.token_urlsafe(32)
                 environment[WORKER_DIGEST] = hashlib.sha256(self.worker_key.encode()).hexdigest()
-                argv = command(argv, self.config.get("runtime") or "mlx_lm")
+                if not private:
+                    argv = command(argv, self.config.get("runtime") or "mlx_lm")
             log = open(self.config["log_path"], "ab", buffering=0) if self.config.get("log_path") else subprocess.DEVNULL
             with self.condition:
                 if self.closed:
@@ -433,9 +454,11 @@ class ModelWorker:
                 # Inherit the gateway's session: serve stop signals the whole
                 # owned group, including a worker when the gateway is killed.
                 self.process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log,
-                                                stderr=subprocess.STDOUT, env=environment)
+                                                stderr=subprocess.STDOUT, env=environment, **extra)
+                if private:
+                    self.private_endpoint.listener.close()
                 self.log = log
-                self.worker_port, self.worker_argv = port, argv
+                self.worker_port, self.worker_argv = (None if private else port), argv
                 self._persist()
                 process = self.process
             from mlx_agent.inference_auth import loopback_opener
@@ -446,11 +469,24 @@ class ModelWorker:
                 if process.poll() is not None or self.closed:
                     raise GatewayError(503, "model_load_failed", "Model worker exited before readiness.")
                 try:
-                    request = urllib.request.Request("http://127.0.0.1:{}/v1/models".format(port),
-                        headers={"Authorization": "Bearer " + self.worker_key} if self.config.get("api_key_sha256") is not None else {})
-                    with opener.open(request, timeout=1) as response:
-                        if response.status == 200:
+                    if private:
+                        from mlx_agent.private_serve import PRIVATE_PROTOCOL
+                        connection = self.connection(timeout=1)
+                        try:
+                            connection.request("GET", "/_mlx/private", headers={"Authorization": "Bearer " + self.worker_key})
+                            response = connection.getresponse()
+                            ready = response.status == 200 and response.getheader("X-MLX-Agent-Transport") == PRIVATE_PROTOCOL
+                            response.read(1024)
+                        finally:
+                            connection.close()
+                        if ready:
                             break
+                    else:
+                        request = urllib.request.Request("http://127.0.0.1:{}/v1/models".format(port),
+                            headers={"Authorization": "Bearer " + self.worker_key} if self.config.get("api_key_sha256") is not None else {})
+                        with opener.open(request, timeout=1) as response:
+                            if response.status == 200:
+                                break
                 except OSError:
                     time.sleep(0.1)
             else:
@@ -499,6 +535,11 @@ class ModelWorker:
         if release:
             self._finish_unload("request_complete")
 
+    def connection(self, timeout=120):
+        if self.private_endpoint is not None:
+            return self.private_endpoint.connection(timeout)
+        return http.client.HTTPConnection("127.0.0.1", self.worker_port, timeout=timeout)
+
     def _stop_worker(self):
         with self.condition:
             process = self.process
@@ -532,6 +573,9 @@ class ModelWorker:
             if self.log not in (None, subprocess.DEVNULL):
                 self.log.close()
             self.log = None
+            if self.private_endpoint is not None:
+                self.private_endpoint.close()
+                self.private_endpoint = None
 
     def unload_if_idle(self):
         with self.condition:
@@ -683,26 +727,38 @@ class GatewayHandler(BaseHTTPRequestHandler):
 
     def _guard(self, control=False):
         port = self.server.server_port
-        if self.headers.get("Host") not in ("127.0.0.1:{}".format(port), "localhost:{}".format(port)):
+        hosts = self.headers.get_all("Host", [])
+        if len(hosts) != 1 or hosts[0] not in ("127.0.0.1:{}".format(port), "localhost:{}".format(port)):
             raise GatewayError(403, "invalid_host", "Use the loopback endpoint address.")
-        origin = self.headers.get("Origin")
-        if origin and origin not in ("http://127.0.0.1:{}".format(port), "http://localhost:{}".format(port)):
+        origins = self.headers.get_all("Origin")
+        if origins is not None and (len(origins) != 1 or origins[0] not in ("http://127.0.0.1:{}".format(port), "http://localhost:{}".format(port))):
             raise GatewayError(403, "invalid_origin", "Cross-origin access is refused.")
         if control and not hmac.compare_digest(self.headers.get("Authorization", "").encode(),
                                                ("Bearer " + self.server.config["control_token"]).encode()):
             raise GatewayError(403, "control_denied", "Endpoint control authorization required.")
-        if not control and self.server.config.get("api_key_sha256") is not None:
-            from mlx_agent.inference_auth import authorized_headers
-            if not authorized_headers(self.headers, self.server.config["api_key_sha256"]):
-                raise GatewayError(401, "authentication_required", "A valid API key is required.")
+        protected = self.server.config.get("api_key_sha256") is not None or self.server.config.get("access_key_file") is not None
+        if not control and protected and not (self.command == "GET" and self.path == "/health"):
+            from mlx_agent.serving_access import read_access_key
+            from mlx_agent.inference_auth import validate_digest, authorized_headers
+            try:
+                from mlx_agent.private_serve import identity
+                if self.server.config.get("private_worker") and self.server.config["private_worker"] != identity():
+                    raise ValueError("Protected worker configuration changed.")
+                digest = validate_digest(self.server.config.get("api_key_sha256", self.server.config.get("access_key_sha256")))
+                if self.server.config.get("access_key_file") is not None:
+                    read_access_key(self.server.config["access_key_file"], digest)
+            except (OSError, ValueError, KeyError):
+                raise GatewayError(503, "access_key_unavailable", "The reviewed serving key is unavailable or changed.") from None
+            if not authorized_headers(self.headers, digest):
+                raise GatewayError(401, "access_denied", "Inference authorization required.")
 
     def _json(self, status, value):
         encoded = json.dumps(value).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(encoded)))
         if status == 401:
             self.send_header("WWW-Authenticate", "Bearer")
-        self.send_header("Content-Length", str(len(encoded)))
         self.send_header("Connection", "close")
         self.end_headers()
         self.close_connection = True
@@ -823,8 +879,12 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 length = int(self.headers.get("Content-Length", "0"))
             except ValueError:
                 raise GatewayError(400, "invalid_body", "Invalid Content-Length.")
-            if not 0 <= length <= MAX_BODY:
-                raise GatewayError(413, "body_too_large", "Request exceeds 16 MiB.")
+            limit = MAX_BODY
+            if self.server.config.get("private_worker"):
+                from mlx_agent.private_serve import MAX_BODY as PRIVATE_MAX_BODY
+                limit = PRIVATE_MAX_BODY
+            if not 0 <= length <= limit:
+                raise GatewayError(413, "body_too_large", "Request exceeds {} bytes.".format(limit))
             try:
                 body = json.loads(self.rfile.read(length)) if length else {}
             except (ValueError, UnicodeError):
@@ -874,14 +934,18 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 chat_completions.decode_tool_arguments(body)
             port = self.server.controller.acquire()
             leased = True
-            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=120)
+            connection = self.server.controller.connection(timeout=120)
             connection.request("POST", "/v1/chat/completions" if translated else self.path, json.dumps(body),
                                dict({"Content-Type": "application/json"}, **({"Authorization": "Bearer " + self.server.controller.worker_key}
-                                   if self.server.config.get("api_key_sha256") is not None else {})))
+                                   if self.server.config.get("private_worker") or self.server.config.get("api_key_sha256") is not None else {})))
             # MLX-LM writes nothing until an unstreamed answer is complete or a queued request starts.
             if not self._worker_replied(connection.sock):
                 return
             response = connection.getresponse()
+            if self.server.config.get("private_worker"):
+                from mlx_agent.private_serve import PRIVATE_PROTOCOL
+                if response.getheader("X-MLX-Agent-Transport") != PRIVATE_PROTOCOL:
+                    raise GatewayError(503, "private_protocol_missing", "The private model worker protocol is unavailable.")
 
             def trimmed(value):
                 chat_completions.trim_end(value, self.server.end_text)

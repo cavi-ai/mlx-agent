@@ -1,10 +1,8 @@
 """Optional bearer-key verification shared by local gateways and their workers."""
 import hashlib
 import hmac
-import os
 from pathlib import Path
 import re
-import stat
 
 
 def validate_digest(value):
@@ -14,15 +12,11 @@ def validate_digest(value):
 
 
 def key_file_digest(filename):
-    descriptor = os.open(filename, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    with os.fdopen(descriptor, 'rb') as stream:
-        metadata = os.fstat(stream.fileno())
-        if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid() or metadata.st_mode & 0o077 or metadata.st_size > 514:
-            raise ValueError('The API key file must be a private regular file owned by this user (mode 600).')
-        token = stream.read(514).rstrip(b'\r\n')
-    if not 32 <= len(token) <= 512 or any(b < 33 or b > 126 for b in token):
-        raise ValueError('Use an API key containing 32 to 512 printable ASCII characters without spaces.')
-    return hashlib.sha256(token).hexdigest()
+    if __package__:
+        from .serving_access import read_access_key
+    else:
+        from serving_access import read_access_key
+    return read_access_key(filename)[1]
 
 
 def configuration_digest(key_file=None, key_sha256=None):

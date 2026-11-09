@@ -385,6 +385,64 @@ model repository. Review the resolved runtime and executable before confirmation
 printed `launchctl bootstrap` command yourself. JIT does not support direct
 `--launchd`; supervise the gateway through an existing process manager instead.
 
+## API key authentication
+
+Add `--api-key-file /absolute/private/key` to both preview and confirmation
+for a supervised loopback endpoint. The file must be an owned regular file
+readable only by its owner, containing a 32–256 character URL-safe API key.
+Keep it outside the model directory. Clients send `Authorization: Bearer KEY`
+or `x-api-key: KEY`; never put the key in URLs or command arguments.
+
+The native app instead keeps generated keys in Keychain and passes the
+verification digest with `--api-key-sha256`. Select one credential source.
+Plans, receipts and process arguments contain the digest, never the API key.
+Authentication requires JIT for chat runtimes and is also available for typed
+model endpoints. Omitting it preserves existing local access.
+
+The gateway authenticates model discovery, chat, Messages, Responses, stored
+responses, typed jobs, cancellation, results and artifacts before inference.
+Missing, wrong or ambiguous credentials receive HTTP 401. The small
+`GET /health` response remains available without a key. Host and Origin checks
+also apply. Control uses a separate generated credential; an inference key
+cannot unload a model or change memory policy.
+
+The reviewed plan binds the credential digest and authentication source.
+Startup rechecks both; changed inputs require a fresh preview. File credentials
+are rechecked on requests. Stop and review a new key to revoke the previous one.
+A key authorizes its holder; it does not identify an executable or provide a
+process allowlist.
+
+Plain MLX-LM workers use an inherited Unix listener with a separate private key.
+That path accepts fixed-model text chat within a 1 MiB request limit. Vision,
+Strata and accelerated chat workers use a loopback port authenticated with a
+separate private key. A public endpoint key cannot access these workers.
+Typed models run through the supervised resident-task transport and open no
+private inference HTTP port. Existing servers retain their configured access
+controls until explicitly changed.
+
+For a supervisor such as Secure Agent, `mlx-agent serve private-worker`
+accepts `--model` and an inherited `--socket-fd` instead of opening a public
+listener. `--describe` reports its protocol without importing MLX or starting
+a model. The supervisor owns lifecycle and socket cleanup. This path requires
+an installed MLX-LM virtual environment and existing local weights; it never
+downloads models or installs a runtime. The Unix directory controls access
+by user and does not isolate other processes already running as that user.
+
+## Foreground protected service
+
+Existing service managers can run an authenticated gateway in the foreground:
+
+```sh
+mlx-agent serve protected-service --model /absolute/local/model --port 8080 --api-key-file /absolute/private/model.key
+```
+
+The key must be an owned, owner-only file. Weights must already exist locally.
+The gateway uses a private Unix worker, refuses unrelated browser Host/Origin
+headers and checks credentials before inference. SIGTERM closes its worker and
+private temporary state. The existing service manager owns restart and stop;
+this command does not create a launchd job or a serve receipt. Retire any old
+raw model listener before claiming backend isolation. `--describe` reports the
+`protected-service-v1` capability and source identity without loading a model.
 ## Typed model endpoints
 
 For a supported local non-chat model, preview with `--runtime auto` or `tasks`.
@@ -421,31 +479,3 @@ interruption is recorded as interrupted when its job is next inspected.
 Typed endpoint history lives in `.mlx-agent-receipts/tasks/PORT` under the chosen
 `--receipts-dir`. CLI inspection uses that exact path as `task --state-dir`.
 These endpoints do not implement chat completions, Messages or Responses.
-
-## Optional API key authentication
-
-Use a private API key to restrict access to a supervised loopback endpoint:
-
-```sh
-mlx-agent serve start --runtime auto --path /path/to/model --jit --api-key-file /path/to/endpoint.key
-```
-
-Review the preview, then repeat the command with `--confirm --preview-hash HASH`.
-The key file must belong to your user, have no group or other permissions
-(`chmod 600`), and contain a 32–512 character printable key without spaces.
-Generate a random key; keep it outside the model directory. The native app
-instead keeps its generated keys in Keychain and passes `--api-key-sha256`.
-Plans, receipts and process arguments contain the verification digest, never
-the API key.
-
-Send `Authorization: Bearer KEY` or `x-api-key: KEY` on every request.
-Authentication covers model discovery, chat, Messages, Responses, typed jobs,
-cancellation, results and artifacts. Missing, wrong or ambiguous credentials
-receive HTTP 401 before inference starts. The private chat worker uses a
-separate, mandatory upstream key, including MLX-LM, MLX-VLM and Strata workers.
-Control operations continue to use their separate owner credential.
-
-API keys authorize their holders. Loopback keeps the endpoint local to this
-machine; it does not identify an executable or provide a process allowlist.
-Stop and review a fresh endpoint with a new key to revoke the previous key.
-Omitting authentication preserves existing local access.

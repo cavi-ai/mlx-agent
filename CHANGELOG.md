@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add a foreground authenticated MLX service for existing service managers, with private workers and worker cleanup on shutdown.
+
+- Add protected MLX-LM JIT serving with API-key authentication, separate control credentials, reviewed key and source identities, and a private Unix worker.
+- Add `serve private-worker` for supervised local inference without a model TCP listener or model downloads.
+- Reap exited serving children and close the parent's log handle so stop can recognize completed processes.
+
 - Size paged Strata MTP expert caches using the validated packed draft-head storage, with the existing startup allowance and resident-loading threshold.
 
 ## 0.12.0 - 2026-11-07

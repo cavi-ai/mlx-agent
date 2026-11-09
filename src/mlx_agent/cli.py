@@ -929,6 +929,18 @@ def _run_coding_bench(arguments):
 def _add_serve_arguments(parser):
     from .serve import MAX_TOKENS_DEFAULT
     actions = parser.add_subparsers(dest="serve_command", required=True)
+    service = actions.add_parser("protected-service", help="run an authenticated private-worker gateway in the foreground")
+    service.add_argument("--describe", action="store_true")
+    service.add_argument("--model")
+    service.add_argument("--api-key-file")
+    service.add_argument("--port", type=int)
+    service.add_argument("--runtime-executable", default="mlx_lm.server")
+    service.add_argument("--max-tokens", type=int, default=8192)
+    private = actions.add_parser("private-worker", help="serve an existing model over a supervisor-owned Unix listener")
+    private.add_argument("--describe", action="store_true", help="report the private transport protocol without starting a model")
+    private.add_argument("--model")
+    private.add_argument("--socket-fd", type=int)
+    private.add_argument("--runtime-executable", default="mlx_lm.server")
     start = actions.add_parser(
         "start",
         help="preview, then confirmation-gated launch of a local MLX server",
@@ -956,8 +968,8 @@ def _add_serve_arguments(parser):
                        help="opt-in bounded Qwen2.5-VL and Qwen3-VL image feature reuse with MLX-VLM")
     start.add_argument("--jit", action="store_true", help="keep endpoint reachable; load local weights on inference requests")
     authentication = start.add_mutually_exclusive_group()
-    authentication.add_argument("--api-key-file", help="private file containing the API key required for inference")
-    authentication.add_argument("--api-key-sha256", help="API key verification digest for clients using a secure credential store")
+    authentication.add_argument("--api-key-file", help="private API key file for a supervised inference endpoint")
+    authentication.add_argument("--api-key-sha256", help="verification digest for an API key held in a secure credential store")
     _add_memory_arguments(start)
     start.add_argument("--launchd", action="store_true", help="install a launchd agent plist instead of spawning now")
     start.add_argument("--launchd-dir", default=None, help="launchd target directory (defaults to ~/Library/LaunchAgents)")
@@ -1123,12 +1135,6 @@ def _run_serve(arguments):
                              "Select a prepared Strata model or omit --profile.")
         if arguments.strata_speculation is not None and runtime != "strata":
             raise ServeError("invalid_arguments", "--strata-speculation requires the Strata runtime.", "Select a prepared local Strata profile.")
-        from .inference_auth import configuration_digest
-        try:
-            api_key_sha256 = configuration_digest(arguments.api_key_file, arguments.api_key_sha256)
-        except (OSError, ValueError):
-            raise ServeError("invalid_arguments", "The API key configuration is invalid or unavailable.",
-                             "Use a private 32–512 character key file or a valid SHA-256 verification digest.") from None
         plan = plan_start(
             arguments.repo,
             runtime,
@@ -1139,6 +1145,8 @@ def _run_serve(arguments):
             training_receipt=arguments.training_receipt,
             path=arguments.path,
             jit=arguments.jit,
+            api_key_file=arguments.api_key_file,
+            api_key_sha256=arguments.api_key_sha256,
             receipts_dir=arguments.receipts_dir,
             hf_cache=arguments.hf_cache,
             runtime_executable=executable,
@@ -1155,7 +1163,6 @@ def _run_serve(arguments):
             m5_prefill=arguments.m5_prefill,
             prompt_lookup=arguments.prompt_lookup,
             vision_cache=arguments.vision_cache,
-            api_key_sha256=api_key_sha256,
         )
         if arguments.launchd:
             if plan.get("jit"):
@@ -2782,6 +2789,20 @@ def build_parser(command=None):
 
 def main(argv=None):
     raw = list(sys.argv[1:] if argv is None else argv)
+    if raw[:2] == ["serve", "protected-service"]:
+        from .protected_service import main as service_main
+        try:
+            return service_main(raw[2:])
+        except (OSError, ValueError, ImportError, RuntimeError):
+            print("Protected MLX service unavailable; verify its runtime, private key and local model.", file=sys.stderr)
+            return 1
+    if raw[:2] == ["serve", "private-worker"]:
+        from .private_serve import main as private_main
+        try:
+            return private_main(raw[2:])
+        except (OSError, ValueError, ImportError):
+            print("Private MLX worker unavailable; verify the installed runtime and local model.", file=sys.stderr)
+            return 1
     if raw and raw[0] == "lab":
         from .lab import run
         return run(raw[1:])

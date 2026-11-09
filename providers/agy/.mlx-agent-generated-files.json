@@ -486,7 +486,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "8677fe7cf8724798ec83d1b6d6fc8396b4fa49309bea48b005c7479405ed322c"
+      "sha256": "b09ae3e3503f32ef79d9706757cd3d4aa49f3acc0a44c4c96b346809de6feb08"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -626,7 +626,7 @@
     },
     {
       "path": "src/mlx_agent/inference_auth.py",
-      "sha256": "23fd681e523a7576fa4eaf29b0cc6a60691924bd642c39e783a67ba6a0f7ecb8"
+      "sha256": "0195b76b75841964db844d3350e08460ce9d67a330f0580825e52434ec9878d1"
     },
     {
       "path": "src/mlx_agent/inference_runner.py",
@@ -654,7 +654,7 @@
     },
     {
       "path": "src/mlx_agent/jit_serve.py",
-      "sha256": "56f2f1dc2c03927c36f7423af24b3530222f0de5ad4587f4d389d924b060d7ec"
+      "sha256": "8a11ea9d238244d7fe95b670dc5eb47f9d1947b07b72a0ebcad9cdef702ba49c"
     },
     {
       "path": "src/mlx_agent/kokoro_runtime.py",
@@ -733,6 +733,10 @@
       "sha256": "32d035234a8cba71fa39f063267bdbb9487066a41849586db4b8452b2f1056ed"
     },
     {
+      "path": "src/mlx_agent/private_serve.py",
+      "sha256": "770fde7baea0aeb16792dcc89bcc4edcba1f1610c46dd4cc3ec2dbc91290053b"
+    },
+    {
       "path": "src/mlx_agent/probe_assets.py",
       "sha256": "17c39982e6bec5c8742dfb8707de536e688922d3aad6496113f8b9beeb44478d"
     },
@@ -747,6 +751,10 @@
     {
       "path": "src/mlx_agent/prompt_lookup_runtime.py",
       "sha256": "822933d9d240f777e7e23da0ba035627985d7d3694f8b6e0e24662afab1a924f"
+    },
+    {
+      "path": "src/mlx_agent/protected_service.py",
+      "sha256": "462851861c673ea1fbeefba1ae17d4a3ae4d2bc052e2b7d4a824218240a356c2"
     },
     {
       "path": "src/mlx_agent/protected_worker.py",
@@ -1102,7 +1110,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "871bf9108f0f26765089032d9feb2326546b3cb16c7b3e4779094f81e9b8604c"
+      "sha256": "da6eb555aa12de4d2f6ebf03ffc08f0de284dd24369747a0b12c4121995ae07c"
     },
     {
       "path": "src/mlx_agent/serve_profiles.py",
@@ -1111,6 +1119,10 @@
     {
       "path": "src/mlx_agent/service_registry.py",
       "sha256": "f2989440adf4e5440e4e92089547dce8716f3eb3f1a664c2c8cf3512f5017685"
+    },
+    {
+      "path": "src/mlx_agent/serving_access.py",
+      "sha256": "8ef86727a0bcf34d7161f497ac5ce59b67063bdb4e99cec348ac124f6aed41c5"
     },
     {
       "path": "src/mlx_agent/source_evidence.py",

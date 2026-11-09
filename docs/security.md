@@ -1,5 +1,15 @@
 # Security and recovery boundaries
 
+Supervised loopback serving can require an API key from a private file or a
+verification digest supplied by a credential store. A separate credential
+protects model unload and memory-policy changes. The reviewed plan binds the
+key digest and authentication source; changed inputs fail closed. Plain MLX-LM
+uses an authenticated inherited Unix worker. Vision, Strata and accelerated
+chat workers use separately authenticated loopback ports. Typed jobs use a
+resident-task transport without a private inference HTTP port. See
+[API key authentication](mlx-agent/source/pages/lifecycle/serve.md#api-key-authentication).
+Existing servers retain their configured access controls until explicitly changed.
+
 The universal installer and Wire are confirmation-gated. Installer `--dry-run`
 produces a plan; install, update, uninstall, and Wire apply require a current
 reviewed `--preview-hash`. Provider CLIs are installed separately. Discovery and
@@ -28,3 +38,19 @@ Installer transactions hold their locks under scoped installer receipt storage, 
 After a physical parent is migrated, an older binary is unsupported for targets in that parent. Any later strict legacy candidate there makes install/update/rollback fail closed, and `doctor` reports `legacy_lock_recreated` with the affected paths. Invalid lookalike names are never opened or removed, and unmigrated parents can still complete their own safe upgrade. A historical version-only marker is retained as an unscoped fail-closed barrier because its parent cannot be recovered. This parent-scoped policy is intentionally conservative because legacy names contain one-way path-spelling hashes. It guards the upgrade boundary; it does not claim to coordinate a future older process that disregards the new lock protocol.
 
 Wire holds an advisory target lock for cooperative writers. Current lock identity uses the opened parent device/inode and an NFC-normalized, case-folded leaf. Python's standard library does not expose a stable descriptor-bound filesystem case-sensitivity capability, so case-distinct leaves conservatively contend even on case-sensitive parents; this safe false contention never weakens macOS alias protection. The lock protects against accidental concurrency, not a malicious process that ignores it and races the final rename. This residual risk is reported in every Wire result and receipt; use a filesystem/permission boundary when adversarial local writers are in scope.
+
+## Foreground protected service
+
+Existing service managers can run an authenticated gateway in the foreground:
+
+```sh
+mlx-agent serve protected-service --model /absolute/local/model --port 8080 --api-key-file /absolute/private/model.key
+```
+
+The key must be an owned, owner-only file. Weights must already exist locally.
+The gateway uses a private Unix worker, refuses unrelated browser Host/Origin
+headers and checks credentials before inference. SIGTERM closes its worker and
+private temporary state. The existing service manager owns restart and stop;
+this command does not create a launchd job or a serve receipt. Retire any old
+raw model listener before claiming backend isolation. `--describe` reports the
+`protected-service-v1` capability and source identity without loading a model.

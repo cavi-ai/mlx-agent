@@ -124,3 +124,44 @@ class MusicDepthTests(unittest.TestCase):
         self.assertFalse(configure_depth_cache(model))
         self.assertIs(model.rvq_depth_decoder,decoder)
         self.assertEqual(model.rvq_depth_decoder(None),'custom')
+
+    def test_runner_reuses_the_caches_and_exports_valid_stereo_pcm(self):
+        import io
+        import json
+        from contextlib import redirect_stdout
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+        import wave
+        import mlx.core as mx
+        import numpy as np
+        from mlx_audio.music.models.minimax_music3.depth import RVQDepthDecoder
+        from mlx_agent import music_runner
+        from mlx_agent.music_speed import _DepthCache
+        model = SimpleNamespace(model_type='minimax_music3',config=self.config,
+                                rvq_depth_decoder=RVQDepthDecoder(self.config))
+        def generate(**kwargs):
+            self.assertIsInstance(model.rvq_depth_decoder,_DepthCache)
+            self.assertEqual((kwargs['duration'],kwargs['steps'],kwargs['seed']),(2,30,7))
+            mx.eval(model._text_ids(kwargs['text'],kwargs['lyrics']))
+            yield SimpleNamespace(audio=mx.array([[0.,.25],[-.5,.75]]),sample_rate=44100)
+        model.generate = generate
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'tokenizer.json').write_text('{}')
+            encoder = 'mlx_audio.music.models.minimax_music3.minimax_music3._encode_official_text_pair'
+            with patch.object(music_runner,'load_model',return_value=model), \
+                    patch(encoder,return_value=mx.array([[1,2],[1,2]])) as encode:
+                for index in range(2):
+                    out = root/f'{index}.wav'
+                    buffer = io.StringIO()
+                    with redirect_stdout(buffer):
+                        self.assertEqual(music_runner.main(['--model',str(root),'--caption','piano',
+                            '--lyrics','[instrumental]','--out',str(out),'--duration','2',
+                            '--steps','30','--seed','7']),0)
+                    self.assertEqual(json.loads(buffer.getvalue())['sample_rate'],44100)
+                    with wave.open(str(out),'rb') as audio:
+                        self.assertEqual((audio.getnchannels(),audio.getsampwidth(),audio.getnframes()),(2,2,2))
+                        np.testing.assert_array_equal(np.frombuffer(audio.readframes(2),dtype='<i2'),
+                                                      [0,8191,-16383,24575])
+                self.assertEqual(encode.call_count,1)

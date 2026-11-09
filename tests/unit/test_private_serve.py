@@ -11,17 +11,6 @@ from tempfile import TemporaryDirectory
 from mlx_agent.private_serve import private_server_class, guarded_handler, PRIVATE_PROTOCOL
 
 
-class UnixHTTPConnection(http.client.HTTPConnection):
-    def __init__(self, path):
-        super().__init__('127.0.0.1', timeout=3)
-        self.path = path
-
-    def connect(self):
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.settimeout(3)
-        self.sock.connect(self.path)
-
-
 class PrivateServingTests(unittest.TestCase):
     def setUp(self):
         self.temp = TemporaryDirectory(prefix='mlx-private-test-', dir='/tmp')
@@ -52,16 +41,22 @@ class PrivateServingTests(unittest.TestCase):
         self.addCleanup(self.server.shutdown)
 
     def request(self, method='POST', path='/v1/chat/completions', body=None, headers=None):
-        connection = UnixHTTPConnection(self.path)
-        try:
-            values = {'Content-Type': 'application/json'}
-            values.update(headers or {})
-            payload = json.dumps(body if body is not None else {'messages': []}) if method == 'POST' else None
-            connection.request(method, path, payload, values)
-            response = connection.getresponse()
-            return response.status, response.getheader('X-MLX-Agent-Transport'), response.read()
-        finally:
-            connection.close()
+        values = {'Host': '127.0.0.1', 'Content-Type': 'application/json', 'Connection': 'close'}
+        values.update(headers or {})
+        payload = json.dumps(body if body is not None else {'messages': []}).encode() if method == 'POST' else b''
+        if method == 'POST':
+            values['Content-Length'] = str(len(payload))
+        lines = [f'{method} {path} HTTP/1.1'] + [f'{name}: {value}' for name, value in values.items()]
+        frame = ('\r\n'.join(lines) + '\r\n\r\n').encode() + payload
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(3)
+            connection.connect(self.path)
+            # Header refusals can close immediately. Queue the complete small
+            # request before reading so a later body write cannot race the close.
+            connection.sendall(frame)
+            with http.client.HTTPResponse(connection) as response:
+                response.begin()
+                return response.status, response.getheader('X-MLX-Agent-Transport'), response.read()
 
     def test_inherited_listener_and_fixed_model_are_enforced(self):
         self.assertEqual(self.server.socket.family, socket.AF_UNIX)

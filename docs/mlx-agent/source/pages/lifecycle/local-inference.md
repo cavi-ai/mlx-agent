@@ -7,7 +7,8 @@ if needed, and finish [conversion](convert.md) before running these commands.
 These commands execute directly; they do not use the preview/confirmation contract
 of downloads and lifecycle starts. Review inputs, output paths, and resource needs.
 
-For retained classification/music results and cancellation across client exits,
+For retained classification and media results, including generated meshes,
+and cancellation across client exits,
 use [Durable inference tasks](tasks.md).
 
 ## Speech
@@ -39,6 +40,11 @@ root `tokenizer.json`; a synthetic tokenizer fallback is refused. Already-export
 quantized checkpoints can be converted from a local `--source-path`, using the
 model's layer policy while preserving tokenizer and scheduler assets.
 
+Supported Music3 layouts automatically reuse causal depth-prefix work and
+repeated prompt encodings. Retained workers can reuse caption/lyric encodings
+across jobs. These paths preserve sampling controls and checkpoint precision;
+floating-point changes can produce different audio from the same seed.
+
 ## Vision and classification
 
 ```bash
@@ -54,14 +60,22 @@ interchangeable with these task-specific models.
 
 ## 3D generation
 
-TripoSG mesh generation supports opt-in adaptive denoiser caching:
+`convert mesh` generates a GLB from a local PNG, JPEG or WebP image through
+TripoSG, TRELLIS.2 or Pixal3D. Supported resolutions and defaults come from the
+converted model configuration. Use `--steps`, `--seed`, `--resolution`,
+`--guidance` and `--max-faces` to select generation and export settings.
+
+TripoSG defaults to 50 steps, resolution 512 and guidance 7. Adaptive denoiser
+caching is optional and off by default:
 
 ```bash
 python3 scripts/mlx-agent convert mesh --path /absolute/local/mesh-model --image /absolute/input/object.png --out /absolute/output/object.glb --denoiser-cache adaptive --cache-memory-mib 256 --json
 ```
 
 Caching may change geometry. The feature budget is separate from model memory;
-jobs above it use full computation. Other mesh architectures use their native path.
+jobs above it use full computation. Adaptive mode requires TripoSG; other mesh
+architectures use `--denoiser-cache off`. JSON metadata reports full/reused
+steps and the feature-memory reservation. No sampling steps are removed.
 
 ## Image and video generation
 

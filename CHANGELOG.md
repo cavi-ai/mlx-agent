@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add opt-in adaptive denoiser caching for Wan2.1 T2V and TripoSG, with feature-memory budgets, refresh limits and reuse statistics.
+- Reuse fixed-conditioning attention projections in TripoSG sampling and point decoding.
+- Reuse causal depth prefixes and repeated prompt encodings during MiniMax Music3 generation.
+
 - Add a foreground authenticated MLX service for existing service managers, with private workers and worker cleanup on shutdown.
 
 - Add protected MLX-LM JIT serving with API-key authentication, separate control credentials, reviewed key and source identities, and a private Unix worker.

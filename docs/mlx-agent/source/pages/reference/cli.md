@@ -35,15 +35,33 @@ python3 scripts/mlx-agent intake fetch --help
 | `backend list/install/remove` | Inspect or manage optional dependencies. |
 | `convert scan` | Inventory GGUF files and candidate duplicates without deletion. |
 | `convert start/status` | Quantize local checkpoints; inspect conversion jobs. |
-| `convert transcribe/decide/generate/speak/music/describe/video` | Execute supported local inference tasks. |
+| `convert transcribe/decide/generate/speak/music/describe/video/mesh` | Execute supported local inference tasks. |
 | `task capabilities/start/status/list/result/cancel/verify-model` | Manage durable local classification and media tasks. See [Durable inference tasks](../lifecycle/tasks.md). |
 | `serve start/status/stop` | Launch and inspect receipt-owned local servers. |
+| `serve discover` | Find services across registered receipt locations and installed runtime inventories. |
+| `serve protected-service/private-worker` | Run authenticated supervised services or private workers for an existing service manager. |
 | `serve unload/policy` | Release JIT workers or update an owned gateway's memory policy. |
 | `serve profile save/show/list/delete` | Save and reuse Strata memory, headroom, context and decoding settings. |
-| `lora start/status` | Train an adapter on a cached base and local dataset. |
+| `lora inspect/start/status/stop` | Inspect prerequisites, train an adapter, inspect jobs, or stop owned training. |
 | `fuse start/status` | Merge an adapter into standalone weights. |
 | `doctor models` | Inspect model inventory, config drift, and endpoint health. |
 | `watch snapshot/diff` | Retain and compare owned-model Hub state. |
+
+`convert video` and `convert mesh` accept `--denoiser-cache adaptive` and
+`--cache-memory-mib` for supported Wan2.1 T2V and TripoSG models. These caches
+are off by default and may change frames or geometry. The same settings are
+available in typed task requests. See [Local inference](../lifecycle/local-inference.md).
+
+## Provider lifecycle
+
+| Command | Purpose |
+| --- | --- |
+| `providers` | Inspect supported coding-agent hosts. |
+| `install/update/uninstall` | Preview and manage owned provider files and receipts. |
+| `doctor <provider>` | Check provider installation, ownership and native visibility. |
+
+See [Installation](../introduction/installation.md) for host-specific commands
+and user/project scopes.
 
 ## Provider lifecycle
 
@@ -68,7 +86,7 @@ condition.
 | Preview type | Hash location with `--json` |
 | --- | --- |
 | Provider install/update/uninstall, Wire apply, Fleet apply | `data.preview.preview_hash` |
-| Serve start, Intake fetch, backend install/remove, Convert/LoRA/Fuse start, model prune | `data.plan.preview_hash` |
+| Serve start, Intake fetch, backend install/remove, Convert/LoRA/Fuse start, `doctor models --prune` | `data.plan.preview_hash` |
 | Wire rollback | `data.preview.preview_hash` |
 
 Repeat the same arguments with `--confirm --preview-hash <hash>`. Rollback

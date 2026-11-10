@@ -82,11 +82,11 @@ class ResidentRunner:
             if write_fd is not None:
                 os.close(write_fd)
 
-    def run(self, argv, timeout=3600, cancelled=lambda: False, cache_policy=None, **options):
+    def run(self, argv, timeout=3600, cancelled=lambda: False, cache_policy=None, memory_limit_bytes=None, **options):
         with self.lock:
-            return self._run(argv, timeout, cancelled, cache_policy, **options)
+            return self._run(argv, timeout, cancelled, cache_policy, memory_limit_bytes, **options)
 
-    def _run(self, argv, timeout, cancelled, cache_policy, **options):
+    def _run(self, argv, timeout, cancelled, cache_policy, memory_limit_bytes=None, **options):
         script = Path(argv[1]) if len(argv) > 1 else Path("")
         if (argv[0] != self.executable or script.parent.resolve() != Path(__file__).parent.resolve()
                 or script.stem not in RUNNERS or script.suffix != ".py"
@@ -103,6 +103,10 @@ class ResidentRunner:
             message = {"runner": script.stem, "arguments": argv[2:]}
             if cache_policy is not None:
                 message['cache_policy'] = cache_policy
+            if memory_limit_bytes is not None:
+                if type(memory_limit_bytes) is not int or not 0 < memory_limit_bytes <= 2**60:
+                    raise ValueError('Invalid worker memory limit.')
+                message['memory_limit_bytes'] = memory_limit_bytes
             raw = json.dumps(message).encode() + b"\n"
             if len(raw) > MAX_MESSAGE:
                 raise ValueError("Runner request exceeded its limit.")

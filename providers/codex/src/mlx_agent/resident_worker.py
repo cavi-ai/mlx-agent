@@ -68,8 +68,16 @@ def main():
                         cache.reclaim(request['reclaim'])
                     code = 0
                 else:
-                    if set(request) not in ({"runner", "arguments"}, {"runner", "arguments", "cache_policy"}) or request['runner'] not in RUNNERS:
+                    if (not {'runner', 'arguments'} <= set(request)
+                            or set(request) - {'runner', 'arguments', 'cache_policy', 'memory_limit_bytes'}
+                            or request['runner'] not in RUNNERS):
                         raise ValueError("Unknown inference runner.")
+                    limit = request.get('memory_limit_bytes')
+                    if limit is not None:
+                        if type(limit) is not int or not 0 < limit <= 2**60:
+                            raise ValueError('Invalid worker memory limit.')
+                        core = importlib.import_module('mlx.core')
+                        core.set_memory_limit(limit)
                     cache.configure(request.get('cache_policy', {}))
                     with redirect_stdout(output), redirect_stderr(errors):
                         module = importlib.import_module("mlx_agent." + request["runner"])

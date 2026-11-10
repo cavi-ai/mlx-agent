@@ -439,6 +439,13 @@ class ModelWorker:
         return None
 
     def _check_resident_memory(self, policy):
+        try:
+            budget = self.memory_registry.snapshot().get('agent_budget')
+        except MemoryAdmissionError as error:
+            raise GatewayError(503, error.code, str(error)) from error
+        if budget is not None and not budget.get('within_budget'):
+            raise GatewayError(503, 'agent_memory_budget_exceeded',
+                               'The shared agent memory budget is unavailable or exhausted.')
         if not policy.get("unload_under_pressure"):
             return
         # The admission already holds a request lease, so an idle reaper cannot
@@ -830,6 +837,25 @@ class ModelWorker:
             return False
         return True
 
+    def guard_agent_budget(self):
+        """Stop this owned worker on a measured breach; never signal external agents."""
+        if self.process is None:
+            return
+        try:
+            snapshot = self.memory_registry.snapshot()
+            budget = snapshot.get('agent_budget')
+        except MemoryAdmissionError:
+            budget = {'status': 'unavailable'}
+        if budget is None:
+            return
+        threshold = budget.get('limit_bytes', 0) - budget.get('reserve_bytes', 0) // 2
+        if budget.get('status') == 'unavailable' or budget['observed_bytes'] > threshold:
+            self.close()
+            with self.condition:
+                self.last_error = 'Agent memory guard stopped the owned model worker.'
+                self.model_state = 'failed'
+                self._persist()
+
     def unload(self):
         with self.condition:
             if self.closed:
@@ -907,6 +933,7 @@ class GatewayServer(ThreadingHTTPServer):
         def reclaim_idle():
             while not stopped.wait(0.5):
                 try:
+                    self.controller.guard_agent_budget()
                     self.controller.unload_if_idle()
                 except OSError:
                     # Persist/stop failures remain visible in controller state.

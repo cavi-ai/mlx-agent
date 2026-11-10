@@ -332,6 +332,11 @@ class TaskModelWorker(ModelWorker):
             if plan['backend'] != record['identity']['backend'] or plan['argv'][0] != self.resident.executable:
                 raise TaskError('identity_changed', 'The model task backend changed.')
             self._check_memory() if not self.resident.loaded else self._reserve_workspace()
+            try:
+                capacity = self.memory_registry.reserve_execution(self.memory_token)
+            except MemoryAdmissionError as error:
+                raise GatewayError(503, error.code, str(error)) from error
+            worker_limit = None if capacity is None else max(1, capacity - 512_000_000)
             with self.condition:
                 if self.closed:
                     raise InterruptedError('Endpoint stopping.')
@@ -355,7 +360,7 @@ class TaskModelWorker(ModelWorker):
             dispatched = True
             result = kind.run(plan, runner=lambda argv, **options: self.resident.run(argv,
                 cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'],
-                cache_policy=allocator_cache.from_memory(self.memory_policy), **options))
+                cache_policy=allocator_cache.from_memory(self.memory_policy), memory_limit_bytes=worker_limit, **options))
             self._check_runtime()
             check_identity(record['identity'])
             self.store.read_request(identifier)
@@ -383,7 +388,7 @@ class TaskModelWorker(ModelWorker):
             unresolved = False
             admission_denied = isinstance(error, (ComputeBusy, InterruptedError)) and not leased
             admission_denied |= (not dispatched and isinstance(error,GatewayError)
-                and error.code in ('insufficient_headroom','memory_unknown','memory_registry_busy'))
+                and error.code in ('insufficient_headroom','memory_unknown','memory_registry_busy', 'agent_memory_budget_exceeded'))
             # No work was dispatched if the host lease was denied. Keep the
             # existing idle worker and its state available for the next request.
             if not admission_denied:

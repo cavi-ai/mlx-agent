@@ -28,11 +28,12 @@ def _bytes(value):
 class MemoryRegistry:
     """Reserve future allocations; OS headroom already includes resident arrays."""
     def __init__(self, root=None, owner=None, inspector=process_identity,
-                 alive=process_alive, group_probe=group_members, lock_timeout=5):
+                 alive=process_alive, group_probe=group_members, lock_timeout=5, process_probe=None):
         self.root = Path(root) if root is not None else compute_root()
         self.owner = owner
         self.inspector, self.alive, self.group_probe = inspector, alive, group_probe
         self.lock_timeout = lock_timeout
+        self.process_probe = process_probe
 
     def _owner(self):
         if self.owner is None:
@@ -173,6 +174,12 @@ class MemoryRegistry:
         details = {'available_bytes':available,'required_available_bytes':amount+pending+floor,
                    'other_reserved_bytes':pending,'headroom_bytes':floor,'requested_headroom_bytes':requested,
                    'captured_at':time.time(),'estimated':True}
+        budget = self._agent_budget(rows, (key, amount))
+        if budget is not None:
+            details['agent_budget'] = budget
+            if not budget['within_budget']:
+                raise MemoryAdmissionError('agent_memory_budget_exceeded',
+                    'The request exceeds the shared agent memory budget; unload an idle model first.', details)
         if not _bytes(available):
             raise MemoryAdmissionError('memory_unknown','OS memory headroom is unavailable.',details)
         if available < details['required_available_bytes']:
@@ -245,5 +252,64 @@ class MemoryRegistry:
             row['headroom_bytes']=amount
             return dict(registry=self._summary(rows),allocation=dict(row))
 
+    def _agent_budget(self, rows, replacement=None):
+        from .memory_budget import read_policy, process_snapshot, account
+        policy = read_policy(self.root)
+        if policy is None:
+            return None
+        try:
+            processes = (self.process_probe or process_snapshot)()
+        except (OSError, ValueError, SubprocessError) as error:
+            raise MemoryAdmissionError('memory_unknown', 'Agent process memory is unavailable.') from error
+        return account(policy, rows, processes, self._owner(), replacement)
+
+    def configure_budget(self, limit_bytes, reserve_bytes=0, external_pids=None):
+        from .memory_budget import SCHEMA as BUDGET_SCHEMA, validate_policy, process_snapshot, read_policy
+        with self._locked() as rows:
+            processes = (self.process_probe or process_snapshot)()
+            previous = read_policy(self.root)
+            external = list(previous['external']) if previous is not None and external_pids is None else []
+            for pid in sorted(set(external_pids or ())):
+                if type(pid) is not int or pid <= 0 or pid not in processes:
+                    raise MemoryAdmissionError('memory_unknown', 'An external agent process cannot be inspected.')
+                row = processes[pid]
+                external.append({'pid': pid, 'identity': row['identity'], 'group': row['group']})
+            policy = {'schema': BUDGET_SCHEMA, 'limit_bytes': limit_bytes,
+                      'reserve_bytes': reserve_bytes, 'external': external}
+            validate_policy(policy)
+            from .memory_budget import account
+            summary = account(policy, rows, processes, self._owner())
+            _atomic_in_directory(self.root, 'budget.json', json.dumps(policy).encode(), 0o600)
+            return summary
+
+    def reserve_execution(self, key):
+        """Reserve active workspace before dispatch, so other loads cannot spend it."""
+        with self._locked() as rows:
+            row = self._own(rows, key)
+            budget = self._agent_budget(rows, (key, 0))
+            if budget is None:
+                return None
+            free = budget['admission_bytes'] - budget['accounted_bytes']
+            if free < 0:
+                raise MemoryAdmissionError('agent_memory_budget_exceeded',
+                    'Unload an idle model before starting this model job.')
+            current = budget['allocations'][key]
+            capacity = current['resident_bytes'] + current['pending_bytes'] + free
+            if row['phase'] == 'resident':
+                row['reserved_bytes'] = current['pending_bytes'] + free - row['growth_bytes']
+            else:
+                row['reserved_bytes'] = capacity
+            return capacity
+
     def snapshot(self):
-        with self._locked() as rows:return self._summary(rows)
+        with self._locked() as rows:
+            result = self._summary(rows)
+            try:
+                budget = self._agent_budget(rows)
+            except MemoryAdmissionError as error:
+                if error.code != 'memory_unknown':
+                    raise
+                budget = {'status': 'unavailable', 'error': str(error), 'within_budget': False}
+            if budget is not None:
+                result['agent_budget'] = budget
+            return result

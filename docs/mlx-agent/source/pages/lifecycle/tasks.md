@@ -260,6 +260,12 @@ and an absolute `image_path`. Optional `steps`, `seed`, `resolution`,
 `guidance` and `max_faces` use the same model-specific settings as
 `convert mesh`. Omitted settings keep the model's defaults.
 
+TripoSG also accepts `denoiser_cache: "adaptive"` and `cache_memory_mib`
+(8..4096, default 256). The cache forecasts transformer residuals during
+stable steps and may change geometry. It is off by default. Jobs above the
+feature budget use full computation; result metadata reports actual reused
+steps and the feature-memory reservation.
+
 The engine retains a verified copy of the input image and publishes an owned
 `output.glb` artifact with the `mesh/1` result. Status, cancellation and result
 verification use the same task commands as the other media kinds. Tasks never

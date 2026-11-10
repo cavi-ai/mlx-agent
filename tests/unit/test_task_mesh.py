@@ -52,6 +52,21 @@ class MeshTaskTests(unittest.TestCase):
             kind.plan(validate_request(self.request), self.root, staged)
         planner.assert_called_once_with(self.request["model_path"], staged, str(self.root / "output.glb"), seed=7)
 
+    def test_cache_settings_match_the_schema_and_reach_the_mesh_planner(self):
+        schema=Draft202012Validator(json.loads((ROOT/'schemas/task-request.schema.json').read_text()))
+        request=dict(self.request,parameters=dict(self.request['parameters'],denoiser_cache='adaptive',cache_memory_mib=64))
+        self.assertTrue(schema.is_valid(request))
+        self.assertEqual(validate_request(request),request)
+        with patch('mlx_agent.task_kinds.plan_mesh') as planner:
+            get('mesh_generation').plan(request,self.root,'/owned/image.png')
+        self.assertEqual(planner.call_args.kwargs['denoiser_cache'],'adaptive')
+        self.assertEqual(planner.call_args.kwargs['cache_memory_mib'],64)
+        for settings in ({'denoiser_cache':'invalid'},{'cache_memory_mib':True},{'cache_memory_mib':7},{'cache_memory_mib':4097}):
+            bad=dict(request,parameters=dict(request['parameters'],**settings))
+            with self.subTest(settings=settings):
+                self.assertFalse(schema.is_valid(bad))
+                with self.assertRaises(TaskError):validate_request(bad)
+
     def test_request_schema_and_runtime_accept_the_same_mesh_parameters(self):
         schema = Draft202012Validator(json.loads((ROOT / "schemas/task-request.schema.json").read_text()))
         parameters = self.request["parameters"]

@@ -52,6 +52,17 @@ controls. Decide reads a JSON request with `state` and `questions` fields for a
 compatible classification model. A text-generation model directory is not
 interchangeable with these task-specific models.
 
+## 3D generation
+
+TripoSG mesh generation supports opt-in adaptive denoiser caching:
+
+```bash
+python3 scripts/mlx-agent convert mesh --path /absolute/local/mesh-model --image /absolute/input/object.png --out /absolute/output/object.glb --denoiser-cache adaptive --cache-memory-mib 256 --json
+```
+
+Caching may change geometry. The feature budget is separate from model memory;
+jobs above it use full computation. Other mesh architectures use their native path.
+
 ## Image and video generation
 
 Wan2.1 T2V supports optional adaptive denoiser caching. Add

@@ -328,6 +328,10 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
             memory_policy = validate_memory_policy(memory_policy)
         except ValueError as error:
             raise ServeError("invalid_arguments", str(error), "Correct the memory policy.") from error
+        from .allocator_cache import requested
+        if requested(memory_policy):
+            raise ServeError('cache_control_unavailable', 'Allocator cache controls require a resident task backend.',
+                             'Select a supported task model; inspect allocator_cache in endpoint status.')
         if not jit:
             raise ServeError("jit_required", "Memory policy requires a JIT endpoint.", "Use --jit.")
         if runtime != "strata" and "model_memory_budget_gb" in memory_policy:
@@ -988,6 +992,9 @@ def _argv_matches(receipt, command, require_port=True):
     # absolute entry point instead of accepting any Python process.
     if len(argv) > 1 and str(argv[1]).endswith(".py") and Path(str(argv[1])).is_absolute():
         executable = str(argv[1])
+    elif len(argv) > 3 and argv[1:4] == [
+            "-I", "-B", str(Path(__file__).with_name("owned_worker.py").resolve())]:
+        executable = str(argv[3])
     model = receipt.get("repo") or receipt.get("path")
     if not model or executable not in command or str(model) not in command:
         return False
@@ -1028,12 +1035,12 @@ def _jit_config(receipt, root):
 def _jit_control(receipt, root, action, policy=None, timeout=None):
     config = _jit_config(receipt, root)
     request = urllib.request.Request("http://127.0.0.1:{}/_mlx/{}".format(receipt["port"], action),
-        data=json.dumps(policy or {}).encode() if action in ("unload", "policy") else None,
+        data=json.dumps(policy or {}).encode() if action in ("unload", "policy", "cache") else None,
         headers={"Authorization": "Bearer " + config["control_token"], "Content-Type": "application/json"})
     from .inference_auth import loopback_opener
     opener = loopback_opener()
     try:
-        with opener.open(request, timeout=timeout if timeout is not None else (10 if action == "unload" else 2)) as response:
+        with opener.open(request, timeout=timeout if timeout is not None else (15 if action in ("unload", "policy", "cache") else 2)) as response:
             state = json.load(response)
             if not isinstance(state, dict) or state.get("model_state") not in ("loaded", "unloaded", "loading", "unloading", "failed"):
                 raise ValueError("Invalid model residency status.")
@@ -1067,6 +1074,14 @@ def _owned_jit_worker(receipt, root):
             if _pid_alive(pid) and os.getpgid(pid) == pid and state.get("worker_started_at") == _pid_start(pid) and _argv_matches(expected, _pid_command(pid)):
                 return pid
             return None
+        isolated = (len(argv) > 7 and argv[1:4] ==
+                    ["-I", "-B", str(Path(__file__).with_name("owned_worker.py").resolve())])
+        if isolated:
+            if (_pid_alive(pid) and os.getpgid(pid) == pid
+                    and state.get("worker_started_at") == _pid_start(pid)
+                    and _argv_matches(expected, _pid_command(pid))):
+                return pid
+            return None
         if _pid_alive(pid) and os.getpgid(pid) == receipt["pid"] and _argv_matches(expected, _pid_command(pid)):
             return pid
     except (OSError, ValueError, TypeError, KeyError, ServeError):
@@ -1076,6 +1091,10 @@ def _owned_jit_worker(receipt, root):
 
 def unload_serve(port, receipts_dir=None, expected_pid=None, expected_start=None):
     return _configure_owned_jit(port, receipts_dir, expected_pid, "unload", expected_start=expected_start)
+
+
+def reclaim_serve_cache(port, receipts_dir=None, expected_pid=None, expected_start=None):
+    return _configure_owned_jit(port, receipts_dir, expected_pid, 'cache', expected_start=expected_start)
 
 
 def configure_serve_memory(port, policy, receipts_dir=None, expected_pid=None, expected_start=None):
@@ -1106,7 +1125,7 @@ def _configure_owned_jit(port, receipts_dir, expected_pid, action, policy=None, 
         raise ServeError("pid_argv_mismatch", "Endpoint process no longer matches its receipt.",
                          "Refresh serving status before unloading.")
     state = _jit_control(receipt, root, action, policy)
-    return dict(state, status="unloaded" if action == "unload" else "configured", port=port, pid=receipt["pid"])
+    return dict(state, status={"unload": "unloaded", "policy": "configured", "cache": "reclaimed"}[action], port=port, pid=receipt["pid"])
 
 
 def stop_serve(port, receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_command,

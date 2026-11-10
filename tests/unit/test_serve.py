@@ -445,6 +445,20 @@ class StartServeTests(unittest.TestCase):
 
 
 class StatusAndStopTests(unittest.TestCase):
+    def test_isolated_worker_matches_framework_python_by_its_bootstrap(self):
+        from mlx_agent import owned_worker
+        from mlx_agent.serve import _argv_matches
+        bootstrap = str(Path(owned_worker.__file__).resolve())
+        arguments = ['-I', '-B', bootstrap, '8', '9', '4242', '/runtime/server.py',
+                     '--model', 'pub/model', '--port', '8080']
+        receipt = {'argv': ['/runtime/bin/python3.12', *arguments], 'repo': 'pub/model', 'port': 8080}
+        command = '/Library/Frameworks/Python.framework/Versions/3.12/Resources/Python.app/Contents/MacOS/Python ' + ' '.join(arguments)
+        self.assertTrue(_argv_matches(receipt, command))
+        for expected, replacement in ((bootstrap, '/runtime/other.py'),
+                                      ('pub/model', 'other/model'), ('--port 8080', '--port 8081')):
+            with self.subTest(replacement=replacement):
+                self.assertFalse(_argv_matches(receipt, command.replace(expected, replacement)))
+
     def test_malformed_receipt_does_not_abort_other_service_status(self):
         self._start_one()
         root = self.root / '.mlx-agent-receipts/serve'

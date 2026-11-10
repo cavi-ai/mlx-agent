@@ -5,6 +5,7 @@ from pathlib import Path
 import selectors
 import subprocess
 import time
+import threading
 
 from .resident_worker import MAX_MESSAGE, RUNNERS
 from .compute import process_identity
@@ -17,7 +18,10 @@ class ResidentRunner:
         self.environment, self.log_path, self.port = environment, log_path, port
         self.process, self.response, self.log = None, None, None
         self.loaded = False
+        self.telemetry = None
+        self.cache_state = None
         self.identity = None
+        self.lock = threading.RLock()
 
     def _receive(self, argv, timeout, cancelled):
         deadline = time.monotonic() + timeout
@@ -78,7 +82,11 @@ class ResidentRunner:
             if write_fd is not None:
                 os.close(write_fd)
 
-    def run(self, argv, timeout=3600, cancelled=lambda: False, **options):
+    def run(self, argv, timeout=3600, cancelled=lambda: False, cache_policy=None, **options):
+        with self.lock:
+            return self._run(argv, timeout, cancelled, cache_policy, **options)
+
+    def _run(self, argv, timeout, cancelled, cache_policy, **options):
         script = Path(argv[1]) if len(argv) > 1 else Path("")
         if (argv[0] != self.executable or script.parent.resolve() != Path(__file__).parent.resolve()
                 or script.stem not in RUNNERS or script.suffix != ".py"
@@ -92,25 +100,60 @@ class ResidentRunner:
                 raise InterruptedError("Inference cancelled.")
             if self.process is None:
                 self._start(timeout=min(timeout, 15), cancelled=cancelled)
-            raw = json.dumps({"runner": script.stem, "arguments": argv[2:]}).encode() + b"\n"
+            message = {"runner": script.stem, "arguments": argv[2:]}
+            if cache_policy is not None:
+                message['cache_policy'] = cache_policy
+            raw = json.dumps(message).encode() + b"\n"
             if len(raw) > MAX_MESSAGE:
                 raise ValueError("Runner request exceeded its limit.")
             self.process.stdin.write(raw)
             self.process.stdin.flush()
             remaining = timeout - (time.monotonic() - started)
             result = self._receive(argv, max(0, remaining), cancelled)
+            from .worker_telemetry import validate
+            self.telemetry = validate(result['memory'])
+            from .allocator_cache import validate_state
+            self.cache_state = validate_state(result['cache']) if 'cache' in result else None
             self.loaded = result["loaded"] is True
             return subprocess.CompletedProcess(argv, result["returncode"], result["stdout"], result["stderr"])
         except BaseException:
             self.close()
             raise
 
+    def control_cache(self, policy, reclaim=None):
+        with self.lock:
+            if not self.loaded or self.process is None:
+                raise ValueError('Cache controls require a loaded worker.')
+            message = {'control': 'cache', 'policy': policy, 'reclaim': reclaim}
+            try:
+                self.process.stdin.write(json.dumps(message).encode() + b'\n')
+                self.process.stdin.flush()
+                result = self._receive(self.process.args, 10, lambda: False)
+                from .worker_telemetry import validate
+                from .allocator_cache import validate_state
+                self.telemetry = validate(result['memory'])
+                self.cache_state = validate_state(result['cache'])
+                if result['loaded'] is not True:
+                    raise ValueError('Cache control changed model residency.')
+                return result['returncode'] == 0
+            except BaseException:
+                self.close()
+                raise
+
     def close(self):
+        with self.lock:
+            self._close()
+
+    def _close(self):
         process = self.process
         if process is not None:
             known = {process.pid: self.identity} if self.identity else {}
             if not _stop(process, self.identity, known, grace=3):
                 raise OSError("The owned inference process group has not stopped safely.")
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired as error:
+                raise OSError("The owned inference worker exit has not been confirmed.") from error
         self._clear()
 
     def _clear(self):
@@ -125,3 +168,5 @@ class ResidentRunner:
             self.log.close()
             self.log = None
         self.loaded = False
+        self.telemetry = None
+        self.cache_state = None

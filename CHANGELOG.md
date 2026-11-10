@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Coordinate estimated memory admission across resident model endpoints and report worker allocations, model loads and cache reuse.
+
+- Keep task models resident during compute contention and reliably reap stopped worker processes.
+
 - Bound TripoSG point-query batches and compile decoder execution with per-generation conditioning.
 
 - Add opt-in adaptive denoiser caching for Wan2.1 T2V and TripoSG, with feature-memory budgets, refresh limits and reuse statistics.

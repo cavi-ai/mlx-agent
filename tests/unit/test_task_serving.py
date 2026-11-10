@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -82,6 +83,7 @@ class TaskHTTPTests(unittest.TestCase):
         self.model = self.root / 'model'
         self.model.mkdir()
         (self.model / 'config.json').write_text('{"model_type":"laya"}')
+        (self.model / 'model.safetensors').write_bytes(b'fixture')
         (self.root / 'fixture_port.py').write_text('''
 import time
 class Model:
@@ -98,6 +100,8 @@ def predict(model, tokenizer, state, questions):
         config = {'local_path': str(self.model), 'model': str(self.model), 'runtime': 'tasks', 'fingerprint': 'unused',
             'port': 0, 'task_identity': identity, 'task_kinds': ['classification'], 'task_state_dir': str(self.root / 'tasks'),
             'max_tokens': 0, 'worker_argv': [sys.executable], 'control_token': 'a' * 32,
+            'memory_state_dir': str(self.root / 'memory'),
+            'compute_state_dir': str(self.root / 'compute'),
             'memory_policy': {'keep_loaded': True}}
         self.server = TaskServer(('127.0.0.1', 0), config)
         self.server.controller.config['port'] = self.server.server_port
@@ -206,6 +210,223 @@ def predict(model, tokenizer, state, questions):
     def test_failed_job_releases_compute_for_retry(self):
         self.assertEqual(self.wait(self.start('fail'))['state'], 'failed')
         self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+
+    def fake_allocator(self):
+        port = self.root / 'fixture_port.py'
+        with port.open('a') as stream:
+            stream.write("""
+import sys, types
+cache_state = {'bytes': 12 * 1024**2, 'limit': 128 * 1024**2}
+def set_limit(value):
+    old = cache_state['limit']; cache_state['limit'] = value; return old
+sys.modules['mlx.core'] = types.SimpleNamespace(
+    set_cache_limit=set_limit, get_cache_memory=lambda: cache_state['bytes'],
+    get_active_memory=lambda: 2 * 1024**2, get_peak_memory=lambda: 4 * 1024**2,
+    synchronize=lambda: None, clear_cache=lambda: cache_state.update(bytes=0))
+original_predict = predict
+def predict(*args):
+    result = original_predict(*args)
+    cache_state['bytes'] = 12 * 1024**2
+    return result
+""")
+
+    def test_allocator_limits_manual_and_idle_reclaim_keep_model_loaded(self):
+        self.fake_allocator()
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        process = controller.resident.process
+        headers = {'Authorization': 'Bearer ' + 'a' * 32}
+        self.assertEqual(self.request('POST', '/_mlx/cache', {})[0], 403)
+        code, value = self.request('POST', '/_mlx/cache', {}, headers)
+        self.assertEqual(code, 200, value)
+        self.assertEqual(value['worker_memory']['cache_bytes'], 0)
+        self.assertEqual(value['worker_memory']['loads'], 1)
+        code, value = self.request('POST', '/_mlx/policy', {'allocator_cache_limit_mib': 4, 'cache_reclaim': 'idle'}, headers)
+        self.assertEqual(code, 200, value)
+        self.assertFalse(value['allocator_cache']['pending'])
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        value = controller.status()
+        self.assertEqual(value['worker_memory']['cache_bytes'], 0)
+        self.assertEqual(value['worker_memory']['loads'], 1)
+        self.assertEqual(value['worker_memory']['cache_hits'], 1)
+        self.assertIs(controller.resident.process, process)
+        self.assertEqual(value['allocator_cache']['last_reclaim']['reason'], 'idle')
+
+    def test_pressure_reclaim_retains_pinned_worker_and_busy_host_defers(self):
+        from mlx_agent.compute import ComputeLease
+        self.fake_allocator()
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        controller.configure({'minimum_headroom_gb': 1, 'cache_reclaim': 'pressure'})
+        controller.memory_probe = lambda: 0
+        with ComputeLease('other-workload', self.root / 'compute'):
+            self.assertFalse(controller.unload_if_idle())
+            self.assertEqual(controller.worker_memory['cache_bytes'], 12 * 1024**2)
+        controller.unload_if_idle()
+        with controller.condition:
+            self.assertTrue(controller.condition.wait_for(lambda: controller.worker_memory['cache_bytes'] == 0, timeout=2))
+        self.assertEqual(controller.model_state, 'loaded')
+        self.assertEqual(controller.worker_memory['cache_bytes'], 0)
+        self.assertEqual(controller.worker_memory['loads'], 1)
+
+    def test_cache_policy_defers_during_active_job_and_manual_reclaim_refuses(self):
+        self.fake_allocator()
+        port = self.root / 'fixture_port.py'
+        with port.open('a') as stream:
+            stream.write("""
+from pathlib import Path
+previous_predict = predict
+def predict(*args):
+    if args[2] == 'hold':
+        marker = Path(__file__).with_name('release-cache-job')
+        deadline = time.monotonic() + 5
+        while not marker.exists() and time.monotonic() < deadline: time.sleep(.01)
+    return previous_predict(*args)
+""")
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        process = controller.resident.process
+        identifier = self.start('hold')
+        headers = {'Authorization': 'Bearer ' + 'a' * 32}
+        self.assertEqual(self.request('POST', '/_mlx/cache', {}, headers)[0], 409)
+        code, value = self.request('POST', '/_mlx/policy', {'allocator_cache_limit_mib': 4, 'cache_reclaim': 'idle'}, headers)
+        self.assertEqual(code, 200, value)
+        self.assertTrue(value['allocator_cache']['pending'])
+        self.assertEqual(value['worker_memory']['cache_bytes'], 12 * 1024**2)
+        (self.root / 'release-cache-job').touch()
+        self.assertEqual(self.wait(identifier)['state'], 'succeeded')
+        state = controller.status()
+        self.assertFalse(state['allocator_cache']['pending'])
+        self.assertEqual(state['worker_memory']['cache_bytes'], 0)
+        self.assertIs(controller.resident.process, process)
+
+    def test_cache_fence_failure_stops_worker_and_releases_only_confirmed_group(self):
+        from mlx_agent.compute import ComputeBusy, ComputeLease
+        self.fake_allocator()
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        with patch.object(ComputeLease, 'release_idle_process_group', side_effect=ComputeBusy('group changed')):
+            code, value = self.request('POST', '/_mlx/cache', {}, {'Authorization': 'Bearer ' + 'a' * 32})
+        self.assertEqual(code, 503, value)
+        self.assertIsNone(self.server.controller.resident.process)
+        with ComputeLease('retry', self.root / 'compute'):
+            pass
+
+    def test_unavailable_cache_controls_preserve_the_loaded_worker(self):
+        self.fake_allocator()
+        with (self.root / 'fixture_port.py').open('a') as stream:
+            stream.write("\nsys.modules['mlx.core'].clear_cache = None\n")
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        process = controller.resident.process
+        code, value = self.request('POST', '/_mlx/cache', {}, {'Authorization': 'Bearer ' + 'a' * 32})
+        self.assertEqual(code, 503, value)
+        self.assertIs(controller.resident.process, process)
+        self.assertEqual(controller.model_state, 'loaded')
+        with self.assertRaises(task_serving.GatewayError):
+            controller.configure({'allocator_cache_limit_mib': 4})
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+
+    def test_invalid_allocator_policy_returns_an_error_without_loading(self):
+        code, value = self.request('POST', '/_mlx/policy', {'allocator_cache_limit_mib': True},
+                                   {'Authorization': 'Bearer ' + 'a' * 32})
+        self.assertEqual(code, 400, value)
+        self.assertEqual(value['error']['code'], 'invalid_policy')
+        self.assertIsNone(self.server.controller.resident.process)
+
+    def test_waiting_job_and_cancelled_waiter_preserve_residency(self):
+        from mlx_agent.compute import ComputeLease
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        controller.configure({'execution_wait_seconds': 2})
+        process = controller.resident.process
+        with ComputeLease('other-workload', self.root / 'compute'):
+            identifier = self.start()
+            time.sleep(.1)
+            self.assertEqual(self.request('POST', '/v1/tasks/' + identifier + '/cancel', {})[0], 200)
+            self.assertEqual(self.wait(identifier)['state'], 'cancelled')
+            self.assertIs(controller.resident.process, process)
+            identifier = self.start()
+            time.sleep(.1)
+            self.assertEqual(self.request('GET', '/v1/tasks/' + identifier)[1]['state'], 'starting')
+        self.assertEqual(self.wait(identifier)['state'], 'succeeded')
+        self.assertIs(controller.resident.process, process)
+
+    def test_compute_contention_keeps_warm_model_for_retry(self):
+        from mlx_agent.compute import ComputeLease
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        process = self.server.controller.resident.process
+        with ComputeLease('other-workload', self.root / 'compute'):
+            denied = self.wait(self.start())
+        self.assertEqual(denied['state'], 'failed')
+        self.assertEqual(denied['error']['code'], 'compute_busy')
+        self.assertIs(self.server.controller.resident.process, process)
+        self.assertEqual(self.server.controller.status()['model_state'], 'loaded')
+        self.assertIsNone(process.poll())
+        identifier = self.start()
+        self.assertEqual(self.wait(identifier)['state'], 'succeeded')
+        status, result = self.request('GET', '/v1/tasks/' + identifier + '/result')
+        self.assertEqual(status, 200, result)
+        self.assertEqual(result['result']['answers']['calls'], 2)
+        self.assertIs(self.server.controller.resident.process, process)
+
+    def test_compute_contention_does_not_start_a_cold_worker(self):
+        from mlx_agent.compute import ComputeLease
+        with ComputeLease('other-workload', self.root / 'compute'):
+            denied = self.wait(self.start())
+        self.assertEqual(denied['error']['code'], 'compute_busy')
+        self.assertIsNone(self.server.controller.resident.process)
+        self.assertEqual(self.server.controller.status()['model_state'], 'unloaded')
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+
+    def test_workspace_admission_keeps_warm_worker_and_reports_load_reuse(self):
+        self.assertEqual(self.wait(self.start())['state'],'succeeded')
+        controller=self.server.controller
+        process=controller.resident.process
+        controller.memory_probe=lambda:0
+        denied=self.wait(self.start())
+        self.assertEqual(denied['error']['code'],'insufficient_headroom')
+        self.assertIs(controller.resident.process,process)
+        self.assertEqual(controller.memory_registry.snapshot()['reserved_bytes'],0)
+        controller.memory_probe=lambda:1<<40
+        self.assertEqual(self.wait(self.start())['state'],'succeeded')
+        self.assertIs(controller.resident.process,process)
+        state=controller.status()
+        self.assertEqual(state['worker_memory']['loads'],1)
+        self.assertEqual(state['worker_memory']['cache_hits'],1)
+        self.assertEqual(state['memory_reservation']['allocation']['phase'],'resident')
+        controller.unload()
+        self.assertEqual(controller.memory_registry.snapshot()['entries'],0)
+
+    def test_lost_compute_ownership_after_execution_stops_worker(self):
+        from mlx_agent.compute import ComputeBusy, ComputeLease
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        process = self.server.controller.resident.process
+        with patch.object(ComputeLease, 'release_idle_process_group', side_effect=ComputeBusy('ownership changed')):
+            failed = self.wait(self.start())
+        self.assertEqual(failed['state'], 'failed')
+        self.assertEqual(failed['error']['code'], 'compute_busy')
+        self.assertIsNone(self.server.controller.resident.process)
+        self.assertEqual(self.server.controller.status()['model_state'], 'unloaded')
+        identifier = self.start()
+        self.assertEqual(self.wait(identifier)['state'], 'succeeded')
+        status, result = self.request('GET', '/v1/tasks/' + identifier + '/result')
+        self.assertEqual(status, 200, result)
+        self.assertEqual(result['result']['answers']['calls'], 1)
+        self.assertIsNot(self.server.controller.resident.process, process)
+
+    def test_settlement_contention_keeps_completed_result_and_warm_model(self):
+        from mlx_agent.residency import MemoryAdmissionError
+        controller=self.server.controller
+        with patch.object(controller.memory_registry,'settle',side_effect=MemoryAdmissionError('memory_registry_busy','busy')):
+            self.assertEqual(self.wait(self.start())['state'],'succeeded')
+        process=controller.resident.process
+        self.assertIn('reservation',controller.last_error)
+        self.assertGreater(controller.memory_registry.snapshot()['reserved_bytes'],0)
+        self.assertEqual(self.wait(self.start())['state'],'succeeded')
+        self.assertIs(controller.resident.process,process)
+        self.assertEqual(controller.worker_memory['cache_hits'],1)
+        self.assertIsNone(controller.last_error)
+        self.assertEqual(controller.memory_registry.snapshot()['reserved_bytes'],0)
 
     def test_changed_model_refuses_reuse_and_releases_stale_weights(self):
         self.assertEqual(self.wait(self.start())['state'], 'succeeded')

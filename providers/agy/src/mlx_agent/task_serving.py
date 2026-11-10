@@ -11,9 +11,11 @@ import threading
 from . import task_kinds
 from .backends import backend_environment, backend_python, load_manifests, load_registries, lookup, normalize_type
 from .compute import ComputeBusy, ComputeLease, process_identity
+from . import allocator_cache
 from .inference_runner import InferenceError
 from .jit_serve import GatewayError, ModelWorker, model_fingerprint, validate_memory_policy
 from .resident_runner import ResidentRunner
+from .residency import MemoryAdmissionError
 from .task_contracts import TaskError, validate_request
 from .task_identity import capture_identity, check_identity
 from .task_runtime import _artifact_reference, _error, _finish, task_result, task_status
@@ -23,7 +25,7 @@ def runtime_fingerprint(backend):
     source = Path(__file__).parent
     from .resident_worker import RUNNERS
     files = [source / (name + '.py') for name in sorted(RUNNERS)]
-    files += [source / name for name in ('resident_worker.py', 'runner_model_cache.py')]
+    files += [source / name for name in ('resident_worker.py', 'runner_model_cache.py','worker_telemetry.py','allocator_cache.py')]
     files += sorted((source / 'resources' / 'ports' / backend).rglob('*.py'))
     digest = hashlib.sha256()
     for path in files:
@@ -125,18 +127,137 @@ class TaskModelWorker(ModelWorker):
         if expected is not None and runtime_fingerprint(self.config['task_identity']['backend']) != expected:
             raise TaskError('runtime_changed', 'The accepted inference adapter changed; review serving again.')
 
+    def _allocator_cache_status(self):
+        desired = allocator_cache.from_memory(self.memory_policy)
+        state = self.resident.cache_state or {}
+        applied = state.get('applied_policy')
+        pending = (allocator_cache.requested(desired) if applied is None else applied != desired)
+        return {'supported': True, 'available': state.get('available'),
+                'policy_fields': sorted(allocator_cache.FIELDS), 'reclaim_modes': list(allocator_cache.MODES),
+                'control_path': '/_mlx/cache', 'configured_policy': desired, 'applied_policy': applied,
+                'pending': pending or bool(state.get('error')), 'active': self.cache_control_active,
+                'last_reclaim': state.get('last_reclaim'), 'error': state.get('error')}
+
     def configure(self, changes):
         if changes.get('context_tokens') is not None or changes.get('model_memory_budget_gb') is not None:
             raise GatewayError(400, 'invalid_policy', 'Task endpoints use headroom reserves without text KV or Strata budgets.')
-        return super().configure(changes)
+        try:
+            desired = validate_memory_policy(dict(self.memory_policy, **changes))
+        except (ValueError, TypeError) as error:
+            raise GatewayError(400, 'invalid_policy', str(error)) from error
+        if (self.resident.loaded and (self.resident.cache_state or {}).get('available') is False
+                and allocator_cache.requested(desired)):
+            raise GatewayError(400, 'cache_control_unavailable', 'This worker does not expose allocator cache controls.')
+        super().configure(changes)
+        if self._allocator_cache_status()['pending']:
+            self._cache_operation(None)
+        return self.status()
+
+    def _cache_operation(self, reason, manual=False, expected=None):
+        with self.condition:
+            if (self.closed or self.active_requests or self.cache_control_active
+                    or self.model_state != 'loaded' or not self.resident.loaded):
+                if manual:
+                    raise GatewayError(409, 'model_busy', 'Cache reclaim requires an idle loaded worker.')
+                return False
+            if expected is not None and expected != (self.process, self.activity_revision, self.policy_revision):
+                return False
+            self.cache_control_active = True
+            desired = allocator_cache.from_memory(self.memory_policy)
+            if reason is None and desired['cache_reclaim'] == 'idle':
+                reason = 'policy'
+        try:
+            with ComputeLease('cache:' + self.config['local_path']) as lease:
+                try:
+                    lease.bind_process_group(self.resident.process.pid)
+                    success = self.resident.control_cache(desired, reclaim=reason)
+                    lease.release_idle_process_group(self.resident.process.pid)
+                except (OSError, ValueError, subprocess.SubprocessError):
+                    self._stop_worker()
+                    with self.condition:
+                        self.model_state = 'unloaded'
+                    raise
+                settled = self._settle_task_memory()
+                if success and settled:
+                    self.last_error = None
+            if not success:
+                self.last_error = (self.resident.cache_state or {}).get('error') or 'Allocator cache control is unavailable.'
+                if manual:
+                    raise GatewayError(503, 'cache_control_unavailable', self.last_error)
+                return False
+            return True
+        except ComputeBusy as error:
+            if manual:
+                raise GatewayError(503, 'compute_busy', str(error)) from error
+            return False
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            with self.condition:
+                self.process = self.resident.process
+                self.model_state = 'failed' if self.process else 'unloaded'
+                self.execution_unresolved = self.process is not None
+                self.last_error = str(error)
+            if self.process is None:
+                self._release_memory()
+            if manual:
+                raise GatewayError(503, 'cache_control_failed', str(error)) from error
+            return False
+        finally:
+            with self.condition:
+                self.cache_control_active = False
+                self.condition.notify_all()
+
+    def reclaim_cache(self):
+        self._cache_operation('manual', manual=True)
+        return self.status()
+
+    def unload_if_idle(self):
+        with self.condition:
+            state = self._allocator_cache_status()
+            if (self.model_state == 'loaded' and not self.active_requests and not self.cache_control_active
+                    and not state['error']):
+                pending = state['pending']
+                pressure = (state['available'] and self.memory_policy.get('cache_reclaim') == 'pressure'
+                            and (self.worker_memory or {}).get('cache_bytes', 0))
+                expected = (self.process, self.activity_revision, self.policy_revision)
+                reserve = self.memory_policy['minimum_headroom_gb']
+            else:
+                pending = pressure = False
+        if pending:
+            return self._cache_operation(None, expected=expected)
+        if pressure:
+            available = self.memory_probe()
+            if type(available) is int and available < reserve * 1e9:
+                if self._cache_operation('pressure', expected=expected):
+                    return True
+        return super().unload_if_idle()
 
     def _stop_worker(self):
         try:
             self.resident.close()
+            self.execution_unresolved = False
+            self._release_memory()
         finally:
             with self.condition:
                 self.process = self.resident.process
                 self.worker_argv = list(self.process.args) if self.process is not None else None
+
+    def _settle_task_memory(self):
+        memory = self.resident.telemetry
+        self.worker_memory = memory
+        resident = None
+        if memory['active_bytes'] is not None and memory['cache_bytes'] is not None:
+            resident = memory['active_bytes'] + memory['cache_bytes']
+            if memory['peak_bytes'] is not None:
+                self.workspace_bytes = max(self.workspace_bytes,memory['peak_bytes']-memory['active_bytes'])
+        try:
+            self.memory_reservation = self.memory_registry.settle(self.memory_token,resident_bytes=resident,telemetry=memory)
+        except MemoryAdmissionError as error:
+            if error.code != 'memory_registry_busy':
+                raise
+            self.last_error = 'Memory reservation remains pending: ' + str(error)
+            return False
+        self.memory_materialized = True
+        return True
 
     def submit(self, body):
         if set(body) != {'kind', 'parameters'} or body['kind'] not in self.config['task_kinds']:
@@ -145,7 +266,7 @@ class TaskModelWorker(ModelWorker):
         request = validate_request({'schema': kind.request_schema, 'kind': kind.name,
             'model_path': self.config['local_path'], 'parameters': body['parameters']})
         with self.condition:
-            if self.closed or self.active_requests or self.model_state == 'unloading':
+            if self.closed or self.active_requests or self.cache_control_active or self.execution_unresolved or self.model_state == 'unloading':
                 raise GatewayError(409, 'model_busy', 'Finish the active model job before starting another.')
             self.active_requests = 1
             self.activity_revision += 1
@@ -193,8 +314,10 @@ class TaskModelWorker(ModelWorker):
     def _execute(self, identifier):
         lease = ComputeLease("task:" + identifier)
         leased = False
+        dispatched = False
         try:
-            lease.__enter__()
+            lease.enter_wait(self.memory_policy.get('execution_wait_seconds', 0),
+                cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'])
             leased = True
             record = self.store.get(identifier)
             if record['cancel_requested'] or self.closed:
@@ -208,12 +331,13 @@ class TaskModelWorker(ModelWorker):
             plan = kind.plan(request, directory, media)
             if plan['backend'] != record['identity']['backend'] or plan['argv'][0] != self.resident.executable:
                 raise TaskError('identity_changed', 'The model task backend changed.')
-            self._check_memory() if not self.resident.loaded else self._check_resident_memory(dict(self.memory_policy))
+            self._check_memory() if not self.resident.loaded else self._reserve_workspace()
             with self.condition:
                 if self.closed:
                     raise InterruptedError('Endpoint stopping.')
                 self.model_state = 'loading' if not self.resident.loaded else 'loaded'
             if self.resident.process is None:
+                self._launching_memory()
                 self.resident._start(cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'])
             with self.condition:
                 if self.closed:
@@ -225,9 +349,13 @@ class TaskModelWorker(ModelWorker):
             worker_identity = process_identity(self.process.pid)
             if not worker_identity:
                 raise TaskError('task_identity_unavailable', 'Cannot establish the model worker identity.')
+            if not self.memory_materialized:
+                self._bind_memory(self.process,worker_identity)
             self.store.transition(identifier, ('starting',), {'state': 'running', 'execution': {'pid': self.process.pid, 'identity': worker_identity}})
+            dispatched = True
             result = kind.run(plan, runner=lambda argv, **options: self.resident.run(argv,
-                cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'], **options))
+                cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'],
+                cache_policy=allocator_cache.from_memory(self.memory_policy), **options))
             self._check_runtime()
             check_identity(record['identity'])
             self.store.read_request(identifier)
@@ -240,25 +368,36 @@ class TaskModelWorker(ModelWorker):
             if self.store.get(identifier)['cancel_requested']:
                 raise InterruptedError('Inference cancelled.')
             reference = self.store.write_result(identifier, result)
+            desired = allocator_cache.from_memory(self.memory_policy)
+            if self.resident.cache_state and self.resident.cache_state['applied_policy'] != desired:
+                self.resident.control_cache(desired, reclaim='policy' if desired['cache_reclaim'] == 'idle' else None)
             # The protocol acknowledges completion before retaining idle weights.
             lease.release_idle_process_group(self.process.pid)
+            memory_settled = self._settle_task_memory()
             with self.condition:
                 self.model_state = 'loaded' if self.resident.loaded else 'unloaded'
-                self.last_error = None
+                self.last_error = None if memory_settled else self.last_error
                 self._persist()
             _finish(self.store, identifier, 'succeeded', result=reference, error=None)
         except BaseException as error:
             unresolved = False
-            try:
-                self._stop_worker()
-            except (OSError, subprocess.SubprocessError):
-                unresolved = True
+            admission_denied = isinstance(error, (ComputeBusy, InterruptedError)) and not leased
+            admission_denied |= (not dispatched and isinstance(error,GatewayError)
+                and error.code in ('insufficient_headroom','memory_unknown','memory_registry_busy'))
+            # No work was dispatched if the host lease was denied. Keep the
+            # existing idle worker and its state available for the next request.
+            if not admission_denied:
+                try:
+                    self._stop_worker()
+                except (OSError, subprocess.SubprocessError):
+                    unresolved = True
             if isinstance(error, ComputeBusy):
                 error = TaskError('compute_busy', str(error), 'Wait for the current host model operation to finish, then start a new job.')
             if unresolved:
                 error = TaskError('task_stop_unconfirmed', 'The owned model worker has not stopped safely.', 'Inspect the worker and retry the owned endpoint stop; its identity is retained.')
             with self.condition:
-                self.model_state = 'failed' if unresolved else 'unloaded'
+                if not admission_denied:
+                    self.model_state = 'failed' if unresolved else 'unloaded'
                 self.last_error = str(error)
                 self._persist()
             cancelled = isinstance(error, InterruptedError) or self.store.get(identifier)['cancel_requested']

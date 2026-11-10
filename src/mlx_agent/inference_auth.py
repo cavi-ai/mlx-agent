@@ -49,7 +49,7 @@ def authorized_headers(headers, digest):
 
 def runtime_fingerprint():
     digest = hashlib.sha256()
-    for name in ('inference_auth.py', 'protected_worker.py'):
+    for name in ('inference_auth.py', 'protected_worker.py', 'owned_worker.py'):
         digest.update(Path(__file__).with_name(name).read_bytes())
     return digest.hexdigest()
 

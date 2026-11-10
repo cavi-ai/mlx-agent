@@ -270,14 +270,16 @@ and reads other experts from disk. Workers disable separate conversation parking
 GPU keepalive and array wiring. A budget is an allocation estimate, not a hard process-RAM
 limit. OS headroom remains a separate admission and pressure guard.
 
-### Saved Strata settings
+### Saved serving settings
 
 Save named settings for shared work or dedicated inference. Profiles
-contain memory, headroom, context, decoding and idle settings; choose the model
-and endpoint when starting. Settings stay under the selected receipts directory.
+contain headroom, residency and execution-wait settings; choose the model
+and endpoint when starting. Strata profiles can also include a model budget,
+context and decoding settings. Settings stay under the selected receipts directory.
 
 ```bash
 python3 scripts/mlx-agent serve profile save shared --memory-budget-gb 24 --min-headroom-gb 24 --strata-decoding lookup --json
+python3 scripts/mlx-agent serve profile save working --min-headroom-gb 24 --idle-timeout 600 --execution-wait 30 --json
 python3 scripts/mlx-agent serve profile list --json
 python3 scripts/mlx-agent serve start --path /absolute/strata/profile --runtime strata --jit --profile shared --json
 ```
@@ -361,8 +363,9 @@ space returns HTTP 503 `insufficient_headroom`. The endpoint remains reachable.
 Status includes policy, the dated estimate in `memory_check`, and
 `load_blocked_reason`.
 
-The check does not reserve memory across endpoints. Other applications,
-concurrent cold loads, and later context growth can change usage. See
+Endpoints coordinate pending loads and configured workspace allowances through
+a shared memory registry. Other applications and growth beyond the configured
+estimates can still change usage. See
 [Troubleshooting](../guides/troubleshooting.md).
 
 ## Adapters and launchd
@@ -458,11 +461,29 @@ python3 scripts/mlx-agent serve start --path /absolute/local/model --runtime aut
 Confirm with the same arguments and the returned preview hash. Use
 `--keep-loaded --no-release-after-request` to retain the loaded model between
 jobs instead. The default for typed endpoints releases weights after each job.
+By default, a job that cannot acquire host compute fails with `compute_busy`;
+any retained idle model stays loaded for retry. Set `--execution-wait 30` to
+wait up to 30 seconds instead. Cancelling a waiting job preserves its idle model.
 `serve policy` can change either mode on an owned endpoint. Manual `serve unload`
 releases idle weights without closing its port; active jobs must finish or be
 cancelled first. Status reports residency, worker PID, active jobs and memory policy.
 Headroom admission and optional idle/pressure handling use the same controls as
 chat JIT endpoints. Text KV estimates and Strata budgets apply to their own runtimes.
+
+JIT and typed task endpoints coordinate estimated memory admission on the host.
+Pending loads and task workspace share the largest headroom reserve configured
+by their registered endpoints. Allocated resident weights are already reflected
+in OS headroom and are not deducted again. Coding workers retain their runtime
+and configured KV/expert-cache growth allowances while loaded; task workspace
+is released after job completion.
+These admission estimates are not OS-enforced process memory limits.
+
+Status includes `memory_reservation` with the endpoint allocation and a shared
+registry snapshot from its latest admission or completion. Typed workers also
+report timestamped, versioned `worker_memory` load and
+cache-hit counts, load time, and MLX active, cache and peak bytes. Unavailable
+allocator measurements are `null`. Cold coding allocations remain reserved
+until inference output is observed; HTTP readiness alone does not release them.
 
 Submit `POST /v1/tasks` with `{"kind":"...","parameters":{...}}`, using a kind
 advertised by that endpoint and the parameters in the [task contract](tasks.md).
@@ -480,3 +501,78 @@ interruption is recorded as interrupted when its job is next inspected.
 Typed endpoint history lives in `.mlx-agent-receipts/tasks/PORT` under the chosen
 `--receipts-dir`. CLI inspection uses that exact path as `task --state-dir`.
 These endpoints do not implement chat completions, Messages or Responses.
+
+
+### Shared execution admission
+
+Resident coding, vision and typed-model endpoints share host execution ownership
+with other guarded model operations. Idle endpoints retain their weights without
+holding execution ownership. Requests to one text backend can use its native
+batching; another model waits or receives HTTP 503 `compute_busy`.
+
+`--execution-wait` accepts 0–3600 seconds and defaults to 0. It is available on
+`serve start`, `serve policy` and saved profiles. Waiting requests count toward
+the endpoint request limit. Disconnecting while waiting cancels admission before
+loading. A disconnected active request retains ownership while its upstream reply
+drains; a reply that cannot drain within 30 seconds stops the owned backend before
+releasing execution. Automatic idle and pressure unloads defer while another
+model owns execution. This is bounded waiting, without FIFO ordering or preemption.
+
+Common profiles work with coding, vision, classification and generation endpoints.
+Profiles containing a Strata budget, context or decoding settings require Strata.
+Explicit launch flags override saved values. For retained typed models, include
+`--keep-loaded --no-release-after-request --no-unload-under-pressure` when saving
+the profile. Status reports active and waiting text requests in `execution`.
+
+
+### Allocator cache controls
+
+Resident task workers support a cap on free MLX allocator buffers and automatic
+reclamation while retaining loaded weights. These settings cover supported task
+backends, including classification, audio and 3D generation. They are separate
+from model, expert, KV and denoiser caches; they do not impose a process RAM limit.
+
+| Policy field | Values | Behavior |
+| --- | --- | --- |
+| `allocator_cache_limit_mib` | `null` or integer 0–1048576 | Cap free allocator buffers in MiB; 0 disables caching; null restores the worker's original limit. |
+| `cache_reclaim` | `off`, `idle`, `pressure` | Keep the allocator cache, clear it after completed work, or clear it while idle below the headroom reserve. Default: off. |
+
+Both settings are optional. Pressure reclamation requires
+`minimum_headroom_gb` and works with `keep_loaded`: it clears free buffers while
+preserving active model tensors. A smaller cache can require more allocations
+on the next request. Existing behavior is preserved when these settings are absent.
+
+```bash
+python3 scripts/mlx-agent serve start --path /absolute/task/model --runtime tasks --keep-loaded --no-release-after-request --allocator-cache-limit-mib 1024 --cache-reclaim idle --json
+python3 scripts/mlx-agent serve policy --port 8085 --expected-pid <gateway-pid> --keep-loaded --no-release-after-request --no-unload-under-pressure --min-headroom-gb 24 --cache-reclaim pressure --json
+python3 scripts/mlx-agent serve reclaim-cache --port 8085 --expected-pid <gateway-pid> --json
+```
+
+Use `--clear-allocator-cache-limit` to restore the worker's original limit.
+The cache flags also work with `serve profile save`; explicit launch flags override
+saved values. A profile that retains weights should use `--keep-loaded
+--no-release-after-request --no-unload-under-pressure`.
+
+Workbench and other clients can inspect `allocator_cache` in endpoint/service
+status. `supported`, `policy_fields`, `reclaim_modes` and `control_path` describe
+the interface. `available` is null until the worker reports runtime capability.
+`configured_policy`, `applied_policy` and `pending` distinguish saved settings
+from settings applied by the worker. `active` identifies a control operation;
+`last_reclaim` reports the reason, cached bytes before/after, released cached bytes
+and timestamp. Allocator measurements do not guarantee equivalent OS headroom.
+
+Apply settings through the protected `POST /_mlx/policy`, for example:
+
+```json
+{"allocator_cache_limit_mib":1024,"cache_reclaim":"pressure","minimum_headroom_gb":24}
+```
+
+`POST /_mlx/cache` with an empty JSON object reclaims an idle loaded worker's
+free buffers immediately. It requires the endpoint control token. Active jobs
+return `model_busy`; host contention returns `compute_busy`. Automatic maintenance
+defers during contention. Saved changes during a job apply at its next safe
+boundary. Reclamation never starts an unloaded model.
+
+Chat runtimes advertise `supported: false` for these controls and reject active
+allocator settings. Their existing context and Strata expert-memory controls
+remain available through their own policies.

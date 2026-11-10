@@ -67,7 +67,7 @@ class JITServingTests(unittest.TestCase):
     def setUp(self):
         self.temp = TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.model = self.root / 'local model'
         self.model.mkdir()
         (self.model / 'config.json').write_text('{}')
@@ -76,6 +76,8 @@ class JITServingTests(unittest.TestCase):
         self.worker.write_text(WORKER)
         self.trace = self.root / 'starts.txt'
         self.config = {
+            'memory_state_dir': str(self.root / 'memory'),
+            'compute_state_dir': str(self.root / 'compute'),
             'model': str(self.model), 'local_path': str(self.model),
             'fingerprint': model_fingerprint(self.model), 'control_token': 'test-control-token',
             'worker_argv': [sys.executable, str(self.worker), '--model', str(self.model), '--port', '{worker_port}', '--trace', str(self.trace)],
@@ -98,6 +100,14 @@ class JITServingTests(unittest.TestCase):
             return response.status, json.loads(response.read())
         finally:
             connection.close()
+
+    def test_chat_runtime_advertises_allocator_controls_as_unavailable(self):
+        control = {'Authorization': 'Bearer test-control-token'}
+        code, value = self.request('POST', '/_mlx/policy', {'allocator_cache_limit_mib': 4}, headers=control)
+        self.assertEqual(code, 400, value)
+        self.assertEqual(value['error']['code'], 'cache_control_unavailable')
+        self.assertFalse(self.server.controller.status()['allocator_cache']['supported'])
+        self.assertFalse(self.trace.exists())
 
     def test_inference_key_is_checked_before_loading_and_control_stays_separate(self):
         import hashlib
@@ -155,6 +165,10 @@ class JITServingTests(unittest.TestCase):
                           receipts_dir=str(self.root), api_key_sha256=digest)
         processes = []
         def spawn(argv, log_path):
+            config_path = Path(argv[argv.index('--config') + 1])
+            fixture_config = json.loads(config_path.read_text())
+            fixture_config.update(compute_state_dir=str(self.root / 'compute'), memory_state_dir=str(self.root / 'memory'))
+            config_path.write_text(json.dumps(fixture_config))
             with open(log_path, 'ab') as output:
                 process = subprocess.Popen(argv, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
             processes.append(process)
@@ -445,6 +459,60 @@ class JITServingTests(unittest.TestCase):
         self.server.controller.memory_probe = lambda: 8_000_000_000
         self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
 
+    def test_distinct_endpoints_share_pending_memory_admission(self):
+        from mlx_agent.jit_serve import ModelWorker, GatewayError
+        first=self.server.controller
+        second=ModelWorker(self.config)
+        self.addCleanup(second.close)
+        first.memory_probe=second.memory_probe=lambda:3_000_000_000
+        first._check_memory()
+        with self.assertRaises(GatewayError) as caught:second._check_memory()
+        self.assertEqual(caught.exception.code,'insufficient_headroom')
+        self.assertGreater(second.memory_check['other_reserved_bytes'],0)
+        first._release_memory()
+        second._check_memory()
+
+    def test_headroom_changed_during_cold_probe_is_registered(self):
+        controller=self.server.controller
+        def probe():
+            controller.configure({'minimum_headroom_gb':2})
+            return 8_000_000_000
+        controller.memory_probe=probe
+        controller._check_memory()
+        self.assertEqual(controller.memory_registry.snapshot()['headroom_bytes'],2_000_000_000)
+
+    def test_coding_reservation_waits_for_output_and_is_released_on_unload(self):
+        controller=self.server.controller
+        controller.acquire()
+        controller.release()
+        pending=controller.memory_registry.snapshot()['reserved_bytes']
+        self.assertGreater(pending,controller.workspace_bytes)
+        self.assertEqual(self.request('POST','/v1/chat/completions',{'messages':[]})[0],200)
+        self.assertEqual(controller.memory_registry.snapshot()['reserved_bytes'],controller.workspace_bytes)
+        controller.unload()
+        self.assertEqual(controller.memory_registry.snapshot()['entries'],0)
+
+    def test_configured_kv_growth_stays_reserved_after_first_output(self):
+        controller=self.server.controller
+        controller.configure({'minimum_headroom_gb':0,'context_tokens':2048})
+        controller.memory_probe=lambda:8_000_000_000
+        with mock.patch('mlx_agent.jit_serve._kv_cache_bytes',return_value=500_000_000):
+            self.assertEqual(self.request('POST','/v1/chat/completions',{'messages':[]})[0],200)
+        self.assertEqual(controller.memory_registry.snapshot()['reserved_bytes'],2_000_000_000)
+
+    def test_settlement_contention_retains_coding_reservation_until_retry(self):
+        from mlx_agent.residency import MemoryAdmissionError
+        controller=self.server.controller
+        with mock.patch.object(controller.memory_registry,'settle',side_effect=MemoryAdmissionError('memory_registry_busy','busy')):
+            self.assertEqual(self.request('POST','/v1/chat/completions',{'messages':[]})[0],200)
+        process=controller.process
+        self.assertGreater(controller.memory_registry.snapshot()['reserved_bytes'],controller.workspace_bytes)
+        self.assertIn('reservation',controller.last_error)
+        self.assertEqual(self.request('POST','/v1/chat/completions',{'messages':[]})[0],200)
+        self.assertIs(controller.process,process)
+        self.assertEqual(controller.memory_registry.snapshot()['reserved_bytes'],controller.workspace_bytes)
+        self.assertIsNone(controller.last_error)
+
     def test_policy_update_requires_auth_and_rejects_invalid_settings(self):
         self.assertEqual(self.request('POST', '/_mlx/policy', {'keep_loaded': True})[0], 403)
         self.assertEqual(self.configure({'idle_timeout_seconds': 10})[0], 200)
@@ -500,8 +568,8 @@ class JITServingTests(unittest.TestCase):
         finally:
             connection.close()
 
-    def test_client_disconnect_releases_lease_before_worker_replies(self):
-        self.config['worker_argv'] += ['--reply-delay', '30']
+    def test_client_disconnect_retains_execution_until_worker_replies(self):
+        self.config['worker_argv'] += ['--reply-delay', '1.5']
         control = {'Authorization': 'Bearer test-control-token'}
         connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=10)
         connection.request('POST', '/v1/chat/completions', json.dumps({'messages': []}))
@@ -512,11 +580,114 @@ class JITServingTests(unittest.TestCase):
             time.sleep(0.1)
         self.assertEqual(status['active_requests'], 1)
         connection.close()
+        time.sleep(.2)
+        self.assertEqual(self.server.controller.active_requests, 1)
+        from mlx_agent.compute import ComputeLease, ComputeBusy
+        with self.assertRaises(ComputeBusy):
+            with ComputeLease('other-model', self.root / 'compute'):
+                pass
         for _ in range(50):
             if self.request('GET', '/_mlx/status', headers=control)[1]['active_requests'] == 0:
                 break
             time.sleep(0.1)
         self.assertEqual(self.request('GET', '/_mlx/status', headers=control)[1]['active_requests'], 0)
+
+    def test_busy_host_does_not_load_worker_and_retry_reuses_it(self):
+        from mlx_agent.compute import ComputeLease
+        body = {'messages': []}
+        with ComputeLease('other-model', self.root / 'compute'):
+            status, result = self.request('POST', '/v1/chat/completions', body)
+            self.assertEqual(status, 503)
+            self.assertEqual(result['error']['code'], 'compute_busy')
+            self.assertFalse(self.trace.exists())
+        self.assertEqual(self.request('POST', '/v1/chat/completions', body)[0], 200)
+        pid = self.server.controller.process.pid
+        with ComputeLease('other-model', self.root / 'compute'):
+            self.assertEqual(self.request('POST', '/v1/chat/completions', body)[0], 503)
+        self.assertEqual(self.request('POST', '/v1/chat/completions', body)[0], 200)
+        self.assertEqual(self.server.controller.process.pid, pid)
+        self.assertEqual(self.trace.read_text().splitlines(), ['start'])
+
+    def test_waiting_model_starts_after_execution_and_same_backend_batches(self):
+        from mlx_agent.jit_serve import ModelWorker
+        from mlx_agent.compute import ComputeLease, ComputeBusy
+        self.config['worker_argv'] += ['--reply-delay', '.6']
+        second_trace = self.root / 'second.txt'
+        second_config = dict(self.config, worker_argv=[sys.executable, str(self.worker), '--model', str(self.model),
+            '--port', '{worker_port}', '--trace', str(second_trace)], memory_policy={'execution_wait_seconds': 3})
+        second = ModelWorker(second_config)
+        self.addCleanup(second.close)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+            first = pool.submit(self.request, 'POST', '/v1/chat/completions', {'messages': []})
+            deadline = time.monotonic() + 5
+            while self.server.controller.execution.users != 1 and time.monotonic() < deadline:
+                time.sleep(.01)
+            batch = pool.submit(self.request, 'POST', '/v1/chat/completions', {'messages': []})
+            waiting = pool.submit(second.acquire)
+            deadline = time.monotonic() + .4
+            while self.server.controller.execution.users != 2 and time.monotonic() < deadline:
+                time.sleep(.01)
+            self.assertEqual(self.server.controller.execution.users, 2)
+            self.assertFalse(second_trace.exists())
+            with self.assertRaises(ComputeBusy):
+                with ComputeLease('third-model', self.root / 'compute'):
+                    pass
+            self.assertEqual(first.result()[0], 200)
+            self.assertEqual(batch.result()[0], 200)
+            self.assertIsInstance(waiting.result(), int)
+        second.release()
+        self.assertEqual(self.trace.read_text().splitlines(), ['start'])
+        self.assertEqual(second_trace.read_text().splitlines(), ['start'])
+        self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
+        self.assertEqual(self.trace.read_text().splitlines(), ['start'])
+
+    def test_disconnected_waiter_starts_no_worker(self):
+        from mlx_agent.compute import ComputeLease
+        self.server.controller.configure({'execution_wait_seconds': 2})
+        with ComputeLease('other-model', self.root / 'compute'):
+            connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=3)
+            connection.request('POST', '/v1/chat/completions', json.dumps({'messages': []}))
+            deadline = time.monotonic() + 1
+            while not self.server.controller.execution.waiting and time.monotonic() < deadline:
+                time.sleep(.01)
+            self.assertEqual(self.server.controller.execution.waiting, 1)
+            connection.close()
+            deadline = time.monotonic() + 1
+            while self.server.controller.active_requests and time.monotonic() < deadline:
+                time.sleep(.01)
+        self.assertEqual(self.server.controller.active_requests, 0)
+        self.assertFalse(self.trace.exists())
+
+    def test_failed_disconnect_drain_stops_backend_before_compute_release(self):
+        from mlx_agent.compute import ComputeLease
+        self.config['worker_argv'] += ['--reply-delay', '10']
+        connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=3)
+        upstreams = []
+        connect = self.server.controller.connection
+        def tracked_connection(*args, **kwargs):
+            upstream = connect(*args, **kwargs)
+            upstream.getresponse = mock.Mock(wraps=upstream.getresponse)
+            upstreams.append(upstream)
+            return upstream
+        with mock.patch('mlx_agent.jit_serve.DRAIN_TIMEOUT_SECONDS', .1), \
+                mock.patch.object(self.server.controller, 'connection', side_effect=tracked_connection):
+            connection.request('POST', '/v1/chat/completions', json.dumps({'messages': []}))
+            deadline = time.monotonic() + 3
+            while self.server.controller.model_state != 'loaded' and time.monotonic() < deadline:
+                time.sleep(.01)
+            process = self.server.controller.process
+            self.assertIsNotNone(process)
+            connection.close()
+            deadline = time.monotonic() + 3
+            while self.server.controller.active_requests and time.monotonic() < deadline:
+                time.sleep(.01)
+        self.assertEqual(self.server.controller.active_requests, 0)
+        self.assertIsNotNone(process.poll())
+        self.assertIsNone(self.server.controller.process)
+        self.assertEqual(len(upstreams), 1)
+        self.assertEqual(upstreams[0].getresponse.call_count, 1)
+        with ComputeLease('other-model', self.root / 'compute'):
+            pass
 
     def test_messages_stream_forwards_worker_keepalive_as_ping(self):
         self.config['worker_argv'] += ['--keepalive']
@@ -691,6 +862,10 @@ class JITServingTests(unittest.TestCase):
         plan = plan_start(None, 'mlx_lm', recipes, path=str(self.model), port=port, jit=True, receipts_dir=str(self.root))
         processes = []
         def spawn(argv, log_path):
+            config_path = Path(argv[argv.index('--config') + 1])
+            fixture_config = json.loads(config_path.read_text())
+            fixture_config.update(compute_state_dir=str(self.root / 'compute'), memory_state_dir=str(self.root / 'memory'))
+            config_path.write_text(json.dumps(fixture_config))
             process = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
             processes.append(process)
             return process.pid
@@ -725,6 +900,10 @@ class JITServingTests(unittest.TestCase):
         code, result = bench()
         self.assertEqual((code, result['error']['code']), (2, 'model_loaded'))
         self.assertEqual(self.trace.read_text().splitlines(), ['start'])
+        deadline = time.monotonic() + 2
+        while status_serve(str(self.root))[0]['active_requests'] and time.monotonic() < deadline:
+            time.sleep(.01)
+        self.assertEqual(status_serve(str(self.root))[0]['active_requests'], 0)
         self.assertEqual(unload_serve(port, str(self.root))['status'], 'unloaded')
         self.assertIsNone(status_serve(str(self.root))[0]['worker_port'])
         self.assertEqual(bench()[0], 0)
@@ -741,6 +920,10 @@ class JITServingTests(unittest.TestCase):
         plan = plan_start(None, 'mlx_lm', recipes, path=str(self.model), port=port, jit=True, receipts_dir=str(self.root))
         processes = []
         def spawn(argv, log_path):
+            config_path = Path(argv[argv.index('--config') + 1])
+            fixture_config = json.loads(config_path.read_text())
+            fixture_config.update(compute_state_dir=str(self.root / 'compute'), memory_state_dir=str(self.root / 'memory'))
+            config_path.write_text(json.dumps(fixture_config))
             process = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
             processes.append(process)
             return process.pid
@@ -764,6 +947,11 @@ class JITServingTests(unittest.TestCase):
             self.assertEqual(configure_serve_memory(port, with_context, str(self.root), expected_pid=pid)['memory_policy'], with_context)
             self.assertEqual(configure_serve_memory(port, policy, str(self.root), expected_pid=pid)['memory_policy'], policy)
             self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
+            from mlx_agent.serve import _owned_jit_worker, receipts_root
+            worker_pid = status_serve(str(self.root))[0]['worker_pid']
+            self.assertEqual(_owned_jit_worker(outcome['receipt'], receipts_root(str(self.root))), worker_pid)
+            with mock.patch('mlx_agent.serve._pid_start', return_value='reused-process'):
+                self.assertIsNone(_owned_jit_worker(outcome['receipt'], receipts_root(str(self.root))))
             self.assertEqual(unload_serve(port, str(self.root))['status'], 'unloaded')
             self.assertEqual(self.request('GET', '/v1/models')[0], 200)
         finally:

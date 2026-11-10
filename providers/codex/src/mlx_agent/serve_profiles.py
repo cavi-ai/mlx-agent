@@ -1,4 +1,4 @@
-"""Named local Strata settings; profiles contain no model paths or commands."""
+"""Named local serving settings; profiles contain no model paths or commands."""
 
 import json
 import os
@@ -7,28 +7,39 @@ import re
 import stat
 
 from .jit_serve import validate_memory_policy
+from .allocator_cache import FIELDS as CACHE_FIELDS
 from .serve import receipts_root
 from .strata_runtime import StrataError, _validate_context
 from .transactions import _atomic_in_directory, _target_locks, _walk_directory
 
-_FIELDS = {"memory_budget_gb", "min_headroom_gb", "strata_context_tokens", "strata_decoding",
-           "idle_timeout", "keep_loaded", "unload_under_pressure"}
+_COMMON = {"min_headroom_gb", "idle_timeout", "keep_loaded", "unload_under_pressure"}
+_STRATA = {"memory_budget_gb", "strata_context_tokens", "strata_decoding"}
+_FIELDS = _COMMON | _STRATA | CACHE_FIELDS | {"execution_wait_seconds", "release_after_request"}
 
 
 def _validate(settings):
-    if not isinstance(settings, dict) or set(settings) != _FIELDS:
-        raise ValueError("A serving profile requires only memory, headroom, context, decoding and idle settings.")
-    if settings["memory_budget_gb"] is None or settings["min_headroom_gb"] is None:
-        raise ValueError("Serving profiles require an explicit model budget and headroom reserve.")
-    validate_memory_policy({"model_memory_budget_gb": settings["memory_budget_gb"],
-        "minimum_headroom_gb": settings["min_headroom_gb"], "idle_timeout_seconds": settings["idle_timeout"],
-        "keep_loaded": settings["keep_loaded"], "unload_under_pressure": settings["unload_under_pressure"]})
-    try:
-        _validate_context(settings["strata_context_tokens"])
-    except StrataError as error:
-        raise ValueError(str(error)) from error
-    if settings["strata_decoding"] not in ("plain", "lookup", "mtp"):
-        raise ValueError("Profile decoding must be plain, lookup or mtp.")
+    if not isinstance(settings, dict) or not _COMMON <= set(settings) or set(settings) - _FIELDS:
+        raise ValueError("A serving profile requires memory, headroom and residency settings only.")
+    strata = bool(set(settings) & _STRATA)
+    if strata and not _STRATA <= set(settings):
+        raise ValueError("Strata profiles require a model budget, context and decoding settings.")
+    if settings["min_headroom_gb"] is None or (strata and settings["memory_budget_gb"] is None):
+        raise ValueError("Serving profiles require an explicit headroom reserve and any selected model budget.")
+    policy = {"minimum_headroom_gb": settings["min_headroom_gb"], "idle_timeout_seconds": settings["idle_timeout"],
+        "keep_loaded": settings["keep_loaded"], "unload_under_pressure": settings["unload_under_pressure"]}
+    if strata:
+        policy["model_memory_budget_gb"] = settings["memory_budget_gb"]
+    for key in ("execution_wait_seconds", "release_after_request", *CACHE_FIELDS):
+        if key in settings:
+            policy[key] = settings[key]
+    validate_memory_policy(policy)
+    if strata:
+        try:
+            _validate_context(settings["strata_context_tokens"])
+        except StrataError as error:
+            raise ValueError(str(error)) from error
+        if settings["strata_decoding"] not in ("plain", "lookup", "mtp"):
+            raise ValueError("Profile decoding must be plain, lookup or mtp.")
     return dict(settings)
 
 

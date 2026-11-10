@@ -449,6 +449,10 @@
       "sha256": "ea12b889604d11ada8e3749cc0413a7e25653ec6d5b45b9aa8f14ae2cc0864b2"
     },
     {
+      "path": "src/mlx_agent/allocator_cache.py",
+      "sha256": "f0a1f01119b7db966dcfae175f2e9160a7522672c51c1f830596f6e4c2619443"
+    },
+    {
       "path": "src/mlx_agent/atomicio.py",
       "sha256": "b6c69842355eb84f06964f98bb7da2773964c28893a0ecade73b6af63e72089a"
     },
@@ -486,7 +490,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "bdecdb76333020233137a061ed425e819ed60167e042db72c87c7021e1820db7"
+      "sha256": "8f9439b18a15de4559c2f1b14f7dc69cd72fa0b16e69e2ba36633cf7666fa4b5"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -530,7 +534,7 @@
     },
     {
       "path": "src/mlx_agent/compute.py",
-      "sha256": "65148ab0eaf4bb4a442e6eb34ded40fe3c145e811cb4a7f02381889fa6c9a8de"
+      "sha256": "1fa9e6a5f74230771b8b2e8b75cae64157bafcc9c5b0888b0d0cfd83422e234c"
     },
     {
       "path": "src/mlx_agent/contextfit.py",
@@ -626,7 +630,7 @@
     },
     {
       "path": "src/mlx_agent/inference_auth.py",
-      "sha256": "0195b76b75841964db844d3350e08460ce9d67a330f0580825e52434ec9878d1"
+      "sha256": "a50e6db8890497a2e399f510f3b4ee8538d62969f8aab1cb5a3a00671be7956c"
     },
     {
       "path": "src/mlx_agent/inference_runner.py",
@@ -654,7 +658,7 @@
     },
     {
       "path": "src/mlx_agent/jit_serve.py",
-      "sha256": "8a11ea9d238244d7fe95b670dc5eb47f9d1947b07b72a0ebcad9cdef702ba49c"
+      "sha256": "5ce71cddeab4ee67a0f3735dfb6958cd7fc3661b8b5cc7cc639869b0cd6fcd3d"
     },
     {
       "path": "src/mlx_agent/kokoro_runtime.py",
@@ -725,6 +729,10 @@
       "sha256": "59444f83dc52e07dd403a2ab7ebc34a513488e252939390098b3f5751083c788"
     },
     {
+      "path": "src/mlx_agent/owned_worker.py",
+      "sha256": "749a53d4054ae9bb89d8d7d12fa8b795a914f02f556eabf80c12163d36e5196c"
+    },
+    {
       "path": "src/mlx_agent/port_analysis.py",
       "sha256": "e350afa08bc784f80f48f5a1bd8139cbbbedf4e9fe061d237599b66d3de8acad"
     },
@@ -781,12 +789,16 @@
       "sha256": "55f6a6e1931b224384b58c4108f2fca447c82dd2689e7367153da590d7c9758a"
     },
     {
+      "path": "src/mlx_agent/residency.py",
+      "sha256": "b134f6614d308c43f649e4a9dc65cf6b15698555c78b6264272ca21ce4042b9f"
+    },
+    {
       "path": "src/mlx_agent/resident_runner.py",
-      "sha256": "7c45b34bdff1c3fc7116ed8be78e717cf03d61da945f2748c487e143a9f54a5f"
+      "sha256": "b81fba5b3ca7eb0fe57cf7659e44029f9612d361db0ae9f43fbad5dc67233316"
     },
     {
       "path": "src/mlx_agent/resident_worker.py",
-      "sha256": "72c5d226d7940b345c858ba50111567a16800cb6028ad9f5273322a8a6de75c2"
+      "sha256": "8f6ce44370c692d85777de8e9fd64e661b1b901992181490b910927f4e268fc1"
     },
     {
       "path": "src/mlx_agent/resources/adapter-runtime.json",
@@ -1110,7 +1122,7 @@
     },
     {
       "path": "src/mlx_agent/runner_model_cache.py",
-      "sha256": "8acc35c35007f96eabb59c112cd650a4d6960c7a176f11f61df4ec2137e52ffe"
+      "sha256": "8797212e99c5e052dd9966648f768495b2ac35b1f769504915b27cb29bd6b913"
     },
     {
       "path": "src/mlx_agent/runtime_preference.py",
@@ -1122,11 +1134,11 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "da6eb555aa12de4d2f6ebf03ffc08f0de284dd24369747a0b12c4121995ae07c"
+      "sha256": "513f4fce135c8e95951947f6e2f48e519e9d10c3888bc0a5d36e408194da5fd9"
     },
     {
       "path": "src/mlx_agent/serve_profiles.py",
-      "sha256": "e0263035983cfbc1657156fed8bbd75e5ac1005bdc4e5f5a1759c2489c52d2ef"
+      "sha256": "9adb888b636ee7a5d3a648bfc8bf4a922d0224d49e33f31dfb3643819c18557e"
     },
     {
       "path": "src/mlx_agent/service_registry.py",
@@ -1150,7 +1162,7 @@
     },
     {
       "path": "src/mlx_agent/strata_runtime.py",
-      "sha256": "370a9105aadd6726f2dc557825c9723db25c507b067ab695335a0322c848010d"
+      "sha256": "f135e2f2e3c5864383c69417703f7e87c64cc6b8728ffd3229cc62a235db6ad1"
     },
     {
       "path": "src/mlx_agent/study_recipes.py",
@@ -1186,11 +1198,11 @@
     },
     {
       "path": "src/mlx_agent/task_serve.py",
-      "sha256": "cdc15ae900203ce87b18b39af732dc4afdd70ee1e2b0f175ad714e96159208c4"
+      "sha256": "b21c3b7b31c2904c33b08ed95e18cfc979d34f1945d8ec6332b2e47a63038abe"
     },
     {
       "path": "src/mlx_agent/task_serving.py",
-      "sha256": "5255c4c42b8505c7567a57c13c4ad4e9200979444d9df2bfde64795b0110a8dd"
+      "sha256": "6cea4bbee0c6c4627ef90c819f15ac3c66f50f7d94880e77953428407f0fe29a"
     },
     {
       "path": "src/mlx_agent/task_store.py",
@@ -1255,6 +1267,10 @@
     {
       "path": "src/mlx_agent/wiring.py",
       "sha256": "87ec5a957b420ccc37f8f48e31f18c8b221cdb589cf5e5378656a488946f6bc5"
+    },
+    {
+      "path": "src/mlx_agent/worker_telemetry.py",
+      "sha256": "ca48142efb7c33bbb4414ea9fdd1155faa811456502157e91dd5fce7d45b0446"
     }
   ],
   "schema_version": 2,

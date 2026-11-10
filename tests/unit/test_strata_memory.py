@@ -79,9 +79,22 @@ class StrataMemoryTests(unittest.TestCase):
 
     def worker(self):
         return ModelWorker({'local_path': str(self.root), 'runtime': 'strata',
+                            'compute_state_dir': str(self.root.resolve() / '.compute'),
+            'memory_state_dir': str(self.root / '.memory'),
             'strata_context_tokens': 8192, 'strata_speculation': False,
             'worker_argv': ['python', 'strata_runtime.py', '--port', '{worker_port}'],
             'memory_policy': {'minimum_headroom_gb': 2}})
+
+    def test_context_and_expert_growth_remain_reserved_after_output(self):
+        worker=self.worker()
+        self.addCleanup(worker.close)
+        worker.config['strata_expert_memory_gb']=1
+        worker.memory_probe=lambda:1<<40
+        worker._check_memory()
+        worker._materialized_memory()
+        _,experts=strata._memory_parts(self.model,8192,False)
+        expected=5_000_000_000+8192*30000+min(experts,1_000_000_000)
+        self.assertEqual(worker.memory_registry.snapshot()['reserved_bytes'],expected)
 
     def test_budget_change_preserves_active_requests_then_reloads_when_idle(self):
         worker = self.worker()
@@ -198,11 +211,11 @@ class StrataMemoryTests(unittest.TestCase):
         worker.model_state = 'failed'
         with patch('mlx_agent.process_tree.remaining', return_value=worker.strata_children), \
                 patch('mlx_agent.process_tree.terminate', side_effect=OSError('engine still live')), \
-                patch('mlx_agent.jit_serve.subprocess.Popen') as spawn:
+                patch('mlx_agent.jit_serve.subprocess.Popen', wraps=subprocess.Popen) as spawn:
             with self.assertRaises(GatewayError) as caught: worker.acquire()
         self.assertEqual(caught.exception.code, 'model_unload_failed')
         self.assertEqual(worker.model_state, 'failed')
-        spawn.assert_not_called()
+        self.assertTrue(all(call.args[0][0] == '/bin/ps' for call in spawn.call_args_list))
 
     def test_child_cleanup_never_signals_a_reused_pid(self):
         from mlx_agent import process_tree
@@ -224,6 +237,7 @@ class StrataMemoryTests(unittest.TestCase):
         config = self.worker().config
         from mlx_agent.jit_serve import model_fingerprint
         config.update(fingerprint=model_fingerprint(self.root), worker_readiness_seconds=3,
+                      compute_state_dir=str(self.root.resolve() / ".compute"),
                       worker_argv=[sys.executable,'-c',front,engine,str(ready),str(pidfile)])
         program = "\n".join([
             'import sys,json,subprocess,os',
@@ -231,7 +245,7 @@ class StrataMemoryTests(unittest.TestCase):
             'w=ModelWorker(json.loads(sys.argv[1]))',
             'w.owned_session=os.getpid()',
             'w.memory_probe=lambda:1<<40',
-            'try: w._start()',
+            'try: w.acquire()',
             "except GatewayError as error: assert error.code=='model_load_failed', error.code",
             "pid=open(sys.argv[2]).read().strip()",
             "state=subprocess.run(['/bin/ps','-p',pid,'-o','stat='],capture_output=True,text=True).stdout.strip()",

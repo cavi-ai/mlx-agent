@@ -1067,6 +1067,14 @@ def _owned_jit_worker(receipt, root):
             if _pid_alive(pid) and os.getpgid(pid) == pid and state.get("worker_started_at") == _pid_start(pid) and _argv_matches(expected, _pid_command(pid)):
                 return pid
             return None
+        isolated = (len(argv) > 7 and argv[1:4] ==
+                    ["-I", "-B", str(Path(__file__).with_name("owned_worker.py").resolve())])
+        if isolated:
+            if (_pid_alive(pid) and os.getpgid(pid) == pid
+                    and state.get("worker_started_at") == _pid_start(pid)
+                    and _argv_matches(expected, _pid_command(pid))):
+                return pid
+            return None
         if _pid_alive(pid) and os.getpgid(pid) == receipt["pid"] and _argv_matches(expected, _pid_command(pid)):
             return pid
     except (OSError, ValueError, TypeError, KeyError, ServeError):

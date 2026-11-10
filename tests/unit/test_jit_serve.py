@@ -882,6 +882,10 @@ class JITServingTests(unittest.TestCase):
         code, result = bench()
         self.assertEqual((code, result['error']['code']), (2, 'model_loaded'))
         self.assertEqual(self.trace.read_text().splitlines(), ['start'])
+        deadline = time.monotonic() + 2
+        while status_serve(str(self.root))[0]['active_requests'] and time.monotonic() < deadline:
+            time.sleep(.01)
+        self.assertEqual(status_serve(str(self.root))[0]['active_requests'], 0)
         self.assertEqual(unload_serve(port, str(self.root))['status'], 'unloaded')
         self.assertIsNone(status_serve(str(self.root))[0]['worker_port'])
         self.assertEqual(bench()[0], 0)
@@ -925,6 +929,11 @@ class JITServingTests(unittest.TestCase):
             self.assertEqual(configure_serve_memory(port, with_context, str(self.root), expected_pid=pid)['memory_policy'], with_context)
             self.assertEqual(configure_serve_memory(port, policy, str(self.root), expected_pid=pid)['memory_policy'], policy)
             self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
+            from mlx_agent.serve import _owned_jit_worker, receipts_root
+            worker_pid = status_serve(str(self.root))[0]['worker_pid']
+            self.assertEqual(_owned_jit_worker(outcome['receipt'], receipts_root(str(self.root))), worker_pid)
+            with mock.patch('mlx_agent.serve._pid_start', return_value='reused-process'):
+                self.assertIsNone(_owned_jit_worker(outcome['receipt'], receipts_root(str(self.root))))
             self.assertEqual(unload_serve(port, str(self.root))['status'], 'unloaded')
             self.assertEqual(self.request('GET', '/v1/models')[0], 200)
         finally:

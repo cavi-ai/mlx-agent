@@ -196,7 +196,7 @@ class ModelWorker:
                 raise OSError("Refusing a symbolic-link worker state file.")
             state = {"gateway_pid": os.getpid(), "worker_pid": self.process.pid if self.process else None,
                      "worker_argv": self.worker_argv, "model_state": self.model_state}
-            if self.config.get("runtime") == "tasks" and self.process:
+            if self.process:
                 from mlx_agent.serve import _pid_start
                 state["worker_started_at"] = _pid_start(self.process.pid)
             _atomic_in_directory(path.parent, path.name, json.dumps(state).encode(), 0o600)

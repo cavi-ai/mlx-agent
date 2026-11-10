@@ -211,11 +211,11 @@ class StrataMemoryTests(unittest.TestCase):
         worker.model_state = 'failed'
         with patch('mlx_agent.process_tree.remaining', return_value=worker.strata_children), \
                 patch('mlx_agent.process_tree.terminate', side_effect=OSError('engine still live')), \
-                patch('mlx_agent.jit_serve.subprocess.Popen') as spawn:
+                patch('mlx_agent.jit_serve.subprocess.Popen', wraps=subprocess.Popen) as spawn:
             with self.assertRaises(GatewayError) as caught: worker.acquire()
         self.assertEqual(caught.exception.code, 'model_unload_failed')
         self.assertEqual(worker.model_state, 'failed')
-        spawn.assert_not_called()
+        self.assertTrue(all(call.args[0][0] == '/bin/ps' for call in spawn.call_args_list))
 
     def test_child_cleanup_never_signals_a_reused_pid(self):
         from mlx_agent import process_tree

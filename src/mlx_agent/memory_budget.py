@@ -113,7 +113,8 @@ def account(policy, entries, rows, owner, replacement=None):
             resident = row.get('rss')
             physical = row.get('physical_bytes', resident)
             if any(type(value) is not int or value < 0 for value in (resident, physical)):
-                raise MemoryAdmissionError('memory_unknown', 'Agent process memory is unavailable.')
+                raise MemoryAdmissionError('memory_unknown',
+                    'Agent process memory is unavailable for PID {}.'.format(pid))
             # RSS misses Metal allocations; footprint also includes compressed memory.
             values.append(max(resident, physical))
         return sum(values)

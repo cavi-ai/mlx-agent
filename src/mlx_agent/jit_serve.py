@@ -846,8 +846,10 @@ class ModelWorker:
         try:
             snapshot = self.memory_registry.snapshot()
             budget = snapshot.get('agent_budget')
-        except MemoryAdmissionError:
-            budget = {'status': 'unavailable'}
+        except MemoryAdmissionError as error:
+            if error.code == 'memory_registry_busy':
+                return  # Admission is serialized; contention is not a measured breach.
+            budget = {'status': 'unavailable', 'error': str(error)}
         if budget is None:
             return
         threshold = budget.get('limit_bytes', 0) - budget.get('reserve_bytes', 0) // 2
@@ -860,7 +862,8 @@ class ModelWorker:
                 self.model_state = 'unloading'
             self.close()
             with self.condition:
-                self.last_error = 'Agent memory guard stopped the owned model worker.'
+                self.last_error = ('Agent memory guard stopped the owned model worker.'
+                    + (' ' + budget['error'] if budget.get('error') else ''))
                 self.model_state = 'failed'
                 self._persist()
 

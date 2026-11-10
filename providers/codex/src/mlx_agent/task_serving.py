@@ -400,12 +400,15 @@ class TaskModelWorker(ModelWorker):
                 error = TaskError('compute_busy', str(error), 'Wait for the current host model operation to finish, then start a new job.')
             if unresolved:
                 error = TaskError('task_stop_unconfirmed', 'The owned model worker has not stopped safely.', 'Inspect the worker and retry the owned endpoint stop; its identity is retained.')
+            cancelled = self.store.get(identifier)['cancel_requested']
+            if isinstance(error, InterruptedError) and not cancelled:
+                error = TaskError('endpoint_stopped', 'The model endpoint stopped during inference.',
+                    'Inspect its status, then restart the endpoint before starting a new job.')
             with self.condition:
                 if not admission_denied:
                     self.model_state = 'failed' if unresolved else 'unloaded'
                 self.last_error = str(error)
                 self._persist()
-            cancelled = isinstance(error, InterruptedError) or self.store.get(identifier)['cancel_requested']
             _finish(self.store, identifier, 'cancelled' if cancelled and not unresolved else 'failed',
                     error=None if cancelled and not unresolved else _error(error), execution_unresolved=unresolved)
         finally:

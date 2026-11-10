@@ -186,6 +186,78 @@ class TripoSGNativeTests(unittest.TestCase):
         np.testing.assert_array_equal(query(points), points.astype('float32').sum(axis=-1))
         self.assertEqual(query(points[:0]).shape, (0,))
 
+    def test_default_point_batches_stay_below_the_large_quantized_projection_boundary(self):
+        import mlx.core as mx
+        import numpy as np
+        from triposg.pipeline import FieldQuery
+        sizes=[]
+
+        def query(points):
+            sizes.append(points.shape[1])
+            return mx.sum(points.astype(mx.float32),axis=-1)
+
+        points=np.ones((32769,3),dtype=np.float16)
+        result=FieldQuery(query)(points)
+        np.testing.assert_array_equal(result,np.full(32769,3))
+        self.assertLessEqual(max(sizes),16384)
+        sizes.clear()
+        result=FieldQuery(query,chunk=32768)(points)
+        np.testing.assert_array_equal(result,np.full(32769,3))
+        self.assertLessEqual(max(sizes),16384)
+
+    def test_compiled_point_queries_match_native_chunks_and_keep_contexts_isolated(self):
+        import mlx.core as mx
+        import numpy as np
+        from unittest.mock import patch
+        from triposg.weights import Weights
+        from triposg.transformer import Decoder
+        from triposg.pipeline import FieldQuery
+        root=Path(__file__).parents[1]/'fixtures/triposg'
+        config=json.loads((root/'parity-config.json').read_text())['vae']
+        with np.load(root/'vae-weights.npz') as source:
+            weights=Weights({name:mx.array(value) for name,value in source.items()})
+        with np.load(root/'parity.npz') as data:
+            for device in (mx.cpu,mx.gpu):
+                mx.set_default_device(device)
+                outputs,queries=[],[]
+                points=data['queries'][0]
+                for index in (0,1):
+                    latents=mx.array(data['latents'][index:index+1])
+                    expected=FieldQuery(Decoder(weights,config,latents),chunk=3,compile_decoder=False)(points)
+                    with patch.object(mx,'compile',wraps=mx.compile) as compile:
+                        query=FieldQuery(Decoder(weights,config,latents),chunk=3)
+                        actual=query(points)
+                        self.assertEqual(compile.call_count,1)
+                    np.testing.assert_allclose(actual,expected,atol=1e-5,rtol=1e-5)
+                    np.testing.assert_array_equal(query(points),actual)
+                    self.assertEqual(query(points[:0]).shape,(0,))
+                    outputs.append(actual)
+                    queries.append(query)
+                self.assertFalse(np.array_equal(*outputs))
+                for query,expected in zip(queries,outputs):
+                    np.testing.assert_array_equal(query(points),expected)
+
+    def test_compiled_query_releases_its_decoder_context(self):
+        import gc
+        import weakref
+        import mlx.core as mx
+        import numpy as np
+        from triposg.weights import Weights
+        from triposg.transformer import Decoder
+        from triposg.pipeline import FieldQuery
+        root=Path(__file__).parents[1]/'fixtures/triposg'
+        config=json.loads((root/'parity-config.json').read_text())['vae']
+        with np.load(root/'vae-weights.npz') as source:
+            weights=Weights({name:mx.array(value) for name,value in source.items()})
+        with np.load(root/'parity.npz') as data:
+            decoder=Decoder(weights,config,mx.array(data['latents'][:1]))
+            reference=weakref.ref(decoder)
+            query=FieldQuery(decoder,chunk=3)
+            query(data['queries'][0])
+        del query,decoder
+        gc.collect()
+        self.assertIsNone(reference())
+
     def test_attention_preserves_the_reference_head_interleaving(self):
         import mlx.core as mx
         import numpy as np

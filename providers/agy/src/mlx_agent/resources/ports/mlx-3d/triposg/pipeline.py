@@ -14,19 +14,25 @@ from .weights import Weights
 
 
 NUM_TOKENS = 2048
-QUERY_CHUNK = 32768
+# Larger point batches can select an unstable tall/narrow quantized projection
+# kernel in the supported MLX backend. Bound both workspace and kernel shape.
+QUERY_CHUNK = 16384
 
 
 class FieldQuery:
     """The VAE decoder as a point-query function: float16 points (N, 3) in, float32 logits (N,) out."""
 
-    def __init__(self, decoder, chunk=QUERY_CHUNK):
-        self.decoder, self.chunk = decoder, chunk
+    def __init__(self, decoder, chunk=QUERY_CHUNK, compile_decoder=True):
+        self.decoder, self.chunk = decoder, min(chunk, QUERY_CHUNK)
+        self.forward = decoder
+        if compile_decoder and isinstance(decoder, Decoder):
+            decoder.prepare_context()
+            self.forward = mx.compile(decoder)
 
     def __call__(self, points):
         outputs, pending = [], None
         for start in range(0, len(points), self.chunk):
-            logits = self.decoder(mx.array(points[start:start + self.chunk])[None]).reshape(-1)
+            logits = self.forward(mx.array(points[start:start + self.chunk])[None]).reshape(-1)
             mx.async_eval(logits)
             if pending is not None:
                 outputs.append(np.array(pending))
@@ -117,9 +123,10 @@ def generate(model, image, out, steps=50, seed=42, resolution=512, guidance=7.0,
     previous, cursor = cursor, time.perf_counter()
     stages["sampling"] = cursor - previous
     decoder = Decoder(weights["vae"], config["components"]["vae"], latents)
+    query = FieldQuery(decoder)
     context = time.perf_counter() - cursor
     decode = {}
-    vertices, faces, queries = extract_mesh(FieldQuery(decoder), resolution.bit_length() - 1, seconds=decode)
+    vertices, faces, queries = extract_mesh(query, resolution.bit_length() - 1, seconds=decode)
     stages["decode_dense"] = decode["decode_dense"] + context
     stages["decode_refine"] = decode["decode_refine"]
     stages["marching_cubes"] = decode["marching_cubes"]

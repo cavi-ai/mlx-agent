@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Bound TripoSG point-query batches and compile decoder execution with per-generation conditioning.
+
 - Add opt-in adaptive denoiser caching for Wan2.1 T2V and TripoSG, with feature-memory budgets, refresh limits and reuse statistics.
 - Reuse fixed-conditioning attention projections in TripoSG sampling and point decoding.
 - Reuse causal depth prefixes and repeated prompt encodings during MiniMax Music3 generation.

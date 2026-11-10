@@ -117,6 +117,13 @@ class Decoder:
             mx.eval(self.context)
         self.context_cache = _CrossAttentionCache(weights, self.context)
 
+    def prepare_context(self):
+        """Materialize fixed cross-attention projections before tracing point queries."""
+        heads = self.config['num_attention_heads']
+        self.context_cache.get(self.weights,
+            'decoder.blocks.' + str(self.config['num_layers_decoder']) + '.attn2',
+            self.context, heads, self.context.shape[-1] // heads, False, True)
+
     def __call__(self, points):
         w, config = self.weights, self.config
         query = position_embedding(points, config["embed_frequency"], config.get("embed_include_pi", False))

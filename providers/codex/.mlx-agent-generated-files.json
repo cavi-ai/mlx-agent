@@ -1010,11 +1010,11 @@
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/pipeline.py",
-      "sha256": "2caabffc2fe440eee8dbd30462c279fb1edfc488c42bd27e7628b6e5f37df46e"
+      "sha256": "e618e5a1a6fb29dee318f5bb85c44ee30382ed12b984d29b91f441a5c0e32665"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/transformer.py",
-      "sha256": "e3d62279640848dc501c7e1db8366ee07d4f147021bbe7bc781d3962f7fef143"
+      "sha256": "2524c0c6022cf8d95620b9c257de6fa307691e95ac7584a250c55d749aaf2acb"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/weights.py",

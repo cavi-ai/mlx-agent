@@ -65,6 +65,11 @@ TripoSG, TRELLIS.2 or Pixal3D. Supported resolutions and defaults come from the
 converted model configuration. Use `--steps`, `--seed`, `--resolution`,
 `--guidance` and `--max-faces` to select generation and export settings.
 
+TripoSG automatically bounds point-query batches and compiles VAE query
+execution for each generation. Fixed decoder conditioning is prepared once;
+compiled queries retain no conditioning across jobs. Weights, sampling steps,
+guidance and requested resolution are unchanged.
+
 TripoSG defaults to 50 steps, resolution 512 and guidance 7. Adaptive denoiser
 caching is optional and off by default:
 

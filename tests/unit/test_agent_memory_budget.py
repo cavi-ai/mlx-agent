@@ -120,6 +120,19 @@ class AgentBudgetTests(unittest.TestCase):
                 self.assertEqual(main(['serve', 'budget', '--json']), 0)
             self.assertEqual(json.loads(output.getvalue())['data']['agent_budget']['limit_bytes'], 64_000_000_000)
 
+    def test_metal_physical_footprint_is_charged_when_rss_is_smaller(self):
+        self.rows[201]['rss'] = 7
+        self.rows[201]['physical_bytes'] = 70
+        self.budget(limit=100, reserve=20, external=[201])
+        self.assertEqual(self.registry.snapshot()['agent_budget']['observed_bytes'], 75)
+        with self.assertRaises(MemoryAdmissionError):
+            self.cold('first', resident=6, workspace=0)
+
+    def test_unavailable_physical_footprint_cannot_fall_back_to_smaller_rss(self):
+        self.rows[201]['physical_bytes'] = None
+        with self.assertRaises(MemoryAdmissionError):
+            self.budget(external=[201])
+
     def test_changing_budget_limits_keeps_included_external_processes(self):
         self.budget(external=[301])
         result = self.registry.configure_budget(300, 20)

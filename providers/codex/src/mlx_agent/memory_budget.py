@@ -1,11 +1,42 @@
 """Private, host-wide agent memory policy and process-family accounting."""
+import ctypes
+import errno
 import json
 import os
 import stat
 import subprocess
+import sys
+from functools import lru_cache
 from pathlib import Path
 
 SCHEMA = 'agent-memory-budget/1'
+
+
+class _RusageInfoV0(ctypes.Structure):
+    # Public Darwin ABI from sys/resource.h; flavor 0 is available since 10.9.
+    _fields_ = [('uuid', ctypes.c_ubyte * 16)] + [
+        (name, ctypes.c_uint64) for name in
+        ('user_time', 'system_time', 'idle_wakeups', 'interrupt_wakeups',
+         'pageins', 'wired_size', 'resident_size', 'phys_footprint',
+         'start_time', 'exit_time')]
+
+
+@lru_cache(maxsize=1)
+def _rusage_function():
+    library = ctypes.CDLL('/usr/lib/libproc.dylib', use_errno=True)
+    function = library.proc_pid_rusage
+    function.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.POINTER(_RusageInfoV0)]
+    function.restype = ctypes.c_int
+    return function
+
+
+def _physical_bytes(pid):
+    usage = _RusageInfoV0()
+    if _rusage_function()(pid, 0, ctypes.byref(usage)) != 0:
+        if ctypes.get_errno() == errno.ESRCH:
+            raise ProcessLookupError(pid)
+        return None  # An unreadable tracked process must block admission.
+    return usage.phys_footprint
 
 
 def process_snapshot():
@@ -18,6 +49,12 @@ def process_snapshot():
             pid, parent, group, rss = map(int, fields[:4])
             rows[pid] = {'parent': parent, 'group': group, 'rss': rss * 1024,
                          'identity': fields[4]}
+    if sys.platform == 'darwin':
+        for pid in list(rows):
+            try:
+                rows[pid]['physical_bytes'] = _physical_bytes(pid)
+            except ProcessLookupError:
+                del rows[pid]  # Short-lived children can exit after ps returned.
     return rows
 
 
@@ -70,9 +107,15 @@ def account(policy, entries, rows, owner, replacement=None):
     from .residency import MemoryAdmissionError
 
     def rss(pids):
-        values = [rows[pid].get('rss') for pid in pids]
-        if any(type(value) is not int or value < 0 for value in values):
-            raise MemoryAdmissionError('memory_unknown', 'Agent process memory is unavailable.')
+        values = []
+        for pid in pids:
+            row = rows[pid]
+            resident = row.get('rss')
+            physical = row.get('physical_bytes', resident)
+            if any(type(value) is not int or value < 0 for value in (resident, physical)):
+                raise MemoryAdmissionError('memory_unknown', 'Agent process memory is unavailable.')
+            # RSS misses Metal allocations; footprint also includes compressed memory.
+            values.append(max(resident, physical))
         return sum(values)
 
     external = set()

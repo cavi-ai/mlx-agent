@@ -690,7 +690,7 @@
     },
     {
       "path": "src/mlx_agent/memory_budget.py",
-      "sha256": "bfa4eb4e92bc90527a14001173f09753002b965cf62de90601a6c2958090b00a"
+      "sha256": "ae8fd2355ab7f094f7a140e55e567e3968c2dcaa60d5ee8c8384350b54d77069"
     },
     {
       "path": "src/mlx_agent/mesh.py",

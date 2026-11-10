@@ -839,8 +839,10 @@ class ModelWorker:
 
     def guard_agent_budget(self):
         """Stop this owned worker on a measured breach; never signal external agents."""
-        if self.process is None:
-            return
+        with self.condition:
+            worker = self.process
+            if worker is None or self.closed or self.model_state not in ('loading', 'loaded'):
+                return
         try:
             snapshot = self.memory_registry.snapshot()
             budget = snapshot.get('agent_budget')
@@ -850,6 +852,12 @@ class ModelWorker:
             return
         threshold = budget.get('limit_bytes', 0) - budget.get('reserve_bytes', 0) // 2
         if budget.get('status') == 'unavailable' or budget['observed_bytes'] > threshold:
+            with self.condition:
+                if (self.process is not worker or self.closed
+                        or self.model_state not in ('loading', 'loaded')):
+                    return
+                # Claim this transition before a concurrent manual or idle unload.
+                self.model_state = 'unloading'
             self.close()
             with self.condition:
                 self.last_error = 'Agent memory guard stopped the owned model worker.'

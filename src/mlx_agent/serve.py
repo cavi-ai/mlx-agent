@@ -992,6 +992,9 @@ def _argv_matches(receipt, command, require_port=True):
     # absolute entry point instead of accepting any Python process.
     if len(argv) > 1 and str(argv[1]).endswith(".py") and Path(str(argv[1])).is_absolute():
         executable = str(argv[1])
+    elif len(argv) > 3 and argv[1:4] == [
+            "-I", "-B", str(Path(__file__).with_name("owned_worker.py").resolve())]:
+        executable = str(argv[3])
     model = receipt.get("repo") or receipt.get("path")
     if not model or executable not in command or str(model) not in command:
         return False

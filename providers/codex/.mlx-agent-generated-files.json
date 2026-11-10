@@ -1134,7 +1134,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "0ce5361debea1a9df1b1eaae36f6015db503cbe8c2270b21b6f191eb404716f3"
+      "sha256": "513f4fce135c8e95951947f6e2f48e519e9d10c3888bc0a5d36e408194da5fd9"
     },
     {
       "path": "src/mlx_agent/serve_profiles.py",

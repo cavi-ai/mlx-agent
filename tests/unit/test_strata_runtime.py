@@ -90,8 +90,11 @@ class StrataProfileTests(unittest.TestCase):
         self.tensor_model()
         from mlx_agent import jit_serve
         worker = jit_serve.ModelWorker({"local_path": str(self.root), "runtime": "strata",
+            "worker_argv": [sys.executable, "strata_runtime.py", "--port", "{worker_port}"],
+            "memory_state_dir": str(self.root / ".memory"),
             "strata_expert_memory_gb": 2, "strata_context_tokens": 8192,
             "memory_policy": {"minimum_headroom_gb": 2}})
+        self.addCleanup(worker.close)
         required = strata.memory_estimate(strata.read_model(self.root), 2, 8192) + 2_000_000_000
         worker.memory_probe = lambda: required
         worker._check_memory()
@@ -218,12 +221,15 @@ class StrataProfileTests(unittest.TestCase):
         self.assertNotEqual(after["fingerprint"], before["fingerprint"])
 
     def test_standalone_jit_memory_admission_retains_headroom_and_unknown_memory_guards(self):
-        self.valid_model()
+        self.tensor_model()
         from mlx_agent import jit_serve
         program = """
 import runpy, sys
+from pathlib import Path
 module = runpy.run_path(sys.argv[1])
 worker = module['ModelWorker']({'local_path': sys.argv[2], 'runtime': 'strata',
+                              'worker_argv': [sys.executable, 'strata_runtime.py', '--port', '{worker_port}'],
+                              'memory_state_dir': str(Path(sys.argv[2]) / '.memory'),
                               'memory_policy': {'minimum_headroom_gb': 2}})
 worker.memory_probe = lambda: 1 << 40
 worker._check_memory()
@@ -236,6 +242,7 @@ for available, code in ((100, 'insufficient_headroom'), (None, 'memory_unknown')
         assert error.code == code, error.code
     else:
         raise AssertionError('memory admission was bypassed')
+worker.close()
 """
         result = subprocess.run([sys.executable, "-c", program, str(Path(jit_serve.__file__).resolve()), str(self.root)],
                                 capture_output=True, text=True, timeout=20)

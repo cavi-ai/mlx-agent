@@ -281,6 +281,17 @@ def _memory_parts(model, context_tokens, speculation):
         raise StrataError("strata_memory_unknown", "Cannot estimate paged Strata memory: " + str(error)) from error
 
 
+def memory_growth_allowance(model, context_tokens=131072, cache_capacity_gb=None, speculation=False):
+    """Reserve runtime, context and expert-cache capacity not measured in the worker."""
+    _validate_context(context_tokens)
+    if cache_capacity_gb is not None and (type(cache_capacity_gb) not in (int,float)
+            or not math.isfinite(cache_capacity_gb) or not 0 <= cache_capacity_gb <= 64):
+        raise StrataError('invalid_arguments','Invalid expert-cache growth allowance.')
+    _, experts = _memory_parts(model,context_tokens,speculation)
+    growth = experts if cache_capacity_gb is None else min(experts,cache_capacity_gb*1e9)
+    return math.ceil(5e9 + context_tokens*30000 + growth)
+
+
 def memory_allocation(model, budget_gb, context_tokens=131072, speculation=False):
     """Resolve an estimated total allowance without changing native expert selection."""
     if type(budget_gb) not in (int, float) or not math.isfinite(budget_gb) or not 1 <= budget_gb <= 1024:

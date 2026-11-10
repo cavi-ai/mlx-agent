@@ -654,7 +654,7 @@
     },
     {
       "path": "src/mlx_agent/jit_serve.py",
-      "sha256": "8a11ea9d238244d7fe95b670dc5eb47f9d1947b07b72a0ebcad9cdef702ba49c"
+      "sha256": "99ac3cc247d90e6b49e8c51e8ced0985edcd9ce7c65a5a3067b1d9d4f51fc3f0"
     },
     {
       "path": "src/mlx_agent/kokoro_runtime.py",
@@ -781,12 +781,16 @@
       "sha256": "55f6a6e1931b224384b58c4108f2fca447c82dd2689e7367153da590d7c9758a"
     },
     {
+      "path": "src/mlx_agent/residency.py",
+      "sha256": "b134f6614d308c43f649e4a9dc65cf6b15698555c78b6264272ca21ce4042b9f"
+    },
+    {
       "path": "src/mlx_agent/resident_runner.py",
-      "sha256": "c2bab56a021204f9f4dd7aecd47dc9c5d66dcafc93164fe929f9441772b3b1a3"
+      "sha256": "9ea1001aeb5aef19315e713b745e81c5d0b953de6725ec03c84790e3fbfaf10a"
     },
     {
       "path": "src/mlx_agent/resident_worker.py",
-      "sha256": "72c5d226d7940b345c858ba50111567a16800cb6028ad9f5273322a8a6de75c2"
+      "sha256": "9cb02444e650bc418e69210f7121f00e0c62ff8c80abfe819e1922889bf6e332"
     },
     {
       "path": "src/mlx_agent/resources/adapter-runtime.json",
@@ -1110,7 +1114,7 @@
     },
     {
       "path": "src/mlx_agent/runner_model_cache.py",
-      "sha256": "8acc35c35007f96eabb59c112cd650a4d6960c7a176f11f61df4ec2137e52ffe"
+      "sha256": "b7d20879e8b0a1aa7d15a9cbe1c7a2241fc95e4fb1a1b291733838201d9e8f51"
     },
     {
       "path": "src/mlx_agent/runtime_preference.py",
@@ -1150,7 +1154,7 @@
     },
     {
       "path": "src/mlx_agent/strata_runtime.py",
-      "sha256": "370a9105aadd6726f2dc557825c9723db25c507b067ab695335a0322c848010d"
+      "sha256": "f135e2f2e3c5864383c69417703f7e87c64cc6b8728ffd3229cc62a235db6ad1"
     },
     {
       "path": "src/mlx_agent/study_recipes.py",
@@ -1190,7 +1194,7 @@
     },
     {
       "path": "src/mlx_agent/task_serving.py",
-      "sha256": "08eafcf2943cd9675c2131daa2c1a277df293dbbb9b56c09d4ee50fb5b97243f"
+      "sha256": "4e87860b498d92590e4d24df46745f68d341785517fc4505a252f89c31897834"
     },
     {
       "path": "src/mlx_agent/task_store.py",
@@ -1255,6 +1259,10 @@
     {
       "path": "src/mlx_agent/wiring.py",
       "sha256": "87ec5a957b420ccc37f8f48e31f18c8b221cdb589cf5e5378656a488946f6bc5"
+    },
+    {
+      "path": "src/mlx_agent/worker_telemetry.py",
+      "sha256": "ca48142efb7c33bbb4414ea9fdd1155faa811456502157e91dd5fce7d45b0446"
     }
   ],
   "schema_version": 2,

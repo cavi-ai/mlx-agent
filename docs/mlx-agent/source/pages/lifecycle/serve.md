@@ -466,6 +466,21 @@ cancelled first. Status reports residency, worker PID, active jobs and memory po
 Headroom admission and optional idle/pressure handling use the same controls as
 chat JIT endpoints. Text KV estimates and Strata budgets apply to their own runtimes.
 
+JIT and typed task endpoints coordinate estimated memory admission on the host.
+Pending loads and task workspace share the largest headroom reserve configured
+by their registered endpoints. Allocated resident weights are already reflected
+in OS headroom and are not deducted again. Coding workers retain their runtime
+and configured KV/expert-cache growth allowances while loaded; task workspace
+is released after job completion.
+These admission estimates are not OS-enforced process memory limits.
+
+Status includes `memory_reservation` with the endpoint allocation and a shared
+registry snapshot from its latest admission or completion. Typed workers also
+report timestamped, versioned `worker_memory` load and
+cache-hit counts, load time, and MLX active, cache and peak bytes. Unavailable
+allocator measurements are `null`. Cold coding allocations remain reserved
+until inference output is observed; HTTP readiness alone does not release them.
+
 Submit `POST /v1/tasks` with `{"kind":"...","parameters":{...}}`, using a kind
 advertised by that endpoint and the parameters in the [task contract](tasks.md).
 The model path is bound by the endpoint, not selectable in the request. One job

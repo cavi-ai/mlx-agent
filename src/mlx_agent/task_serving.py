@@ -14,6 +14,7 @@ from .compute import ComputeBusy, ComputeLease, process_identity
 from .inference_runner import InferenceError
 from .jit_serve import GatewayError, ModelWorker, model_fingerprint, validate_memory_policy
 from .resident_runner import ResidentRunner
+from .residency import MemoryAdmissionError
 from .task_contracts import TaskError, validate_request
 from .task_identity import capture_identity, check_identity
 from .task_runtime import _artifact_reference, _error, _finish, task_result, task_status
@@ -23,7 +24,7 @@ def runtime_fingerprint(backend):
     source = Path(__file__).parent
     from .resident_worker import RUNNERS
     files = [source / (name + '.py') for name in sorted(RUNNERS)]
-    files += [source / name for name in ('resident_worker.py', 'runner_model_cache.py')]
+    files += [source / name for name in ('resident_worker.py', 'runner_model_cache.py','worker_telemetry.py')]
     files += sorted((source / 'resources' / 'ports' / backend).rglob('*.py'))
     digest = hashlib.sha256()
     for path in files:
@@ -133,10 +134,29 @@ class TaskModelWorker(ModelWorker):
     def _stop_worker(self):
         try:
             self.resident.close()
+            self._release_memory()
         finally:
             with self.condition:
                 self.process = self.resident.process
                 self.worker_argv = list(self.process.args) if self.process is not None else None
+
+    def _settle_task_memory(self):
+        memory = self.resident.telemetry
+        self.worker_memory = memory
+        resident = None
+        if memory['active_bytes'] is not None and memory['cache_bytes'] is not None:
+            resident = memory['active_bytes'] + memory['cache_bytes']
+            if memory['peak_bytes'] is not None:
+                self.workspace_bytes = max(self.workspace_bytes,memory['peak_bytes']-memory['active_bytes'])
+        try:
+            self.memory_reservation = self.memory_registry.settle(self.memory_token,resident_bytes=resident,telemetry=memory)
+        except MemoryAdmissionError as error:
+            if error.code != 'memory_registry_busy':
+                raise
+            self.last_error = 'Memory reservation remains pending: ' + str(error)
+            return False
+        self.memory_materialized = True
+        return True
 
     def submit(self, body):
         if set(body) != {'kind', 'parameters'} or body['kind'] not in self.config['task_kinds']:
@@ -193,6 +213,7 @@ class TaskModelWorker(ModelWorker):
     def _execute(self, identifier):
         lease = ComputeLease("task:" + identifier)
         leased = False
+        dispatched = False
         try:
             lease.__enter__()
             leased = True
@@ -208,12 +229,13 @@ class TaskModelWorker(ModelWorker):
             plan = kind.plan(request, directory, media)
             if plan['backend'] != record['identity']['backend'] or plan['argv'][0] != self.resident.executable:
                 raise TaskError('identity_changed', 'The model task backend changed.')
-            self._check_memory() if not self.resident.loaded else self._check_resident_memory(dict(self.memory_policy))
+            self._check_memory() if not self.resident.loaded else self._reserve_workspace()
             with self.condition:
                 if self.closed:
                     raise InterruptedError('Endpoint stopping.')
                 self.model_state = 'loading' if not self.resident.loaded else 'loaded'
             if self.resident.process is None:
+                self._launching_memory()
                 self.resident._start(cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'])
             with self.condition:
                 if self.closed:
@@ -225,7 +247,10 @@ class TaskModelWorker(ModelWorker):
             worker_identity = process_identity(self.process.pid)
             if not worker_identity:
                 raise TaskError('task_identity_unavailable', 'Cannot establish the model worker identity.')
+            if not self.memory_materialized:
+                self._bind_memory(self.process,worker_identity)
             self.store.transition(identifier, ('starting',), {'state': 'running', 'execution': {'pid': self.process.pid, 'identity': worker_identity}})
+            dispatched = True
             result = kind.run(plan, runner=lambda argv, **options: self.resident.run(argv,
                 cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'], **options))
             self._check_runtime()
@@ -242,14 +267,17 @@ class TaskModelWorker(ModelWorker):
             reference = self.store.write_result(identifier, result)
             # The protocol acknowledges completion before retaining idle weights.
             lease.release_idle_process_group(self.process.pid)
+            memory_settled = self._settle_task_memory()
             with self.condition:
                 self.model_state = 'loaded' if self.resident.loaded else 'unloaded'
-                self.last_error = None
+                self.last_error = None if memory_settled else self.last_error
                 self._persist()
             _finish(self.store, identifier, 'succeeded', result=reference, error=None)
         except BaseException as error:
             unresolved = False
             admission_denied = isinstance(error, ComputeBusy) and not leased
+            admission_denied |= (not dispatched and isinstance(error,GatewayError)
+                and error.code in ('insufficient_headroom','memory_unknown','memory_registry_busy'))
             # No work was dispatched if the host lease was denied. Keep the
             # existing idle worker and its state available for the next request.
             if not admission_denied:

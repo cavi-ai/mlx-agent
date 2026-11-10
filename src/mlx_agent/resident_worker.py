@@ -13,7 +13,7 @@ import threading
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from mlx_agent import runner_model_cache
+from mlx_agent import runner_model_cache, worker_telemetry
 
 RUNNERS = frozenset(("decide_runner", "music_runner", "transcribe_runner", "speak_runner",
                      "generate_runner", "describe_runner", "video_runner", "mesh_runner", "embed_runner"))
@@ -62,7 +62,8 @@ def main():
             except (Exception, SystemExit) as error:
                 errors.write(str(error)[-2000:])
             message = json.dumps({"returncode": code, "stdout": output.getvalue(), "stderr": errors.getvalue(),
-                                  "loaded": runner_model_cache.loaded()}, allow_nan=False).encode() + b"\n"
+                                  "loaded": runner_model_cache.loaded(),
+                                  "memory": worker_telemetry.capture(runner_model_cache.statistics())}, allow_nan=False).encode() + b"\n"
             if len(message) > MAX_MESSAGE:
                 return 2
             response.write(message)

@@ -17,6 +17,7 @@ class ResidentRunner:
         self.environment, self.log_path, self.port = environment, log_path, port
         self.process, self.response, self.log = None, None, None
         self.loaded = False
+        self.telemetry = None
         self.identity = None
 
     def _receive(self, argv, timeout, cancelled):
@@ -99,6 +100,8 @@ class ResidentRunner:
             self.process.stdin.flush()
             remaining = timeout - (time.monotonic() - started)
             result = self._receive(argv, max(0, remaining), cancelled)
+            from .worker_telemetry import validate
+            self.telemetry = validate(result['memory'])
             self.loaded = result["loaded"] is True
             return subprocess.CompletedProcess(argv, result["returncode"], result["stdout"], result["stderr"])
         except BaseException:
@@ -129,3 +132,4 @@ class ResidentRunner:
             self.log.close()
             self.log = None
         self.loaded = False
+        self.telemetry = None

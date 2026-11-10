@@ -79,9 +79,21 @@ class StrataMemoryTests(unittest.TestCase):
 
     def worker(self):
         return ModelWorker({'local_path': str(self.root), 'runtime': 'strata',
+            'memory_state_dir': str(self.root / '.memory'),
             'strata_context_tokens': 8192, 'strata_speculation': False,
             'worker_argv': ['python', 'strata_runtime.py', '--port', '{worker_port}'],
             'memory_policy': {'minimum_headroom_gb': 2}})
+
+    def test_context_and_expert_growth_remain_reserved_after_output(self):
+        worker=self.worker()
+        self.addCleanup(worker.close)
+        worker.config['strata_expert_memory_gb']=1
+        worker.memory_probe=lambda:1<<40
+        worker._check_memory()
+        worker._materialized_memory()
+        _,experts=strata._memory_parts(self.model,8192,False)
+        expected=5_000_000_000+8192*30000+min(experts,1_000_000_000)
+        self.assertEqual(worker.memory_registry.snapshot()['reserved_bytes'],expected)
 
     def test_budget_change_preserves_active_requests_then_reloads_when_idle(self):
         worker = self.worker()

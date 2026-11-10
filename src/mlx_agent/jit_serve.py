@@ -15,6 +15,7 @@ import math
 import os
 import re
 import selectors
+import secrets
 import signal
 import socket
 import subprocess
@@ -33,6 +34,7 @@ from mlx_agent.contextfit import CONTEXT_MAX, CONTEXT_MIN, extract_architecture,
 from mlx_agent.messages_api import (MessagesRequestError, StreamTranslator, WorkerResponseError, error_body,
                                     from_chat_response, to_chat_request)
 from mlx_agent.transactions import _atomic_in_directory
+from mlx_agent.residency import MemoryRegistry, MemoryAdmissionError
 
 MAX_BODY = 16 * 1024 * 1024
 MAX_REQUESTS = 32
@@ -168,6 +170,14 @@ class ModelWorker:
         self.owned_session = None
         self.clock = time.monotonic
         self.memory_probe = available_memory_bytes
+        self.memory_registry = MemoryRegistry(config.get('memory_state_dir'))
+        self.memory_token = secrets.token_hex(16)
+        self.memory_reservation = None
+        self.worker_memory = None
+        self.workspace_bytes = 1_500_000_000
+        self.growth_bytes = 0
+        self.memory_materialized = False
+        self.memory_transition_blocked = False
 
     def _persist(self):
         state_path = self.config.get("state_path")
@@ -204,6 +214,7 @@ class ModelWorker:
                     return
             self.model_state = "unloaded"
             self.memory_budget_pending = False
+            self._release_memory()
             self._persist()
 
     def status(self):
@@ -214,6 +225,7 @@ class ModelWorker:
                     "worker_port": self.worker_port if self.model_state == "loaded" else None,
                     "last_error": self.last_error, "memory_policy": dict(self.memory_policy),
                     "memory_check": self.memory_check, "load_blocked_reason": self.load_blocked_reason,
+                    "memory_reservation": self.memory_reservation, "worker_memory": self.worker_memory,
                     "resident_memory_check": self.resident_memory_check,
                     "request_blocked_reason": self.request_blocked_reason,
                     "last_unload_reason": self.last_unload_reason,
@@ -266,6 +278,7 @@ class ModelWorker:
                 elif config.get("strata_expert_memory_gb") is not None:
                     argv += ["--expert-memory-gb", str(config["strata_expert_memory_gb"])]
                 config.update(worker_argv=argv, strata_memory_allocation=allocation)
+            self._set_memory_headroom(max(policy['minimum_headroom_gb'] or 0,self.memory_policy['minimum_headroom_gb'] or 0))
             if config.get("config_path"):
                 path = Path(config["config_path"])
                 try:
@@ -276,6 +289,7 @@ class ModelWorker:
                     raise GatewayError(503, "policy_not_saved", str(error)) from error
             self.config.update(config)
             self.memory_policy = policy
+            self._set_memory_headroom(policy['minimum_headroom_gb'] or 0)
             if budget_changed and self.model_state == "loaded":
                 self.memory_budget_pending = True
             self.policy_revision += 1
@@ -286,35 +300,92 @@ class ModelWorker:
             reserve = self.memory_policy["minimum_headroom_gb"]
             context = self.memory_policy.get("context_tokens")
             self.load_blocked_reason = None
-        if reserve is None:
-            return
         weights = sum(item.stat().st_size for item in Path(self.config["local_path"]).rglob("*")
                       if item.is_file() and item.suffix in (".safetensors", ".npz", ".bin", ".gguf"))
         if weights and self.config.get("adapter_path") is not None:
             weights += self.config["adapter_identity"]["adapters.safetensors"]["bytes"]
         kv = 0 if context is None else _kv_cache_bytes(self.config["local_path"], context)
-        available = self.memory_probe()
-        required = math.ceil(weights * 1.10 + kv + 1.5e9 + reserve * 1e9) if weights and kv is not None else None
+        runtime_bytes = 1_500_000_000
+        dynamic_bytes = runtime_bytes + (kv or 0)
+        size = math.ceil(weights * 1.10 + kv + 1.5e9) if weights and kv is not None else None
         if self.config.get("runtime") == "strata":
-            from mlx_agent.strata_runtime import read_model, memory_estimate, memory_allocation
+            from mlx_agent.strata_runtime import read_model, memory_estimate, memory_allocation, memory_growth_allowance
             model = read_model(self.config["local_path"])
             context = self.config.get("strata_context_tokens", 131072)
             budget = self.memory_policy.get("model_memory_budget_gb")
-            size = (memory_allocation(model, budget, context, self._strata_speculation())["estimated_resident_bytes"]
-                    if budget is not None else memory_estimate(model, self.config.get("strata_expert_memory_gb"),
-                                                              context, self._strata_speculation()))
-            required = math.ceil(size + reserve * 1e9)
-        with self.condition:
-            self.memory_check = {"available_bytes": available, "required_available_bytes": required,
-                                 "captured_at": time.time(), "estimated": True}
-            if type(available) is not int or available < 0 or required is None:
-                self.load_blocked_reason = ("The local config.json does not give the KV cache size for the policy context."
-                                            if kv is None else "Memory headroom or model weight size is unavailable.")
-                raise GatewayError(503, "memory_unknown", self.load_blocked_reason)
-            if available < required:
-                self.load_blocked_reason = "Insufficient memory headroom for estimated weights, {}runtime allowance and reserve.".format(
-                    "KV cache, " if context is not None else "")
-                raise GatewayError(503, "insufficient_headroom", self.load_blocked_reason)
+            capacity = self.config.get('strata_expert_memory_gb')
+            if budget is not None:
+                allocation = memory_allocation(model,budget,context,self._strata_speculation())
+                size = allocation['estimated_resident_bytes']
+                capacity = 0 if allocation['mode']=='resident' else allocation['expert_memory_gb']
+            else:
+                size = memory_estimate(model,capacity,context,self._strata_speculation())
+            runtime_bytes = 5_000_000_000
+            dynamic_bytes = memory_growth_allowance(model,context,capacity,self._strata_speculation())
+        if size is None:
+            self.load_blocked_reason = 'Model or context memory estimate is unavailable.'
+            raise GatewayError(503,'memory_unknown',self.load_blocked_reason)
+        self.workspace_bytes = min(math.ceil(size),runtime_bytes)
+        self.growth_bytes = min(math.ceil(size)-self.workspace_bytes,max(0,dynamic_bytes-self.workspace_bytes))
+        model_key = hashlib.sha256(json.dumps([str(Path(self.config['local_path']).resolve()),
+            self.config.get('fingerprint'),self.config.get('runtime'),self.config['worker_argv']],sort_keys=True).encode()).hexdigest()
+        try:
+            self.memory_reservation = self.memory_registry.reserve(self.memory_token,model_key,
+                math.ceil(size)-self.workspace_bytes-self.growth_bytes,self.workspace_bytes,
+                lambda:math.ceil((self.memory_policy['minimum_headroom_gb'] or 0)*1e9),self.memory_probe,
+                growth_bytes=self.growth_bytes)
+            self.memory_check = self.memory_reservation
+        except MemoryAdmissionError as error:
+            self.memory_check = error.details
+            self.load_blocked_reason = str(error)
+            raise GatewayError(503,error.code,str(error)) from error
+
+    def _release_memory(self):
+        if self.memory_reservation is not None:
+            self.memory_registry.release(self.memory_token)
+            self.memory_reservation = None
+        self.worker_memory = None
+        self.memory_materialized = False
+        self.memory_transition_blocked = False
+
+    def _set_memory_headroom(self,gigabytes):
+        if self.memory_reservation is not None:
+            try:
+                self.memory_reservation = self.memory_registry.set_headroom(self.memory_token,math.ceil(gigabytes*1e9))
+            except MemoryAdmissionError as error:
+                raise GatewayError(503,error.code,str(error)) from error
+
+    def _launching_memory(self):
+        if self.memory_reservation is not None:
+            self.memory_reservation = self.memory_registry.launching(self.memory_token)
+
+    def _bind_memory(self, process, identity):
+        if self.memory_reservation is not None:
+            self.memory_reservation = self.memory_registry.bind_worker(self.memory_token,process.pid,identity,os.getpgid(process.pid))
+
+    def _materialized_memory(self):
+        # Readiness alone does not prove that an asynchronous model loader has
+        # allocated its weights. Keep cold allocations reserved until output.
+        if self.memory_reservation is not None and not self.memory_materialized and not self.memory_transition_blocked:
+            try:
+                self.memory_reservation = self.memory_registry.settle(self.memory_token,
+                    workspace_bytes=self.workspace_bytes+self.growth_bytes)
+            except MemoryAdmissionError as error:
+                if error.code != 'memory_registry_busy':
+                    raise GatewayError(503,error.code,str(error)) from error
+                self.memory_transition_blocked = True
+                self.last_error = 'Memory reservation remains pending: ' + str(error)
+                return
+            self.memory_materialized = True
+            self.last_error = None
+
+    def _reserve_workspace(self):
+        try:
+            self.memory_check = self.memory_registry.reserve_workspace(self.memory_token,self.workspace_bytes,self.memory_probe)
+            self.memory_reservation = self.memory_check
+        except MemoryAdmissionError as error:
+            self.memory_check = error.details
+            raise GatewayError(503,error.code,str(error)) from error
 
     def _resident_check(self, policy, available, scope):
         known = type(available) is int and available >= 0
@@ -354,6 +425,7 @@ class ModelWorker:
             if self.active_requests >= MAX_REQUESTS:
                 raise GatewayError(503, "endpoint_busy", "Too many inference requests.")
             self.active_requests += 1
+            self.memory_transition_blocked = False
             self.activity_revision += 1
             policy = dict(self.memory_policy)
             self.request_blocked_reason = None
@@ -418,6 +490,7 @@ class ModelWorker:
             self._check_training_receipt()
             self._check_adapter()
             self._check_memory()
+            self._launching_memory()
             private = self.config.get("private_worker")
             if private:
                 from mlx_agent.private_serve import PrivateEndpoint, identity
@@ -492,6 +565,8 @@ class ModelWorker:
             else:
                 raise GatewayError(503, "model_load_failed",
                                    "Model worker did not become ready in {} seconds.".format(readiness_seconds))
+            from mlx_agent.compute import process_identity
+            self._bind_memory(process,process_identity(process.pid))
             if model_fingerprint(self.config["local_path"]) != self.config["fingerprint"]:
                 raise GatewayError(503, "model_changed", "Model files changed while loading.")
             self._check_training_receipt()
@@ -576,6 +651,7 @@ class ModelWorker:
             if self.private_endpoint is not None:
                 self.private_endpoint.close()
                 self.private_endpoint = None
+        self._release_memory()
 
     def unload_if_idle(self):
         with self.condition:
@@ -798,6 +874,17 @@ class GatewayHandler(BaseHTTPRequestHandler):
                         return False
                     selector.unregister(self.connection)
 
+    def _memory_output(self, payload):
+        controller = self.server.controller
+        if controller.memory_materialized or controller.memory_transition_blocked or controller.memory_reservation is None:
+            return
+        try:
+            value = json.loads(payload)
+        except (ValueError,TypeError):
+            return
+        if isinstance(value,dict):
+            controller._materialized_memory()
+
     def _relay(self, response, translate):
         """Answer a non-streamed request from the worker's translated chat completion."""
         if response.status != 200:
@@ -811,6 +898,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
             raise GatewayError(502, "invalid_worker_response", str(error))
         except (ValueError, TypeError, KeyError, IndexError, AttributeError):
             raise GatewayError(502, "invalid_worker_response", "Model worker returned an invalid response.")
+        self.server.controller._materialized_memory()
         self._json(200, value)
         return value
 
@@ -838,7 +926,9 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 if data == b"[DONE]":
                     self.wfile.write(b"".join(translator.finish()))
                     break
-                self.wfile.write(b"".join(translator.chunk(json.loads(data))))
+                events = translator.chunk(json.loads(data))
+                self.server.controller._materialized_memory()
+                self.wfile.write(b"".join(events))
                 self.wfile.flush()
             else:
                 raise WorkerResponseError("Model worker stream ended early.")
@@ -978,11 +1068,15 @@ class GatewayHandler(BaseHTTPRequestHandler):
             if response.status == 200 and body.get("stream") and self.path == "/v1/chat/completions":
                 stream = chat_completions.ChunkStream()
                 while line := response.readline(MAX_BODY):
+                    if line.startswith(b'data: ') and line.strip() != b'data: [DONE]':
+                        self._memory_output(line[len(b'data: '):])
                     self.wfile.write(stream.line(line))
                     self.wfile.flush()
                 return
             if response.status == 200 and not body.get("stream"):
                 payload = response.read(MAX_BODY + 1)
+                if payload:
+                    self._memory_output(payload)
                 self.wfile.write(chat_completions.complete_body(payload, self.server.end_text)
                                  if len(payload) <= MAX_BODY else payload)
             while chunk := response.read1(65536):

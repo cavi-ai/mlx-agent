@@ -82,6 +82,7 @@ class TaskHTTPTests(unittest.TestCase):
         self.model = self.root / 'model'
         self.model.mkdir()
         (self.model / 'config.json').write_text('{"model_type":"laya"}')
+        (self.model / 'model.safetensors').write_bytes(b'fixture')
         (self.root / 'fixture_port.py').write_text('''
 import time
 class Model:
@@ -98,6 +99,7 @@ def predict(model, tokenizer, state, questions):
         config = {'local_path': str(self.model), 'model': str(self.model), 'runtime': 'tasks', 'fingerprint': 'unused',
             'port': 0, 'task_identity': identity, 'task_kinds': ['classification'], 'task_state_dir': str(self.root / 'tasks'),
             'max_tokens': 0, 'worker_argv': [sys.executable], 'control_token': 'a' * 32,
+            'memory_state_dir': str(self.root / 'memory'),
             'memory_policy': {'keep_loaded': True}}
         self.server = TaskServer(('127.0.0.1', 0), config)
         self.server.controller.config['port'] = self.server.server_port
@@ -234,6 +236,25 @@ def predict(model, tokenizer, state, questions):
         self.assertEqual(self.server.controller.status()['model_state'], 'unloaded')
         self.assertEqual(self.wait(self.start())['state'], 'succeeded')
 
+    def test_workspace_admission_keeps_warm_worker_and_reports_load_reuse(self):
+        self.assertEqual(self.wait(self.start())['state'],'succeeded')
+        controller=self.server.controller
+        process=controller.resident.process
+        controller.memory_probe=lambda:0
+        denied=self.wait(self.start())
+        self.assertEqual(denied['error']['code'],'insufficient_headroom')
+        self.assertIs(controller.resident.process,process)
+        self.assertEqual(controller.memory_registry.snapshot()['reserved_bytes'],0)
+        controller.memory_probe=lambda:1<<40
+        self.assertEqual(self.wait(self.start())['state'],'succeeded')
+        self.assertIs(controller.resident.process,process)
+        state=controller.status()
+        self.assertEqual(state['worker_memory']['loads'],1)
+        self.assertEqual(state['worker_memory']['cache_hits'],1)
+        self.assertEqual(state['memory_reservation']['allocation']['phase'],'resident')
+        controller.unload()
+        self.assertEqual(controller.memory_registry.snapshot()['entries'],0)
+
     def test_lost_compute_ownership_after_execution_stops_worker(self):
         from mlx_agent.compute import ComputeBusy, ComputeLease
         self.assertEqual(self.wait(self.start())['state'], 'succeeded')
@@ -250,6 +271,20 @@ def predict(model, tokenizer, state, questions):
         self.assertEqual(status, 200, result)
         self.assertEqual(result['result']['answers']['calls'], 1)
         self.assertIsNot(self.server.controller.resident.process, process)
+
+    def test_settlement_contention_keeps_completed_result_and_warm_model(self):
+        from mlx_agent.residency import MemoryAdmissionError
+        controller=self.server.controller
+        with patch.object(controller.memory_registry,'settle',side_effect=MemoryAdmissionError('memory_registry_busy','busy')):
+            self.assertEqual(self.wait(self.start())['state'],'succeeded')
+        process=controller.resident.process
+        self.assertIn('reservation',controller.last_error)
+        self.assertGreater(controller.memory_registry.snapshot()['reserved_bytes'],0)
+        self.assertEqual(self.wait(self.start())['state'],'succeeded')
+        self.assertIs(controller.resident.process,process)
+        self.assertEqual(controller.worker_memory['cache_hits'],1)
+        self.assertIsNone(controller.last_error)
+        self.assertEqual(controller.memory_registry.snapshot()['reserved_bytes'],0)
 
     def test_changed_model_refuses_reuse_and_releases_stale_weights(self):
         self.assertEqual(self.wait(self.start())['state'], 'succeeded')

@@ -51,6 +51,10 @@ def predict(model, tokenizer, state, questions):
         self.assertEqual(self.invoke(), 2)
         self.assertEqual(self.worker.process.pid, pid)
         self.assertTrue(self.worker.loaded)
+        self.assertEqual(self.worker.telemetry['schema'],'worker-memory/1')
+        self.assertEqual(self.worker.telemetry['loads'],1)
+        self.assertEqual(self.worker.telemetry['cache_hits'],1)
+        self.assertIsNone(self.worker.telemetry['active_bytes'])
 
     def test_launcher_exec_binds_the_ready_worker_identity(self):
         from mlx_agent.compute import process_identity

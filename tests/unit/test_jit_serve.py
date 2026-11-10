@@ -76,6 +76,7 @@ class JITServingTests(unittest.TestCase):
         self.worker.write_text(WORKER)
         self.trace = self.root / 'starts.txt'
         self.config = {
+            'memory_state_dir': str(self.root / 'memory'),
             'model': str(self.model), 'local_path': str(self.model),
             'fingerprint': model_fingerprint(self.model), 'control_token': 'test-control-token',
             'worker_argv': [sys.executable, str(self.worker), '--model', str(self.model), '--port', '{worker_port}', '--trace', str(self.trace)],
@@ -444,6 +445,60 @@ class JITServingTests(unittest.TestCase):
         self.assertFalse(self.trace.exists())
         self.server.controller.memory_probe = lambda: 8_000_000_000
         self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
+
+    def test_distinct_endpoints_share_pending_memory_admission(self):
+        from mlx_agent.jit_serve import ModelWorker, GatewayError
+        first=self.server.controller
+        second=ModelWorker(self.config)
+        self.addCleanup(second.close)
+        first.memory_probe=second.memory_probe=lambda:3_000_000_000
+        first._check_memory()
+        with self.assertRaises(GatewayError) as caught:second._check_memory()
+        self.assertEqual(caught.exception.code,'insufficient_headroom')
+        self.assertGreater(second.memory_check['other_reserved_bytes'],0)
+        first._release_memory()
+        second._check_memory()
+
+    def test_headroom_changed_during_cold_probe_is_registered(self):
+        controller=self.server.controller
+        def probe():
+            controller.configure({'minimum_headroom_gb':2})
+            return 8_000_000_000
+        controller.memory_probe=probe
+        controller._check_memory()
+        self.assertEqual(controller.memory_registry.snapshot()['headroom_bytes'],2_000_000_000)
+
+    def test_coding_reservation_waits_for_output_and_is_released_on_unload(self):
+        controller=self.server.controller
+        controller.acquire()
+        controller.release()
+        pending=controller.memory_registry.snapshot()['reserved_bytes']
+        self.assertGreater(pending,controller.workspace_bytes)
+        self.assertEqual(self.request('POST','/v1/chat/completions',{'messages':[]})[0],200)
+        self.assertEqual(controller.memory_registry.snapshot()['reserved_bytes'],controller.workspace_bytes)
+        controller.unload()
+        self.assertEqual(controller.memory_registry.snapshot()['entries'],0)
+
+    def test_configured_kv_growth_stays_reserved_after_first_output(self):
+        controller=self.server.controller
+        controller.configure({'minimum_headroom_gb':0,'context_tokens':2048})
+        controller.memory_probe=lambda:8_000_000_000
+        with mock.patch('mlx_agent.jit_serve._kv_cache_bytes',return_value=500_000_000):
+            self.assertEqual(self.request('POST','/v1/chat/completions',{'messages':[]})[0],200)
+        self.assertEqual(controller.memory_registry.snapshot()['reserved_bytes'],2_000_000_000)
+
+    def test_settlement_contention_retains_coding_reservation_until_retry(self):
+        from mlx_agent.residency import MemoryAdmissionError
+        controller=self.server.controller
+        with mock.patch.object(controller.memory_registry,'settle',side_effect=MemoryAdmissionError('memory_registry_busy','busy')):
+            self.assertEqual(self.request('POST','/v1/chat/completions',{'messages':[]})[0],200)
+        process=controller.process
+        self.assertGreater(controller.memory_registry.snapshot()['reserved_bytes'],controller.workspace_bytes)
+        self.assertIn('reservation',controller.last_error)
+        self.assertEqual(self.request('POST','/v1/chat/completions',{'messages':[]})[0],200)
+        self.assertIs(controller.process,process)
+        self.assertEqual(controller.memory_registry.snapshot()['reserved_bytes'],controller.workspace_bytes)
+        self.assertIsNone(controller.last_error)
 
     def test_policy_update_requires_auth_and_rejects_invalid_settings(self):
         self.assertEqual(self.request('POST', '/_mlx/policy', {'keep_loaded': True})[0], 403)

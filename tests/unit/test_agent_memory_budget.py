@@ -144,6 +144,11 @@ class AgentBudgetTests(unittest.TestCase):
                     break
                 time.sleep(.01)
             self.assertTrue(state.startswith('Z'))
+            if sys.platform == 'darwin':
+                from mlx_agent.memory_budget import _physical_bytes
+                # ps may have read the state before the command became defunct.
+                with self.assertRaises(ProcessLookupError):
+                    _physical_bytes(child.pid)
             budget = registry.snapshot()['agent_budget']
             self.assertNotEqual(budget.get('status'), 'unavailable', budget)
             self.assertTrue(budget['within_budget'])

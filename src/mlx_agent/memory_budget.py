@@ -36,6 +36,8 @@ def _physical_bytes(pid):
         if ctypes.get_errno() == errno.ESRCH:
             raise ProcessLookupError(pid)
         return None  # An unreadable tracked process must block admission.
+    if usage.exit_time:
+        raise ProcessLookupError(pid)  # The process exited after ps sampled its state.
     return usage.phys_footprint
 
 

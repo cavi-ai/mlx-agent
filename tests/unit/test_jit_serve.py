@@ -654,7 +654,15 @@ class JITServingTests(unittest.TestCase):
         from mlx_agent.compute import ComputeLease
         self.config['worker_argv'] += ['--reply-delay', '10']
         connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=3)
-        with mock.patch('mlx_agent.jit_serve.DRAIN_TIMEOUT_SECONDS', .1):
+        upstreams = []
+        connect = self.server.controller.connection
+        def tracked_connection(*args, **kwargs):
+            upstream = connect(*args, **kwargs)
+            upstream.getresponse = mock.Mock(wraps=upstream.getresponse)
+            upstreams.append(upstream)
+            return upstream
+        with mock.patch('mlx_agent.jit_serve.DRAIN_TIMEOUT_SECONDS', .1), \
+                mock.patch.object(self.server.controller, 'connection', side_effect=tracked_connection):
             connection.request('POST', '/v1/chat/completions', json.dumps({'messages': []}))
             deadline = time.monotonic() + 3
             while self.server.controller.model_state != 'loaded' and time.monotonic() < deadline:
@@ -668,6 +676,8 @@ class JITServingTests(unittest.TestCase):
         self.assertEqual(self.server.controller.active_requests, 0)
         self.assertIsNotNone(process.poll())
         self.assertIsNone(self.server.controller.process)
+        self.assertEqual(len(upstreams), 1)
+        self.assertEqual(upstreams[0].getresponse.call_count, 1)
         with ComputeLease('other-model', self.root / 'compute'):
             pass
 

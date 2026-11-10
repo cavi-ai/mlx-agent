@@ -1174,8 +1174,6 @@ class GatewayHandler(BaseHTTPRequestHandler):
             upstream.settimeout(None)
             # MLX-LM writes nothing until an unstreamed answer is complete or a queued request starts.
             if not self._worker_replied(upstream):
-                upstream.settimeout(DRAIN_TIMEOUT_SECONDS)
-                response = connection.getresponse()
                 return
             response = connection.getresponse()
             if self.server.config.get("private_worker"):
@@ -1238,11 +1236,11 @@ class GatewayHandler(BaseHTTPRequestHandler):
             try:
                 if leased and submitted and (response is None or not response.isclosed()):
                     try:
+                        deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
                         if upstream is not None:
                             upstream.settimeout(DRAIN_TIMEOUT_SECONDS)
                         if response is None:
                             response = connection.getresponse()
-                        deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
                         while not response.isclosed():
                             if upstream is not None:
                                 upstream.settimeout(max(.001, deadline - time.monotonic()))

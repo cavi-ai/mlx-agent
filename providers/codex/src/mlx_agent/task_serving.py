@@ -171,7 +171,7 @@ class TaskModelWorker(ModelWorker):
                 try:
                     lease.bind_process_group(self.resident.process.pid)
                     success = self.resident.control_cache(desired, reclaim=reason)
-                    lease.release_idle_process_group(self.resident.process.pid)
+                    lease.release_idle_process_group(self.resident.process.pid, self.resident.idle_members())
                 except (OSError, ValueError, subprocess.SubprocessError):
                     self._stop_worker()
                     with self.condition:
@@ -377,7 +377,7 @@ class TaskModelWorker(ModelWorker):
             if self.resident.cache_state and self.resident.cache_state['applied_policy'] != desired:
                 self.resident.control_cache(desired, reclaim='policy' if desired['cache_reclaim'] == 'idle' else None)
             # The protocol acknowledges completion before retaining idle weights.
-            lease.release_idle_process_group(self.process.pid)
+            lease.release_idle_process_group(self.process.pid, self.resident.idle_members())
             memory_settled = self._settle_task_memory()
             with self.condition:
                 self.model_state = 'loaded' if self.resident.loaded else 'unloaded'

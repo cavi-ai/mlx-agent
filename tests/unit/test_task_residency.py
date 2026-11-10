@@ -56,6 +56,37 @@ def predict(model, tokenizer, state, questions):
         self.assertEqual(self.worker.telemetry['cache_hits'],1)
         self.assertIsNone(self.worker.telemetry['active_bytes'])
 
+    def test_resource_tracker_can_stay_idle_across_warm_requests(self):
+        from mlx_agent.compute import ComputeLease
+        port = self.root / 'fixture_port.py'
+        port.write_text(port.read_text().replace('    model.count += 1',
+            '    from multiprocessing.shared_memory import SharedMemory\n'
+            '    shared = SharedMemory(create=True, size=1)\n'
+            '    shared.close()\n    shared.unlink()\n    model.count += 1'))
+        self.assertEqual(self.invoke(), 1)
+        pid = self.worker.process.pid
+        with ComputeLease('test-idle', self.root / 'compute') as lease:
+            lease.bind_process_group(pid)
+            lease.release_idle_process_group(pid, self.worker.idle_members())
+        self.assertEqual(self.invoke(), 2)
+        self.assertEqual(self.worker.process.pid, pid)
+        self.assertEqual(self.worker.telemetry['loads'], 1)
+
+    def test_unexpected_idle_child_cannot_release_the_compute_lease(self):
+        from mlx_agent.compute import ComputeLease
+        port = self.root / 'fixture_port.py'
+        port.write_text(port.read_text().replace('    model.count += 1',
+            '    import subprocess, sys\n'
+            '    model.child = subprocess.Popen([sys.executable, "-c", "import time;time.sleep(30)"])\n'
+            '    model.count += 1'))
+        self.assertEqual(self.invoke(), 1)
+        pid = self.worker.process.pid
+        with ComputeLease('test-idle', self.root / 'compute') as lease:
+            lease.bind_process_group(pid)
+            with self.assertRaisesRegex(ValueError, 'Unexpected child'):
+                lease.release_idle_process_group(pid, self.worker.idle_members())
+            self.worker.close()
+
     def test_launcher_exec_binds_the_ready_worker_identity(self):
         from mlx_agent.compute import process_identity
         launcher = self.root / 'python-launcher'

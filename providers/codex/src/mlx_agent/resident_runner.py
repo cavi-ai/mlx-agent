@@ -1,6 +1,7 @@
 """Bounded, cancellable calls to one isolated backend retaining one local model."""
 import json
 import os
+import re
 from pathlib import Path
 import selectors
 import subprocess
@@ -123,6 +124,25 @@ class ResidentRunner:
         except BaseException:
             self.close()
             raise
+
+    def idle_members(self):
+        """Inspect the completed worker and its standard Python resource tracker."""
+        from .process_tree import _snapshot
+        if not self.loaded or self.process is None or self.process.poll() is not None:
+            raise ValueError('Idle inspection requires a loaded worker.')
+        pid = self.process.pid
+        expected = {pid: self.identity}
+        for member, (parent, group, identity) in _snapshot().items():
+            if group != pid or member == pid:
+                continue
+            command = identity.split(None, 5)[-1]
+            executable, marker, descriptor = command.partition(
+                ' -c from multiprocessing.resource_tracker import main;main(')
+            if (parent != pid or not marker or not re.fullmatch(r'[0-9]+\)', descriptor)
+                    or Path(executable).resolve() != Path(self.executable).resolve()):
+                raise ValueError('Unexpected child prevents resident worker idle handoff.')
+            expected[member] = identity
+        return expected
 
     def control_cache(self, policy, reclaim=None):
         with self.lock:

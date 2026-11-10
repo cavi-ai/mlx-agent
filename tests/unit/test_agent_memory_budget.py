@@ -120,6 +120,48 @@ class AgentBudgetTests(unittest.TestCase):
                 self.assertEqual(main(['serve', 'budget', '--json']), 0)
             self.assertEqual(json.loads(output.getvalue())['data']['agent_budget']['limit_bytes'], 64_000_000_000)
 
+    def test_defunct_worker_is_not_mistaken_for_a_replacement_process(self):
+        import subprocess
+        import sys
+        import time
+
+        from mlx_agent.compute import process_identity
+        registry = MemoryRegistry(self.root / 'live')
+        registry.configure_budget(64_000_000_000, 8_000_000_000)
+        child = subprocess.Popen([sys.executable, '-c', 'import time;time.sleep(30)'],
+                                 start_new_session=True)
+        try:
+            identity = process_identity(child.pid)
+            registry.reserve('worker', 'a' * 64, 1024, 0, 0, lambda: 10**12)
+            registry.launching('worker')
+            registry.bind_worker('worker', child.pid, identity, child.pid)
+            registry.settle('worker', resident_bytes=1024)
+            child.terminate()
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                state = subprocess.check_output(['/bin/ps', '-p', str(child.pid), '-o', 'stat='], text=True).strip()
+                if state.startswith('Z'):
+                    break
+                time.sleep(.01)
+            self.assertTrue(state.startswith('Z'))
+            budget = registry.snapshot()['agent_budget']
+            self.assertNotEqual(budget.get('status'), 'unavailable', budget)
+            self.assertTrue(budget['within_budget'])
+        finally:
+            child.wait(timeout=5)
+            registry.release('worker')
+
+    def test_live_worker_identity_replacement_still_blocks_admission(self):
+        self.budget()
+        self.cold('first')
+        self.registry.launching('first')
+        self.registry.bind_worker('first', 201, 'worker', 201)
+        self.registry.settle('first', resident_bytes=60)
+        self.rows[201]['identity'] = 'replacement'
+        self.assertEqual(self.registry.snapshot()['agent_budget']['status'], 'unavailable')
+        with self.assertRaises(MemoryAdmissionError):
+            self.cold('second')
+
     def test_metal_physical_footprint_is_charged_when_rss_is_smaller(self):
         self.rows[201]['rss'] = 7
         self.rows[201]['physical_bytes'] = 70

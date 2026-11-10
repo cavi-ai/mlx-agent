@@ -40,15 +40,15 @@ def _physical_bytes(pid):
 
 
 def process_snapshot():
-    result = subprocess.run(['/bin/ps', '-axo', 'pid=,ppid=,pgid=,rss=,lstart=,command='],
+    result = subprocess.run(['/bin/ps', '-axo', 'pid=,ppid=,pgid=,rss=,stat=,lstart=,command='],
                             capture_output=True, text=True, timeout=5, check=True)
     rows = {}
     for line in result.stdout.splitlines():
-        fields = line.split(None, 4)
-        if len(fields) == 5:
+        fields = line.split(None, 5)
+        if len(fields) == 6 and not fields[4].startswith('Z'):
             pid, parent, group, rss = map(int, fields[:4])
             rows[pid] = {'parent': parent, 'group': group, 'rss': rss * 1024,
-                         'identity': fields[4]}
+                         'identity': fields[5]}
     if sys.platform == 'darwin':
         for pid in list(rows):
             try:
@@ -114,7 +114,7 @@ def account(policy, entries, rows, owner, replacement=None):
             physical = row.get('physical_bytes', resident)
             if any(type(value) is not int or value < 0 for value in (resident, physical)):
                 raise MemoryAdmissionError('memory_unknown',
-                    'Agent process memory is unavailable for PID {}.'.format(pid))
+                    f'Agent process memory is unavailable for PID {pid}.')
             # RSS misses Metal allocations; footprint also includes compressed memory.
             values.append(max(resident, physical))
         return sum(values)

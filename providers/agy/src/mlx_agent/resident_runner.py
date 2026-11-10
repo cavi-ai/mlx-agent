@@ -111,6 +111,10 @@ class ResidentRunner:
             known = {process.pid: self.identity} if self.identity else {}
             if not _stop(process, self.identity, known, grace=3):
                 raise OSError("The owned inference process group has not stopped safely.")
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired as error:
+                raise OSError("The owned inference worker exit has not been confirmed.") from error
         self._clear()
 
     def _clear(self):

@@ -207,6 +207,50 @@ def predict(model, tokenizer, state, questions):
         self.assertEqual(self.wait(self.start('fail'))['state'], 'failed')
         self.assertEqual(self.wait(self.start())['state'], 'succeeded')
 
+    def test_compute_contention_keeps_warm_model_for_retry(self):
+        from mlx_agent.compute import ComputeLease
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        process = self.server.controller.resident.process
+        with ComputeLease('other-workload', self.root / 'compute'):
+            denied = self.wait(self.start())
+        self.assertEqual(denied['state'], 'failed')
+        self.assertEqual(denied['error']['code'], 'compute_busy')
+        self.assertIs(self.server.controller.resident.process, process)
+        self.assertEqual(self.server.controller.status()['model_state'], 'loaded')
+        self.assertIsNone(process.poll())
+        identifier = self.start()
+        self.assertEqual(self.wait(identifier)['state'], 'succeeded')
+        status, result = self.request('GET', '/v1/tasks/' + identifier + '/result')
+        self.assertEqual(status, 200, result)
+        self.assertEqual(result['result']['answers']['calls'], 2)
+        self.assertIs(self.server.controller.resident.process, process)
+
+    def test_compute_contention_does_not_start_a_cold_worker(self):
+        from mlx_agent.compute import ComputeLease
+        with ComputeLease('other-workload', self.root / 'compute'):
+            denied = self.wait(self.start())
+        self.assertEqual(denied['error']['code'], 'compute_busy')
+        self.assertIsNone(self.server.controller.resident.process)
+        self.assertEqual(self.server.controller.status()['model_state'], 'unloaded')
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+
+    def test_lost_compute_ownership_after_execution_stops_worker(self):
+        from mlx_agent.compute import ComputeBusy, ComputeLease
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        process = self.server.controller.resident.process
+        with patch.object(ComputeLease, 'release_idle_process_group', side_effect=ComputeBusy('ownership changed')):
+            failed = self.wait(self.start())
+        self.assertEqual(failed['state'], 'failed')
+        self.assertEqual(failed['error']['code'], 'compute_busy')
+        self.assertIsNone(self.server.controller.resident.process)
+        self.assertEqual(self.server.controller.status()['model_state'], 'unloaded')
+        identifier = self.start()
+        self.assertEqual(self.wait(identifier)['state'], 'succeeded')
+        status, result = self.request('GET', '/v1/tasks/' + identifier + '/result')
+        self.assertEqual(status, 200, result)
+        self.assertEqual(result['result']['answers']['calls'], 1)
+        self.assertIsNot(self.server.controller.resident.process, process)
+
     def test_changed_model_refuses_reuse_and_releases_stale_weights(self):
         self.assertEqual(self.wait(self.start())['state'], 'succeeded')
         (self.model / 'config.json').write_text('{"model_type":"laya","changed":true}')

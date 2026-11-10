@@ -782,7 +782,7 @@
     },
     {
       "path": "src/mlx_agent/resident_runner.py",
-      "sha256": "7c45b34bdff1c3fc7116ed8be78e717cf03d61da945f2748c487e143a9f54a5f"
+      "sha256": "c2bab56a021204f9f4dd7aecd47dc9c5d66dcafc93164fe929f9441772b3b1a3"
     },
     {
       "path": "src/mlx_agent/resident_worker.py",
@@ -1190,7 +1190,7 @@
     },
     {
       "path": "src/mlx_agent/task_serving.py",
-      "sha256": "5255c4c42b8505c7567a57c13c4ad4e9200979444d9df2bfde64795b0110a8dd"
+      "sha256": "08eafcf2943cd9675c2131daa2c1a277df293dbbb9b56c09d4ee50fb5b97243f"
     },
     {
       "path": "src/mlx_agent/task_store.py",

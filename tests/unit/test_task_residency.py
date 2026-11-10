@@ -8,6 +8,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from mlx_agent import resident_runner
 
@@ -80,6 +81,48 @@ def predict(model, tokenizer, state, questions):
         self.assertIsNotNone(process.poll())
         self.assertFalse(self.worker.loaded)
         self.assertEqual(self.invoke(), 1)
+
+    def test_stop_confirmation_reaps_child_before_clearing_residency(self):
+        self.assertEqual(self.invoke(), 1)
+        process = self.worker.process
+        self.addCleanup(process.wait, timeout=5)
+
+        def stopped(*args, **kwargs):
+            process.terminate()
+            return True
+
+        # Group inspection may confirm termination before Popen has collected
+        # the direct child's exit status. close must finish that ownership step.
+        with patch.object(resident_runner, '_stop', side_effect=stopped):
+            self.worker.close()
+        self.assertIsNotNone(process.returncode)
+        with self.assertRaises(ChildProcessError):
+            os.waitpid(process.pid, os.WNOHANG)
+        self.assertIsNone(self.worker.process)
+        self.assertFalse(self.worker.loaded)
+
+    def test_unconfirmed_child_exit_retains_process_identity(self):
+        self.assertEqual(self.invoke(), 1)
+        process, identity = self.worker.process, self.worker.identity
+        self.addCleanup(process.wait, timeout=5)
+        self.addCleanup(process.terminate)
+        error = subprocess.TimeoutExpired(process.args, 3)
+        with patch.object(resident_runner, '_stop', return_value=True), patch.object(process, 'wait', side_effect=error):
+            with self.assertRaises(OSError):
+                self.worker.close()
+        self.assertIs(self.worker.process, process)
+        self.assertEqual(self.worker.identity, identity)
+        self.assertTrue(self.worker.loaded)
+
+    def test_unconfirmed_process_group_retains_process_identity(self):
+        self.assertEqual(self.invoke(), 1)
+        process, identity = self.worker.process, self.worker.identity
+        with patch.object(resident_runner, '_stop', return_value=False):
+            with self.assertRaises(OSError):
+                self.worker.close()
+        self.assertIs(self.worker.process, process)
+        self.assertEqual(self.worker.identity, identity)
+        self.assertTrue(self.worker.loaded)
 
     def test_request_cannot_select_a_different_model_or_script(self):
         for argv in (self.argv[:1] + ["/tmp/unknown.py"] + self.argv[2:],

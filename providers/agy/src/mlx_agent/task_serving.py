@@ -249,16 +249,21 @@ class TaskModelWorker(ModelWorker):
             _finish(self.store, identifier, 'succeeded', result=reference, error=None)
         except BaseException as error:
             unresolved = False
-            try:
-                self._stop_worker()
-            except (OSError, subprocess.SubprocessError):
-                unresolved = True
+            admission_denied = isinstance(error, ComputeBusy) and not leased
+            # No work was dispatched if the host lease was denied. Keep the
+            # existing idle worker and its state available for the next request.
+            if not admission_denied:
+                try:
+                    self._stop_worker()
+                except (OSError, subprocess.SubprocessError):
+                    unresolved = True
             if isinstance(error, ComputeBusy):
                 error = TaskError('compute_busy', str(error), 'Wait for the current host model operation to finish, then start a new job.')
             if unresolved:
                 error = TaskError('task_stop_unconfirmed', 'The owned model worker has not stopped safely.', 'Inspect the worker and retry the owned endpoint stop; its identity is retained.')
             with self.condition:
-                self.model_state = 'failed' if unresolved else 'unloaded'
+                if not admission_denied:
+                    self.model_state = 'failed' if unresolved else 'unloaded'
                 self.last_error = str(error)
                 self._persist()
             cancelled = isinstance(error, InterruptedError) or self.store.get(identifier)['cancel_requested']

@@ -458,6 +458,8 @@ python3 scripts/mlx-agent serve start --path /absolute/local/model --runtime aut
 Confirm with the same arguments and the returned preview hash. Use
 `--keep-loaded --no-release-after-request` to retain the loaded model between
 jobs instead. The default for typed endpoints releases weights after each job.
+A job that cannot acquire host compute fails with `compute_busy`; any retained
+idle model stays loaded for retry.
 `serve policy` can change either mode on an owned endpoint. Manual `serve unload`
 releases idle weights without closing its port; active jobs must finish or be
 cancelled first. Status reports residency, worker PID, active jobs and memory policy.

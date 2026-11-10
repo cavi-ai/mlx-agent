@@ -14,19 +14,25 @@ from .weights import Weights
 
 
 NUM_TOKENS = 2048
-QUERY_CHUNK = 32768
+# Larger point batches can select an unstable tall/narrow quantized projection
+# kernel in the supported MLX backend. Bound both workspace and kernel shape.
+QUERY_CHUNK = 16384
 
 
 class FieldQuery:
     """The VAE decoder as a point-query function: float16 points (N, 3) in, float32 logits (N,) out."""
 
-    def __init__(self, decoder, chunk=QUERY_CHUNK):
-        self.decoder, self.chunk = decoder, chunk
+    def __init__(self, decoder, chunk=QUERY_CHUNK, compile_decoder=True):
+        self.decoder, self.chunk = decoder, min(chunk, QUERY_CHUNK)
+        self.forward = decoder
+        if compile_decoder and isinstance(decoder, Decoder):
+            decoder.prepare_context()
+            self.forward = mx.compile(decoder)
 
     def __call__(self, points):
         outputs, pending = [], None
         for start in range(0, len(points), self.chunk):
-            logits = self.decoder(mx.array(points[start:start + self.chunk])[None]).reshape(-1)
+            logits = self.forward(mx.array(points[start:start + self.chunk])[None]).reshape(-1)
             mx.async_eval(logits)
             if pending is not None:
                 outputs.append(np.array(pending))
@@ -69,8 +75,13 @@ def load(path):
     return config, weights
 
 
-def generate(model, image, out, steps=50, seed=42, resolution=512, guidance=7.0, max_faces=500_000):
+def generate(model, image, out, steps=50, seed=42, resolution=512, guidance=7.0, max_faces=500_000,
+             denoiser_cache='off', cache_memory_mib=256):
     config, weights = model
+    if denoiser_cache not in ('off','adaptive'):
+        raise ValueError('denoiser_cache must be off or adaptive.')
+    if type(cache_memory_mib) is not int or not 8 <= cache_memory_mib <= 4096:
+        raise ValueError('cache_memory_mib must be 8..4096.')
     started = time.perf_counter()
     stages = {}
     mx.reset_peak_memory()
@@ -83,22 +94,39 @@ def generate(model, image, out, steps=50, seed=42, resolution=512, guidance=7.0,
     transformer = config["components"]["transformer"]
     latents = initial_latents(seed, transformer["in_channels"])
     context_cache = _CrossAttentionCache(weights["transformer"], features)
-    for timestep, delta in flow_schedule(config["scheduler"], steps):
-        inputs = mx.concatenate([latents, latents], axis=0) if guidance > 1 else latents
-        prediction = denoise(weights["transformer"], transformer, inputs,
-                             [timestep] * inputs.shape[0], features, context_cache=context_cache)
-        if guidance > 1:
-            unconditioned, conditioned = mx.split(prediction, 2, axis=0)
-            prediction = unconditioned + guidance * (conditioned - unconditioned)
-        latents = latents + delta * prediction
-        mx.eval(latents)
+    cache, cache_result = None, None
+    if denoiser_cache == 'adaptive':
+        from .denoiser_cache import DenoiserCache
+
+        limit = cache_memory_mib * 1024 ** 2
+        reservation = 6 * features.shape[0] * (NUM_TOKENS + 1) * transformer['width'] * 4
+        if reservation <= limit:
+            cache = DenoiserCache(steps, limit)
+        else:
+            cache_result = {'mode':'adaptive', 'full_steps':steps, 'reused_steps':0,
+                            'peak_cache_bytes':0, 'memory_limit_bytes':limit, 'fallback_reason':'memory_limit'}
+    try:
+        for timestep, delta in flow_schedule(config["scheduler"], steps):
+            inputs = mx.concatenate([latents, latents], axis=0) if guidance > 1 else latents
+            prediction = denoise(weights["transformer"], transformer, inputs,
+                                 [timestep] * inputs.shape[0], features, context_cache=context_cache,
+                                 **({'denoiser_cache':cache} if cache is not None else {}))
+            if guidance > 1:
+                unconditioned, conditioned = mx.split(prediction, 2, axis=0)
+                prediction = unconditioned + guidance * (conditioned - unconditioned)
+            latents = latents + delta * prediction
+            mx.eval(latents)
+    finally:
+        if cache is not None:
+            cache.close()
     del context_cache
     previous, cursor = cursor, time.perf_counter()
     stages["sampling"] = cursor - previous
     decoder = Decoder(weights["vae"], config["components"]["vae"], latents)
+    query = FieldQuery(decoder)
     context = time.perf_counter() - cursor
     decode = {}
-    vertices, faces, queries = extract_mesh(FieldQuery(decoder), resolution.bit_length() - 1, seconds=decode)
+    vertices, faces, queries = extract_mesh(query, resolution.bit_length() - 1, seconds=decode)
     stages["decode_dense"] = decode["decode_dense"] + context
     stages["decode_refine"] = decode["decode_refine"]
     stages["marching_cubes"] = decode["marching_cubes"]
@@ -108,7 +136,10 @@ def generate(model, image, out, steps=50, seed=42, resolution=512, guidance=7.0,
     stages["decimation"] = cursor - previous
     write_glb(out, vertices, faces)
     stages["export"] = time.perf_counter() - cursor
-    return {"path": str(out), "seconds": round(time.perf_counter() - started, 3), "steps": steps,
+    result = {"path": str(out), "seconds": round(time.perf_counter() - started, 3), "steps": steps,
             "seed": seed, "resolution": resolution, "vertices": len(vertices), "faces": len(faces),
             "queries": queries, "stage_seconds": {name: round(value, 3) for name, value in stages.items()},
             "peak_memory_gb": round(mx.get_peak_memory() / 1e9, 3)}
+    if denoiser_cache == 'adaptive':
+        result['denoiser_cache'] = cache.stats() if cache is not None else cache_result
+    return result

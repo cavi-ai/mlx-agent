@@ -18,7 +18,8 @@ already published artifact.
 | Resolve and download a Hugging Face model | [Model intake](mlx-agent/source/pages/lifecycle/intake.md) |
 | Manage optional converter dependencies | [Backends](mlx-agent/source/pages/lifecycle/backends.md) |
 | Quantize a checkpoint or inventory GGUF files | [Convert](mlx-agent/source/pages/lifecycle/convert.md) |
-| Run speech, image, video, or classification tasks | [Local inference](mlx-agent/source/pages/lifecycle/local-inference.md) |
+| Run speech, music, vision, video, 3D, or classification tasks | [Local inference](mlx-agent/source/pages/lifecycle/local-inference.md) |
+| Retain, cancel, and verify model jobs | [Durable inference tasks](mlx-agent/source/pages/lifecycle/tasks.md) |
 | Serve weights and manage JIT memory | [Serve](mlx-agent/source/pages/lifecycle/serve.md) |
 | Train and fuse an adapter | [LoRA and fuse](mlx-agent/source/pages/lifecycle/lora-and-fuse.md) |
 | Run controlled experiments and retain training evaluations | [Laboratory](mlx-agent/source/pages/lifecycle/laboratory.md) |

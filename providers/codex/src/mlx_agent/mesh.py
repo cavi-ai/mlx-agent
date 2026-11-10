@@ -40,7 +40,7 @@ def _choices(values):
 
 
 def plan_mesh(model_path, image, out, steps=None, seed=42, resolution=None, guidance=None, max_faces=500_000,
-              manifests=None, registries=None, root=None):
+              manifests=None, registries=None, root=None, denoiser_cache='off', cache_memory_mib=256):
     """The backend run for one image; unset steps, resolution and guidance take the model's own defaults."""
     model, image, target = (Path(value).expanduser().absolute() for value in (model_path, image, out))
     try:
@@ -66,6 +66,12 @@ def plan_mesh(model_path, image, out, steps=None, seed=42, resolution=None, guid
         raise MeshError("invalid_arguments", "Max faces must be 1000..10000000.", "Use --max-faces 500000.")
     if type(guidance) not in (int, float) or not math.isfinite(guidance) or not 1 <= guidance <= 20:
         raise MeshError("invalid_arguments", "Guidance must be finite and between 1 and 20.", "Use --guidance 7.")
+    if denoiser_cache not in ('off','adaptive'):
+        raise MeshError('invalid_arguments', 'Denoiser cache must be off or adaptive.', 'Use --denoiser-cache adaptive.')
+    if type(cache_memory_mib) is not int or not 8 <= cache_memory_mib <= 4096:
+        raise MeshError('invalid_arguments', 'Cache memory must be 8..4096 MiB.', 'Use --cache-memory-mib 256.')
+    if denoiser_cache == 'adaptive' and config.get('model_type') != 'triposg':
+        raise MeshError('invalid_arguments', 'Adaptive mesh denoiser caching requires TripoSG.', 'Use --denoiser-cache off for this model.')
     manifests = load_manifests() if manifests is None else manifests
     registries = load_registries(manifests, root) if registries is None else registries
     hits = [hit for hit in lookup(config.get("model_type"), manifests, registries) if hit["category"] == "mesh_generation"]
@@ -78,6 +84,8 @@ def plan_mesh(model_path, image, out, steps=None, seed=42, resolution=None, guid
             "--model", str(model), "--image", str(image), "--out", str(target), "--steps", str(steps),
             "--seed", str(seed), "--resolution", str(resolution), "--guidance", str(guidance),
             "--max-faces", str(max_faces)]
+    if denoiser_cache == 'adaptive':
+        argv += ['--denoiser-cache',denoiser_cache,'--cache-memory-mib',str(cache_memory_mib)]
     return {"backend": manifest["id"], "model": str(model), "out": str(target), "argv": argv}
 
 

@@ -1,7 +1,8 @@
 # Serve
 
-Serve launches local MLX servers from a reviewed plan. Use `mlx_lm` for text
-or `mlx-vlm` for vision/language models. `auto` selects typed job serving for
+Serve launches local MLX servers from a reviewed plan. Use `mlx_lm` for text,
+`mlx-vlm` for vision/language models, or `strata` for prepared compatible GGUF
+profiles. `auto` selects typed job serving for
 supported classifiers, text embeddings, speech, music, image, video and 3D models. Ollama and LM Studio manage their
 own servers.
 

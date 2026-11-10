@@ -71,7 +71,7 @@ def block(w, name, x, heads, context=None, self_attention=True, qk_norm=False, s
     return x + w.feed_forward(name + ".ff", w.norm(name + ".norm3", x))
 
 
-def denoise(w, config, latents, timestep, image_features, context_cache=None):
+def denoise(w, config, latents, timestep, image_features, context_cache=None, denoiser_cache=None):
     width, layers, heads = config["width"], config["num_layers"], config["num_attention_heads"]
     half = width // 2
     frequencies = mx.exp(-math.log(10000) * mx.arange(half, dtype=mx.float32) / half)
@@ -81,12 +81,21 @@ def denoise(w, config, latents, timestep, image_features, context_cache=None):
     x = mx.concatenate([embedding[:, None, :], w.linear("proj_in", latents)], axis=1)
     skips = []
     for index in range(layers):
+        first_input = x if index == 0 and denoiser_cache is not None else None
         x = block(w, "blocks." + str(index), x, heads, context=image_features,
                   qk_norm=True, skip=skips.pop() if index > layers // 2 else None,
                   context_cache=context_cache)
+        if first_input is not None:
+            reuse = denoiser_cache.begin(w, image_features, first_input, x, float(timestep[0]))
+            del first_input
+            if reuse:
+                x = denoiser_cache.predict(x)
+                break
         if index < layers // 2:
             skips.append(x)
         mx.eval(x)
+    if denoiser_cache is not None and not denoiser_cache.reuse:
+        denoiser_cache.record(x)
     return w.linear("proj_out", w.norm("norm_out", x)[:, 1:])
 
 
@@ -107,6 +116,13 @@ class Decoder:
                                  config["num_attention_heads"])
             mx.eval(self.context)
         self.context_cache = _CrossAttentionCache(weights, self.context)
+
+    def prepare_context(self):
+        """Materialize fixed cross-attention projections before tracing point queries."""
+        heads = self.config['num_attention_heads']
+        self.context_cache.get(self.weights,
+            'decoder.blocks.' + str(self.config['num_layers_decoder']) + '.attn2',
+            self.context, heads, self.context.shape[-1] // heads, False, True)
 
     def __call__(self, points):
         w, config = self.weights, self.config

@@ -131,7 +131,8 @@ configuration. Keep the returned receipts for inspection and rollback.
 | Apply or recover a connection configuration | [Wire](docs/mlx-agent/source/pages/capabilities/wire.md) |
 | Measure an already-served model | [Bench](docs/mlx-agent/source/pages/capabilities/bench.md) |
 | Research a domain or design a project | [Research](docs/mlx-agent/source/pages/capabilities/research.md) · [Blueprint](docs/mlx-agent/source/pages/capabilities/blueprint.md) |
-| Download, quantize, and run model tasks | [Intake](docs/mlx-agent/source/pages/lifecycle/intake.md) · [Convert](docs/mlx-agent/source/pages/lifecycle/convert.md) · [Local inference](docs/mlx-agent/source/pages/lifecycle/local-inference.md) |
+| Download or convert model weights | [Intake](docs/mlx-agent/source/pages/lifecycle/intake.md) · [Convert](docs/mlx-agent/source/pages/lifecycle/convert.md) |
+| Run music, vision, video, and 3D tasks | [Local inference](docs/mlx-agent/source/pages/lifecycle/local-inference.md) · [Durable tasks](docs/mlx-agent/source/pages/lifecycle/tasks.md) |
 | Serve models with JIT loading and memory policy | [Serve](docs/mlx-agent/source/pages/lifecycle/serve.md) |
 | Run controlled experiments and retain training evaluations | [Laboratory](docs/mlx-agent/source/pages/lifecycle/laboratory.md) |
 | Train or fuse an adapter | [LoRA and fuse](docs/mlx-agent/source/pages/lifecycle/lora-and-fuse.md) |

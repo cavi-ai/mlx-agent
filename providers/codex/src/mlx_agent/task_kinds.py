@@ -191,10 +191,16 @@ def _validate_video_understanding(parameters):
 
 
 def _validate_mesh(parameters):
-    _require_keys(parameters, ("image_path",), ("steps", "seed", "resolution", "guidance", "max_faces"),
+    _require_keys(parameters, ("image_path",), ("steps", "seed", "resolution", "guidance", "max_faces", "denoiser_cache", "cache_memory_mib"),
                   "Mesh-generation parameters need image_path and supported generation settings.")
     _require_absolute(parameters, "image_path")
-    _require_integer(parameters, "steps", "seed", "resolution", "max_faces")
+    _require_integer(parameters, "steps", "seed", "resolution", "max_faces", "cache_memory_mib")
+    if 'cache_memory_mib' in parameters and not 8 <= parameters['cache_memory_mib'] <= 4096:
+        raise TaskError('invalid_parameters', 'cache_memory_mib must be 8..4096.')
+    if 'denoiser_cache' in parameters:
+        _require_string(parameters, 'denoiser_cache')
+        if parameters['denoiser_cache'] not in ('off','adaptive'):
+            raise TaskError('invalid_parameters', 'denoiser_cache must be off or adaptive.')
     _require_finite(parameters, "guidance")
     return parameters
 
@@ -244,7 +250,7 @@ def _plan_video_understanding(model, parameters, output, media, directory):
 
 
 def _plan_mesh(model, parameters, output, media, directory):
-    return plan_mesh(model, media, output, **_options(parameters, ("steps", "seed", "resolution", "guidance", "max_faces")))
+    return plan_mesh(model, media, output, **_options(parameters, ("steps", "seed", "resolution", "guidance", "max_faces", "denoiser_cache", "cache_memory_mib")))
 
 
 def _check_mesh_output(path, plan):

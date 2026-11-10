@@ -9,6 +9,8 @@ from mlx_agent import cli
 from mlx_agent.backends import INSTALL_MARKER, load_manifests, load_registries
 from mlx_agent.mesh import MeshError, plan_mesh
 from mlx_agent.taxonomy import classify
+from unittest import mock
+from mlx_agent import mesh_runner
 
 
 class MeshPlanningTests(unittest.TestCase):
@@ -38,6 +40,26 @@ class MeshPlanningTests(unittest.TestCase):
         self.assertEqual(args[args.index('--module')+1], 'mlx.mlx_agent_ports.triposg')
         self.assertEqual(args[args.index('--image')+1], str(self.image))
         self.assertEqual(args[args.index('--out')+1], str(self.out))
+
+    def test_adaptive_cache_flags_and_architecture_boundary(self):
+        self.assertEqual(self.plan(denoiser_cache='adaptive',cache_memory_mib=64)['argv'][-4:],
+                         ['--denoiser-cache','adaptive','--cache-memory-mib','64'])
+        self.assertNotIn('--denoiser-cache',self.plan()['argv'])
+        for options in ({'denoiser_cache':'invalid'},{'cache_memory_mib':True},{'cache_memory_mib':7},{'cache_memory_mib':4097}):
+            with self.subTest(options=options),self.assertRaises(MeshError):self.plan(**options)
+        (self.model/'config.json').write_text(json.dumps({'model_type':'trellis2'}))
+        with self.assertRaisesRegex(MeshError,'TripoSG'):self.plan(denoiser_cache='adaptive')
+
+    def test_runner_forwards_adaptive_cache_options(self):
+        port=mock.Mock();port.generate.return_value={'path':str(self.out),'stage_seconds':{'sampling':1}}
+        args=['--module','fixture','--model',str(self.model),'--image',str(self.image),'--out',str(self.out),
+              '--steps','50','--seed','42','--resolution','512','--guidance','7','--max-faces','500000',
+              '--denoiser-cache','adaptive','--cache-memory-mib','64']
+        with mock.patch.object(mesh_runner.importlib,'import_module',return_value=port), \
+             mock.patch.object(mesh_runner,'load_model',return_value=object()),contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(mesh_runner.main(args),0)
+        self.assertEqual(port.generate.call_args.kwargs['denoiser_cache'],'adaptive')
+        self.assertEqual(port.generate.call_args.kwargs['cache_memory_mib'],64)
 
     def test_defaults_to_the_upstream_resolution_and_face_cap(self):
         args = self.plan()['argv']

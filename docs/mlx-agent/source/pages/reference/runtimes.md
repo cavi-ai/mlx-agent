@@ -8,6 +8,8 @@ Choose one for the model format and task you intend to run.
 | --- | --- | --- |
 | `mlx_lm` | Native text serving; default text conversion, LoRA, and fusion path | 8080 |
 | `mlx-vlm` | Native vision/language serving and media tasks | 8083 |
+| `strata` | Prepared Strata GGUF profiles with expert-memory and decoding controls | Selected with `--port` |
+| `tasks` | Capability-bound HTTP tasks over an installed model backend | Selected with `--port` |
 | LM Studio | Desktop-managed models with a local OpenAI-compatible server | 1234 |
 | Ollama | Runtime-managed models and tags through its local API | 11434 |
 | LiteLLM | Router over explicitly configured backends | 4000 |
@@ -18,11 +20,22 @@ Serve's `--port` and Fleet's `--port-map role=port` allow explicit choices.
 
 ## Native MLX servers
 
-`serve start` launches `mlx_lm` or `mlx-vlm` with reviewed arguments and
-local weights. The executable must already be installed. `--path` selects a
+`serve start` supports `mlx_lm`, `mlx-vlm`, `strata`, and `tasks` with reviewed
+arguments and local weights. The selected runtime or backend must already be
+installed. `--path` selects a
 local directory; `--repo` selects a cached repository. Text adapters use
 `--adapter-path`. See [Serve](../lifecycle/serve.md) for JIT, launchd, memory
-policy, and process ownership.
+policy, API-key authentication, and process ownership.
+
+Strata requires a prepared compatible GGUF profile. Its memory budget covers
+weights, expert cache, draft state, context and runtime allowances; saved profiles
+retain the selected budget and decoding mode. This budget is distinct from the
+activation-cache limits used by video and 3D generation.
+
+Task serving advertises the selected model's task kinds through its HTTP endpoint.
+Jobs retain verified input/output artifacts and support status and cancellation.
+The model backend controls which tasks and settings are supported. See
+[Durable inference tasks](../lifecycle/tasks.md).
 
 ## Managed desktop and tag runtimes
 
@@ -47,9 +60,10 @@ start LiteLLM or load the referenced model servers.
 ## Optional task backends
 
 [Backends](../lifecycle/backends.md) manage locked converter and task-runner
-environments, separate from an always-running HTTP server.
+environments. Their models can run through direct inference commands, durable
+local jobs, or a `tasks` HTTP endpoint.
 [Local inference](../lifecycle/local-inference.md) covers speech, classification,
-media description, image generation, and video generation.
+media description, music, image/video generation, and 3D mesh generation.
 
 Reference packs shipped in `src/mlx_agent/resources/references/` cover
 quantization, model families, and serving troubleshooting. Compare performance

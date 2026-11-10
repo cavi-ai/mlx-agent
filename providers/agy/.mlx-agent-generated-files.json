@@ -486,7 +486,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "d1ffea7834c5ce77a87a14a3787898135ad9df19f259f04a833aebe5adf75c65"
+      "sha256": "bdecdb76333020233137a061ed425e819ed60167e042db72c87c7021e1820db7"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -686,11 +686,11 @@
     },
     {
       "path": "src/mlx_agent/mesh.py",
-      "sha256": "fc17121f6a8d30c1234fe56f5c880c8ad649718eadce0d7c1aa59fbc6a84e1f1"
+      "sha256": "869fcd1b7c5f14b2292bb7bfd425982ca85cd86eec051ef06e413cbd901736df"
     },
     {
       "path": "src/mlx_agent/mesh_runner.py",
-      "sha256": "b300fab09496289e3b3d71d6464a020818b857e751d34b55143766026a672262"
+      "sha256": "875820ec9218991f88762d0b216c7aa206e679a9e3aacacd5ab4a6d88df27321"
     },
     {
       "path": "src/mlx_agent/messages_api.py",
@@ -993,6 +993,10 @@
       "sha256": "c7a2443d5c1f1b78593f893c0e2a018d5fcb5bdf103a64f7ddde7472a1531466"
     },
     {
+      "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/denoiser_cache.py",
+      "sha256": "b54bf78508813157132a2bf4ef3e1c476dfc555e8e1d49ae2cbbcd2e7884e277"
+    },
+    {
       "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/dinov2.py",
       "sha256": "77698eae355eb1083578cb8874ac1437ce908e33b0fa5c750ff323357cb55a21"
     },
@@ -1006,11 +1010,11 @@
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/pipeline.py",
-      "sha256": "8b318a1f8297ebbcccd50c285234c95900979c7c1a51650b7d134e6aaa3cb22a"
+      "sha256": "e618e5a1a6fb29dee318f5bb85c44ee30382ed12b984d29b91f441a5c0e32665"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/transformer.py",
-      "sha256": "80baefcde4e9c8df47c4881d8698f79539b21fc7f9d324de8e1b37069413ba70"
+      "sha256": "2524c0c6022cf8d95620b9c257de6fa307691e95ac7584a250c55d749aaf2acb"
     },
     {
       "path": "src/mlx_agent/resources/ports/mlx-3d/triposg/weights.py",
@@ -1166,7 +1170,7 @@
     },
     {
       "path": "src/mlx_agent/task_kinds.py",
-      "sha256": "c189a6c37bd0ca98f712eea2c96513dc71ad27ab765dfdb7a0253e8e0be25c17"
+      "sha256": "c398d4d6f299e7ccac1e6e52b319a1a56670bac56fe1801628ab6c6eef3ab899"
     },
     {
       "path": "src/mlx_agent/task_mp4_validator.py",

@@ -113,7 +113,7 @@
             "max_pixels": {"type": "integer"}
           }
         }}}},
-        {"if": {"properties": {"kind": {"const": "mesh_generation"}}}, "then": {"properties": {"parameters": {"type": "object", "additionalProperties": false, "required": ["image_path"], "properties": {"image_path": {"type": "string", "pattern": "^/[^\\u0000-\\u001f]*$"}, "steps": {"type": "integer"}, "seed": {"type": "integer"}, "resolution": {"type": "integer"}, "guidance": {"type": "number"}, "max_faces": {"type": "integer"}}}}}},
+        {"if": {"properties": {"kind": {"const": "mesh_generation"}}}, "then": {"properties": {"parameters": {"type": "object", "additionalProperties": false, "required": ["image_path"], "properties": {"image_path": {"type": "string", "pattern": "^/[^\\u0000-\\u001f]*$"}, "steps": {"type": "integer"}, "seed": {"type": "integer"}, "resolution": {"type": "integer"}, "guidance": {"type": "number"}, "max_faces": {"type": "integer"}, "denoiser_cache": {"enum": ["off", "adaptive"]}, "cache_memory_mib": {"type": "integer", "minimum": 8, "maximum": 4096}}}}}},
         {"if": {"properties": {"kind": {"const": "embedding"}}}, "then": {"properties": {"parameters": {"type": "object", "additionalProperties": false, "required": ["input"], "properties": {"input": {"type": "array", "minItems": 1, "maxItems": 128, "items": {"type": "string", "minLength": 1, "maxLength": 32768, "pattern": "\\S"}}, "max_length": {"type": "integer", "minimum": 1, "maximum": 8192}}}}}}
       ]
     }

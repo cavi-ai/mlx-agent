@@ -80,11 +80,30 @@ def _pixel_std(frames) -> float:
 
 
 def generate(model: Model, prompt: str, out: str, width: int = 832, height: int = 480, frames: int = 81,
-             fps: int = 16, steps: int = 50, seed: int = 42) -> dict:
+             fps: int = 16, steps: int = 50, seed: int = 42, denoiser_cache: str = "off",
+             cache_memory_mib: int = 256) -> dict:
     """Render one video to ``out`` (MP4); returns its dimensions, timing, memory, and pixel spread."""
     import mlx.core as mx
     import mlx_video.generate_wan as wan
     from transformers import AutoTokenizer
+
+    if denoiser_cache not in ("off", "adaptive"):
+        raise ValueError("denoiser_cache must be off or adaptive")
+    if isinstance(cache_memory_mib, bool) or not isinstance(cache_memory_mib, int) or not 8 <= cache_memory_mib <= 4096:
+        raise ValueError("cache_memory_mib must be 8..4096")
+    cache = None
+    cache_result = None
+    if denoiser_cache == "adaptive":
+        from .denoiser_cache import WanDenoiserCache, required_cache_bytes
+
+        if model.config.get("model_version") != "2.1" or model.config.get("dual_model", False) or model.config.get("model_type") != "t2v":
+            raise ValueError("adaptive denoiser caching requires single-model Wan2.1 T2V")
+        limit = cache_memory_mib * 1024 ** 2
+        if required_cache_bytes(model.config, width, height, frames) > limit:
+            cache_result = {"mode": "adaptive", "full_steps": steps, "reused_steps": 0,
+                            "peak_cache_bytes": 0, "memory_limit_bytes": limit, "fallback_reason": "memory_limit"}
+        else:
+            cache = WanDenoiserCache(steps, limit)
 
     spent = {"load": 0.0}
     written = {}
@@ -98,11 +117,16 @@ def generate(model: Model, prompt: str, out: str, width: int = 832, height: int 
             try:
                 key = repr((arguments, sorted(keywords.items())))
                 retained = model.components.get(function.__name__) if model.retain_weights else None
+                if function.__name__ == "load_vae_decoder" and cache is not None:
+                    cache.close()
                 if retained is not None and retained[0] == key:
-                    return retained[1]
-                value = function(*arguments, **keywords)
-                if model.retain_weights:
-                    model.components[function.__name__] = (key, value)
+                    value = retained[1]
+                else:
+                    value = function(*arguments, **keywords)
+                    if model.retain_weights:
+                        model.components[function.__name__] = (key, value)
+                if function.__name__ == "load_wan_model" and cache is not None:
+                    return cache.attach(value)
                 return value
             finally:
                 spent["load"] += time.time() - started
@@ -141,22 +165,28 @@ def generate(model: Model, prompt: str, out: str, width: int = 832, height: int 
         mock.patch.object(AutoTokenizer, "from_pretrained", redirected),
     ]
     with contextlib.ExitStack() as stack:
+        if cache is not None:
+            stack.callback(cache.close)
         for patch in patches:
             stack.enter_context(patch)
         with contextlib.redirect_stdout(sys.stderr):
             wan.generate_video(
                 model_dir=str(model.path), prompt=prompt, width=width, height=height, num_frames=frames,
                 steps=steps, seed=seed, output_path=out,
+                **({"no_compile": True} if cache is not None else {}),
             )
     total = time.time() - started
     peak_memory_gb = mx.get_peak_memory() / 1e9
     if "frames" not in written:
         raise RuntimeError("the pipeline produced no video")
     seconds = max(total - spent["load"], 0.0)
-    return {
+    result = {
         "path": str(out), "width": written["width"], "height": written["height"], "frames": written["frames"],
         "fps": fps, "duration_seconds": round(written["frames"] / fps, 3), "steps": steps, "seed": seed,
         "seconds": round(seconds, 3), "load_seconds": round(spent["load"], 3),
         "seconds_per_frame": round(seconds / written["frames"], 3),
         "peak_memory_gb": round(peak_memory_gb, 3), "pixel_std": round(written["pixel_std"], 3),
     }
+    if denoiser_cache == "adaptive":
+        result["denoiser_cache"] = cache.stats() if cache is not None else cache_result
+    return result

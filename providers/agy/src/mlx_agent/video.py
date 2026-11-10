@@ -52,7 +52,8 @@ def _config_int(config, key, default):
 
 
 def plan_video(model_path, prompt, out, width=DEFAULT_WIDTH, height=DEFAULT_HEIGHT, frames=DEFAULT_FRAMES,
-               fps=None, steps=None, seed=42, manifests=None, registries=None, root=None):
+               fps=None, steps=None, seed=42, manifests=None, registries=None, root=None,
+               denoiser_cache="off", cache_memory_mib=256):
     """Pick the video backend for a converted model directory; pure apart from reading config.json.
 
     The size alignment, the frame rule, the area cap, and the step and rate defaults come from the
@@ -101,6 +102,13 @@ def plan_video(model_path, prompt, out, width=DEFAULT_WIDTH, height=DEFAULT_HEIG
         raise _invalid("--steps must be 1..100.", "Pass --steps 30, for example.")
     if not _is_int(seed) or not 0 <= seed < 2 ** 32:
         raise _invalid("--seed must be 0..4294967295.", "Pass --seed 42, for example.")
+    if denoiser_cache not in ("off", "adaptive"):
+        raise _invalid("--denoiser-cache must be off or adaptive.", "Pass --denoiser-cache adaptive to enable residual reuse.")
+    if not _is_int(cache_memory_mib) or not 8 <= cache_memory_mib <= 4096:
+        raise _invalid("--cache-memory-mib must be 8..4096.", "Pass --cache-memory-mib 256, for example.")
+    if denoiser_cache == "adaptive" and (config.get("model_version") != "2.1" or
+                                         config.get("dual_model", False) or config.get("model_type") != "t2v"):
+        raise _invalid("Adaptive denoiser caching requires single-model Wan2.1 T2V.", "Use --denoiser-cache off for this model.")
     model_type = config.get("model_type")
     manifests = load_manifests() if manifests is None else manifests
     registries = load_registries(manifests, root) if registries is None else registries
@@ -124,6 +132,8 @@ def plan_video(model_path, prompt, out, width=DEFAULT_WIDTH, height=DEFAULT_HEIG
         "--prompt=" + prompt, "--out", str(target), "--width", str(width), "--height", str(height),
         "--frames", str(frames), "--fps", str(fps), "--steps", str(steps), "--seed", str(seed),
     ]
+    if denoiser_cache == "adaptive":
+        argv.extend(["--denoiser-cache", denoiser_cache, "--cache-memory-mib", str(cache_memory_mib)])
     return {
         "backend": manifest["id"], "model": str(model), "out": str(target),
         "width": width, "height": height, "frames": frames, "fps": fps, "steps": steps, "seed": seed, "argv": argv,
@@ -144,5 +154,8 @@ def run_video(plan, manifests=None, root=None, timeout=DEFAULT_TIMEOUT_SECONDS, 
         "path", "width", "height", "frames", "fps", "duration_seconds", "steps", "seed", "seconds", "load_seconds",
         "seconds_per_frame", "peak_memory_gb", "pixel_std",
     )
-    return dict({"schema": VIDEO_SCHEMA, "backend": plan["backend"], "model": plan["model"]},
-                **{key: result.get(key) for key in keys})
+    output = dict({"schema": VIDEO_SCHEMA, "backend": plan["backend"], "model": plan["model"]},
+                  **{key: result.get(key) for key in keys})
+    if "denoiser_cache" in result:
+        output["denoiser_cache"] = result["denoiser_cache"]
+    return output

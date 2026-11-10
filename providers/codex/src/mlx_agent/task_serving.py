@@ -215,7 +215,8 @@ class TaskModelWorker(ModelWorker):
         leased = False
         dispatched = False
         try:
-            lease.__enter__()
+            lease.enter_wait(self.memory_policy.get('execution_wait_seconds', 0),
+                cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'])
             leased = True
             record = self.store.get(identifier)
             if record['cancel_requested'] or self.closed:
@@ -275,7 +276,7 @@ class TaskModelWorker(ModelWorker):
             _finish(self.store, identifier, 'succeeded', result=reference, error=None)
         except BaseException as error:
             unresolved = False
-            admission_denied = isinstance(error, ComputeBusy) and not leased
+            admission_denied = isinstance(error, (ComputeBusy, InterruptedError)) and not leased
             admission_denied |= (not dispatched and isinstance(error,GatewayError)
                 and error.code in ('insufficient_headroom','memory_unknown','memory_registry_busy'))
             # No work was dispatched if the host lease was denied. Keep the

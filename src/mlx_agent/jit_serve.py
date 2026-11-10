@@ -35,10 +35,12 @@ from mlx_agent.messages_api import (MessagesRequestError, StreamTranslator, Work
                                     from_chat_response, to_chat_request)
 from mlx_agent.transactions import _atomic_in_directory
 from mlx_agent.residency import MemoryRegistry, MemoryAdmissionError
+from mlx_agent.compute import ComputeBusy, ComputeLease, ExecutionAdmission, group_members, process_identity
 
 MAX_BODY = 16 * 1024 * 1024
 MAX_REQUESTS = 32
 STORED_RESPONSES = 64
+DRAIN_TIMEOUT_SECONDS = 30
 
 
 STRATA_CONTEXT = "Strata JIT admission already includes the KV cache at --strata-context-tokens."
@@ -48,9 +50,12 @@ def validate_memory_policy(policy=None):
     defaults = {"idle_timeout_seconds": 0, "keep_loaded": False, "minimum_headroom_gb": None}
     if policy is None:
         return defaults
-    if not isinstance(policy, dict) or set(policy) - set(defaults) - {"context_tokens", "unload_under_pressure", "model_memory_budget_gb", "release_after_request"}:
+    if not isinstance(policy, dict) or set(policy) - set(defaults) - {"context_tokens", "unload_under_pressure", "model_memory_budget_gb", "release_after_request", "execution_wait_seconds"}:
         raise ValueError("Unknown memory policy fields.")
     result = dict(defaults, **policy)
+    wait = result.get("execution_wait_seconds", 0)
+    if type(wait) is not int or not 0 <= wait <= 3600:
+        raise ValueError("Execution wait must be an integer between 0 and 3600 seconds.")
     # Null and absent both mean no KV term; policies without a context keep their existing form.
     release = result.pop("release_after_request", False)
     if type(release) is not bool or (release and result["keep_loaded"]):
@@ -153,6 +158,10 @@ class ModelWorker:
         self.worker_argv = None
         self.model_state = "unloaded"
         self.active_requests = 0
+        self.execution = ExecutionAdmission("serve:" + config.get("model", config["local_path"]), config.get("compute_state_dir"))
+        self.worker_group = None
+        self.worker_identity = None
+        self.execution_unresolved = False
         self.last_error = None
         self.closed = False
         self.log = None
@@ -194,6 +203,14 @@ class ModelWorker:
 
     def _refresh(self):
         if self.process and self.process.poll() is not None and self.model_state == "loaded":
+            if self.worker_group is not None:
+                try:
+                    self._stop_group()
+                except (OSError, ValueError, subprocess.SubprocessError) as error:
+                    self.model_state = "failed"
+                    self.last_error = str(error)
+                    self._persist()
+                    return
             self.process = None
             if self.private_endpoint is not None:
                 self.private_endpoint.close()
@@ -224,6 +241,7 @@ class ModelWorker:
                     "worker_pid": self.process.pid if self.process and self.process.poll() is None else None,
                     "worker_port": self.worker_port if self.model_state == "loaded" else None,
                     "last_error": self.last_error, "memory_policy": dict(self.memory_policy),
+                    "execution": {"active_requests": self.execution.users, "waiting_requests": self.execution.waiting},
                     "memory_check": self.memory_check, "load_blocked_reason": self.load_blocked_reason,
                     "memory_reservation": self.memory_reservation, "worker_memory": self.worker_memory,
                     "resident_memory_check": self.resident_memory_check,
@@ -413,13 +431,15 @@ class ModelWorker:
         if error:
             raise error
 
-    def acquire(self):
+    def acquire(self, cancelled=lambda: False):
         with self.condition:
             if not self.condition.wait_for(lambda: self.model_state != "unloading" or self.closed, timeout=10):
                 raise GatewayError(503, "model_unloading", "Model unload has not finished.")
             if self.closed:
                 raise GatewayError(503, "endpoint_stopping", "Endpoint is stopping.")
             self._refresh()
+            if self.execution_unresolved:
+                raise GatewayError(503, "worker_unavailable", "The previous backend execution has not stopped.")
             if self.memory_budget_pending:
                 raise GatewayError(503, "model_reconfiguring", "The model is applying a memory budget; retry when it is idle.")
             if self.active_requests >= MAX_REQUESTS:
@@ -429,11 +449,15 @@ class ModelWorker:
             self.activity_revision += 1
             policy = dict(self.memory_policy)
             self.request_blocked_reason = None
-            starter = self.model_state not in ("loaded", "loading")
-            if starter:
-                self.model_state = "loading"
-                self.last_error = None
+        admitted = False
         try:
+            self.execution.acquire(policy.get("execution_wait_seconds", 0), lambda: self.closed or cancelled())
+            admitted = True
+            with self.condition:
+                starter = self.model_state not in ("loaded", "loading")
+                if starter:
+                    self.model_state = "loading"
+                    self.last_error = None
             if starter:
                 self._start()
             else:
@@ -443,13 +467,18 @@ class ModelWorker:
             with self.condition:
                 if self.closed or self.model_state != "loaded":
                     raise GatewayError(503, "model_load_failed", self.last_error or "Model is not ready.")
+            self.execution.bind(self.process.pid)
             self._check_resident_memory(policy)
             with self.condition:
                 if self.closed or self.model_state != "loaded":
                     raise GatewayError(503, "endpoint_stopping", "Endpoint is stopping.")
                 return self.worker_port
-        except BaseException:
-            self.release()
+        except BaseException as error:
+            self.release(compute=admitted)
+            if isinstance(error, ComputeBusy):
+                raise GatewayError(503, "compute_busy", str(error)) from error
+            if isinstance(error, InterruptedError):
+                raise GatewayError(503, "execution_cancelled", str(error)) from error
             raise
 
     def _check_adapter(self):
@@ -520,20 +549,42 @@ class ModelWorker:
                 environment[WORKER_DIGEST] = hashlib.sha256(self.worker_key.encode()).hexdigest()
                 if not private:
                     argv = command(argv, self.config.get("runtime") or "mlx_lm")
-            log = open(self.config["log_path"], "ab", buffering=0) if self.config.get("log_path") else subprocess.DEVNULL
-            with self.condition:
-                if self.closed:
-                    raise GatewayError(503, "endpoint_stopping", "Endpoint is stopping.")
-                # Inherit the gateway's session: serve stop signals the whole
-                # owned group, including a worker when the gateway is killed.
-                self.process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log,
-                                                stderr=subprocess.STDOUT, env=environment, **extra)
-                if private:
-                    self.private_endpoint.listener.close()
-                self.log = log
-                self.worker_port, self.worker_argv = (None if private else port), argv
-                self._persist()
-                process = self.process
+            from mlx_agent.owned_worker import command as owned_command
+            ready_read, ready_write = os.pipe()
+            gate_read, gate_write = os.pipe()
+            try:
+                argv = owned_command(argv, ready_write, gate_read)
+                extra["pass_fds"] = (*extra.get("pass_fds", ()), ready_write, gate_read)
+                log = open(self.config["log_path"], "ab", buffering=0) if self.config.get("log_path") else subprocess.DEVNULL
+                with self.condition:
+                    if self.closed:
+                        if log != subprocess.DEVNULL:
+                            log.close()
+                        raise GatewayError(503, "endpoint_stopping", "Endpoint is stopping.")
+                    self.log = log
+                    self.process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log,
+                        stderr=subprocess.STDOUT, env=environment, start_new_session=True, **extra)
+                    self.worker_group = self.process.pid
+                    if private:
+                        self.private_endpoint.listener.close()
+                    self.worker_port, self.worker_argv = (None if private else port), argv
+                    self._persist()
+                    process = self.process
+                os.close(ready_write)
+                ready_write = None
+                os.close(gate_read)
+                gate_read = None
+                with selectors.DefaultSelector() as selector:
+                    selector.register(ready_read, selectors.EVENT_READ)
+                    if not selector.select(5) or os.read(ready_read, 1) != b'R':
+                        raise GatewayError(503, "model_load_failed", "Model worker startup was not acknowledged.")
+                self.execution.bind(process.pid)
+                self.worker_identity = process_identity(process.pid)
+                os.write(gate_write, b'G')
+            finally:
+                for descriptor in (ready_read, ready_write, gate_read, gate_write):
+                    if descriptor is not None:
+                        os.close(descriptor)
             from mlx_agent.inference_auth import loopback_opener
             opener = loopback_opener()
             readiness_seconds = self.config.get("worker_readiness_seconds", 60)
@@ -565,7 +616,6 @@ class ModelWorker:
             else:
                 raise GatewayError(503, "model_load_failed",
                                    "Model worker did not become ready in {} seconds.".format(readiness_seconds))
-            from mlx_agent.compute import process_identity
             self._bind_memory(process,process_identity(process.pid))
             if model_fingerprint(self.config["local_path"]) != self.config["fingerprint"]:
                 raise GatewayError(503, "model_changed", "Model files changed while loading.")
@@ -597,7 +647,34 @@ class ModelWorker:
                 raise failure from error
             raise GatewayError(503, "model_load_failed", str(failure)) from failure
 
-    def release(self):
+    def _idle_execution(self, lease):
+        process = self.process
+        if process is None:
+            return
+        try:
+            if self.execution_unresolved:
+                raise ComputeBusy("The upstream execution did not complete.")
+            if process.poll() is not None:
+                raise ComputeBusy("The model worker exited.")
+            members = {pid: process_identity(pid) for pid in group_members(process.pid)}
+            if not all(members.values()):
+                raise ComputeBusy("The idle backend group cannot be inspected.")
+            lease.release_idle_process_group(process.pid, members)
+        except (ComputeBusy, OSError, ValueError, subprocess.SubprocessError):
+            self.execution_unresolved = True
+            self._stop_worker()
+            with self.condition:
+                self.model_state = "unloaded"
+                self._persist()
+
+    def release(self, compute=True):
+        try:
+            if compute:
+                self.execution.release(self._idle_execution)
+        finally:
+            self._release_request()
+
+    def _release_request(self):
         with self.condition:
             self.active_requests -= 1
             self.activity_revision += 1
@@ -616,6 +693,9 @@ class ModelWorker:
         return http.client.HTTPConnection("127.0.0.1", self.worker_port, timeout=timeout)
 
     def _stop_worker(self):
+        if self.worker_group is not None:
+            self._stop_group()
+            return
         with self.condition:
             process = self.process
         if self.config.get("runtime") == "strata":
@@ -653,6 +733,47 @@ class ModelWorker:
                 self.private_endpoint = None
         self._release_memory()
 
+    def _stop_group(self):
+        with self.condition:
+            process, group = self.process, self.worker_group
+        if process is not None and process.poll() is None:
+            if self.worker_identity is not None and process_identity(process.pid) != self.worker_identity:
+                raise OSError("The model worker identity changed; shutdown is blocked.")
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                pass
+            try:
+                process.wait(timeout=65 if self.config.get("runtime") == "strata" else 3)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(group, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=3)
+        if group_members(group):
+            try:
+                os.killpg(group, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            deadline = time.monotonic() + 3
+            while group_members(group) and time.monotonic() < deadline:
+                time.sleep(.05)
+            if group_members(group):
+                raise OSError("The owned model process group has not stopped.")
+        with self.condition:
+            self.process = None
+            self.worker_group = self.worker_identity = None
+            self.execution_unresolved = False
+            self.strata_children = {}
+            if self.log not in (None, subprocess.DEVNULL):
+                self.log.close()
+            self.log = None
+            if self.private_endpoint is not None:
+                self.private_endpoint.close()
+                self.private_endpoint = None
+        self._release_memory()
+
     def unload_if_idle(self):
         with self.condition:
             self._refresh()
@@ -680,7 +801,14 @@ class ModelWorker:
                 if error is None or error.code == "memory_unknown":
                     return False
                 self.model_state = "unloading"
-        self._finish_unload("memory_budget" if budget_reload else "idle" if idle else "memory_pressure")
+        try:
+            with ComputeLease("idle-unload:" + self.config.get("model", self.config["local_path"]), self.config.get("compute_state_dir")):
+                self._finish_unload("memory_budget" if budget_reload else "idle" if idle else "memory_pressure")
+        except ComputeBusy:
+            with self.condition:
+                self.model_state = "loaded"
+                self.condition.notify_all()
+            return False
         return True
 
     def unload(self):
@@ -715,6 +843,7 @@ class ModelWorker:
             self.closed = True
             self.condition.notify_all()
         self._stop_worker()
+        self.execution.close()
         with self.condition:
             self.model_state = "unloaded"
             self._persist()
@@ -858,6 +987,16 @@ class GatewayHandler(BaseHTTPRequestHandler):
         message = "Model worker returned HTTP {}".format(response.status)
         return GatewayError(502, "worker_error", message + (": {}".format(reason) if isinstance(reason, str) else "."))
 
+    def _client_gone(self):
+        try:
+            with selectors.DefaultSelector() as selector:
+                selector.register(self.connection, selectors.EVENT_READ)
+                if not selector.select(0):
+                    return False
+            return not self.connection.recv(1, socket.MSG_PEEK)
+        except OSError:
+            return True
+
     def _worker_replied(self, worker):
         """Wait without a deadline for the worker's first reply byte; False once the client disconnects."""
         with selectors.DefaultSelector() as selector:
@@ -961,6 +1100,8 @@ class GatewayHandler(BaseHTTPRequestHandler):
         connection = None
         leased = False
         response_started = False
+        response = upstream = None
+        submitted = False
         try:
             self._guard(control=self.path in ("/_mlx/unload", "/_mlx/policy"))
             if self.headers.get("Transfer-Encoding"):
@@ -1022,14 +1163,19 @@ class GatewayHandler(BaseHTTPRequestHandler):
             legacy_mlx = runtime is None and Path(self.server.config["worker_argv"][0]).name == "mlx_lm.server"
             if runtime == "mlx_lm" or legacy_mlx:
                 chat_completions.decode_tool_arguments(body)
-            port = self.server.controller.acquire()
+            port = self.server.controller.acquire(cancelled=self._client_gone)
             leased = True
             connection = self.server.controller.connection(timeout=120)
             connection.request("POST", "/v1/chat/completions" if translated else self.path, json.dumps(body),
                                dict({"Content-Type": "application/json"}, **({"Authorization": "Bearer " + self.server.controller.worker_key}
                                    if self.server.config.get("private_worker") or self.server.config.get("api_key_sha256") is not None else {})))
+            submitted = True
+            upstream = connection.sock
+            upstream.settimeout(None)
             # MLX-LM writes nothing until an unstreamed answer is complete or a queued request starts.
-            if not self._worker_replied(connection.sock):
+            if not self._worker_replied(upstream):
+                upstream.settimeout(DRAIN_TIMEOUT_SECONDS)
+                response = connection.getresponse()
                 return
             response = connection.getresponse()
             if self.server.config.get("private_worker"):
@@ -1083,15 +1229,41 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 self.wfile.write(chunk)
                 self.wfile.flush()
         except GatewayError as error:
-            self._error(error)
+            if not self._client_gone():
+                self._error(error)
         except (OSError, http.client.HTTPException):
-            if not response_started:
+            if not response_started and not self._client_gone():
                 self._error(GatewayError(503, "worker_unavailable", "Model worker connection failed."))
         finally:
-            if connection:
-                connection.close()
-            if leased:
-                self.server.controller.release()
+            try:
+                if leased and submitted and (response is None or not response.isclosed()):
+                    try:
+                        if upstream is not None:
+                            upstream.settimeout(DRAIN_TIMEOUT_SECONDS)
+                        if response is None:
+                            response = connection.getresponse()
+                        deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
+                        while not response.isclosed():
+                            if upstream is not None:
+                                upstream.settimeout(max(.001, deadline - time.monotonic()))
+                            if time.monotonic() >= deadline:
+                                raise TimeoutError("Model reply did not drain.")
+                            if not response.read1(65536):
+                                break
+                    except (OSError, http.client.HTTPException):
+                        self.server.controller.execution_unresolved = True
+                        try:
+                            self.server.controller._stop_worker()
+                        finally:
+                            with self.server.controller.condition:
+                                self.server.controller.model_state = "failed" if self.server.controller.process else "unloaded"
+                                self.server.controller._persist()
+            finally:
+                if connection:
+                    connection.close()
+                if leased:
+                    self.server.controller.release()
+
 
 
 def make_server(config, port):

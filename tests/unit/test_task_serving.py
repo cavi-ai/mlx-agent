@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -100,6 +101,7 @@ def predict(model, tokenizer, state, questions):
             'port': 0, 'task_identity': identity, 'task_kinds': ['classification'], 'task_state_dir': str(self.root / 'tasks'),
             'max_tokens': 0, 'worker_argv': [sys.executable], 'control_token': 'a' * 32,
             'memory_state_dir': str(self.root / 'memory'),
+            'compute_state_dir': str(self.root / 'compute'),
             'memory_policy': {'keep_loaded': True}}
         self.server = TaskServer(('127.0.0.1', 0), config)
         self.server.controller.config['port'] = self.server.server_port
@@ -208,6 +210,24 @@ def predict(model, tokenizer, state, questions):
     def test_failed_job_releases_compute_for_retry(self):
         self.assertEqual(self.wait(self.start('fail'))['state'], 'failed')
         self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+
+    def test_waiting_job_and_cancelled_waiter_preserve_residency(self):
+        from mlx_agent.compute import ComputeLease
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        controller.configure({'execution_wait_seconds': 2})
+        process = controller.resident.process
+        with ComputeLease('other-workload', self.root / 'compute'):
+            identifier = self.start()
+            time.sleep(.1)
+            self.assertEqual(self.request('POST', '/v1/tasks/' + identifier + '/cancel', {})[0], 200)
+            self.assertEqual(self.wait(identifier)['state'], 'cancelled')
+            self.assertIs(controller.resident.process, process)
+            identifier = self.start()
+            time.sleep(.1)
+            self.assertEqual(self.request('GET', '/v1/tasks/' + identifier)[1]['state'], 'starting')
+        self.assertEqual(self.wait(identifier)['state'], 'succeeded')
+        self.assertIs(controller.resident.process, process)
 
     def test_compute_contention_keeps_warm_model_for_retry(self):
         from mlx_agent.compute import ComputeLease

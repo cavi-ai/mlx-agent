@@ -947,7 +947,7 @@ def _add_serve_arguments(parser):
     )
     start.add_argument("--repo", default=None, help="publisher/model present in the local Hugging Face cache")
     start.add_argument("--path", default=None, help="local model directory to serve instead of a cache repo id")
-    start.add_argument("--profile", help="saved Strata settings; explicit options override the profile")
+    start.add_argument("--profile", help="saved serving settings; explicit options override the profile")
     start.add_argument("--runtime", required=True, choices=["auto", "mlx_lm", "mlx-vlm", "strata", "tasks"])
     decoding = start.add_mutually_exclusive_group()
     decoding.add_argument("--strata-speculation", choices=["on", "off"], help="legacy Strata draft-and-verify switch (default: off)")
@@ -1000,7 +1000,7 @@ def _add_serve_arguments(parser):
     status = actions.add_parser("status", help="cross-check serve receipts against live processes")
     status.add_argument("--receipts-dir", default=None)
     status.add_argument("--json", action="store_true")
-    profiles = actions.add_parser("profile", help="save and reuse local Strata memory and decoding settings")
+    profiles = actions.add_parser("profile", help="save and reuse local memory, residency and execution settings")
     profile_actions = profiles.add_subparsers(dest="profile_command", required=True)
     for command in ("save", "show", "list", "delete"):
         action = profile_actions.add_parser(command)
@@ -1009,13 +1009,15 @@ def _add_serve_arguments(parser):
         action.add_argument("--receipts-dir", default=None)
         action.add_argument("--json", action="store_true")
         if command == "save":
-            action.add_argument("--memory-budget-gb", type=float, required=True)
+            action.add_argument("--memory-budget-gb", type=float, default=None)
             action.add_argument("--min-headroom-gb", type=float, required=True)
-            action.add_argument("--strata-context-tokens", type=int, default=16384)
-            action.add_argument("--strata-decoding", choices=["plain", "lookup", "mtp"], default="plain")
+            action.add_argument("--strata-context-tokens", type=int, default=None)
+            action.add_argument("--strata-decoding", choices=["plain", "lookup", "mtp"], default=None)
             action.add_argument("--idle-timeout", type=int, default=300)
             action.add_argument("--keep-loaded", action="store_true")
             action.add_argument("--unload-under-pressure", action=argparse.BooleanOptionalAction, default=True)
+            action.add_argument("--execution-wait", dest="execution_wait_seconds", type=int, default=None)
+            action.add_argument("--release-after-request", action=argparse.BooleanOptionalAction, default=None)
             action.add_argument("--replace", action="store_true")
     discover = actions.add_parser("discover", help="find engine services across registered and live receipt locations")
     discover.add_argument("--receipts-dir", action="append", default=[])
@@ -1030,6 +1032,7 @@ def _add_memory_arguments(parser, clear_budget=False):
         budgets.add_argument("--clear-memory-budget", action="store_true",
                              help="remove the model budget after active requests finish")
     parser.add_argument("--idle-timeout", type=int, default=None, help="unload after this many idle seconds (0 disables)")
+    parser.add_argument("--execution-wait", dest="execution_wait_seconds", type=int, default=None, help="wait up to this many seconds for host compute (0-3600; default 0)")
     parser.add_argument("--release-after-request", action=argparse.BooleanOptionalAction, default=None, help="release model weights after each completed inference request")
     parser.add_argument("--keep-loaded", action=argparse.BooleanOptionalAction, default=None, help="prevent automatic idle unload after use")
     parser.add_argument("--unload-under-pressure", action=argparse.BooleanOptionalAction, default=None,
@@ -1042,6 +1045,8 @@ def _add_memory_arguments(parser, clear_budget=False):
 def _memory_arguments(arguments):
     policy = {"idle_timeout_seconds": arguments.idle_timeout or 0, "keep_loaded": bool(arguments.keep_loaded),
               "minimum_headroom_gb": arguments.min_headroom_gb}
+    if getattr(arguments, "execution_wait_seconds", None) is not None:
+        policy["execution_wait_seconds"] = arguments.execution_wait_seconds
     if getattr(arguments, "release_after_request", None) is not None:
         policy["release_after_request"] = arguments.release_after_request
     if arguments.memory_budget_gb is not None:
@@ -1052,8 +1057,8 @@ def _memory_arguments(arguments):
         policy["model_memory_budget_gb"] = None
     if arguments.context_tokens is not None:
         policy["context_tokens"] = arguments.context_tokens
-    if arguments.unload_under_pressure:
-        policy["unload_under_pressure"] = True
+    if arguments.unload_under_pressure is not None:
+        policy["unload_under_pressure"] = arguments.unload_under_pressure
     return policy
 
 
@@ -1070,7 +1075,14 @@ def _run_serve(arguments):
             if command == "save":
                 keys = ("memory_budget_gb", "min_headroom_gb", "strata_context_tokens", "strata_decoding",
                         "idle_timeout", "keep_loaded", "unload_under_pressure")
-                settings = {key: getattr(arguments, key) for key in keys}
+                settings = {key: getattr(arguments, key) for key in keys if getattr(arguments, key) is not None}
+                strata = any(key in settings for key in ("memory_budget_gb", "strata_context_tokens", "strata_decoding"))
+                if strata:
+                    settings.setdefault("strata_context_tokens", 16384)
+                    settings.setdefault("strata_decoding", "plain")
+                for key in ("execution_wait_seconds", "release_after_request"):
+                    if getattr(arguments, key) is not None:
+                        settings[key] = getattr(arguments, key)
                 result = {"name": arguments.name, "settings": serve_profiles.save_profile(
                     arguments.name, settings, arguments.receipts_dir, replace=arguments.replace)}
             elif command == "show":
@@ -1130,9 +1142,9 @@ def _run_serve(arguments):
         selected_runtime = "mlx_lm" if arguments.training_receipt and arguments.runtime == "auto" else arguments.runtime
         runtime, executable = resolve_serve_runtime(
             arguments.repo, arguments.path, selected_runtime, recipes, hf_cache=arguments.hf_cache)
-        if arguments.profile and runtime != "strata":
-            raise ServeError("invalid_arguments", "Saved serving profiles currently require Strata.",
-                             "Select a prepared Strata model or omit --profile.")
+        if arguments.profile and "memory_budget_gb" in settings and runtime != "strata":
+            raise ServeError("invalid_arguments", "Profiles with Strata settings require the Strata runtime.",
+                             "Select a prepared Strata model or a profile containing only common settings.")
         if arguments.strata_speculation is not None and runtime != "strata":
             raise ServeError("invalid_arguments", "--strata-speculation requires the Strata runtime.", "Select a prepared local Strata profile.")
         plan = plan_start(

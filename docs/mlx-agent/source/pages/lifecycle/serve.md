@@ -270,14 +270,16 @@ and reads other experts from disk. Workers disable separate conversation parking
 GPU keepalive and array wiring. A budget is an allocation estimate, not a hard process-RAM
 limit. OS headroom remains a separate admission and pressure guard.
 
-### Saved Strata settings
+### Saved serving settings
 
 Save named settings for shared work or dedicated inference. Profiles
-contain memory, headroom, context, decoding and idle settings; choose the model
-and endpoint when starting. Settings stay under the selected receipts directory.
+contain headroom, residency and execution-wait settings; choose the model
+and endpoint when starting. Strata profiles can also include a model budget,
+context and decoding settings. Settings stay under the selected receipts directory.
 
 ```bash
 python3 scripts/mlx-agent serve profile save shared --memory-budget-gb 24 --min-headroom-gb 24 --strata-decoding lookup --json
+python3 scripts/mlx-agent serve profile save working --min-headroom-gb 24 --idle-timeout 600 --execution-wait 30 --json
 python3 scripts/mlx-agent serve profile list --json
 python3 scripts/mlx-agent serve start --path /absolute/strata/profile --runtime strata --jit --profile shared --json
 ```
@@ -361,8 +363,9 @@ space returns HTTP 503 `insufficient_headroom`. The endpoint remains reachable.
 Status includes policy, the dated estimate in `memory_check`, and
 `load_blocked_reason`.
 
-The check does not reserve memory across endpoints. Other applications,
-concurrent cold loads, and later context growth can change usage. See
+Endpoints coordinate pending loads and configured workspace allowances through
+a shared memory registry. Other applications and growth beyond the configured
+estimates can still change usage. See
 [Troubleshooting](../guides/troubleshooting.md).
 
 ## Adapters and launchd
@@ -458,8 +461,9 @@ python3 scripts/mlx-agent serve start --path /absolute/local/model --runtime aut
 Confirm with the same arguments and the returned preview hash. Use
 `--keep-loaded --no-release-after-request` to retain the loaded model between
 jobs instead. The default for typed endpoints releases weights after each job.
-A job that cannot acquire host compute fails with `compute_busy`; any retained
-idle model stays loaded for retry.
+By default, a job that cannot acquire host compute fails with `compute_busy`;
+any retained idle model stays loaded for retry. Set `--execution-wait 30` to
+wait up to 30 seconds instead. Cancelling a waiting job preserves its idle model.
 `serve policy` can change either mode on an owned endpoint. Manual `serve unload`
 releases idle weights without closing its port; active jobs must finish or be
 cancelled first. Status reports residency, worker PID, active jobs and memory policy.
@@ -497,3 +501,25 @@ interruption is recorded as interrupted when its job is next inspected.
 Typed endpoint history lives in `.mlx-agent-receipts/tasks/PORT` under the chosen
 `--receipts-dir`. CLI inspection uses that exact path as `task --state-dir`.
 These endpoints do not implement chat completions, Messages or Responses.
+
+
+### Shared execution admission
+
+Resident coding, vision and typed-model endpoints share host execution ownership
+with other guarded model operations. Idle endpoints retain their weights without
+holding execution ownership. Requests to one text backend can use its native
+batching; another model waits or receives HTTP 503 `compute_busy`.
+
+`--execution-wait` accepts 0–3600 seconds and defaults to 0. It is available on
+`serve start`, `serve policy` and saved profiles. Waiting requests count toward
+the endpoint request limit. Disconnecting while waiting cancels admission before
+loading. A disconnected active request retains ownership while its upstream reply
+drains; a reply that cannot drain within 30 seconds stops the owned backend before
+releasing execution. Automatic idle and pressure unloads defer while another
+model owns execution. This is bounded waiting, without FIFO ordering or preemption.
+
+Common profiles work with coding, vision, classification and generation endpoints.
+Profiles containing a Strata budget, context or decoding settings require Strata.
+Explicit launch flags override saved values. For retained typed models, include
+`--keep-loaded --no-release-after-request --no-unload-under-pressure` when saving
+the profile. Status reports active and waiting text requests in `execution`.

@@ -486,7 +486,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "bdecdb76333020233137a061ed425e819ed60167e042db72c87c7021e1820db7"
+      "sha256": "57930b0d51951d8ad72abe67a74d4956f96fee83cae0da5bb5165ee22b727746"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -530,7 +530,7 @@
     },
     {
       "path": "src/mlx_agent/compute.py",
-      "sha256": "65148ab0eaf4bb4a442e6eb34ded40fe3c145e811cb4a7f02381889fa6c9a8de"
+      "sha256": "1fa9e6a5f74230771b8b2e8b75cae64157bafcc9c5b0888b0d0cfd83422e234c"
     },
     {
       "path": "src/mlx_agent/contextfit.py",
@@ -626,7 +626,7 @@
     },
     {
       "path": "src/mlx_agent/inference_auth.py",
-      "sha256": "0195b76b75841964db844d3350e08460ce9d67a330f0580825e52434ec9878d1"
+      "sha256": "a50e6db8890497a2e399f510f3b4ee8538d62969f8aab1cb5a3a00671be7956c"
     },
     {
       "path": "src/mlx_agent/inference_runner.py",
@@ -654,7 +654,7 @@
     },
     {
       "path": "src/mlx_agent/jit_serve.py",
-      "sha256": "99ac3cc247d90e6b49e8c51e8ced0985edcd9ce7c65a5a3067b1d9d4f51fc3f0"
+      "sha256": "d5b6d200a2d55cca78e9bc96684f566172efb0b5e20d6bd80216710221c24347"
     },
     {
       "path": "src/mlx_agent/kokoro_runtime.py",
@@ -723,6 +723,10 @@
     {
       "path": "src/mlx_agent/music_speed.py",
       "sha256": "59444f83dc52e07dd403a2ab7ebc34a513488e252939390098b3f5751083c788"
+    },
+    {
+      "path": "src/mlx_agent/owned_worker.py",
+      "sha256": "749a53d4054ae9bb89d8d7d12fa8b795a914f02f556eabf80c12163d36e5196c"
     },
     {
       "path": "src/mlx_agent/port_analysis.py",
@@ -1130,7 +1134,7 @@
     },
     {
       "path": "src/mlx_agent/serve_profiles.py",
-      "sha256": "e0263035983cfbc1657156fed8bbd75e5ac1005bdc4e5f5a1759c2489c52d2ef"
+      "sha256": "383b74ab160c94353259e317badeb02ed399dd6504e7bf397123e3458ef95770"
     },
     {
       "path": "src/mlx_agent/service_registry.py",
@@ -1194,7 +1198,7 @@
     },
     {
       "path": "src/mlx_agent/task_serving.py",
-      "sha256": "4e87860b498d92590e4d24df46745f68d341785517fc4505a252f89c31897834"
+      "sha256": "69ef7d5b689c88b7c76b1651329a89d792bcbc5d5f472e866106d20bff42cdbe"
     },
     {
       "path": "src/mlx_agent/task_store.py",

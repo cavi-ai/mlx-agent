@@ -16,6 +16,12 @@ class ServeProfileTests(unittest.TestCase):
                              strata_decoding="lookup", idle_timeout=300, unload_under_pressure=True,
                              keep_loaded=False)
 
+    def test_common_profile_has_no_strata_requirement(self):
+        settings = dict(min_headroom_gb=24, idle_timeout=600, keep_loaded=False,
+                        unload_under_pressure=True, execution_wait_seconds=2)
+        profiles.save_profile('working', settings, self.root)
+        self.assertEqual(profiles.load_profile('working', self.root), settings)
+
     def test_round_trip_replace_delete_and_private_storage(self):
         profiles.save_profile("shared", self.settings, self.root)
         self.assertEqual(profiles.load_profile("shared", self.root), self.settings)

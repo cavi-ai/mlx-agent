@@ -67,7 +67,7 @@ class JITServingTests(unittest.TestCase):
     def setUp(self):
         self.temp = TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.model = self.root / 'local model'
         self.model.mkdir()
         (self.model / 'config.json').write_text('{}')
@@ -77,6 +77,7 @@ class JITServingTests(unittest.TestCase):
         self.trace = self.root / 'starts.txt'
         self.config = {
             'memory_state_dir': str(self.root / 'memory'),
+            'compute_state_dir': str(self.root / 'compute'),
             'model': str(self.model), 'local_path': str(self.model),
             'fingerprint': model_fingerprint(self.model), 'control_token': 'test-control-token',
             'worker_argv': [sys.executable, str(self.worker), '--model', str(self.model), '--port', '{worker_port}', '--trace', str(self.trace)],
@@ -156,6 +157,10 @@ class JITServingTests(unittest.TestCase):
                           receipts_dir=str(self.root), api_key_sha256=digest)
         processes = []
         def spawn(argv, log_path):
+            config_path = Path(argv[argv.index('--config') + 1])
+            fixture_config = json.loads(config_path.read_text())
+            fixture_config.update(compute_state_dir=str(self.root / 'compute'), memory_state_dir=str(self.root / 'memory'))
+            config_path.write_text(json.dumps(fixture_config))
             with open(log_path, 'ab') as output:
                 process = subprocess.Popen(argv, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
             processes.append(process)
@@ -555,8 +560,8 @@ class JITServingTests(unittest.TestCase):
         finally:
             connection.close()
 
-    def test_client_disconnect_releases_lease_before_worker_replies(self):
-        self.config['worker_argv'] += ['--reply-delay', '30']
+    def test_client_disconnect_retains_execution_until_worker_replies(self):
+        self.config['worker_argv'] += ['--reply-delay', '1.5']
         control = {'Authorization': 'Bearer test-control-token'}
         connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=10)
         connection.request('POST', '/v1/chat/completions', json.dumps({'messages': []}))
@@ -567,11 +572,104 @@ class JITServingTests(unittest.TestCase):
             time.sleep(0.1)
         self.assertEqual(status['active_requests'], 1)
         connection.close()
+        time.sleep(.2)
+        self.assertEqual(self.server.controller.active_requests, 1)
+        from mlx_agent.compute import ComputeLease, ComputeBusy
+        with self.assertRaises(ComputeBusy):
+            with ComputeLease('other-model', self.root / 'compute'):
+                pass
         for _ in range(50):
             if self.request('GET', '/_mlx/status', headers=control)[1]['active_requests'] == 0:
                 break
             time.sleep(0.1)
         self.assertEqual(self.request('GET', '/_mlx/status', headers=control)[1]['active_requests'], 0)
+
+    def test_busy_host_does_not_load_worker_and_retry_reuses_it(self):
+        from mlx_agent.compute import ComputeLease
+        body = {'messages': []}
+        with ComputeLease('other-model', self.root / 'compute'):
+            status, result = self.request('POST', '/v1/chat/completions', body)
+            self.assertEqual(status, 503)
+            self.assertEqual(result['error']['code'], 'compute_busy')
+            self.assertFalse(self.trace.exists())
+        self.assertEqual(self.request('POST', '/v1/chat/completions', body)[0], 200)
+        pid = self.server.controller.process.pid
+        with ComputeLease('other-model', self.root / 'compute'):
+            self.assertEqual(self.request('POST', '/v1/chat/completions', body)[0], 503)
+        self.assertEqual(self.request('POST', '/v1/chat/completions', body)[0], 200)
+        self.assertEqual(self.server.controller.process.pid, pid)
+        self.assertEqual(self.trace.read_text().splitlines(), ['start'])
+
+    def test_waiting_model_starts_after_execution_and_same_backend_batches(self):
+        from mlx_agent.jit_serve import ModelWorker
+        from mlx_agent.compute import ComputeLease, ComputeBusy
+        self.config['worker_argv'] += ['--reply-delay', '.6']
+        second_trace = self.root / 'second.txt'
+        second_config = dict(self.config, worker_argv=[sys.executable, str(self.worker), '--model', str(self.model),
+            '--port', '{worker_port}', '--trace', str(second_trace)], memory_policy={'execution_wait_seconds': 3})
+        second = ModelWorker(second_config)
+        self.addCleanup(second.close)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+            first = pool.submit(self.request, 'POST', '/v1/chat/completions', {'messages': []})
+            deadline = time.monotonic() + 5
+            while self.server.controller.execution.users != 1 and time.monotonic() < deadline:
+                time.sleep(.01)
+            batch = pool.submit(self.request, 'POST', '/v1/chat/completions', {'messages': []})
+            waiting = pool.submit(second.acquire)
+            deadline = time.monotonic() + .4
+            while self.server.controller.execution.users != 2 and time.monotonic() < deadline:
+                time.sleep(.01)
+            self.assertEqual(self.server.controller.execution.users, 2)
+            self.assertFalse(second_trace.exists())
+            with self.assertRaises(ComputeBusy):
+                with ComputeLease('third-model', self.root / 'compute'):
+                    pass
+            self.assertEqual(first.result()[0], 200)
+            self.assertEqual(batch.result()[0], 200)
+            self.assertIsInstance(waiting.result(), int)
+        second.release()
+        self.assertEqual(self.trace.read_text().splitlines(), ['start'])
+        self.assertEqual(second_trace.read_text().splitlines(), ['start'])
+        self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
+        self.assertEqual(self.trace.read_text().splitlines(), ['start'])
+
+    def test_disconnected_waiter_starts_no_worker(self):
+        from mlx_agent.compute import ComputeLease
+        self.server.controller.configure({'execution_wait_seconds': 2})
+        with ComputeLease('other-model', self.root / 'compute'):
+            connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=3)
+            connection.request('POST', '/v1/chat/completions', json.dumps({'messages': []}))
+            deadline = time.monotonic() + 1
+            while not self.server.controller.execution.waiting and time.monotonic() < deadline:
+                time.sleep(.01)
+            self.assertEqual(self.server.controller.execution.waiting, 1)
+            connection.close()
+            deadline = time.monotonic() + 1
+            while self.server.controller.active_requests and time.monotonic() < deadline:
+                time.sleep(.01)
+        self.assertEqual(self.server.controller.active_requests, 0)
+        self.assertFalse(self.trace.exists())
+
+    def test_failed_disconnect_drain_stops_backend_before_compute_release(self):
+        from mlx_agent.compute import ComputeLease
+        self.config['worker_argv'] += ['--reply-delay', '10']
+        connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=3)
+        with mock.patch('mlx_agent.jit_serve.DRAIN_TIMEOUT_SECONDS', .1):
+            connection.request('POST', '/v1/chat/completions', json.dumps({'messages': []}))
+            deadline = time.monotonic() + 3
+            while self.server.controller.model_state != 'loaded' and time.monotonic() < deadline:
+                time.sleep(.01)
+            process = self.server.controller.process
+            self.assertIsNotNone(process)
+            connection.close()
+            deadline = time.monotonic() + 3
+            while self.server.controller.active_requests and time.monotonic() < deadline:
+                time.sleep(.01)
+        self.assertEqual(self.server.controller.active_requests, 0)
+        self.assertIsNotNone(process.poll())
+        self.assertIsNone(self.server.controller.process)
+        with ComputeLease('other-model', self.root / 'compute'):
+            pass
 
     def test_messages_stream_forwards_worker_keepalive_as_ping(self):
         self.config['worker_argv'] += ['--keepalive']
@@ -746,6 +844,10 @@ class JITServingTests(unittest.TestCase):
         plan = plan_start(None, 'mlx_lm', recipes, path=str(self.model), port=port, jit=True, receipts_dir=str(self.root))
         processes = []
         def spawn(argv, log_path):
+            config_path = Path(argv[argv.index('--config') + 1])
+            fixture_config = json.loads(config_path.read_text())
+            fixture_config.update(compute_state_dir=str(self.root / 'compute'), memory_state_dir=str(self.root / 'memory'))
+            config_path.write_text(json.dumps(fixture_config))
             process = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
             processes.append(process)
             return process.pid
@@ -796,6 +898,10 @@ class JITServingTests(unittest.TestCase):
         plan = plan_start(None, 'mlx_lm', recipes, path=str(self.model), port=port, jit=True, receipts_dir=str(self.root))
         processes = []
         def spawn(argv, log_path):
+            config_path = Path(argv[argv.index('--config') + 1])
+            fixture_config = json.loads(config_path.read_text())
+            fixture_config.update(compute_state_dir=str(self.root / 'compute'), memory_state_dir=str(self.root / 'memory'))
+            config_path.write_text(json.dumps(fixture_config))
             process = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
             processes.append(process)
             return process.pid

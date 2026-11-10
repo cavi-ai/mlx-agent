@@ -8,6 +8,8 @@ from pathlib import Path
 import stat
 import subprocess
 import sys
+import threading
+import time
 
 
 class ComputeBusy(ValueError):
@@ -86,8 +88,11 @@ class ComputeLease:
         info = self.root.stat()
         if info.st_uid != os.getuid() or info.st_mode & 0o077:
             raise ValueError("Compute state must be a private owned directory.")
-        descriptor = os.open(self.root / "owner.json",
-            os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(self.root / "owner.json", flags | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            descriptor = os.open(self.root / "owner.json", flags)
         self.descriptor = descriptor
         try:
             info = os.fstat(descriptor)
@@ -135,20 +140,38 @@ class ComputeLease:
             self.descriptor = None
             raise
 
+    def enter_wait(self, seconds=0, cancelled=lambda: False):
+        """Bounded admission; cancellation never transfers ownership."""
+        deadline = time.monotonic() + seconds
+        while True:
+            if cancelled():
+                raise InterruptedError('Execution admission cancelled.')
+            try:
+                return self.__enter__()
+            except ComputeBusy:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise
+                time.sleep(min(.05, remaining))
+
     def bind_process_group(self, pid):
         if self.descriptor is None or type(pid) is not int or pid <= 0:
             raise ValueError("An active compute lease and positive group leader are required.")
+        self.execution_group = {"pgid": pid, "leader_identity": "unverified"}
+        self._write(dict(self.record, schema=2, execution_group=self.execution_group))
         identity = self.inspector(pid)
         if not identity or os.getpgid(pid) != pid:
             raise ComputeBusy("The task execution group identity could not be established.")
         self.execution_group = {"pgid": pid, "leader_identity": identity}
         self._write(dict(self.record, schema=2, execution_group=self.execution_group))
 
-    def release_idle_process_group(self, pid):
-        """Release compute after a resident worker acknowledges a job and has no child processes."""
+    def release_idle_process_group(self, pid, members=None):
+        """Release only after completion and inspection of the idle private group."""
+        expected = {pid: self.execution_group["leader_identity"]} if members is None and self.execution_group else members
         if (self.descriptor is None or self.execution_group is None or self.execution_group['pgid'] != pid
                 or self.inspector(pid) != self.execution_group['leader_identity']
-                or set(self.group_probe(pid)) != {pid}):
+                or not expected or set(self.group_probe(pid)) != set(expected)
+                or any(self.inspector(member) != identity for member, identity in expected.items())):
             raise ComputeBusy("The resident worker has not returned to an inspected idle state.")
         self.execution_group = None
         self._write({key: value for key, value in self.record.items() if key != 'execution_group'} | {'schema': 1})
@@ -208,3 +231,78 @@ def guarded_start(operation, launch, *args, **kwargs):
                 from .convert import register_monitor_lease
                 register_monitor_lease(result["receipt_path"], result["receipt"])
         return result
+
+
+class ExecutionAdmission:
+    """Batch requests to one backend under one shared host lease."""
+    def __init__(self, operation, root=None):
+        self.operation, self.root = operation, root
+        self.condition = threading.Condition()
+        self.lease = None
+        self.users = 0
+        self.waiting = 0
+        self.closed = False
+
+    def acquire(self, seconds=0, cancelled=lambda: False):
+        deadline = time.monotonic() + seconds
+        with self.condition:
+            self.waiting += 1
+            try:
+                while True:
+                    if self.closed or cancelled():
+                        raise InterruptedError('Execution admission cancelled.')
+                    if self.users:
+                        self.users += 1
+                        return
+                    lease = ComputeLease(self.operation, self.root)
+                    try:
+                        lease.__enter__()
+                    except ComputeBusy:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise
+                        self.condition.wait(min(.05, remaining))
+                        continue
+                    if self.closed or cancelled():
+                        lease.__exit__(None, None, None)
+                        raise InterruptedError('Execution admission cancelled.')
+                    self.lease, self.users = lease, 1
+                    return
+            finally:
+                self.waiting -= 1
+
+    def bind(self, pid):
+        with self.condition:
+            if self.lease is None:
+                raise ComputeBusy('Model startup requires execution admission.')
+            if self.lease.execution_group and self.lease.execution_group['pgid'] == pid:
+                return
+            self.lease.bind_process_group(pid)
+
+    def release(self, idle):
+        with self.condition:
+            if self.users == 0:
+                return
+            self.users -= 1
+            if self.users == 0:
+                try:
+                    idle(self.lease)
+                except BaseException:
+                    # Retain the descriptor until shutdown proves the group stopped.
+                    self.closed = True
+                    self.condition.notify_all()
+                    raise
+                try:
+                    self.lease.__exit__(None, None, None)
+                finally:
+                    self.lease = None
+                    self.condition.notify_all()
+
+    def close(self):
+        with self.condition:
+            self.closed = True
+            if self.lease is not None:
+                self.lease.__exit__(None, None, None)
+                self.lease = None
+            self.users = 0
+            self.condition.notify_all()

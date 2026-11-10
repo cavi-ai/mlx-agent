@@ -98,6 +98,25 @@ class ServeCliTests(unittest.TestCase):
             self.assertEqual(policy['minimum_headroom_gb'], 24)
             self.assertNotIn('model_memory_budget_gb', policy)
 
+    def test_allocator_settings_profiles_and_owned_reclaim_command(self):
+        with TemporaryDirectory() as directory:
+            code, output = self._run(['serve', 'profile', 'save', 'working', '--receipts-dir', directory,
+                '--min-headroom-gb', '24', '--allocator-cache-limit-mib', '1024', '--cache-reclaim', 'pressure', '--json'])
+            self.assertEqual(code, 0, output)
+            settings = json.loads(output)['data']['settings']
+            self.assertEqual(settings['allocator_cache_limit_mib'], 1024)
+            self.assertEqual(settings['cache_reclaim'], 'pressure')
+        with mock.patch('mlx_agent.serve.configure_serve_memory', return_value={'status': 'configured'}) as configure:
+            code, output = self._run(['serve', 'policy', '--port', '8080', '--expected-pid', '123',
+                '--clear-allocator-cache-limit', '--cache-reclaim', 'off', '--json'])
+            self.assertEqual(code, 0, output)
+            self.assertIsNone(configure.call_args.args[1]['allocator_cache_limit_mib'])
+            self.assertEqual(configure.call_args.args[1]['cache_reclaim'], 'off')
+        with mock.patch('mlx_agent.serve.reclaim_serve_cache', return_value={'status': 'reclaimed'}) as reclaim:
+            code, output = self._run(['serve', 'reclaim-cache', '--port', '8080', '--expected-pid', '123', '--json'])
+            self.assertEqual(code, 0, output)
+            reclaim.assert_called_once_with(8080, None, 123, expected_start=None)
+
     def test_memory_policy_is_bound_to_preview_and_rejected_for_eager_serving(self):
         with TemporaryDirectory() as directory:
             (Path(directory) / 'model.safetensors').write_bytes(b'weights')

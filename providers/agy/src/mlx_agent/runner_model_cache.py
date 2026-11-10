@@ -7,12 +7,15 @@ _entry = None
 _loads = 0
 _cache_hits = 0
 _load_seconds = 0.0
+_allocator_cache = None
 
 
 def load_model(loader, path, **options):
     global _entry, _loads, _cache_hits, _load_seconds
     if not _enabled:
         return loader(path, **options)
+    if _allocator_cache is not None:
+        _allocator_cache.apply_limit()
     local = Path(path)
     if not local.is_absolute() or not local.is_dir():
         raise ValueError("Resident inference requires existing absolute local model files.")

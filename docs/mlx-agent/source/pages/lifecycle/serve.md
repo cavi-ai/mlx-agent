@@ -523,3 +523,56 @@ Profiles containing a Strata budget, context or decoding settings require Strata
 Explicit launch flags override saved values. For retained typed models, include
 `--keep-loaded --no-release-after-request --no-unload-under-pressure` when saving
 the profile. Status reports active and waiting text requests in `execution`.
+
+
+### Allocator cache controls
+
+Resident task workers support a cap on free MLX allocator buffers and automatic
+reclamation while retaining loaded weights. These settings cover supported task
+backends, including classification, audio and 3D generation. They are separate
+from model, expert, KV and denoiser caches; they do not impose a process RAM limit.
+
+| Policy field | Values | Behavior |
+| --- | --- | --- |
+| `allocator_cache_limit_mib` | `null` or integer 0–1048576 | Cap free allocator buffers in MiB; 0 disables caching; null restores the worker's original limit. |
+| `cache_reclaim` | `off`, `idle`, `pressure` | Keep the allocator cache, clear it after completed work, or clear it while idle below the headroom reserve. Default: off. |
+
+Both settings are optional. Pressure reclamation requires
+`minimum_headroom_gb` and works with `keep_loaded`: it clears free buffers while
+preserving active model tensors. A smaller cache can require more allocations
+on the next request. Existing behavior is preserved when these settings are absent.
+
+```bash
+python3 scripts/mlx-agent serve start --path /absolute/task/model --runtime tasks --keep-loaded --no-release-after-request --allocator-cache-limit-mib 1024 --cache-reclaim idle --json
+python3 scripts/mlx-agent serve policy --port 8085 --expected-pid <gateway-pid> --keep-loaded --no-release-after-request --no-unload-under-pressure --min-headroom-gb 24 --cache-reclaim pressure --json
+python3 scripts/mlx-agent serve reclaim-cache --port 8085 --expected-pid <gateway-pid> --json
+```
+
+Use `--clear-allocator-cache-limit` to restore the worker's original limit.
+The cache flags also work with `serve profile save`; explicit launch flags override
+saved values. A profile that retains weights should use `--keep-loaded
+--no-release-after-request --no-unload-under-pressure`.
+
+Workbench and other clients can inspect `allocator_cache` in endpoint/service
+status. `supported`, `policy_fields`, `reclaim_modes` and `control_path` describe
+the interface. `available` is null until the worker reports runtime capability.
+`configured_policy`, `applied_policy` and `pending` distinguish saved settings
+from settings applied by the worker. `active` identifies a control operation;
+`last_reclaim` reports the reason, cached bytes before/after, released cached bytes
+and timestamp. Allocator measurements do not guarantee equivalent OS headroom.
+
+Apply settings through the protected `POST /_mlx/policy`, for example:
+
+```json
+{"allocator_cache_limit_mib":1024,"cache_reclaim":"pressure","minimum_headroom_gb":24}
+```
+
+`POST /_mlx/cache` with an empty JSON object reclaims an idle loaded worker's
+free buffers immediately. It requires the endpoint control token. Active jobs
+return `model_busy`; host contention returns `compute_busy`. Automatic maintenance
+defers during contention. Saved changes during a job apply at its next safe
+boundary. Reclamation never starts an unloaded model.
+
+Chat runtimes advertise `supported: false` for these controls and reject active
+allocator settings. Their existing context and Strata expert-memory controls
+remain available through their own policies.

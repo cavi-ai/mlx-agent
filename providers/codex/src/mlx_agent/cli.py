@@ -990,6 +990,12 @@ def _add_serve_arguments(parser):
     unload.add_argument("--expected-start", default=None)
     unload.add_argument("--receipts-dir", default=None)
     unload.add_argument("--json", action="store_true")
+    reclaim = actions.add_parser("reclaim-cache", help="release free allocator buffers from an idle resident task worker")
+    reclaim.add_argument("--port", type=int, required=True)
+    reclaim.add_argument("--expected-pid", type=int, required=True)
+    reclaim.add_argument("--expected-start", default=None)
+    reclaim.add_argument("--receipts-dir", default=None)
+    reclaim.add_argument("--json", action="store_true")
     policy = actions.add_parser("policy", help="configure owned JIT memory management without restarting")
     policy.add_argument("--port", type=int, required=True)
     policy.add_argument("--expected-pid", type=int, required=True)
@@ -1018,13 +1024,25 @@ def _add_serve_arguments(parser):
             action.add_argument("--unload-under-pressure", action=argparse.BooleanOptionalAction, default=True)
             action.add_argument("--execution-wait", dest="execution_wait_seconds", type=int, default=None)
             action.add_argument("--release-after-request", action=argparse.BooleanOptionalAction, default=None)
+            _add_allocator_cache_arguments(action)
             action.add_argument("--replace", action="store_true")
     discover = actions.add_parser("discover", help="find engine services across registered and live receipt locations")
     discover.add_argument("--receipts-dir", action="append", default=[])
     discover.add_argument("--json", action="store_true")
 
 
+def _add_allocator_cache_arguments(parser):
+    limit = parser.add_mutually_exclusive_group()
+    limit.add_argument('--allocator-cache-limit-mib', type=int, default=None,
+                       help='resident task worker free-buffer cache cap in MiB (0 disables caching)')
+    limit.add_argument('--clear-allocator-cache-limit', action='store_true',
+                       help='restore the worker native default allocator cache limit')
+    parser.add_argument('--cache-reclaim', choices=['off', 'idle', 'pressure'], default=None,
+                        help='reclaim idle resident worker cache; pressure requires --min-headroom-gb')
+
+
 def _add_memory_arguments(parser, clear_budget=False):
+    _add_allocator_cache_arguments(parser)
     budgets = parser.add_mutually_exclusive_group()
     budgets.add_argument("--memory-budget-gb", type=float, default=None,
                         help="Strata JIT estimated total model-memory allowance in GB; default reserve: 2 GB")
@@ -1045,6 +1063,11 @@ def _add_memory_arguments(parser, clear_budget=False):
 def _memory_arguments(arguments):
     policy = {"idle_timeout_seconds": arguments.idle_timeout or 0, "keep_loaded": bool(arguments.keep_loaded),
               "minimum_headroom_gb": arguments.min_headroom_gb}
+    for key in ('allocator_cache_limit_mib', 'cache_reclaim'):
+        if getattr(arguments, key, None) is not None:
+            policy[key] = getattr(arguments, key)
+    if getattr(arguments, 'clear_allocator_cache_limit', False):
+        policy['allocator_cache_limit_mib'] = None
     if getattr(arguments, "execution_wait_seconds", None) is not None:
         policy["execution_wait_seconds"] = arguments.execution_wait_seconds
     if getattr(arguments, "release_after_request", None) is not None:
@@ -1064,7 +1087,7 @@ def _memory_arguments(arguments):
 
 def _run_serve(arguments):
     from .serve import (
-        ServeError, configure_serve_memory, default_model_present, load_recipes, plan_start, resolve_serve_runtime,
+        ServeError, configure_serve_memory, reclaim_serve_cache, default_model_present, load_recipes, plan_start, resolve_serve_runtime,
         start_serve, status_serve, stop_serve, unload_serve, wired_port_claim,
     )
     operation = "serve-{0}".format(arguments.serve_command)
@@ -1080,9 +1103,11 @@ def _run_serve(arguments):
                 if strata:
                     settings.setdefault("strata_context_tokens", 16384)
                     settings.setdefault("strata_decoding", "plain")
-                for key in ("execution_wait_seconds", "release_after_request"):
+                for key in ("execution_wait_seconds", "release_after_request", "allocator_cache_limit_mib", "cache_reclaim"):
                     if getattr(arguments, key) is not None:
                         settings[key] = getattr(arguments, key)
+                if arguments.clear_allocator_cache_limit:
+                    settings['allocator_cache_limit_mib'] = None
                 result = {"name": arguments.name, "settings": serve_profiles.save_profile(
                     arguments.name, settings, arguments.receipts_dir, replace=arguments.replace)}
             elif command == "show":
@@ -1120,6 +1145,11 @@ def _run_serve(arguments):
                 {"expected_start": arguments.expected_start} if arguments.expected_start is not None else {}))
             return _emit_serve_result(ResultEnvelope.ok(operation, outcome), arguments.json,
                 human="Model unloaded; endpoint remains reachable on port {}.".format(arguments.port))
+        if arguments.serve_command == 'reclaim-cache':
+            outcome = reclaim_serve_cache(arguments.port, arguments.receipts_dir, arguments.expected_pid,
+                                         expected_start=arguments.expected_start)
+            return _emit_serve_result(ResultEnvelope.ok(operation, outcome), arguments.json,
+                                      human='Allocator cache reclaimed on port {}.'.format(arguments.port))
         if arguments.serve_command == "policy":
             outcome = configure_serve_memory(arguments.port, _memory_arguments(arguments), arguments.receipts_dir, arguments.expected_pid, **(
                 {"expected_start": arguments.expected_start} if arguments.expected_start is not None else {}))
@@ -1130,6 +1160,8 @@ def _run_serve(arguments):
             from .serve_profiles import load_profile
             settings = load_profile(arguments.profile, arguments.receipts_dir)
             for key, value in settings.items():
+                if key == 'allocator_cache_limit_mib' and arguments.clear_allocator_cache_limit:
+                    continue
                 if key == "strata_decoding" and arguments.strata_speculation is not None:
                     continue
                 if key == "memory_budget_gb" and arguments.strata_expert_memory_gb is not None:

@@ -7,13 +7,14 @@ import re
 import stat
 
 from .jit_serve import validate_memory_policy
+from .allocator_cache import FIELDS as CACHE_FIELDS
 from .serve import receipts_root
 from .strata_runtime import StrataError, _validate_context
 from .transactions import _atomic_in_directory, _target_locks, _walk_directory
 
 _COMMON = {"min_headroom_gb", "idle_timeout", "keep_loaded", "unload_under_pressure"}
 _STRATA = {"memory_budget_gb", "strata_context_tokens", "strata_decoding"}
-_FIELDS = _COMMON | _STRATA | {"execution_wait_seconds", "release_after_request"}
+_FIELDS = _COMMON | _STRATA | CACHE_FIELDS | {"execution_wait_seconds", "release_after_request"}
 
 
 def _validate(settings):
@@ -28,7 +29,7 @@ def _validate(settings):
         "keep_loaded": settings["keep_loaded"], "unload_under_pressure": settings["unload_under_pressure"]}
     if strata:
         policy["model_memory_budget_gb"] = settings["memory_budget_gb"]
-    for key in ("execution_wait_seconds", "release_after_request"):
+    for key in ("execution_wait_seconds", "release_after_request", *CACHE_FIELDS):
         if key in settings:
             policy[key] = settings[key]
     validate_memory_policy(policy)

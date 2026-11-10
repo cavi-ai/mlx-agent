@@ -35,6 +35,7 @@ from mlx_agent.messages_api import (MessagesRequestError, StreamTranslator, Work
                                     from_chat_response, to_chat_request)
 from mlx_agent.transactions import _atomic_in_directory
 from mlx_agent.residency import MemoryRegistry, MemoryAdmissionError
+from mlx_agent import allocator_cache
 from mlx_agent.compute import ComputeBusy, ComputeLease, ExecutionAdmission, group_members, process_identity
 
 MAX_BODY = 16 * 1024 * 1024
@@ -50,9 +51,12 @@ def validate_memory_policy(policy=None):
     defaults = {"idle_timeout_seconds": 0, "keep_loaded": False, "minimum_headroom_gb": None}
     if policy is None:
         return defaults
-    if not isinstance(policy, dict) or set(policy) - set(defaults) - {"context_tokens", "unload_under_pressure", "model_memory_budget_gb", "release_after_request", "execution_wait_seconds"}:
+    if not isinstance(policy, dict) or set(policy) - set(defaults) - allocator_cache.FIELDS - {"context_tokens", "unload_under_pressure", "model_memory_budget_gb", "release_after_request", "execution_wait_seconds"}:
         raise ValueError("Unknown memory policy fields.")
     result = dict(defaults, **policy)
+    cache = allocator_cache.from_memory(result)
+    if cache['cache_reclaim'] == 'pressure' and result['minimum_headroom_gb'] is None:
+        raise ValueError('Pressure cache reclaim requires a headroom reserve.')
     wait = result.get("execution_wait_seconds", 0)
     if type(wait) is not int or not 0 <= wait <= 3600:
         raise ValueError("Execution wait must be an integer between 0 and 3600 seconds.")
@@ -166,6 +170,8 @@ class ModelWorker:
         self.closed = False
         self.log = None
         self.memory_policy = validate_memory_policy(config.get("memory_policy"))
+        if config.get('runtime') != 'tasks' and allocator_cache.requested(self.memory_policy):
+            raise ValueError('Allocator cache controls require a resident task backend.')
         self.memory_check = None
         self.resident_memory_check = None
         self.request_blocked_reason = None
@@ -183,6 +189,7 @@ class ModelWorker:
         self.memory_token = secrets.token_hex(16)
         self.memory_reservation = None
         self.worker_memory = None
+        self.cache_control_active = False
         self.workspace_bytes = 1_500_000_000
         self.growth_bytes = 0
         self.memory_materialized = False
@@ -244,6 +251,7 @@ class ModelWorker:
                     "execution": {"active_requests": self.execution.users, "waiting_requests": self.execution.waiting},
                     "memory_check": self.memory_check, "load_blocked_reason": self.load_blocked_reason,
                     "memory_reservation": self.memory_reservation, "worker_memory": self.worker_memory,
+                    "allocator_cache": self._allocator_cache_status(),
                     "resident_memory_check": self.resident_memory_check,
                     "request_blocked_reason": self.request_blocked_reason,
                     "last_unload_reason": self.last_unload_reason,
@@ -255,6 +263,15 @@ class ModelWorker:
                               strata_decoding=self.config.get("strata_decoding"),
                               memory_budget_pending=self.memory_budget_pending)
             return result
+
+    def _allocator_cache_status(self):
+        return {'supported': False, 'available': False, 'pending': False,
+                'control_path': None, 'policy_fields': [], 'reclaim_modes': [], 'active': False,
+                'configured_policy': allocator_cache.from_memory(self.memory_policy),
+                'applied_policy': None, 'last_reclaim': None, 'error': None}
+
+    def reclaim_cache(self):
+        raise GatewayError(400, 'cache_control_unavailable', 'This runtime does not expose allocator cache controls.')
 
     def _strata_speculation(self):
         if "strata_decoding" in self.config:
@@ -273,6 +290,8 @@ class ModelWorker:
                 raise GatewayError(400, "invalid_policy", STRATA_CONTEXT)
             if self.config.get("runtime") != "strata" and "model_memory_budget_gb" in policy:
                 raise GatewayError(400, "invalid_policy", "Model memory budgets currently require Strata.")
+            if self.config.get('runtime') != 'tasks' and allocator_cache.requested(policy):
+                raise GatewayError(400, 'cache_control_unavailable', 'Allocator cache controls require a resident task backend.')
             config = dict(self.config, memory_policy=policy)
             budget_changed = policy.get("model_memory_budget_gb") != self.memory_policy.get("model_memory_budget_gb")
             if budget_changed:
@@ -779,7 +798,7 @@ class ModelWorker:
             self._refresh()
             policy = dict(self.memory_policy)
             budget_reload = self.memory_budget_pending
-            if (self.closed or self.model_state != "loaded" or self.active_requests
+            if (self.closed or self.model_state != "loaded" or self.active_requests or self.cache_control_active
                     or (not budget_reload and (policy["keep_loaded"] or self.last_activity is None))):
                 return False
             idle = budget_reload or policy.get("release_after_request", False) or bool(policy["idle_timeout_seconds"] and
@@ -815,7 +834,7 @@ class ModelWorker:
         with self.condition:
             if self.closed:
                 raise GatewayError(503, "endpoint_stopping", "Endpoint is stopping.")
-            if self.active_requests or self.model_state == "unloading":
+            if self.active_requests or self.cache_control_active or self.model_state == "unloading":
                 raise GatewayError(409, "model_busy", "Finish active requests before unloading.")
             self.model_state = "unloading"
         self._finish_unload("manual")
@@ -1103,7 +1122,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
         response = upstream = None
         submitted = False
         try:
-            self._guard(control=self.path in ("/_mlx/unload", "/_mlx/policy"))
+            self._guard(control=self.path in ("/_mlx/unload", "/_mlx/policy", "/_mlx/cache"))
             if self.headers.get("Transfer-Encoding"):
                 raise GatewayError(400, "invalid_body", "Use a bounded Content-Length request.")
             try:
@@ -1124,6 +1143,11 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 raise GatewayError(400, "invalid_body", "Expected a JSON object.")
             if self.path == "/_mlx/unload":
                 self._json(200, self.server.controller.unload())
+                return
+            if self.path == "/_mlx/cache":
+                if body:
+                    raise GatewayError(400, 'invalid_body', 'Cache reclaim requires an empty object.')
+                self._json(200, self.server.controller.reclaim_cache())
                 return
             if self.path == "/_mlx/policy":
                 self._json(200, self.server.controller.configure(body))

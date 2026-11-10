@@ -81,7 +81,7 @@ class TaskHandler(GatewayHandler):
 
     def do_POST(self):
         try:
-            self._guard(control=self.path in ('/_mlx/unload', '/_mlx/policy'))
+            self._guard(control=self.path in ('/_mlx/unload', '/_mlx/policy', '/_mlx/cache'))
             if self.headers.get('Transfer-Encoding'):
                 raise GatewayError(400, 'invalid_body', 'Use a bounded Content-Length request.')
             try:
@@ -96,6 +96,10 @@ class TaskHandler(GatewayHandler):
             controller = self.server.controller
             if self.path == '/_mlx/unload':
                 self._json(200, controller.unload())
+            elif self.path == '/_mlx/cache':
+                if body:
+                    raise GatewayError(400, 'invalid_body', 'Cache reclaim requires an empty object.')
+                self._json(200, controller.reclaim_cache())
             elif self.path == '/_mlx/policy':
                 self._json(200, controller.configure(body))
             elif self.path == '/v1/tasks':

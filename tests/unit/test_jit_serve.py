@@ -101,6 +101,14 @@ class JITServingTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_chat_runtime_advertises_allocator_controls_as_unavailable(self):
+        control = {'Authorization': 'Bearer test-control-token'}
+        code, value = self.request('POST', '/_mlx/policy', {'allocator_cache_limit_mib': 4}, headers=control)
+        self.assertEqual(code, 400, value)
+        self.assertEqual(value['error']['code'], 'cache_control_unavailable')
+        self.assertFalse(self.server.controller.status()['allocator_cache']['supported'])
+        self.assertFalse(self.trace.exists())
+
     def test_inference_key_is_checked_before_loading_and_control_stays_separate(self):
         import hashlib
         token = 'client-' + 'a' * 40

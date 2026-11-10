@@ -14,6 +14,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from mlx_agent import runner_model_cache, worker_telemetry
+from mlx_agent.allocator_cache import AllocatorCache, CacheUnavailable
 
 RUNNERS = frozenset(("decide_runner", "music_runner", "transcribe_runner", "speak_runner",
                      "generate_runner", "describe_runner", "video_runner", "mesh_runner", "embed_runner"))
@@ -42,6 +43,8 @@ def main():
 
     threading.Thread(target=watch_parent, daemon=True).start()
     runner_model_cache._enabled = True
+    cache = AllocatorCache()
+    runner_model_cache._allocator_cache = cache
     with os.fdopen(args.response_fd, "wb", buffering=0) as response:
         response.write(json.dumps({"ready": os.getpid()}).encode() + b"\n")
         while True:
@@ -54,16 +57,36 @@ def main():
             code = 1
             try:
                 request = json.loads(raw)
-                if set(request) != {"runner", "arguments"} or request["runner"] not in RUNNERS:
-                    raise ValueError("Unknown inference runner.")
-                with redirect_stdout(output), redirect_stderr(errors):
-                    module = importlib.import_module("mlx_agent." + request["runner"])
-                    code = module.main(request["arguments"])
+                if request.get('control') == 'cache':
+                    if set(request) != {'control', 'policy', 'reclaim'} or request['reclaim'] not in (None, 'manual', 'pressure', 'policy'):
+                        raise ValueError('Invalid allocator cache control.')
+                    if not runner_model_cache.loaded():
+                        raise ValueError('Cache controls require a loaded worker.')
+                    cache.configure(request['policy'])
+                    cache.apply_limit(enforce=request['reclaim'] is None)
+                    if request['reclaim']:
+                        cache.reclaim(request['reclaim'])
+                    code = 0
+                else:
+                    if set(request) not in ({"runner", "arguments"}, {"runner", "arguments", "cache_policy"}) or request['runner'] not in RUNNERS:
+                        raise ValueError("Unknown inference runner.")
+                    cache.configure(request.get('cache_policy', {}))
+                    with redirect_stdout(output), redirect_stderr(errors):
+                        module = importlib.import_module("mlx_agent." + request["runner"])
+                        code = module.main(request["arguments"])
+                    if code == 0:
+                        try:
+                            idle = cache.desired['cache_reclaim'] == 'idle'
+                            cache.apply_limit(enforce=not idle)
+                            if idle:
+                                cache.reclaim('idle')
+                        except CacheUnavailable:
+                            pass  # Preserve the successful result and expose maintenance failure.
             except (Exception, SystemExit) as error:
                 errors.write(str(error)[-2000:])
             message = json.dumps({"returncode": code, "stdout": output.getvalue(), "stderr": errors.getvalue(),
                                   "loaded": runner_model_cache.loaded(),
-                                  "memory": worker_telemetry.capture(runner_model_cache.statistics())}, allow_nan=False).encode() + b"\n"
+                                  "memory": worker_telemetry.capture(runner_model_cache.statistics()), "cache": cache.snapshot()}, allow_nan=False).encode() + b"\n"
             if len(message) > MAX_MESSAGE:
                 return 2
             response.write(message)

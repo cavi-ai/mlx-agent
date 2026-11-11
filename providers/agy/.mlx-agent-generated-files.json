@@ -490,7 +490,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "8f9439b18a15de4559c2f1b14f7dc69cd72fa0b16e69e2ba36633cf7666fa4b5"
+      "sha256": "bcba05992d0bdb8aa90eeac8e37293bfd6c8b0ff1f63e58f5bb709f1265b981b"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -658,7 +658,7 @@
     },
     {
       "path": "src/mlx_agent/jit_serve.py",
-      "sha256": "5ce71cddeab4ee67a0f3735dfb6958cd7fc3661b8b5cc7cc639869b0cd6fcd3d"
+      "sha256": "982e8816c872b68135ec8ffeb08880cd4fa3f2a187f630331050f5b46fabfb79"
     },
     {
       "path": "src/mlx_agent/kokoro_runtime.py",
@@ -687,6 +687,10 @@
     {
       "path": "src/mlx_agent/mcp_server.py",
       "sha256": "0c5ecf17c72b99dbbb0841b686c0b12738efdb9b132e1422ad03802fb1a8ac38"
+    },
+    {
+      "path": "src/mlx_agent/memory_budget.py",
+      "sha256": "82d6998bc01b7b36588c874dee003f60e5bce56a4590fd4ec5b340418e6f3dbb"
     },
     {
       "path": "src/mlx_agent/mesh.py",
@@ -790,15 +794,15 @@
     },
     {
       "path": "src/mlx_agent/residency.py",
-      "sha256": "b134f6614d308c43f649e4a9dc65cf6b15698555c78b6264272ca21ce4042b9f"
+      "sha256": "849c28c91ce852d5c94076fb9a5ceae45dc046f7476a19e5c28c4ca55f5ef12f"
     },
     {
       "path": "src/mlx_agent/resident_runner.py",
-      "sha256": "b81fba5b3ca7eb0fe57cf7659e44029f9612d361db0ae9f43fbad5dc67233316"
+      "sha256": "8e50a25fc3a9015ce371c454e01d205f5360c113b0828f9c0634f57724c86741"
     },
     {
       "path": "src/mlx_agent/resident_worker.py",
-      "sha256": "8f6ce44370c692d85777de8e9fd64e661b1b901992181490b910927f4e268fc1"
+      "sha256": "4ea818a48585336c87eb2ccf8d693a718aaa8db48bcbd2cf90faa6d7597c6493"
     },
     {
       "path": "src/mlx_agent/resources/adapter-runtime.json",
@@ -1202,7 +1206,7 @@
     },
     {
       "path": "src/mlx_agent/task_serving.py",
-      "sha256": "6cea4bbee0c6c4627ef90c819f15ac3c66f50f7d94880e77953428407f0fe29a"
+      "sha256": "ab1afbced1cd35f03b76064fc19eb512080ed2155302b7e6c33648b75204c6d5"
     },
     {
       "path": "src/mlx_agent/task_store.py",

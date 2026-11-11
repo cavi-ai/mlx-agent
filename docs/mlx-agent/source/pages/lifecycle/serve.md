@@ -1,5 +1,26 @@
 # Serve
 
+## Shared agent memory budget
+
+`serve budget --json` reports the engine's shared memory policy. Configure a
+64 GB limit with an 8 GB transient reserve using:
+
+```sh
+mlx-agent serve budget --limit-gb 64 --reserve-gb 8 --json
+```
+
+The reserve stays inside the limit, leaving 56 GB for admission. Reservations
+count pending loads, resident model workers, active workspace and process
+overhead. `--include-pid PID` includes an existing agent process and its family,
+bound to that process's start identity; changing only the limits preserves those
+bindings. All values use decimal GB. Unknown accounting blocks new allocations.
+
+Typed workers receive an MLX allocation ceiling before executing a job. The
+gateway also observes process-family memory and stops only its own model worker
+on a measured breach. This policy does not control unrelated applications or
+replace system-headroom checks. Existing servers must be restarted on a supporting
+engine to participate; installing newer source does not update a running process.
+
 Serve launches local MLX servers from a reviewed plan. Use `mlx_lm` for text,
 `mlx-vlm` for vision/language models, or `strata` for prepared compatible GGUF
 profiles. `auto` selects typed job serving for

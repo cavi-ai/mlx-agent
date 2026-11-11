@@ -1006,6 +1006,11 @@ def _add_serve_arguments(parser):
     status = actions.add_parser("status", help="cross-check serve receipts against live processes")
     status.add_argument("--receipts-dir", default=None)
     status.add_argument("--json", action="store_true")
+    budget = actions.add_parser('budget', help='inspect or configure the shared agent memory budget')
+    budget.add_argument('--limit-gb', type=float)
+    budget.add_argument('--reserve-gb', type=float, default=8)
+    budget.add_argument('--include-pid', type=int, action='append')
+    budget.add_argument('--json', action='store_true')
     profiles = actions.add_parser("profile", help="save and reuse local memory, residency and execution settings")
     profile_actions = profiles.add_subparsers(dest="profile_command", required=True)
     for command in ("save", "show", "list", "delete"):
@@ -1092,6 +1097,21 @@ def _run_serve(arguments):
     )
     operation = "serve-{0}".format(arguments.serve_command)
     try:
+        if arguments.serve_command == 'budget':
+            import math
+            from .residency import MemoryRegistry
+            registry = MemoryRegistry()
+            if arguments.limit_gb is None:
+                if arguments.include_pid:
+                    raise ValueError('--include-pid requires --limit-gb.')
+                data = registry.snapshot()
+            else:
+                if any(not math.isfinite(value) for value in (arguments.limit_gb, arguments.reserve_gb)):
+                    raise ValueError('Memory limits must be finite gigabyte values.')
+                data = registry.configure_budget(round(arguments.limit_gb * 1e9),
+                    round(arguments.reserve_gb * 1e9), arguments.include_pid)
+            return _emit_serve_result(ResultEnvelope.ok(operation, data), arguments.json,
+                                      human=json.dumps(data, indent=2))
         if arguments.serve_command == "profile":
             from . import serve_profiles
             command = arguments.profile_command

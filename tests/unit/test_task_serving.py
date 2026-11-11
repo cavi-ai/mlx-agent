@@ -190,6 +190,21 @@ def predict(model, tokenizer, state, questions):
         path.write_text('{}')
         self.assertEqual(self.request('GET', '/v1/tasks/' + identifier + '/artifacts/result')[0], 404)
 
+    def test_endpoint_stop_records_failure_without_inventing_user_cancellation(self):
+        identifier = self.start('wait')
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if self.request('GET', '/v1/tasks/' + identifier)[1]['state'] == 'running':
+                break
+            time.sleep(.02)
+        self.server.controller.close()
+        record = self.request('GET', '/v1/tasks/' + identifier)[1]
+        self.assertEqual(record['state'], 'failed', record)
+        self.assertEqual(record['error']['code'], 'endpoint_stopped')
+        self.assertFalse(record['cancel_requested'])
+        self.assertFalse(record['execution_unresolved'])
+        self.assertIsNone(self.server.controller.resident.process)
+
     def test_cancel_reaps_worker_and_allows_next_job(self):
         import time
         identifier = self.start('wait')

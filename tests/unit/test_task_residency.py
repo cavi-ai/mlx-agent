@@ -56,6 +56,68 @@ def predict(model, tokenizer, state, questions):
         self.assertEqual(self.worker.telemetry['cache_hits'],1)
         self.assertIsNone(self.worker.telemetry['active_bytes'])
 
+    def test_resource_tracker_can_stay_idle_across_warm_requests(self):
+        from mlx_agent.compute import ComputeLease
+        port = self.root / 'fixture_port.py'
+        port.write_text(port.read_text().replace('    model.count += 1',
+            '    from multiprocessing.shared_memory import SharedMemory\n'
+            '    shared = SharedMemory(create=True, size=1)\n'
+            '    shared.close()\n    shared.unlink()\n    model.count += 1'))
+        self.assertEqual(self.invoke(), 1)
+        pid = self.worker.process.pid
+        with ComputeLease('test-idle', self.root / 'compute') as lease:
+            lease.bind_process_group(pid)
+            lease.release_idle_process_group(pid, self.worker.idle_members())
+        self.assertEqual(self.invoke(), 2)
+        self.assertEqual(self.worker.process.pid, pid)
+        self.assertEqual(self.worker.telemetry['loads'], 1)
+
+    def test_unexpected_idle_child_cannot_release_the_compute_lease(self):
+        from mlx_agent.compute import ComputeLease
+        port = self.root / 'fixture_port.py'
+        port.write_text(port.read_text().replace('    model.count += 1',
+            '    import subprocess, sys\n'
+            '    model.child = subprocess.Popen([sys.executable, "-c", "import time;time.sleep(30)"])\n'
+            '    model.count += 1'))
+        self.assertEqual(self.invoke(), 1)
+        pid = self.worker.process.pid
+        with ComputeLease('test-idle', self.root / 'compute') as lease:
+            lease.bind_process_group(pid)
+            with self.assertRaisesRegex(ValueError, 'Unexpected child'):
+                lease.release_idle_process_group(pid, self.worker.idle_members())
+            self.worker.close()
+
+    def test_inherited_warning_filters_allow_tracker_idle_handoff(self):
+        self.worker.environment['PYTHONWARNINGS'] = 'default,ignore::FutureWarning,default'
+        self.test_resource_tracker_can_stay_idle_across_warm_requests()
+
+    def test_exec_launcher_retains_resource_tracker_idle_handoff(self):
+        launcher = self.root / 'python-launcher'
+        launcher.write_text('#!' + sys.executable + '\nimport os,sys\nos.execv(sys.executable, [sys.executable, *sys.argv[1:]])\n')
+        launcher.chmod(0o700)
+        self.worker.executable = str(launcher)
+        self.argv[0] = str(launcher)
+        self.test_resource_tracker_can_stay_idle_across_warm_requests()
+
+    def test_tracker_from_another_interpreter_is_not_idle(self):
+        self.assertEqual(self.invoke(), 1)
+        pid = self.worker.process.pid
+        identity = ('Mon Jan 1 00:00:00 2024 /different/python'
+                    + ' -c from multiprocessing.resource_tracker import main;main(6)')
+        with patch('mlx_agent.process_tree._snapshot', return_value={pid + 1: (pid, pid, identity)}):
+            with self.assertRaisesRegex(ValueError, 'Unexpected child'):
+                self.worker.idle_members()
+
+    def test_tracker_cannot_add_warning_flags_absent_from_launch_environment(self):
+        self.worker.environment['PYTHONWARNINGS'] = 'default'
+        self.assertEqual(self.invoke(), 1)
+        pid = self.worker.process.pid
+        identity = ('Mon Jan 1 00:00:00 2024 ' + self.worker.executable
+                    + ' -Walways -c from multiprocessing.resource_tracker import main;main(6)')
+        with patch('mlx_agent.process_tree._snapshot', return_value={pid + 1: (pid, pid, identity)}):
+            with self.assertRaisesRegex(ValueError, 'Unexpected child'):
+                self.worker.idle_members()
+
     def test_launcher_exec_binds_the_ready_worker_identity(self):
         from mlx_agent.compute import process_identity
         launcher = self.root / 'python-launcher'

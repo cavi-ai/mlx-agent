@@ -1,6 +1,7 @@
 """Bounded, cancellable calls to one isolated backend retaining one local model."""
 import json
 import os
+import re
 from pathlib import Path
 import selectors
 import subprocess
@@ -82,11 +83,11 @@ class ResidentRunner:
             if write_fd is not None:
                 os.close(write_fd)
 
-    def run(self, argv, timeout=3600, cancelled=lambda: False, cache_policy=None, **options):
+    def run(self, argv, timeout=3600, cancelled=lambda: False, cache_policy=None, memory_limit_bytes=None, **options):
         with self.lock:
-            return self._run(argv, timeout, cancelled, cache_policy, **options)
+            return self._run(argv, timeout, cancelled, cache_policy, memory_limit_bytes, **options)
 
-    def _run(self, argv, timeout, cancelled, cache_policy, **options):
+    def _run(self, argv, timeout, cancelled, cache_policy, memory_limit_bytes=None, **options):
         script = Path(argv[1]) if len(argv) > 1 else Path("")
         if (argv[0] != self.executable or script.parent.resolve() != Path(__file__).parent.resolve()
                 or script.stem not in RUNNERS or script.suffix != ".py"
@@ -103,6 +104,10 @@ class ResidentRunner:
             message = {"runner": script.stem, "arguments": argv[2:]}
             if cache_policy is not None:
                 message['cache_policy'] = cache_policy
+            if memory_limit_bytes is not None:
+                if type(memory_limit_bytes) is not int or not 0 < memory_limit_bytes <= 2**60:
+                    raise ValueError('Invalid worker memory limit.')
+                message['memory_limit_bytes'] = memory_limit_bytes
             raw = json.dumps(message).encode() + b"\n"
             if len(raw) > MAX_MESSAGE:
                 raise ValueError("Runner request exceeded its limit.")
@@ -119,6 +124,38 @@ class ResidentRunner:
         except BaseException:
             self.close()
             raise
+
+    def idle_members(self):
+        """Inspect the completed worker and its standard Python resource tracker."""
+        from .process_tree import _snapshot
+        if not self.loaded or self.process is None or self.process.poll() is not None:
+            raise ValueError('Idle inspection requires a loaded worker.')
+        pid = self.process.pid
+        expected = {pid: self.identity}
+        # Framework launchers may exec a different binary before worker readiness.
+        command = self.identity.split(None, 5)[-1]
+        worker_executable, marker, _ = command.partition(
+            ' ' + str(Path(__file__).with_name('resident_worker.py')) + ' --response-fd ')
+        if not marker:
+            raise ValueError('The ready worker interpreter cannot be identified.')
+        environment = self.environment if self.environment is not None else os.environ
+        # multiprocessing forwards the worker's inherited warning options.
+        # Match that exact suffix, rather than accepting arbitrary Python flags.
+        warnings = dict.fromkeys(environment.get('PYTHONWARNINGS', '').split(','))
+        warning_flags = ''.join(' -W' + option for option in warnings if option)
+        for member, (parent, group, identity) in _snapshot().items():
+            if group != pid or member == pid:
+                continue
+            command = identity.split(None, 5)[-1]
+            executable, marker, descriptor = command.partition(
+                ' -c from multiprocessing.resource_tracker import main;main(')
+            if warning_flags:
+                executable = executable.removesuffix(warning_flags)
+            if (parent != pid or not marker or not re.fullmatch(r'[0-9]+\)', descriptor)
+                    or Path(executable).resolve() != Path(worker_executable).resolve()):
+                raise ValueError('Unexpected child prevents resident worker idle handoff.')
+            expected[member] = identity
+        return expected
 
     def control_cache(self, policy, reclaim=None):
         with self.lock:

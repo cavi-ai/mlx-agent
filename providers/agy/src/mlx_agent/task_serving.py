@@ -171,7 +171,7 @@ class TaskModelWorker(ModelWorker):
                 try:
                     lease.bind_process_group(self.resident.process.pid)
                     success = self.resident.control_cache(desired, reclaim=reason)
-                    lease.release_idle_process_group(self.resident.process.pid)
+                    lease.release_idle_process_group(self.resident.process.pid, self.resident.idle_members())
                 except (OSError, ValueError, subprocess.SubprocessError):
                     self._stop_worker()
                     with self.condition:
@@ -332,6 +332,11 @@ class TaskModelWorker(ModelWorker):
             if plan['backend'] != record['identity']['backend'] or plan['argv'][0] != self.resident.executable:
                 raise TaskError('identity_changed', 'The model task backend changed.')
             self._check_memory() if not self.resident.loaded else self._reserve_workspace()
+            try:
+                capacity = self.memory_registry.reserve_execution(self.memory_token)
+            except MemoryAdmissionError as error:
+                raise GatewayError(503, error.code, str(error)) from error
+            worker_limit = None if capacity is None else max(1, capacity - 512_000_000)
             with self.condition:
                 if self.closed:
                     raise InterruptedError('Endpoint stopping.')
@@ -355,7 +360,7 @@ class TaskModelWorker(ModelWorker):
             dispatched = True
             result = kind.run(plan, runner=lambda argv, **options: self.resident.run(argv,
                 cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'],
-                cache_policy=allocator_cache.from_memory(self.memory_policy), **options))
+                cache_policy=allocator_cache.from_memory(self.memory_policy), memory_limit_bytes=worker_limit, **options))
             self._check_runtime()
             check_identity(record['identity'])
             self.store.read_request(identifier)
@@ -372,7 +377,7 @@ class TaskModelWorker(ModelWorker):
             if self.resident.cache_state and self.resident.cache_state['applied_policy'] != desired:
                 self.resident.control_cache(desired, reclaim='policy' if desired['cache_reclaim'] == 'idle' else None)
             # The protocol acknowledges completion before retaining idle weights.
-            lease.release_idle_process_group(self.process.pid)
+            lease.release_idle_process_group(self.process.pid, self.resident.idle_members())
             memory_settled = self._settle_task_memory()
             with self.condition:
                 self.model_state = 'loaded' if self.resident.loaded else 'unloaded'
@@ -383,7 +388,7 @@ class TaskModelWorker(ModelWorker):
             unresolved = False
             admission_denied = isinstance(error, (ComputeBusy, InterruptedError)) and not leased
             admission_denied |= (not dispatched and isinstance(error,GatewayError)
-                and error.code in ('insufficient_headroom','memory_unknown','memory_registry_busy'))
+                and error.code in ('insufficient_headroom','memory_unknown','memory_registry_busy', 'agent_memory_budget_exceeded'))
             # No work was dispatched if the host lease was denied. Keep the
             # existing idle worker and its state available for the next request.
             if not admission_denied:
@@ -395,12 +400,15 @@ class TaskModelWorker(ModelWorker):
                 error = TaskError('compute_busy', str(error), 'Wait for the current host model operation to finish, then start a new job.')
             if unresolved:
                 error = TaskError('task_stop_unconfirmed', 'The owned model worker has not stopped safely.', 'Inspect the worker and retry the owned endpoint stop; its identity is retained.')
+            cancelled = self.store.get(identifier)['cancel_requested']
+            if isinstance(error, InterruptedError) and not cancelled:
+                error = TaskError('endpoint_stopped', 'The model endpoint stopped during inference.',
+                    'Inspect its status, then restart the endpoint before starting a new job.')
             with self.condition:
                 if not admission_denied:
                     self.model_state = 'failed' if unresolved else 'unloaded'
                 self.last_error = str(error)
                 self._persist()
-            cancelled = isinstance(error, InterruptedError) or self.store.get(identifier)['cancel_requested']
             _finish(self.store, identifier, 'cancelled' if cancelled and not unresolved else 'failed',
                     error=None if cancelled and not unresolved else _error(error), execution_unresolved=unresolved)
         finally:

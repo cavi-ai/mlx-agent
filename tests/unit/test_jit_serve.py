@@ -101,6 +101,43 @@ class JITServingTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_busy_memory_registry_does_not_terminate_the_loaded_worker(self):
+        import fcntl
+        from mlx_agent.jit_serve import ModelWorker
+        controller = ModelWorker(self.config)
+        self.addCleanup(controller.close)
+        controller.memory_registry.configure_budget(64_000_000_000, 8_000_000_000)
+        controller.memory_registry.lock_timeout = .02
+        process = subprocess.Popen([sys.executable, '-c', 'import time;time.sleep(30)'],
+                                   start_new_session=True)
+        controller.process = process
+        controller.model_state = 'loaded'
+        with (controller.memory_registry.root / 'memory.lock').open('rb') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            controller.guard_agent_budget()
+        self.assertIsNone(process.poll())
+        self.assertFalse(controller.closed)
+        self.assertEqual(controller.model_state, 'loaded')
+
+    def test_memory_guard_cannot_close_a_worker_that_finished_unloading(self):
+        from mlx_agent.jit_serve import ModelWorker
+        controller = ModelWorker(self.config)
+        self.addCleanup(controller.close)
+        process = subprocess.Popen([sys.executable, '-c', 'import time;time.sleep(30)'],
+                                   start_new_session=True)
+        controller.process = process
+        controller.model_state = 'loaded'
+
+        def snapshot_after_unload():
+            controller.unload()
+            return {'agent_budget': {'status': 'unavailable'}}
+
+        with mock.patch.object(controller.memory_registry, 'snapshot', side_effect=snapshot_after_unload):
+            controller.guard_agent_budget()
+        self.assertIsNotNone(process.poll())
+        self.assertEqual(controller.unload()['model_state'], 'unloaded')
+        self.assertFalse(controller.closed)
+
     def test_chat_runtime_advertises_allocator_controls_as_unavailable(self):
         control = {'Authorization': 'Bearer test-control-token'}
         code, value = self.request('POST', '/_mlx/policy', {'allocator_cache_limit_mib': 4}, headers=control)

@@ -37,6 +37,7 @@ MAX_TOKENS_MIN, MAX_TOKENS_MAX, MAX_TOKENS_DEFAULT = 256, 65536, 8192
 PORT_MIN, PORT_MAX = 1, 65535
 READINESS_DEADLINE_DEFAULT = 60.0
 STOP_DEADLINE_SECONDS = 10.0
+SPLASH_STOP_DEADLINE_SECONDS = 20.0
 MAX_RECEIPTS = 50
 
 _RECIPES_PATH = Path(__file__).resolve().parent / "resources" / "serve-recipes.json"
@@ -135,6 +136,16 @@ def resolve_serve_runtime(repo, path, runtime, recipes, hf_cache=None,
         if runtime == "auto":
             raise ServeError("model_config_unavailable", "Automatic runtime selection needs a readable local config.json.",
                              "Select a downloaded local model or explicitly review its serving runtime.") from None
+    if runtime == "splash":
+        from .splash_runtime import SplashError, installed_runtime, read_target
+        try:
+            if local is None:
+                raise SplashError("model_not_local", "Splash serves local files or a cached repository only.",
+                                  "Pass --path to local weights, or --repo for a model in the Hugging Face cache.")
+            read_target(local)
+            return "splash", installed_runtime()["launcher"]
+        except SplashError as error:
+            raise ServeError(error.code, str(error), error.remediation) from error
     if runtime == "strata" or (runtime == "auto" and config.get("serving_runtime") == "strata"):
         from .strata_runtime import StrataError, installed_runtime, read_model
         try:
@@ -271,8 +282,12 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                runtime_executable=None, strata_speculation=False, strata_decoding=None,
                strata_expert_memory_gb=None, strata_context_tokens=None, training_receipt=None, thinking="default",
                m5_prefill=False, prompt_lookup=False, vision_cache=False, api_key_file=None, api_key_sha256=None,
-               system_prompt=None, default_temperature=None, default_top_p=None):
+               system_prompt=None, default_temperature=None, default_top_p=None,
+               splash_draft_model=None, splash_max_memory_gb=None, splash_max_context_tokens=None):
     """Render the start plan and local file identities without side effects."""
+    if runtime != "splash" and (splash_draft_model is not None or splash_max_memory_gb is not None
+                                or splash_max_context_tokens is not None):
+        raise ServeError("invalid_arguments", "Splash options require the Splash runtime.", "Use --runtime splash.")
     access = None
     if api_key_file is not None:
         if api_key_sha256 is not None:
@@ -441,7 +456,34 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
             values["executable"] = strata_runtime["python"]
         except StrataError as error:
             raise ServeError(error.code, str(error), error.remediation) from error
+    splash_target = splash_runtime = splash_draft = None
+    if runtime == "splash":
+        from .splash_runtime import SplashError, installed_runtime, read_draft, read_target, serve_arguments
+        try:
+            if adapter_path is not None or jit:
+                raise SplashError("invalid_arguments", "Splash serves local weights without a LoRA adapter or --jit.",
+                                  "Remove the adapter and --jit; Splash releases idle weights itself.")
+            splash_model_dir = local_path
+            if has_repo:
+                from .convert import cached_snapshot
+                snapshot = cached_snapshot(repo.strip(), hf_cache)
+                if snapshot is None:
+                    raise SplashError("model_not_local", "The repository is not in the Hugging Face cache: " + repo.strip(),
+                                      "Download it first; serve never downloads models.")
+                splash_model_dir = str(snapshot)
+            splash_target = read_target(splash_model_dir, served_model=repo.strip() if has_repo else None)
+            splash_draft = read_draft(splash_draft_model) if splash_draft_model is not None else None
+            splash_argv = serve_arguments(splash_draft, splash_max_memory_gb, splash_max_context_tokens)
+            splash_runtime = installed_runtime()
+            if runtime_executable is not None and runtime_executable != splash_runtime["launcher"]:
+                raise SplashError("splash_not_installed", "The reviewed Splash launcher changed.")
+        except SplashError as error:
+            raise ServeError(error.code, str(error), error.remediation) from error
+        values.update(executable=splash_runtime["launcher"], served_model=splash_target["served_model"],
+                      splash_target=splash_target["target"])
     argv = [part.format(**values) for part in recipe["argv"]]
+    if splash_target:
+        argv += splash_argv
     if strata_model:
         argv += ["--runtime-root", strata_runtime["root"], "--speculation", "on" if strata_speculation else "off",
                  "--decoding", strata_decoding,
@@ -512,6 +554,16 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                     readiness_deadline=900)
         if strata_allocation is not None:
             plan["strata_memory_allocation"] = strata_allocation
+    elif splash_target:
+        plan.update(splash_version=splash_runtime["version"], splash_runtime_fingerprint=splash_runtime["fingerprint"],
+                    splash_model_fingerprint=splash_target["fingerprint"], splash_target=splash_target["target"],
+                    splash_model_dir=splash_model_dir,
+                    splash_served_model=splash_target["served_model"], splash_source=splash_target["source"],
+                    splash_draft_model=splash_draft["path"] if splash_draft else None,
+                    splash_draft_fingerprint=splash_draft["fingerprint"] if splash_draft else None,
+                    splash_max_memory_gb=splash_max_memory_gb, splash_max_context_tokens=splash_max_context_tokens,
+                    weight_format=splash_target["format"], weight_bytes=splash_target["weight_bytes"],
+                    weights_preserved=True, readiness_deadline=900)
     elif has_path:
         plan.update(_local_weight_evidence(local_path))
     if prefill_kernel is not None:
@@ -671,6 +723,21 @@ def _default_path_present(path):
     return Path(path).is_dir()
 
 
+def _require_splash_identity(plan):
+    if plan.get("runtime") != "splash":
+        return
+    from .splash_runtime import SplashError, installed_runtime, read_draft, read_target
+    try:
+        current = (read_target(plan["splash_model_dir"])["fingerprint"],
+                   read_draft(plan["splash_draft_model"])["fingerprint"] if plan.get("splash_draft_model") else None,
+                   installed_runtime(plan["argv"][0])["fingerprint"])
+    except SplashError as error:
+        raise ServeError("preview_stale", str(error), "Review a fresh Splash serve plan.") from error
+    if current != (plan["splash_model_fingerprint"], plan["splash_draft_fingerprint"], plan["splash_runtime_fingerprint"]):
+        raise ServeError("preview_stale", "The Splash target, draft or launcher changed after preview.",
+                         "Review a fresh Splash serve plan.")
+
+
 def _require_task_identity(plan):
     if plan.get("task_identity") is None:
         return
@@ -720,6 +787,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
     _require_prefill_identity(plan)
     _require_decode_identity(plan)
     _require_vision_identity(plan)
+    _require_splash_identity(plan)
 
     _require_access_identity(plan)
 
@@ -755,7 +823,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "The model is not present in a local inventory.",
             "Download it with the runtime's own pull command first; serve never downloads models.",
         )
-    if plan["path"] is not None:
+    # A Splash target may be a GGUF file; its identity check above proved it present.
+    if plan["path"] is not None and plan["runtime"] != "splash":
         present = path_present or _default_path_present
         if not present(plan["path"]):
             raise ServeError(
@@ -841,6 +910,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         _require_prefill_identity(plan)
         _require_decode_identity(plan)
         _require_vision_identity(plan)
+        _require_splash_identity(plan)
         _require_access_identity(plan)
     except ServeError:
         _terminate_pid(pid)
@@ -883,6 +953,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         receipt["strata_decoding"] = plan["strata_decoding"]
     if "strata_memory_allocation" in plan:
         receipt["strata_memory_allocation"] = plan["strata_memory_allocation"]
+    if plan["runtime"] == "splash":
+        receipt.update(splash_served_model=plan["splash_served_model"], splash_version=plan["splash_version"])
     content = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     _atomic_in_directory(root, receipt_path.name, content, 0o600)
     return {"status": "started", "receipt": receipt}
@@ -999,6 +1071,10 @@ def _argv_matches(receipt, command, require_port=True):
     argv = receipt.get("argv") or []
     if not argv:
         return False
+    if receipt.get("runtime") == "splash":
+        # The launcher execs Splash's server on its own prepared copy of the target.
+        return ("-m server.server" in command and "--model {0} ".format(receipt.get("splash_served_model")) in command + " "
+                and (not require_port or "--port {0} ".format(receipt.get("port")) in command + " "))
     executable = Path(str(argv[0])).name
     # macOS framework Python reports its bundle binary in ps, not the
     # interpreter alias used to launch it. Bind a script recipe to its
@@ -1170,10 +1246,11 @@ def stop_serve(port, receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_c
             "The live pid {0} does not match the serve receipt; refusing to signal it.".format(pid),
             "Inspect the process yourself; the receipt is retained at {0}.".format(receipt_path),
         )
-    if (receipt.get("jit") or receipt.get("runtime") == "strata") and terminate is _terminate_pid and os.getpgid(pid) == receipt["pid"]:
+    if (receipt.get("jit") or receipt.get("runtime") in ("strata", "splash")) and terminate is _terminate_pid and os.getpgid(pid) == receipt["pid"]:
         terminate = lambda _pid, sig: os.killpg(receipt["pid"], sig)
     terminate(pid, signal.SIGTERM)
-    deadline = clock() + STOP_DEADLINE_SECONDS
+    # Splash gives its engine 15 seconds to stop before killing it.
+    deadline = clock() + (SPLASH_STOP_DEADLINE_SECONDS if receipt.get("runtime") == "splash" else STOP_DEADLINE_SECONDS)
     while clock() < deadline:
         if not pid_alive(pid):
             receipt_path.unlink()

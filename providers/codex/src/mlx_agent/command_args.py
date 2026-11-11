@@ -22,6 +22,7 @@ class CommandArgumentError(ValueError):
 
 
 _RUNTIMES = {"ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm"}
+_BENCH_RUNTIMES = _RUNTIMES | {"strata", "splash"}
 _BENCH_WORKLOADS = {"chat", "prefix", "prefill", "concurrent", "cold"}
 _ROLES = {role for role, _keywords, _label in ROLES}
 _MODEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,191}$")
@@ -257,7 +258,7 @@ def _parse_bench(tokens):
     seen = set()
     values = {
         "--repo": (lambda value: _model(value), "repo"),
-        "--runtime": (lambda value: value if value in _RUNTIMES else None, "runtime"),
+        "--runtime": (lambda value: value if value in _BENCH_RUNTIMES else None, "runtime"),
         "--role": (lambda value: value if value in _ROLES else None, "role"),
         "--runs": (lambda value: _integer(value, "runs", 1, 10), "runs"),
         "--gen-tokens": (lambda value: _integer(value, "gen-tokens", 16, 2048), "gen-tokens"),
@@ -297,7 +298,7 @@ def _parse_bench_coding(tokens):
     argv, index, seen = ["bench", "coding"], 1, set()
     values = {
         "--repo": _model,
-        "--runtime": lambda value: value if value in {"mlx_lm", "lmstudio", "mlx-vlm", "litellm"} else None,
+        "--runtime": lambda value: value if value in _BENCH_RUNTIMES - {"ollama"} else None,
         "--base-url": _endpoint,
         "--gen-tokens": lambda value: _integer(value, "gen-tokens", 256, 1024),
         "--timeout": lambda value: _decimal(value, "timeout", 1, 600),

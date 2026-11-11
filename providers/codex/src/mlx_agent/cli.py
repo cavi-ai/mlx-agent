@@ -689,11 +689,12 @@ def _run_wire(arguments):
         ), arguments.json)
 
 
-_BENCH_RUNTIMES = ("ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm")
+_BENCH_RUNTIMES = ("ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm", "strata", "splash")
 
 
 _BENCH_ORIGINS = {"ollama": "http://127.0.0.1:11434", "lmstudio": "http://127.0.0.1:1234",
-                  "mlx-vlm": "http://127.0.0.1:8083", "mlx_lm": "http://127.0.0.1:8080", "litellm": "http://127.0.0.1:4000"}
+                  "mlx-vlm": "http://127.0.0.1:8083", "mlx_lm": "http://127.0.0.1:8080", "litellm": "http://127.0.0.1:4000",
+                  "strata": "http://127.0.0.1:8084", "splash": "http://127.0.0.1:8086"}
 
 
 def _bench_runtime_client(name, base_url=None):
@@ -948,7 +949,10 @@ def _add_serve_arguments(parser):
     start.add_argument("--repo", default=None, help="publisher/model present in the local Hugging Face cache")
     start.add_argument("--path", default=None, help="local model directory to serve instead of a cache repo id")
     start.add_argument("--profile", help="saved serving settings; explicit options override the profile")
-    start.add_argument("--runtime", required=True, choices=["auto", "mlx_lm", "mlx-vlm", "strata", "tasks"])
+    start.add_argument("--runtime", required=True, choices=["auto", "mlx_lm", "mlx-vlm", "strata", "splash", "tasks"])
+    start.add_argument("--splash-draft-model", help="local DFlash2 draft directory (default: the family's draft in the Hugging Face cache)")
+    start.add_argument("--splash-max-memory-gb", type=float, help="Splash Metal memory ceiling in decimal GB (1–1024); it can only lower Splash's own plan")
+    start.add_argument("--splash-max-context", type=int, help="Splash context limit in tokens (512–1010000)")
     decoding = start.add_mutually_exclusive_group()
     decoding.add_argument("--strata-speculation", choices=["on", "off"], help="legacy Strata draft-and-verify switch (default: off)")
     decoding.add_argument("--strata-decoding", choices=["plain", "lookup", "mtp"], help="Strata verified decoding mode; lookup needs no draft weights")
@@ -959,7 +963,7 @@ def _add_serve_arguments(parser):
     start.add_argument("--adapter-path", default=None, help="LoRA adapter directory (mlx_lm only)")
     start.add_argument("--training-receipt", default=None, help="completed LoRA receipt selecting its pinned base and adapter")
     start.add_argument("--thinking", choices=["default", "off"], default="default",
-                       help="off asks the chat template to skip reasoning (mlx_lm); other runtimes report unsupported")
+                       help="off asks the chat template to skip reasoning (mlx_lm, splash); other runtimes report unsupported")
     start.add_argument('--system-prompt', help='default chat system prompt when the client supplies none (--jit)')
     start.add_argument('--default-temperature', type=float, help='temperature when the client omits it (--jit, 0–2)')
     start.add_argument('--default-top-p', type=float, help='top-p when the client omits it (--jit, 0–1)')
@@ -1233,6 +1237,9 @@ def _run_serve(arguments):
             m5_prefill=arguments.m5_prefill,
             prompt_lookup=arguments.prompt_lookup,
             vision_cache=arguments.vision_cache,
+            splash_draft_model=arguments.splash_draft_model,
+            splash_max_memory_gb=arguments.splash_max_memory_gb,
+            splash_max_context_tokens=arguments.splash_max_context,
         )
         if arguments.launchd:
             if plan.get("jit"):

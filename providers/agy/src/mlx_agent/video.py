@@ -14,6 +14,7 @@ from .backends import (
     lookup,
 )
 from .inference_runner import InferenceError, RunnerContract, invoke
+from .media_settings import supports_adaptive_reuse
 
 VIDEO_SCHEMA = "video/1"
 VIDEO_RUNNER = Path(__file__).resolve().with_name("video_runner.py")
@@ -106,8 +107,7 @@ def plan_video(model_path, prompt, out, width=DEFAULT_WIDTH, height=DEFAULT_HEIG
         raise _invalid("--denoiser-cache must be off or adaptive.", "Pass --denoiser-cache adaptive to enable residual reuse.")
     if not _is_int(cache_memory_mib) or not 8 <= cache_memory_mib <= 4096:
         raise _invalid("--cache-memory-mib must be 8..4096.", "Pass --cache-memory-mib 256, for example.")
-    if denoiser_cache == "adaptive" and (config.get("model_version") != "2.1" or
-                                         config.get("dual_model", False) or config.get("model_type") != "t2v"):
+    if denoiser_cache == "adaptive" and not supports_adaptive_reuse(config, "video_generation"):
         raise _invalid("Adaptive denoiser caching requires single-model Wan2.1 T2V.", "Use --denoiser-cache off for this model.")
     model_type = config.get("model_type")
     manifests = load_manifests() if manifests is None else manifests

@@ -689,12 +689,16 @@
       "sha256": "0c5ecf17c72b99dbbb0841b686c0b12738efdb9b132e1422ad03802fb1a8ac38"
     },
     {
+      "path": "src/mlx_agent/media_settings.py",
+      "sha256": "b5b6970a5acd9f33d1aaa241a8cfce6fa81467f2b4ee03ca3c02babe77955ba5"
+    },
+    {
       "path": "src/mlx_agent/memory_budget.py",
       "sha256": "357c61bddace1dbaee17817b1587e9686af74ba920f0891ff6b17d503670c86f"
     },
     {
       "path": "src/mlx_agent/mesh.py",
-      "sha256": "869fcd1b7c5f14b2292bb7bfd425982ca85cd86eec051ef06e413cbd901736df"
+      "sha256": "a44b5a7b0e3a0fb85d5fa50bc236c76bcdfec40b681e6b7a4b3b778c5966f4c2"
     },
     {
       "path": "src/mlx_agent/mesh_runner.py",
@@ -1174,11 +1178,11 @@
     },
     {
       "path": "src/mlx_agent/task_cli.py",
-      "sha256": "c1ad5de7543c4fb7560ef54d0428f4651dac6a3c1b01c7a3fcc0a7c9a3dc007c"
+      "sha256": "b316e31a8569585c5a51a05f84bff7fbae9458e10d9b8d31529043357bf6bc80"
     },
     {
       "path": "src/mlx_agent/task_contracts.py",
-      "sha256": "4622cb008337b55b5ddf60daa118a57042c296a3affdd0ee88fa3bf8dfbbd693"
+      "sha256": "d02ab990681cd0f5ee9d7d181ce6bc6d59eb693aae996dee3a16be1466a0fa92"
     },
     {
       "path": "src/mlx_agent/task_identity.py",
@@ -1254,7 +1258,7 @@
     },
     {
       "path": "src/mlx_agent/video.py",
-      "sha256": "7b6db3b1b2c1bea28563a96aff830270b20686ecb4dae8495fc417f4ddd236c0"
+      "sha256": "1ebd906c2c8a3a8f67e459350dd56bf22b52e7710c414ad43789cf546efb9b91"
     },
     {
       "path": "src/mlx_agent/video_runner.py",

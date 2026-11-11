@@ -18,7 +18,8 @@
         "bench": {"command": "mlx-bench", "invocation": "/mlx-bench"},
         "doctor": {"command": "mlx-doctor", "invocation": "/mlx-doctor"},
         "watch": {"command": "mlx-watch", "invocation": "/mlx-watch"},
-        "fleet": {"command": "mlx-fleet", "invocation": "/mlx-fleet"}
+        "fleet": {"command": "mlx-fleet", "invocation": "/mlx-fleet"},
+        "task": {"command": "mlx-task", "invocation": "/mlx-task"}
       },
       "last_smoke_test": {"status": "fixture", "date": "2026-07-17", "summary": "Plugin installation, skill discovery and removal checked with Claude Code 2.1.198. Scout output checked with fixtures; model invocation not verified."},
       "release_evidence": {"id": "rc-2026-07-17-claude", "status": "fixture", "date": "2026-07-17", "environment": "macOS arm64", "cli_version": "2.1.198", "scopes_tested": ["user"], "native_discovery": "skills listed; slash-command session not run", "fixture_bundle": "passed", "uninstall": "passed"},
@@ -45,7 +46,8 @@
         "bench": {"command": "mlx-bench", "invocation": "$mlx-agent:mlx-bench"},
         "doctor": {"command": "mlx-doctor", "invocation": "$mlx-agent:mlx-doctor"},
         "watch": {"command": "mlx-watch", "invocation": "$mlx-agent:mlx-watch"},
-        "fleet": {"command": "mlx-fleet", "invocation": "$mlx-agent:mlx-fleet"}
+        "fleet": {"command": "mlx-fleet", "invocation": "$mlx-agent:mlx-fleet"},
+        "task": {"command": "mlx-task", "invocation": "$mlx-agent:mlx-task"}
       },
       "last_smoke_test": {"status": "blocked", "date": "2026-07-29", "summary": "Marketplace installation and namespaced skill discovery checked with Codex CLI 0.137.0. Scout output checked with fixtures; model invocation not verified."},
       "release_evidence": {"id": "rc-2026-07-29-codex", "status": "blocked", "date": "2026-07-29", "environment": "macOS arm64", "cli_version": "0.137.0", "scopes_tested": ["user"], "native_discovery": "namespaced skills injected", "fixture_bundle": "passed", "uninstall": "passed"},
@@ -72,7 +74,8 @@
         "bench": {"command": "mlx-bench", "invocation": "mlx-bench skill"},
         "doctor": {"command": "mlx-doctor", "invocation": "mlx-doctor skill"},
         "watch": {"command": "mlx-watch", "invocation": "mlx-watch skill"},
-        "fleet": {"command": "mlx-fleet", "invocation": "mlx-fleet skill"}
+        "fleet": {"command": "mlx-fleet", "invocation": "mlx-fleet skill"},
+        "task": {"command": "mlx-task", "invocation": "mlx-task skill"}
       },
       "last_smoke_test": {"status": "fixture", "date": "2026-08-25", "summary": "Plugin validation, seven-skill discovery and user/project installation lifecycle checked with Agy 1.1.14. Scout output checked with fixtures; model invocation not verified."},
       "release_evidence": {"id": "rc-2026-08-25-agy", "status": "fixture", "date": "2026-08-25", "environment": "macOS arm64", "cli_version": "1.1.14", "scopes_tested": ["user", "project"], "native_discovery": "Agy registered all seven packaged skills", "fixture_bundle": "passed", "uninstall": "passed"},
@@ -99,7 +102,8 @@
         "bench": {"command": "mlx-bench", "invocation": "/mlx-bench"},
         "doctor": {"command": "mlx-doctor", "invocation": "/mlx-doctor"},
         "watch": {"command": "mlx-watch", "invocation": "/mlx-watch"},
-        "fleet": {"command": "mlx-fleet", "invocation": "/mlx-fleet"}
+        "fleet": {"command": "mlx-fleet", "invocation": "/mlx-fleet"},
+        "task": {"command": "mlx-task", "invocation": "/mlx-task"}
       },
       "last_smoke_test": {"status": "blocked", "date": "2026-07-29", "summary": "Seven-command installation and removal checked with OpenCode 1.18.9. Command transport checked with fixtures; model invocation not verified."},
       "release_evidence": {"id": "rc-2026-07-29-opencode", "status": "blocked", "date": "2026-07-29", "environment": "macOS arm64", "cli_version": "1.18.9", "scopes_tested": ["user", "project"], "native_discovery": "all seven commands installed", "fixture_bundle": "passed", "uninstall": "passed"},
@@ -126,7 +130,8 @@
         "bench": {"command": "mlx-bench", "invocation": "/mlx-bench"},
         "doctor": {"command": "mlx-doctor", "invocation": "/mlx-doctor"},
         "watch": {"command": "mlx-watch", "invocation": "/mlx-watch"},
-        "fleet": {"command": "mlx-fleet", "invocation": "/mlx-fleet"}
+        "fleet": {"command": "mlx-fleet", "invocation": "/mlx-fleet"},
+        "task": {"command": "mlx-task", "invocation": "/mlx-task"}
       },
       "last_smoke_test": {"status": "fixture", "date": "2026-10-15", "summary": "Seven-skill discovery and removal checked in user and project scopes with OpenClaw 2026.10.3. Scout output checked with fixtures."},
       "release_evidence": {"id": "rc-2026-10-15-openclaw", "status": "fixture", "date": "2026-10-15", "environment": "macOS arm64", "cli_version": "2026.10.3", "scopes_tested": ["user", "project"], "native_discovery": "openclaw skills list reported all seven skills in both scopes", "fixture_bundle": "passed", "uninstall": "passed"},
@@ -153,7 +158,8 @@
         "bench": {"command": "mlx-bench", "invocation": "/mlx-bench"},
         "doctor": {"command": "mlx-doctor", "invocation": "/mlx-doctor"},
         "watch": {"command": "mlx-watch", "invocation": "/mlx-watch"},
-        "fleet": {"command": "mlx-fleet", "invocation": "/mlx-fleet"}
+        "fleet": {"command": "mlx-fleet", "invocation": "/mlx-fleet"},
+        "task": {"command": "mlx-task", "invocation": "/mlx-task"}
       },
       "last_smoke_test": {"status": "fixture", "date": "2026-10-15", "summary": "Seven-skill discovery and removal checked in user scope with Hermes Agent 0.19.1. This version does not discover project skills. Scout output checked with fixtures."},
       "release_evidence": {"id": "rc-2026-10-15-hermes", "status": "fixture", "date": "2026-10-15", "environment": "macOS arm64", "cli_version": "0.19.1", "scopes_tested": ["user", "project"], "native_discovery": "hermes skills list reported all seven user-scope skills; 0.19.1 has no project skill discovery", "fixture_bundle": "passed", "uninstall": "passed"},
@@ -180,7 +186,8 @@
         "bench": {"command": "mlx-bench", "invocation": "mlx-bench skill"},
         "doctor": {"command": "mlx-doctor", "invocation": "mlx-doctor skill"},
         "watch": {"command": "mlx-watch", "invocation": "mlx-watch skill"},
-        "fleet": {"command": "mlx-fleet", "invocation": "mlx-fleet skill"}
+        "fleet": {"command": "mlx-fleet", "invocation": "mlx-fleet skill"},
+        "task": {"command": "mlx-task", "invocation": "mlx-task skill"}
       },
       "last_smoke_test": {"status": "fixture", "date": "2026-07-17", "summary": "User/project installation and removal checked with fixture-backed Scout output."},
       "release_evidence": {"id": "rc-2026-07-17-agentskills", "status": "fixture", "date": "2026-07-17", "environment": "macOS arm64", "cli_version": "portable format", "scopes_tested": ["user", "project"], "native_discovery": "not applicable", "fixture_bundle": "passed", "uninstall": "passed"},

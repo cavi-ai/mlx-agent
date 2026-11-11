@@ -21,4 +21,8 @@ Roles are canonical (`general`, `coding`, `reasoning`, `vision`, `embedding`, `t
 
 - Renders one bounded LiteLLM router YAML with a managed header and an exact five-line entry grammar per role.
 - Every referenced model is checked against local inventories; `--allow-missing` records a reviewed warning instead of failing.
-- Applies through the identical preview-confirm-receipt-rollback transaction as wire.
+- Applies through the identical preview-confirm-receipt-rollback transaction as wire. `--receipts-dir` chooses where the non-secret receipt is written, and `--endpoint` names an optional local runtime health endpoint for the transaction to check.
+- `wire status <receipt>` reports a fleet receipt, and `wire rollback <receipt>` restores the previous file through its own preview and `--confirm --preview-hash`.
+
+Agents reach Fleet through `/mlx-fleet` (or the host's equivalent skill) and the
+MCP `fleet` capability; both stop at the preview until you confirm the hash.

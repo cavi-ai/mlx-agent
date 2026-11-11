@@ -41,6 +41,10 @@
       "sha256": "6fc9b842ca3deb63e24a00cd76ef21b7e125ef911b4c1c6dd324ece92b1f38dd"
     },
     {
+      "path": "skills/mlx-task/SKILL.md",
+      "sha256": "bdee780de52ec49ce6bc313c823f65cf8b7b99d7f0cbdd2e778c210d46c35d80"
+    },
+    {
       "path": "skills/mlx-watch/SKILL.md",
       "sha256": "ea8504f8876d968a303f91f3016c72fb591017f4fb9cfdfd6b07d054c583afca"
     },
@@ -530,7 +534,7 @@
     },
     {
       "path": "src/mlx_agent/command_executor.py",
-      "sha256": "df07ae85a25780d23cfe90e1032a19031ec5fbb388b7940414763ce9a26e5b32"
+      "sha256": "cb092f42a40d6ed81afda867ce5b7de2fc2d707c24d1a8fecaa79e90aa933b08"
     },
     {
       "path": "src/mlx_agent/compute.py",

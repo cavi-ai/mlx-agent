@@ -28,7 +28,8 @@ execution. Optional backend dependency installation requires Python 3.12.
 
 ## Stable interfaces
 
-- The seven provider capabilities (`mlx-scout`, `mlx-adopt`, `mlx-wire`, `mlx-bench`, `mlx-doctor`, `mlx-watch`, `mlx-fleet`) and their argument grammars.
+- The eight provider capabilities (`mlx-scout`, `mlx-adopt`, `mlx-wire`, `mlx-bench`, `mlx-doctor`, `mlx-watch`, `mlx-fleet`, `mlx-task`) and their argument grammars.
+- The MCP tools `mlx_agent_execute` and `mlx_agent_capabilities`.
 - The confirmation-gated transaction contract (preview hash, receipts, rollback).
 - Receipt and state schemas (versioned, with migrations).
 

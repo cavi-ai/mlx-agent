@@ -224,7 +224,11 @@ current identity and checks it again during execution.
 
 ## Agent access through MCP
 
-The existing `mlx_agent_execute` tool accepts capability `task`. Pass a task
+Hosts with the plugin installed expose these actions as `/mlx-task` (Codex:
+`$mlx-agent:mlx-task`), backed by the same grammar. See
+[Agent integration](../introduction/agents.md).
+
+The `mlx_agent_execute` tool accepts capability `task`. Pass a task
 command in `arguments`; the narrow grammar always requests JSON output:
 
 ```json

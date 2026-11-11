@@ -26,8 +26,9 @@ Blueprint write guidance packs without training or scaffolding applications.
 2. **Verify** — `adopt` runs deterministic role probes (coding, reasoning, vision OCR, embedding, tool-use) against your local runtime before recommending.
 3. **Measure** — `bench` records TTFT and tok/s on your chip as `runtime_measured` evidence.
 4. **Wire** — `wire` applies configuration through a preview-confirm-receipt-rollback transaction.
-5. **Operate** — `serve`, `doctor models`, `fleet`, and `watch` manage local model processes, health, configuration, and Hub changes.
-6. **Produce** — `intake`, `backend`, `convert`, `lora`, and `fuse` acquire sources, manage dependencies, quantize, train, and fuse local models.
+5. **Operate** — `serve`, `doctor models`, `fleet`, and `watch` manage local model processes, health, configuration, and Hub changes. Serving covers MLX-LM, MLX-VLM, Strata and Splash, with just-in-time loading, memory budgets and API-key protected endpoints.
+6. **Infer** — `task` runs durable classification, embedding, transcription, speech, music, image, video and 3D mesh jobs against local models, with stable IDs, cancellation and verified output files.
+7. **Produce** — `intake`, `backend`, `convert`, `lora`, and `fuse` acquire sources, manage dependencies, quantize, train, and fuse local models.
 
 [Your first local model](quickstart.md) covers making weights available and
 starting a server before verification. For domain research or project design,
@@ -36,4 +37,4 @@ See [Evidence and sizing](../reference/evidence.md) for probe and fit limits.
 
 ## Providers
 
-First-class adapters ship for Claude Code, Codex CLI, Agy, and OpenCode, plus portable AgentSkills packages. Every provider exposes the seven capabilities: Claude Code and OpenCode use `/mlx-*` commands, Codex uses `$mlx-agent:mlx-*`, and Agy and AgentSkills use the named `mlx-*` skills.
+First-class adapters ship for Claude Code, Codex CLI, Agy, OpenCode, OpenClaw, and Hermes Agent, plus portable AgentSkills packages. Every provider exposes eight capabilities: scout, adopt, wire, bench, doctor, watch, fleet, and task. Claude Code, OpenCode, OpenClaw, and Hermes Agent use `/mlx-*` commands, Codex uses `$mlx-agent:mlx-*`, and Agy and AgentSkills use the named `mlx-*` skills. Claude Code and OpenCode add the `mlx-advisor` agent, and any MCP client can use the bundled MCP server. See [Agent integration](agents.md).

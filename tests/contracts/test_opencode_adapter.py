@@ -52,7 +52,7 @@ class OpenCodeAdapterContractTests(unittest.TestCase):
         manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
         opencode = manifest["providers"]["opencode"]
         self.assertEqual({"kind": "command", "prefix": "/"}, opencode["invocation"])
-        self.assertEqual(["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"], opencode["commands"])
+        self.assertEqual(["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task"], opencode["commands"])
         self.assertEqual(["opencode"], opencode["detect_commands"])
         sources = {item["source"] for item in opencode["artifacts"]}
         self.assertIn("providers/opencode/plugins", sources)
@@ -77,7 +77,7 @@ class OpenCodeAdapterContractTests(unittest.TestCase):
             plugin_text = plugin.read_text(encoding="utf-8")
             self.assertIn('tool: {', plugin_text)
             self.assertIn('mlx_agent_command', plugin_text)
-            self.assertIn('tool.schema.enum(["scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"])', plugin_text)
+            self.assertIn('tool.schema.enum(["scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "task"])', plugin_text)
             self.assertIn('tool.schema.string().max(MAX_ARGUMENT_BYTES)', plugin_text)
             self.assertIn('Bun.spawn({', plugin_text)
             self.assertIn('cmd: ["python3", "-m", "mlx_agent.command_executor"', plugin_text)
@@ -92,7 +92,7 @@ class OpenCodeAdapterContractTests(unittest.TestCase):
                 r"async function readBounded\(stream: ReadableStream<Uint8Array>\) \{\n  const decoder = new TextDecoder\(\)",
             )
             command_paths = sorted(path.name for path in (package_root / "commands").glob("*.md"))
-            self.assertEqual(["mlx-adopt.md", "mlx-bench.md", "mlx-doctor.md", "mlx-fleet.md", "mlx-scout.md", "mlx-watch.md", "mlx-wire.md"], command_paths)
+            self.assertEqual(["mlx-adopt.md", "mlx-bench.md", "mlx-doctor.md", "mlx-fleet.md", "mlx-scout.md", "mlx-task.md", "mlx-watch.md", "mlx-wire.md"], command_paths)
             for capability in CAPABILITIES:
                 command = package_root / "commands" / "mlx-{0}.md".format(capability)
                 content = command.read_text(encoding="utf-8")

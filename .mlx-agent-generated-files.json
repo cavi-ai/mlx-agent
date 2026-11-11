@@ -18,7 +18,7 @@
     },
     {
       "path": "agents/mlx-advisor.md",
-      "sha256": "25b2823fecaebc5ea305b26b0a3d88fbb8455d7befc117e83a166200e0925558"
+      "sha256": "ba4c0f14b2619c0a7f73d39e116ad05aea52a7fa4d40f3e626cd672bfe966e95"
     },
     {
       "path": "commands/mlx-adopt.md",
@@ -39,6 +39,10 @@
     {
       "path": "commands/mlx-scout.md",
       "sha256": "a0ec4be4a82a481d9dfc64f9f71d78fc014c2f7bc77208c1a73f6ae1ba0a1e8b"
+    },
+    {
+      "path": "commands/mlx-task.md",
+      "sha256": "039512fdf04bd02aef8dcebe54004fcacafba615ce5322b102de6c175e040f14"
     },
     {
       "path": "commands/mlx-watch.md",

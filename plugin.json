@@ -992,6 +992,61 @@
           ]
         }
       }
+    },
+    "task": {
+      "command": "mlx-task",
+      "description": "Run, track and collect durable local inference tasks.",
+      "actions": {
+        "capabilities": {
+          "arguments": [
+            {"name": "state_dir", "flag": "--state-dir", "kind": "option", "type": "string", "required": false},
+            {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false},
+            {"name": "model_path", "flag": "--model-path", "kind": "option", "type": "string", "required": false}
+          ]
+        },
+        "start": {
+          "arguments": [
+            {"name": "state_dir", "flag": "--state-dir", "kind": "option", "type": "string", "required": false},
+            {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false},
+            {"name": "request", "flag": "--request", "kind": "option", "type": "string", "required": true}
+          ]
+        },
+        "status": {
+          "arguments": [
+            {"name": "state_dir", "flag": "--state-dir", "kind": "option", "type": "string", "required": false},
+            {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false},
+            {"name": "id", "flag": "--id", "kind": "option", "type": "string", "required": true}
+          ]
+        },
+        "list": {
+          "arguments": [
+            {"name": "state_dir", "flag": "--state-dir", "kind": "option", "type": "string", "required": false},
+            {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false},
+            {"name": "limit", "flag": "--limit", "kind": "option", "type": "integer", "required": false}
+          ]
+        },
+        "result": {
+          "arguments": [
+            {"name": "state_dir", "flag": "--state-dir", "kind": "option", "type": "string", "required": false},
+            {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false},
+            {"name": "id", "flag": "--id", "kind": "option", "type": "string", "required": true}
+          ]
+        },
+        "cancel": {
+          "arguments": [
+            {"name": "state_dir", "flag": "--state-dir", "kind": "option", "type": "string", "required": false},
+            {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false},
+            {"name": "id", "flag": "--id", "kind": "option", "type": "string", "required": true}
+          ]
+        },
+        "verify-model": {
+          "arguments": [
+            {"name": "state_dir", "flag": "--state-dir", "kind": "option", "type": "string", "required": false},
+            {"name": "json", "flag": "--json", "kind": "option", "type": "boolean", "required": false},
+            {"name": "id", "flag": "--id", "kind": "option", "type": "string", "required": true}
+          ]
+        }
+      }
     }
   },
   "providers": {
@@ -1004,7 +1059,8 @@
         "bench",
         "doctor",
         "watch",
-        "fleet"
+        "fleet",
+        "task"
       ],
       "commands": [
         "mlx-scout",
@@ -1013,7 +1069,8 @@
         "mlx-bench",
         "mlx-doctor",
         "mlx-watch",
-        "mlx-fleet"
+        "mlx-fleet",
+        "mlx-task"
       ],
       "invocation": {
         "kind": "command",
@@ -1078,7 +1135,8 @@
         "bench",
         "doctor",
         "watch",
-        "fleet"
+        "fleet",
+        "task"
       ],
       "commands": [
         "mlx-agent:mlx-scout",
@@ -1087,7 +1145,8 @@
         "mlx-agent:mlx-bench",
         "mlx-agent:mlx-doctor",
         "mlx-agent:mlx-watch",
-        "mlx-agent:mlx-fleet"
+        "mlx-agent:mlx-fleet",
+        "mlx-agent:mlx-task"
       ],
       "invocation": {
         "kind": "skill",
@@ -1141,6 +1200,10 @@
           "destination": "skills/mlx-fleet"
         },
         {
+          "source": "providers/codex/skills/mlx-task",
+          "destination": "skills/mlx-task"
+        },
+        {
           "source": "providers/codex/scripts",
           "destination": "scripts"
         },
@@ -1160,7 +1223,8 @@
         "bench",
         "doctor",
         "watch",
-        "fleet"
+        "fleet",
+        "task"
       ],
       "commands": [
         "mlx-scout",
@@ -1169,7 +1233,8 @@
         "mlx-bench",
         "mlx-doctor",
         "mlx-watch",
-        "mlx-fleet"
+        "mlx-fleet",
+        "mlx-task"
       ],
       "invocation": {
         "kind": "skill",
@@ -1206,7 +1271,8 @@
         "bench",
         "doctor",
         "watch",
-        "fleet"
+        "fleet",
+        "task"
       ],
       "commands": [
         "mlx-scout",
@@ -1215,7 +1281,8 @@
         "mlx-bench",
         "mlx-doctor",
         "mlx-watch",
-        "mlx-fleet"
+        "mlx-fleet",
+        "mlx-task"
       ],
       "invocation": {
         "kind": "command",
@@ -1279,6 +1346,10 @@
         {
           "source": "providers/opencode/skills/mlx-fleet",
           "destination": "skills/mlx-fleet"
+        },
+        {
+          "source": "providers/opencode/skills/mlx-task",
+          "destination": "skills/mlx-task"
         }
       ],
       "config_paths": []
@@ -1292,7 +1363,8 @@
         "bench",
         "doctor",
         "watch",
-        "fleet"
+        "fleet",
+        "task"
       ],
       "commands": [
         "mlx-scout",
@@ -1301,7 +1373,8 @@
         "mlx-bench",
         "mlx-doctor",
         "mlx-watch",
-        "mlx-fleet"
+        "mlx-fleet",
+        "mlx-task"
       ],
       "invocation": {
         "kind": "command",
@@ -1433,6 +1506,22 @@
         {
           "source": "scripts/mlx-agent-mcp",
           "destination": "skills/mlx-fleet/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-task/SKILL.md",
+          "destination": "skills/mlx-task/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-task/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-task/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-task/scripts/mlx-agent-mcp"
         }
       ],
       "config_paths": []
@@ -1446,7 +1535,8 @@
         "bench",
         "doctor",
         "watch",
-        "fleet"
+        "fleet",
+        "task"
       ],
       "commands": [
         "mlx-scout",
@@ -1455,7 +1545,8 @@
         "mlx-bench",
         "mlx-doctor",
         "mlx-watch",
-        "mlx-fleet"
+        "mlx-fleet",
+        "mlx-task"
       ],
       "invocation": {
         "kind": "command",
@@ -1587,6 +1678,22 @@
         {
           "source": "scripts/mlx-agent-mcp",
           "destination": "skills/mlx-fleet/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-task/SKILL.md",
+          "destination": "skills/mlx-task/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-task/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-task/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-task/scripts/mlx-agent-mcp"
         }
       ],
       "config_paths": []
@@ -1600,7 +1707,8 @@
         "bench",
         "doctor",
         "watch",
-        "fleet"
+        "fleet",
+        "task"
       ],
       "commands": [],
       "invocation": {
@@ -1726,6 +1834,22 @@
         {
           "source": "scripts/mlx-agent-mcp",
           "destination": "skills/mlx-fleet/scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "providers/agentskills/mlx-task/SKILL.md",
+          "destination": "skills/mlx-task/SKILL.md"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "skills/mlx-task/src/mlx_agent"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "skills/mlx-task/scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "skills/mlx-task/scripts/mlx-agent-mcp"
         }
       ],
       "config_paths": []

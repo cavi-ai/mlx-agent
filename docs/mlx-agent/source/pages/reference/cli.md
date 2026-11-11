@@ -1,7 +1,8 @@
 # Command line
 
 Run `python3 scripts/mlx-agent` from the repository root. The provider-neutral
-core covers the seven host capabilities and additional model lifecycle commands.
+core covers the eight host capabilities and additional model lifecycle commands.
+`python3 scripts/mlx-agent --version` prints the installed version.
 
 Use `--help` at any level for current arguments, choices, and defaults:
 

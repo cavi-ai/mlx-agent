@@ -186,7 +186,7 @@ esac
         codex = manifest["providers"]["codex"]
         self.assertEqual({"kind": "skill", "prefix": "$"}, codex["invocation"])
         self.assertEqual(
-            ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire", "mlx-agent:mlx-bench", "mlx-agent:mlx-doctor", "mlx-agent:mlx-watch", "mlx-agent:mlx-fleet"],
+            ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire", "mlx-agent:mlx-bench", "mlx-agent:mlx-doctor", "mlx-agent:mlx-watch", "mlx-agent:mlx-fleet", "mlx-agent:mlx-task"],
             codex["commands"],
         )
 

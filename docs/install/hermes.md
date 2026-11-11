@@ -1,6 +1,6 @@
 # Hermes Agent
 
-Hermes loads each installed skill as `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, and `/mlx-fleet`. Every skill folder carries its own launcher and Python runtime.
+Hermes loads each installed skill as `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, `/mlx-fleet`, and `/mlx-task`. Every skill folder carries its own launcher and Python runtime.
 
 Use the receipt-owned installer; it never edits `config.yaml`:
 
@@ -18,4 +18,4 @@ User scope installs into `$HERMES_HOME/skills` when `HERMES_HOME` is set, otherw
 python3 scripts/mlx-agent install hermes --scope project --project /absolute/project/path --dry-run --json
 ```
 
-Hermes releases with project skill discovery load `<project>/.hermes/skills` only from trusted repositories, after `hermes skills trust`; Hermes 0.19.1 reads only `$HERMES_HOME/skills`. Run `hermes skills list` and confirm the seven `mlx-*` skills appear. `doctor hermes` runs `hermes --version`, which also runs the Hermes update check.
+Hermes releases with project skill discovery load `<project>/.hermes/skills` only from trusted repositories, after `hermes skills trust`; Hermes 0.19.1 reads only `$HERMES_HOME/skills`. Run `hermes skills list` and confirm the eight `mlx-*` skills appear. `doctor hermes` runs `hermes --version`, which also runs the Hermes update check.

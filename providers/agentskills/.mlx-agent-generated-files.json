@@ -21,6 +21,10 @@
       "sha256": "ef70b2981f92b0b2d1f27cf1e434d4dad3049fed47084cc477d2ac17164ea2f4"
     },
     {
+      "path": "mlx-task/SKILL.md",
+      "sha256": "a249cb0d6f50f9921cd5d12059882816175bbf88cfc69afaad244cf340955275"
+    },
+    {
       "path": "mlx-watch/SKILL.md",
       "sha256": "6e05d91dd0a26296776f7f08aa4abd6ab826cf08ca9029b3a30e6ee2d1152a47"
     },

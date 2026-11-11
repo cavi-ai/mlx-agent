@@ -64,6 +64,21 @@ class CommandExecutorTests(unittest.TestCase):
         self.assertNotIn(hostile.encode("utf-8"), result.stdout)
         self.assertNotIn(hostile.encode("utf-8"), result.stderr)
 
+    def test_subprocess_transport_runs_task_capabilities_through_the_core(self):
+        environment = dict(os.environ)
+        environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[2] / "src")
+        result = subprocess.run(
+            [sys.executable, "-m", "mlx_agent.command_executor", "--provider", "opencode", "--capability", "task"],
+            input=b"capabilities --json",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+            shell=False,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn(b'"schema":"task-capabilities/1"', result.stdout)
+
     def test_rejects_untrusted_provider_invalid_utf8_and_oversized_stdin(self):
         with self.assertRaises(CommandExecutorError):
             execute_command("agy", "scout", io.BytesIO(b"--limit 1"))

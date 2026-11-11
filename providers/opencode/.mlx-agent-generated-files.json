@@ -2,7 +2,7 @@
   "files": [
     {
       "path": "agents/mlx-advisor.md",
-      "sha256": "5dd784c58a7bd97757b9fdb7ae154d2675afc36412173cee0cc983d647492c4c"
+      "sha256": "a5e6220793a1d452ade68d925a70ef06ed297d8c727abfc3e3edab4a99d35eae"
     },
     {
       "path": "commands/mlx-adopt.md",
@@ -25,6 +25,10 @@
       "sha256": "791716331dc36caea09b65f7d6b32bb578d8f2f86451ee0d2a00d06745193fca"
     },
     {
+      "path": "commands/mlx-task.md",
+      "sha256": "beab294ca5b4315cde434ce8135e7811a840caa670c8f35ba94c20c46b5e2ce7"
+    },
+    {
       "path": "commands/mlx-watch.md",
       "sha256": "f4cd88f4d1a2534a9e0538fa31c44dfdebb79e3124ec1d612a501d962b77ffec"
     },
@@ -34,7 +38,7 @@
     },
     {
       "path": "plugins/mlx-agent-command.ts",
-      "sha256": "d65aa7c0fbcca2c14d916bacb2e83316f6172cec13c08e3c572c8cbe9309854c"
+      "sha256": "dae6dfae44c41736cab140e2b09a4450cbcc95bec20a49733d507dfa14ffcbb4"
     },
     {
       "path": "skills/mlx-adopt/SKILL.md",
@@ -55,6 +59,10 @@
     {
       "path": "skills/mlx-scout/SKILL.md",
       "sha256": "3ed81a6ed29c7200eb72dab3f1c7cf9828e5890237213678eb6b7e8159f9fa84"
+    },
+    {
+      "path": "skills/mlx-task/SKILL.md",
+      "sha256": "cf4835fa42472032c8bc045d476fdee29d5e9b13ff9ad4713160b42bc32137e0"
     },
     {
       "path": "skills/mlx-watch/SKILL.md",

@@ -18,7 +18,7 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Union
 
 ROOT = Path(__file__).resolve().parents[1]
 SUPPORTED_PROVIDERS = ("claude", "codex", "agy", "opencode", "agentskills")
-CAPABILITIES = ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet")
+CAPABILITIES = ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "task")
 INVENTORY_NAME = ".mlx-agent-generated-files.json"
 INVENTORY_SCHEMA_VERSION = 2
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -203,6 +203,23 @@ Show that returned diff and preview hash. Do not write configuration files direc
 
 Never download model weights without an explicit confirmation. Report the transaction receipt returned by the CLI.
 """.format(identifier=identifier, invocation=invocation)
+    elif capability == "task":
+        body = """# MLX Task
+
+canonical capability ID: {identifier}
+
+List the supported inference kinds and their request contracts without loading a model:
+
+`{invocation} task capabilities --json`
+
+Add `--model-path <absolute-model-dir>` to read one local model's optional media settings. To run a task, write a `task-request` JSON file whose `kind`, `model_path` and `parameters` follow the returned contract, then start it with an absolute path:
+
+`{invocation} task start --request <absolute-request.json> --json`
+
+Follow it with `task status --id <task-id> --json`, collect verified output paths with `task result --id <task-id> --json`, and review recent runs with `task list --json`. `task cancel --id <task-id> --json` stops a running task; `task verify-model --id <task-id> --json` rechecks that the model still matches the one the task used.
+
+Present the returned status, metrics and artifact paths as returned. Tasks use only an existing local model and its installed backend; they must not download model weights, install a runtime, or change configuration.
+""".format(identifier=identifier, invocation=invocation)
     else:
         body = """# MLX Wire
 
@@ -226,21 +243,27 @@ Never download model weights without an explicit confirmation. Report the transa
 
 
 def _advisor_markdown(manifest: Mapping[str, object]) -> str:
-    scout = _capability_id(manifest, "scout")
-    adopt = _capability_id(manifest, "adopt")
-    wire = _capability_id(manifest, "wire")
+    identifiers = "\n".join(
+        "canonical capability ID: {0}".format(_capability_id(manifest, capability)) for capability in CAPABILITIES
+    )
     return _with_tool_use_guidance(manifest, """---
 description: {description}
 ---
 
 # MLX Advisor
 
-canonical capability ID: {scout}
-canonical capability ID: {adopt}
-canonical capability ID: {wire}
+{identifiers}
 
-Use only the structured CLI beneath `${{CLAUDE_PLUGIN_ROOT}}/scripts/mlx-agent`. Run `discover` for evidence and `adopt start --state <state-path>` or `adopt resume --state <state-path>` for durable recommendations. For wiring, run `wire render <model> --target <target> --path <config-path> --json`, then the unconfirmed `wire apply <model> --target <target> --path <config-path> --json` to obtain the exact diff and preview hash. Show it. Only after the user explicitly confirms that exact preview, run `wire apply <model> --target <target> --path <config-path> --confirm --preview-hash <preview-hash> --json`. Do not duplicate adoption policy, download model weights, or write configuration files.
-""".format(description=_yaml_scalar("Provider adapter for the structured MLX agent CLI."), scout=scout, adopt=adopt, wire=wire))
+Use only the structured CLI beneath `${{CLAUDE_PLUGIN_ROOT}}/scripts/mlx-agent`, through the bundled `mlx_agent_execute` MCP tool when it is available. Pick the stage the user is in:
+
+- Choose a model: run `discover` for evidence and `adopt start --state <state-path>` or `adopt resume --state <state-path>` for durable recommendations.
+- Check what is installed: `doctor models --json` for inventories, wiring drift and endpoint health; `watch snapshot --json` and `watch diff --json` for upstream changes to owned models.
+- Measure a served model: `bench run --repo <repo> --runtime <runtime> --json`, or `bench coding` for the fixed code-edit workload. Bench never starts servers.
+- Run local inference: `task capabilities --json`, then `task start --request <absolute-request.json> --json` and `task status`, `task result`, `task list`, `task cancel` or `task verify-model` with `--id <task-id> --json`.
+- Connect a client: `wire render <model> --target <target> --path <config-path> --json`, then the unconfirmed `wire apply <model> --target <target> --path <config-path> --json` to obtain the exact diff and preview hash. Show it. Only after the user explicitly confirms that exact preview, run `wire apply <model> --target <target> --path <config-path> --confirm --preview-hash <preview-hash> --json`. `fleet render` and `fleet apply` follow the same preview and confirmation sequence for a per-role router.
+
+Do not duplicate adoption policy, download model weights, install runtimes, or write configuration files directly. Present returned evidence, measurements and receipts as returned.
+""".format(description=_yaml_scalar("Lifecycle advisor for the structured MLX agent CLI."), identifiers=identifiers))
 
 
 def _claude_command_markdown(manifest: Mapping[str, object], capability: str) -> str:
@@ -257,6 +280,8 @@ def _claude_command_markdown(manifest: Mapping[str, object], capability: str) ->
         boundary = "Watch writes only its own state file and must not download model weights or change configuration."
     elif capability == "fleet":
         boundary = "The validated tool sequence is `fleet render --path <router.yaml> --assign <role=repo> --json`, then `fleet apply --path <router.yaml> --assign <role=repo> --json` to obtain the preview. After the user explicitly confirms that exact preview, call `fleet apply --path <router.yaml> --assign <role=repo> --confirm --preview-hash <preview-hash> --json`."
+    elif capability == "task":
+        boundary = "The validated tool sequence is `task capabilities --json`, then `task start --request <absolute-request.json> --json` with a request file following the returned contract, then `task status`, `task result`, `task list`, `task cancel` or `task verify-model` with `--id <task-id> --json`. Tasks use only existing local models and installed backends; they must not install runtimes or change configuration."
     else:
         boundary = "Scout is read-only and must not download model weights or change configuration. {0}".format(_reference_pack_pointer("${CLAUDE_PLUGIN_ROOT}"))
     return _with_tool_use_guidance(manifest, """---
@@ -370,6 +395,7 @@ def _opencode_command_markdown(manifest: Mapping[str, object], capability: str) 
         "doctor": "Run only the read-only diagnostics. Do not delete, move, or repair anything without the user's explicitly reviewed prune preview.",
         "watch": "Run only the baseline snapshot and diff actions. Do not download model weights or change configuration.",
         "fleet": "Use only the transaction CLI's render, preview, confirmed `--confirm --preview-hash` apply, and receipt workflow. Do not edit configuration directly.",
+        "task": "Run only the validated task actions against an existing local model. Do not download model weights, install a runtime, or change configuration.",
     }
     return _with_tool_use_guidance(manifest, front_matter + """# MLX {title}
 
@@ -407,6 +433,7 @@ def _opencode_skill_markdown(manifest: Mapping[str, object], capability: str) ->
         "doctor": "The validated operation is read-only diagnostics. Prune is irreversible and requires the user's explicitly reviewed preview hash.",
         "watch": "The validated operation writes only the watch state file. It must not download model weights or mutate configuration.",
         "fleet": "Use the transaction CLI for render, then the unconfirmed preview and hash, then confirmed apply only after the user confirms that exact hash. Do not write configuration directly.",
+        "task": "List kinds with `capabilities --json`, start with an absolute `task-request` file, then use status, result, list, cancel or verify-model by task ID. Tasks use only existing local models and must not download model weights or install a runtime.",
     }
     return _with_tool_use_guidance(manifest, """---
 name: {name}
@@ -451,15 +478,18 @@ permission:
 
 # MLX Advisor
 
-Use the installed `mlx-scout`, `mlx-adopt`, and `mlx-wire` skills. Do not grant
-yourself blanket edit or bash permission. Scout is read-only. Adopt may create
-only one bounded independent verification record and must not fan out. Wire
-must route every mutation through the transaction CLI: render, request an
-unconfirmed preview/hash, show it, and apply only after the user confirms that
-exact preview hash. Never edit a configuration file directly, auto-install a
-provider/model, persist secrets, or claim a model response when authentication
-is unavailable.
-""".format(description=_yaml_scalar("Safe advisor for structured local MLX discovery, adoption, and wiring.")))
+Use the installed `mlx-scout`, `mlx-adopt`, `mlx-wire`, `mlx-bench`,
+`mlx-doctor`, `mlx-watch`, `mlx-fleet` and `mlx-task` skills. Do not grant
+yourself blanket edit or bash permission. Scout, doctor and watch are
+read-only apart from watch's own state file. Adopt may create only one bounded
+independent verification record and must not fan out. Bench measures only
+models already served. Task runs durable local inference against an existing
+local model and installed backend. Wire and fleet must route every mutation
+through the transaction CLI: render, request an unconfirmed preview/hash, show
+it, and apply only after the user confirms that exact preview hash. Never edit
+a configuration file directly, auto-install a provider/model, persist secrets,
+or claim a model response when authentication is unavailable.
+""".format(description=_yaml_scalar("Safe advisor for the structured local MLX model lifecycle.")))
 
 
 def _opencode_plugin() -> str:
@@ -740,11 +770,9 @@ def _allowed_surface_paths(surface: Optional[Path]) -> set:
         Path(".claude-plugin/plugin.json"), Path(".claude-plugin/marketplace.json"),
         Path(".agents/plugins/marketplace.json"),
         Path(".mcp.json"),
-        Path("commands/mlx-scout.md"), Path("commands/mlx-adopt.md"), Path("commands/mlx-wire.md"),
-        Path("commands/mlx-bench.md"), Path("commands/mlx-doctor.md"), Path("commands/mlx-watch.md"),
-        Path("commands/mlx-fleet.md"),
         Path("agents/mlx-advisor.md"), Path("scripts/mlx-adopt.workflow.mjs"),
     }
+    root_paths.update(Path("commands/mlx-{0}.md".format(capability)) for capability in CAPABILITIES)
     runtime = {Path("scripts/mlx-agent"), Path("scripts/mlx-agent-mcp"), Path("requirements-lab.txt"), Path("requirements-lab-inference.txt")}
     runtime.update(Path("src/mlx_agent") / source.relative_to(ROOT / "src" / "mlx_agent") for source in _production_bundle_sources())
     legacy_gemini_runtime = {
@@ -838,16 +866,11 @@ def _render(manifest: Mapping[str, object], provider_ids: Sequence[str]) -> Dict
             Path(".claude-plugin/plugin.json"): _plugin_metadata(manifest),
             Path(".claude-plugin/marketplace.json"): _marketplace_metadata(manifest),
             Path(".mcp.json"): json.dumps({"mcpServers": {"mlx-agent": {"command": "python3", "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/mlx-agent-mcp"]}}}, indent=2) + "\n",
-            Path("commands/mlx-scout.md"): _claude_command_markdown(manifest, "scout"),
-            Path("commands/mlx-adopt.md"): _claude_command_markdown(manifest, "adopt"),
-            Path("commands/mlx-wire.md"): _claude_command_markdown(manifest, "wire"),
-            Path("commands/mlx-bench.md"): _claude_command_markdown(manifest, "bench"),
-            Path("commands/mlx-doctor.md"): _claude_command_markdown(manifest, "doctor"),
-            Path("commands/mlx-watch.md"): _claude_command_markdown(manifest, "watch"),
-            Path("commands/mlx-fleet.md"): _claude_command_markdown(manifest, "fleet"),
             Path("agents/mlx-advisor.md"): _advisor_markdown(manifest),
             Path("scripts/mlx-adopt.workflow.mjs"): _workflow(manifest),
         }
+        for capability in CAPABILITIES:
+            claude_paths[Path("commands/mlx-{0}.md".format(capability))] = _claude_command_markdown(manifest, capability)
         rendered.update(claude_paths)
     if "codex" in selected:
         codex_root = Path("providers/codex")

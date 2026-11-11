@@ -12,7 +12,7 @@ from .command_args import CommandArgumentError, parse_command_arguments
 
 MAX_ARGUMENT_BYTES = 4096
 _PROVIDERS = ("opencode",)
-_CAPABILITIES = ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet")
+_CAPABILITIES = ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "task")
 
 
 class CommandExecutorError(ValueError):

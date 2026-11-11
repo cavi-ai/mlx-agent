@@ -11,7 +11,7 @@ from typing import Any, Dict, Iterable, List
 SCHEMA_VERSION = "1.1"
 RESULT_SCHEMA_VERSION = "1.0"
 PLUGIN_VERSION = "0.12.0"
-CAPABILITIES = ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet")
+CAPABILITIES = ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "task")
 CANONICAL_ROLES = (
     "general",
     "coding",
@@ -29,6 +29,7 @@ CAPABILITY_ACTIONS = {
     "doctor": ("models",),
     "watch": ("snapshot", "diff"),
     "fleet": ("render", "apply"),
+    "task": ("capabilities", "start", "status", "list", "result", "cancel", "verify-model"),
 }
 NATIVE_PROVIDERS = ("claude", "codex", "agy", "opencode", "openclaw", "hermes")
 PROVIDERS = NATIVE_PROVIDERS + ("agentskills",)
@@ -42,12 +43,12 @@ PROVIDER_INVOCATIONS = {
     "agentskills": {"kind": "skill", "prefix": ""},
 }
 PROVIDER_COMMANDS = {
-    "claude": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"],
-    "codex": ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire", "mlx-agent:mlx-bench", "mlx-agent:mlx-doctor", "mlx-agent:mlx-watch", "mlx-agent:mlx-fleet"],
-    "agy": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"],
-    "opencode": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"],
-    "openclaw": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"],
-    "hermes": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"],
+    "claude": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task"],
+    "codex": ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire", "mlx-agent:mlx-bench", "mlx-agent:mlx-doctor", "mlx-agent:mlx-watch", "mlx-agent:mlx-fleet", "mlx-agent:mlx-task"],
+    "agy": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task"],
+    "opencode": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task"],
+    "openclaw": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task"],
+    "hermes": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task"],
     "agentskills": [],
 }
 DATE_TIME_PATTERN = re.compile(
@@ -211,7 +212,7 @@ def _validate_provider(value: Any, name: str, errors: List[str]) -> None:
     _require_keys(value, keys, prefix, errors)
     _unexpected_keys(value, keys, prefix, errors)
     if value.get("capabilities") != list(CAPABILITIES):
-        errors.append("{0}.capabilities must equal ['scout', 'adopt', 'wire', 'bench', 'doctor', 'watch', 'fleet']".format(prefix))
+        errors.append("{0}.capabilities must equal {1}".format(prefix, list(CAPABILITIES)))
     commands = value.get("detect_commands")
     if not isinstance(commands, list) or not all(isinstance(item, str) and item for item in commands):
         errors.append("{0}.detect_commands must be an array of non-empty strings".format(prefix))
@@ -366,6 +367,7 @@ def _validate_cli_parity(value, errors):
             "doctor": {"models": root["doctor"]},
             "watch": _subparsers(root["watch"]),
             "fleet": _subparsers(root["fleet"]),
+            "task": _subparsers(root["task"]),
         }
     except Exception as error:
         errors.append("could not inspect CLI parser: {0}".format(error))

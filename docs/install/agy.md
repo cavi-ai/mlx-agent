@@ -10,7 +10,8 @@ agy plugin list
 ```
 
 The package exposes the `mlx-scout skill`, `mlx-adopt skill`, `mlx-wire skill`,
-`mlx-bench skill`, `mlx-doctor skill`, `mlx-watch skill`, and `mlx-fleet skill`.
+`mlx-bench skill`, `mlx-doctor skill`, `mlx-watch skill`, `mlx-fleet skill`, and
+`mlx-task skill`.
 Use `/skills` in an Agy session to inspect the loaded skills, then ask Agy to use
 the named skill. Agy does not document `/mlx-*` custom slash commands for
 plugin skills, so this package does not claim them.

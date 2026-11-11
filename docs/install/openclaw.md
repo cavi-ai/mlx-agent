@@ -1,6 +1,6 @@
 # OpenClaw
 
-OpenClaw loads each installed skill as `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, and `/mlx-fleet`. Every skill folder carries its own launcher and Python runtime.
+OpenClaw loads each installed skill as `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, `/mlx-fleet`, and `/mlx-task`. Every skill folder carries its own launcher and Python runtime.
 
 Use the receipt-owned installer; it never edits `openclaw.json`:
 
@@ -18,4 +18,4 @@ User scope installs into the managed skills directory, `$OPENCLAW_STATE_DIR/skil
 python3 scripts/mlx-agent install openclaw --scope project --project /absolute/agent/workspace --dry-run --json
 ```
 
-Export the same `OPENCLAW_STATE_DIR` the gateway uses before running the installer. OpenClaw picks up new skills in the next session; run `openclaw skills list` and confirm the seven `mlx-*` skills appear.
+Export the same `OPENCLAW_STATE_DIR` the gateway uses before running the installer. OpenClaw picks up new skills in the next session; run `openclaw skills list` and confirm the eight `mlx-*` skills appear.

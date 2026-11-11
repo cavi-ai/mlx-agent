@@ -7,7 +7,8 @@
       "pages": [
         { "title": "Overview", "path": "introduction/overview.md" },
         { "title": "Installation", "path": "introduction/installation.md" },
-        { "title": "Your first local model", "path": "introduction/quickstart.md" }
+        { "title": "Your first local model", "path": "introduction/quickstart.md" },
+        { "title": "Agent integration", "path": "introduction/agents.md" }
       ]
     },
     {

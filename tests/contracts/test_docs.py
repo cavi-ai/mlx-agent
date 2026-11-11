@@ -28,7 +28,7 @@ TOOL_USE_DOC_PATHS = (
 )
 PROVIDERS = ("claude", "codex", "agy", "opencode", "openclaw", "hermes", "agentskills")
 NATIVE_PROVIDERS = ("claude", "codex", "agy", "opencode", "openclaw", "hermes")
-COMMANDS = ("mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet")
+COMMANDS = ("mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task")
 EVIDENCE_FIELDS = ("schema", "install_round_trip", "native_discovery", "bundle_execution", "model_backed_invocation")
 
 
@@ -53,7 +53,7 @@ class DocumentationContractTests(unittest.TestCase):
                 self.assertEqual(["user", "project"], entry["scopes"])
                 self.assertTrue(entry["config_paths"])
                 self.assertEqual(set(COMMANDS), {item["command"] for item in entry["capabilities"].values()})
-                self.assertEqual({"scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"}, set(entry["capabilities"]))
+                self.assertEqual({"scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "task"}, set(entry["capabilities"]))
                 self.assertEqual({"status", "date", "summary"}, set(entry["last_smoke_test"]))
                 self.assertEqual(
                     {"id", "status", "date", "environment", "cli_version", "scopes_tested", "native_discovery", "fixture_bundle", "uninstall"},

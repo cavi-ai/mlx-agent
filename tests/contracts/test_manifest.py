@@ -31,11 +31,11 @@ class ManifestTests(unittest.TestCase):
             },
         )
 
-    def test_manifest_has_seven_capabilities_five_providers_and_canonical_roles(self):
+    def test_manifest_has_eight_capabilities_seven_providers_and_canonical_roles(self):
         manifest = json.loads((ROOT / "plugin.json").read_text())
         roles = manifest["roles"]
 
-        self.assertEqual(set(manifest["capabilities"]), {"scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"})
+        self.assertEqual(set(manifest["capabilities"]), {"scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "task"})
         self.assertEqual(
             set(manifest["providers"]),
             {"claude", "codex", "agy", "opencode", "openclaw", "hermes", "agentskills"},
@@ -67,10 +67,10 @@ class ManifestTests(unittest.TestCase):
         for provider in ("claude", "agy", "opencode", "openclaw", "hermes"):
             self.assertEqual(
                 manifest["providers"][provider]["commands"],
-                ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"],
+                ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task"],
             )
         self.assertEqual(
-            ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire", "mlx-agent:mlx-bench", "mlx-agent:mlx-doctor", "mlx-agent:mlx-watch", "mlx-agent:mlx-fleet"],
+            ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire", "mlx-agent:mlx-bench", "mlx-agent:mlx-doctor", "mlx-agent:mlx-watch", "mlx-agent:mlx-fleet", "mlx-agent:mlx-task"],
             manifest["providers"]["codex"]["commands"],
         )
 
@@ -109,7 +109,7 @@ class ManifestTests(unittest.TestCase):
             path.write_text(json.dumps(manifest))
             errors = validate_manifest(path)
         self.assertIn(
-            "providers.codex.commands must equal ['mlx-agent:mlx-scout', 'mlx-agent:mlx-adopt', 'mlx-agent:mlx-wire', 'mlx-agent:mlx-bench', 'mlx-agent:mlx-doctor', 'mlx-agent:mlx-watch', 'mlx-agent:mlx-fleet']",
+            "providers.codex.commands must equal ['mlx-agent:mlx-scout', 'mlx-agent:mlx-adopt', 'mlx-agent:mlx-wire', 'mlx-agent:mlx-bench', 'mlx-agent:mlx-doctor', 'mlx-agent:mlx-watch', 'mlx-agent:mlx-fleet', 'mlx-agent:mlx-task']",
             errors,
         )
 

@@ -16,7 +16,7 @@ from mlx_agent.providers import ProviderRegistry
 
 ROOT = Path(__file__).resolve().parents[2]
 GENERATOR_PATH = ROOT / "scripts" / "generate_adapters.py"
-CAPABILITIES = ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet")
+CAPABILITIES = ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "task")
 
 
 def load_generator():

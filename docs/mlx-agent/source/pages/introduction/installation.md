@@ -27,7 +27,7 @@ claude plugin marketplace add cavi-ai/mlx-agent
 claude plugin install mlx-agent@mlx-agent
 ```
 
-Restart Claude Code, then run `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, or `/mlx-fleet`.
+Restart Claude Code, then run `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, `/mlx-fleet`, or `/mlx-task`. The plugin also registers the `mlx-advisor` agent and the MCP server described in [Agent integration](agents.md).
 
 ## Codex CLI
 

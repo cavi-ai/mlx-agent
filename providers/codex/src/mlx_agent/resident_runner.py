@@ -132,12 +132,19 @@ class ResidentRunner:
             raise ValueError('Idle inspection requires a loaded worker.')
         pid = self.process.pid
         expected = {pid: self.identity}
+        environment = self.environment if self.environment is not None else os.environ
+        # multiprocessing forwards the worker's inherited warning options.
+        # Match that exact suffix, rather than accepting arbitrary Python flags.
+        warnings = dict.fromkeys(environment.get('PYTHONWARNINGS', '').split(','))
+        warning_flags = ''.join(' -W' + option for option in warnings if option)
         for member, (parent, group, identity) in _snapshot().items():
             if group != pid or member == pid:
                 continue
             command = identity.split(None, 5)[-1]
             executable, marker, descriptor = command.partition(
                 ' -c from multiprocessing.resource_tracker import main;main(')
+            if warning_flags:
+                executable = executable.removesuffix(warning_flags)
             if (parent != pid or not marker or not re.fullmatch(r'[0-9]+\)', descriptor)
                     or Path(executable).resolve() != Path(self.executable).resolve()):
                 raise ValueError('Unexpected child prevents resident worker idle handoff.')

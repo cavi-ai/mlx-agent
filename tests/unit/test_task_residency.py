@@ -87,6 +87,20 @@ def predict(model, tokenizer, state, questions):
                 lease.release_idle_process_group(pid, self.worker.idle_members())
             self.worker.close()
 
+    def test_inherited_warning_filters_allow_tracker_idle_handoff(self):
+        self.worker.environment['PYTHONWARNINGS'] = 'default,ignore::FutureWarning,default'
+        self.test_resource_tracker_can_stay_idle_across_warm_requests()
+
+    def test_tracker_cannot_add_warning_flags_absent_from_launch_environment(self):
+        self.worker.environment['PYTHONWARNINGS'] = 'default'
+        self.assertEqual(self.invoke(), 1)
+        pid = self.worker.process.pid
+        identity = ('Mon Jan 1 00:00:00 2024 ' + self.worker.executable
+                    + ' -Walways -c from multiprocessing.resource_tracker import main;main(6)')
+        with patch('mlx_agent.process_tree._snapshot', return_value={pid + 1: (pid, pid, identity)}):
+            with self.assertRaisesRegex(ValueError, 'Unexpected child'):
+                self.worker.idle_members()
+
     def test_launcher_exec_binds_the_ready_worker_identity(self):
         from mlx_agent.compute import process_identity
         launcher = self.root / 'python-launcher'

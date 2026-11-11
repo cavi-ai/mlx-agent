@@ -207,6 +207,60 @@ class SharedComputeLeaseTests(unittest.TestCase):
                     pass
         self.assertTrue(path.exists())
 
+    def test_shared_record_publication_survives_competing_admission(self):
+        import fcntl
+        identities = {os.getpid(): 'gateway', 4242: 'worker'}
+        members = [4242]
+        real_open = os.open
+        interleaved = False
+        def lease(name, root=None):
+            return ComputeLease(name, root or self.root, shared=True, inspector=identities.get,
+                alive=lambda pid: pid in identities, group_probe=lambda _: list(members))
+        def admit_between_creation_and_lock(path, flags, *args, **kwargs):
+            nonlocal interleaved
+            descriptor = real_open(path, flags, *args, **kwargs)
+            if not interleaved and flags & os.O_EXCL and 'execution-' in Path(path).name:
+                interleaved = True
+                with lease('serve:second'):
+                    pass
+            return descriptor
+        with patch('mlx_agent.compute.os.open', side_effect=admit_between_creation_and_lock):
+            with lease('serve:first') as first:
+                first.handoff(4242, process_group=True)
+                path = first.record_path
+                self.assertTrue(path.exists(), 'Competing admission removed the new ownership record.')
+                record = json.loads(path.read_text())
+                self.assertEqual(record['pid'], 4242)
+                self.assertEqual(record['execution_group']['pgid'], 4242)
+        self.assertTrue(interleaved)
+        with self.assertRaises(ComputeBusy):
+            with lease('serve:third'):
+                pass
+        members.clear()
+        del identities[4242]
+        with lease('serve:third'):
+            self.assertFalse(path.exists())
+
+        blocker = None
+        def contend_before_owner_lock(path, flags, *args, **kwargs):
+            nonlocal blocker
+            descriptor = real_open(path, flags, *args, **kwargs)
+            if flags & os.O_EXCL and 'execution-' in Path(path).name:
+                blocker = real_open(path, os.O_RDWR)
+                fcntl.flock(blocker, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return descriptor
+        contended = self.root / 'contended'
+        try:
+            with patch('mlx_agent.compute.os.open', side_effect=contend_before_owner_lock):
+                with self.assertRaises(ComputeBusy):
+                    with lease('serve:contended', contended):
+                        pass
+        finally:
+            if blocker is not None:
+                os.close(blocker)
+        self.assertEqual(list(contended.glob('execution-*.json')), [])
+        self.assertEqual(list(contended.glob('.*.pending')), [])
+
     def test_shared_execution_is_visible_across_processes(self):
         import subprocess
         import sys

@@ -534,7 +534,7 @@
     },
     {
       "path": "src/mlx_agent/compute.py",
-      "sha256": "3f5367fb6a1d038294d2ec0b8b022a191a78f861d0b2024fe4888c2217353185"
+      "sha256": "3b040e22aa3102f1c52824eaf78ff589b8c15047aa00094cac6ad53945fed562"
     },
     {
       "path": "src/mlx_agent/contextfit.py",
@@ -1206,7 +1206,7 @@
     },
     {
       "path": "src/mlx_agent/task_serving.py",
-      "sha256": "6a07d9a4be863640b97fc49dc5a6105c4735736140f5e29d6c83e70d280f6775"
+      "sha256": "ddfb995312a8eb3e1746e26778cd96abaa1c7905ec6b4140aa0b602b68fd84ec"
     },
     {
       "path": "src/mlx_agent/task_store.py",

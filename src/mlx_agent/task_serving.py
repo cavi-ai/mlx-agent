@@ -318,6 +318,7 @@ class TaskModelWorker(ModelWorker):
         dispatched = False
         try:
             with self.condition:
+                self.memory_guard_error = None
                 budget_gb = self.memory_policy.get('model_memory_budget_gb')
             lease = ComputeLease("task:" + identifier, self.config.get('compute_state_dir'),
                 shared=budget_gb is not None and self.memory_registry.shared_execution_enabled())
@@ -425,6 +426,8 @@ class TaskModelWorker(ModelWorker):
             _finish(self.store, identifier, 'cancelled' if cancelled and not unresolved else 'failed',
                     error=None if cancelled and not unresolved else _error(error), execution_unresolved=unresolved)
         finally:
+            with self.condition:
+                self.memory_guard_error = None
             if leased:
                 lease.__exit__(None, None, None)
             self.release()

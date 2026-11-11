@@ -98,6 +98,7 @@ class ComputeLease:
         except FileExistsError:
             descriptor = os.open(self.root / "owner.json", flags)
         self.descriptor = descriptor
+        pending_path = None
         try:
             info = os.fstat(descriptor)
             if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_nlink != 1:
@@ -111,18 +112,31 @@ class ComputeLease:
             if self.shared:
                 self.host_descriptor = descriptor
                 self.record_path = self.root / ("execution-" + secrets.token_hex(16) + ".json")
-                self.descriptor = os.open(self.record_path, flags | os.O_CREAT | os.O_EXCL, 0o600)
-                fcntl.flock(self.descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                staging = self.record_path.with_name('.' + self.record_path.name + '.pending')
+                self.descriptor = os.open(staging, flags | os.O_CREAT | os.O_EXCL, 0o600)
+                pending_path = staging
+                try:
+                    fcntl.flock(self.descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    raise ComputeBusy("Another process is claiming this execution record.") from None
             identity = self.inspector(os.getpid())
             if identity is None:
                 raise ComputeBusy("The current process identity could not be established.")
             self._write({"schema": 1, "pid": os.getpid(), "identity": identity, "operation": self.operation})
+            if pending_path is not None:
+                # Publish only a locked, complete record; scanners never see creation in flight.
+                os.replace(pending_path, self.record_path)
+                pending_path = None
             return self
         except BaseException:
-            if self.descriptor is not None and self.descriptor != descriptor:
-                os.close(self.descriptor)
-            os.close(descriptor)
-            self.host_descriptor = self.descriptor = None
+            try:
+                if pending_path is not None:
+                    pending_path.unlink(missing_ok=True)
+            finally:
+                if self.descriptor is not None and self.descriptor != descriptor:
+                    os.close(self.descriptor)
+                os.close(descriptor)
+                self.host_descriptor = self.descriptor = None
             raise
 
     def _check_record(self, descriptor):

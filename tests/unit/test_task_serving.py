@@ -46,6 +46,13 @@ class TaskServingTests(unittest.TestCase):
         self.assertEqual(plans[0]['task_identity'], identity)
         self.assertEqual(plans[0]['memory_policy']['release_after_request'], True)
 
+    def test_task_memory_budget_is_part_of_the_reviewed_plan(self):
+        identity = {'backend': 'mlx-embeddings', 'model_fingerprint': 'a' * 64}
+        with patch('mlx_agent.task_serving.resolve_model', return_value=(['classification'], sys.executable, identity)):
+            plan = plan_start(None, 'tasks', load_recipes(), path=str(self.model), receipts_dir=self.root,
+                memory_policy={'model_memory_budget_gb': 12})
+        self.assertEqual(plan['memory_policy']['model_memory_budget_gb'], 12)
+
     def test_keep_loaded_and_release_after_request_cannot_conflict(self):
         with self.assertRaises(ValueError):
             validate_memory_policy({'keep_loaded': True, 'release_after_request': True})
@@ -113,7 +120,7 @@ def predict(model, tokenizer, state, questions):
                          '--module', 'fixture_port', '--model', model, '--request', request]}
         for context in (patch('mlx_agent.task_kinds.plan_decide', side_effect=planner),
                         patch('mlx_agent.inference_runner.sync_ports'),
-                        patch('mlx_agent.task_serving.ComputeLease', side_effect=lambda operation: ComputeLease(operation, self.root / 'compute'))):
+                        patch('mlx_agent.task_serving.ComputeLease', side_effect=lambda operation, root=None, **options: ComputeLease(operation, self.root / 'compute', **options))):
             context.start()
             self.addCleanup(context.stop)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -154,6 +161,138 @@ def predict(model, tokenizer, state, questions):
                 return value
             time.sleep(.02)
         self.fail('The synthetic task did not finish before its deadline.')
+
+    def test_measured_job_breach_reports_cap_error_and_releases_only_its_worker(self):
+        from mlx_agent.memory_budget import process_snapshot
+        controller = self.server.controller
+        controller.memory_registry.configure_budget(8_000_000_000, 1_000_000_000)
+        controller.memory_probe = lambda: 100_000_000_000
+        controller.configure({'model_memory_budget_gb': 2})
+        mlx = self.root / 'mlx'
+        mlx.mkdir()
+        (mlx / '__init__.py').write_text('')
+        (mlx / 'core.py').write_text('def set_memory_limit(limit): pass\n')
+        identifier = self.start('wait')
+        deadline = time.monotonic() + 5
+        while controller.store.get(identifier)['state'] == 'starting' and time.monotonic() < deadline:
+            time.sleep(.01)
+        self.assertEqual(controller.store.get(identifier)['state'], 'running')
+        worker = controller.resident.process
+        def probe():
+            rows = process_snapshot()
+            if worker.pid in rows:
+                rows[worker.pid]['rss'] = 2_000_000_001
+            return rows
+        controller.memory_registry.process_probe = probe
+        controller.guard_agent_budget()
+        record = self.wait(identifier)
+        self.assertEqual(record['state'], 'failed')
+        self.assertEqual(record['error']['code'], 'job_memory_cap_exceeded')
+        self.assertIsNotNone(worker.poll())
+        self.assertEqual(controller.memory_registry.snapshot()['entries'], 0)
+        self.assertEqual(list((self.root / 'compute').glob('execution-*.json')), [])
+
+    def test_guard_error_does_not_replace_a_later_execution_failure(self):
+        from mlx_agent.memory_budget import process_snapshot
+        controller = self.server.controller
+        controller.memory_registry.configure_budget(8_000_000_000, 1_000_000_000)
+        controller.memory_probe = lambda: 100_000_000_000
+        controller.configure({'model_memory_budget_gb': 2})
+        mlx = self.root / 'mlx'
+        mlx.mkdir()
+        (mlx / '__init__.py').write_text('')
+        (mlx / 'core.py').write_text('def set_memory_limit(limit): pass\n')
+        identifier = self.start('wait')
+        deadline = time.monotonic() + 5
+        while controller.store.get(identifier)['state'] == 'starting' and time.monotonic() < deadline:
+            time.sleep(.01)
+        self.assertEqual(controller.store.get(identifier)['state'], 'running')
+        worker = controller.resident.process
+        def probe():
+            rows = process_snapshot()
+            if worker.pid in rows:
+                rows[worker.pid]['rss'] = 2_000_000_001
+            return rows
+        controller.memory_registry.process_probe = probe
+        controller.guard_agent_budget()
+        stopped = self.wait(identifier)
+        self.assertEqual(stopped['error']['code'], 'job_memory_cap_exceeded')
+        # A later persisted job encounters the stopped endpoint, not the old breach.
+        request = controller.store.read_request(identifier)
+        later = controller.store.create(request, controller.config['task_identity'])
+        controller._execute(later['id'])
+        failed = controller.store.get(later['id'])
+        self.assertEqual(failed['state'], 'failed')
+        self.assertEqual(failed['error']['code'], 'endpoint_stopped')
+        self.assertEqual(controller.memory_registry.snapshot()['entries'], 0)
+        self.assertEqual(list((self.root / 'compute').glob('execution-*.json')), [])
+
+    def test_denied_cap_releases_cold_reservation_before_retry(self):
+        controller = self.server.controller
+        controller.memory_registry.configure_budget(8_000_000_000, 1_000_000_000)
+        controller.memory_probe = lambda: 100_000_000_000
+        controller.configure({'model_memory_budget_gb': 1})
+        record = self.wait(self.start())
+        self.assertEqual(record['state'], 'failed')
+        self.assertEqual(record['error']['code'], 'job_memory_cap_exceeded')
+        self.assertEqual(controller.memory_registry.snapshot()['entries'], 0)
+        self.assertIsNone(controller.resident.process)
+        controller.configure({'model_memory_budget_gb': 8})
+        record = self.wait(self.start())
+        self.assertEqual(record['state'], 'failed')
+        self.assertEqual(record['error']['code'], 'agent_memory_budget_exceeded')
+        self.assertEqual(controller.memory_registry.snapshot()['entries'], 0)
+
+    def test_capped_routes_execute_together_under_one_real_budget(self):
+        from mlx_agent.compute import ComputeBusy, ComputeLease
+        from mlx_agent.task_serve import TaskServer
+        controller = self.server.controller
+        controller.memory_registry.configure_budget(8_000_000_000, 1_000_000_000)
+        controller.memory_probe = lambda: 100_000_000_000
+        controller.configure({'model_memory_budget_gb': 2})
+        # The model-free fixture exposes only the MLX ceiling entrypoint.
+        mlx = self.root / 'mlx'
+        mlx.mkdir()
+        (mlx / '__init__.py').write_text('')
+        (mlx / 'core.py').write_text('def set_memory_limit(limit): pass\n')
+        config = dict(controller.config, task_state_dir=str(self.root / 'second-tasks'), port=0)
+        second = TaskServer(('127.0.0.1', 0), config)
+        second.controller.resident.environment = dict(controller.resident.environment)
+        second.controller.memory_probe = controller.memory_probe
+        self.addCleanup(second.server_close)
+        self.addCleanup(second.controller.close)
+        first_id = self.start('wait')
+        second_record = second.controller.submit({'kind': 'classification', 'parameters': {
+            'state': 'wait', 'questions': {'route': {'type': 'choice', 'instructions': 'Choose one.'}}}})
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            records = [controller.store.get(first_id), second.controller.store.get(second_record['id'])]
+            if all(record['state'] == 'running' for record in records):
+                break
+            if any(record['state'] == 'failed' for record in records):
+                self.fail(str(records))
+            time.sleep(.01)
+        self.assertTrue(all(record['state'] == 'running' for record in records), records)
+        budget = controller.memory_registry.snapshot()['agent_budget']
+        self.assertTrue(budget['within_budget'], budget)
+        self.assertEqual(sum(row['execution_bytes'] for row in budget['allocations'].values()), 4_000_000_000)
+        owners = [json.loads(path.read_text()) for path in (self.root / 'compute').glob('execution-*.json')]
+        self.assertEqual(len(owners), 2)
+        self.assertEqual({r['execution_group']['pgid'] for r in owners},
+                         {record['execution']['pid'] for record in records})
+        with self.assertRaises(ComputeBusy):
+            with ComputeLease('cache', self.root / 'compute'):
+                pass
+        controller.store.request_cancel(first_id)
+        second.controller.store.request_cancel(second_record['id'])
+        self.wait(first_id)
+        second.controller.job_thread.join(timeout=5)
+        self.assertFalse(second.controller.job_thread.is_alive())
+        self.assertEqual(list((self.root / 'compute').glob('execution-*.json')), [])
+        controller.configure({'model_memory_budget_gb': 3})
+        self.assertEqual(controller.memory_policy['model_memory_budget_gb'], 3)
+        controller.configure({'model_memory_budget_gb': None})
+        self.assertNotIn('model_memory_budget_gb', controller.memory_policy)
 
     def test_http_reuses_weights_then_applies_release_mode(self):
         status, inventory = self.request('GET', '/v1/models')

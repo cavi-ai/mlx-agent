@@ -340,7 +340,10 @@ worker.close()
         code, result = run(["profile", "save", "default", "--receipts-dir", str(self.root),
             "--memory-budget-gb", "20", "--min-headroom-gb", "32"])
         self.assertEqual(code, 0, result)
-        self.assertEqual(result["data"]["settings"]["strata_decoding"], "plain")
+        self.assertNotIn("strata_decoding", result["data"]["settings"])
+        _, default = run(["start", "--runtime", "strata", "--path", str(self.root), "--jit",
+                          "--profile", "default", "--receipts-dir", str(self.root)])
+        self.assertEqual(default["data"]["plan"]["strata_decoding"], "plain")
 
     def test_previous_pinned_installation_remains_source_verified(self):
         runtime = self.installed()

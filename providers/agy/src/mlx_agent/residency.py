@@ -53,7 +53,9 @@ class MemoryRegistry:
                   'reserved_bytes','headroom_bytes','telemetry'}
         for key, row in value['entries'].items():
             if (not isinstance(key,str) or not 1 <= len(key) <= 128 or not isinstance(row,dict)
-                    or set(row) != fields or row['phase'] not in ('reserved','launching','resident')
+                    or set(row) - {'execution_bytes'} != fields
+                    or ('execution_bytes' in row and not _bytes(row['execution_bytes']))
+                    or row['phase'] not in ('reserved','launching','resident')
                     or not isinstance(row['model_key'],str) or len(row['model_key']) != 64
                     or any(not _bytes(row[name]) for name in ('resident_bytes','workspace_bytes','growth_bytes','reserved_bytes','headroom_bytes'))):
                 raise ValueError('Invalid residency entry.')
@@ -223,6 +225,7 @@ class MemoryRegistry:
             validate(telemetry)
         with self._locked() as rows:
             row=self._own(rows,key)
+            row.pop('execution_bytes', None)
             row['phase']='resident'
             row['reserved_bytes']=workspace_bytes
             if resident_bytes is not None:row['resident_bytes']=resident_bytes
@@ -282,24 +285,58 @@ class MemoryRegistry:
             _atomic_in_directory(self.root, 'budget.json', json.dumps(policy).encode(), 0o600)
             return summary
 
-    def reserve_execution(self, key):
-        """Reserve active workspace before dispatch, so other loads cannot spend it."""
+    def reserve_execution(self, key, limit_bytes=None, probe=None):
+        """Reserve a total job ceiling atomically, including already resident memory."""
+        if limit_bytes is not None and (not _bytes(limit_bytes) or limit_bytes == 0):
+            raise MemoryAdmissionError('memory_unknown', 'Invalid job memory cap.')
         with self._locked() as rows:
             row = self._own(rows, key)
             budget = self._agent_budget(rows, (key, 0))
-            if budget is None:
+            resident = row['resident_bytes'] if row['phase'] == 'resident' else 0
+            minimum = row['resident_bytes'] + row['workspace_bytes'] + row['growth_bytes']
+            if budget is not None:
+                current = budget['allocations'][key]
+                resident = current['resident_bytes']
+                minimum = max(minimum, resident + row['reserved_bytes'] + row['growth_bytes']
+                              if row['phase'] == 'resident' else current['pending_bytes'])
+                free = budget['admission_bytes'] - budget['accounted_bytes']
+                capacity = resident + current['pending_bytes'] + free
+            else:
+                capacity = limit_bytes
+            if limit_bytes is not None:
+                if limit_bytes < minimum:
+                    raise MemoryAdmissionError('job_memory_cap_exceeded',
+                        'The model and workspace exceed this route memory budget; increase --memory-budget-gb.',
+                        {'required_bytes': minimum, 'limit_bytes': limit_bytes})
+                if capacity is not None and limit_bytes > capacity:
+                    raise MemoryAdmissionError('agent_memory_budget_exceeded',
+                        'The route memory budget does not fit the shared admission; retry after another job finishes.')
+                capacity = limit_bytes
+            if capacity is None:
                 return None
-            free = budget['admission_bytes'] - budget['accounted_bytes']
-            if free < 0:
+            if capacity < minimum:
                 raise MemoryAdmissionError('agent_memory_budget_exceeded',
                     'Unload an idle model before starting this model job.')
-            current = budget['allocations'][key]
-            capacity = current['resident_bytes'] + current['pending_bytes'] + free
-            if row['phase'] == 'resident':
-                row['reserved_bytes'] = current['pending_bytes'] + free - row['growth_bytes']
-            else:
-                row['reserved_bytes'] = capacity
+            amount = capacity - resident if row['phase'] == 'resident' else capacity
+            if probe is not None:
+                available = probe()
+                others = [r for k, r in rows.items() if k != key]
+                required = amount + sum(r['reserved_bytes'] for r in others) + max(
+                    [row['headroom_bytes']] + [r['headroom_bytes'] for r in others])
+                if not _bytes(available):
+                    raise MemoryAdmissionError('memory_unknown', 'OS memory headroom is unavailable.')
+                if available < required:
+                    raise MemoryAdmissionError('insufficient_headroom',
+                        'The job memory ceiling does not fit available system headroom.')
+            row['execution_bytes'] = capacity
+            row['reserved_bytes'] = amount
             return capacity
+
+    def shared_execution_enabled(self):
+        """Sharing is opt-in through the existing host memory budget."""
+        from .memory_budget import read_policy
+        with self._locked():
+            return read_policy(self.root) is not None
 
     def snapshot(self):
         with self._locked() as rows:

@@ -270,7 +270,8 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                adapter_path=None, path=None, jit=False, receipts_dir=None, hf_cache=None, memory_policy=None,
                runtime_executable=None, strata_speculation=False, strata_decoding=None,
                strata_expert_memory_gb=None, strata_context_tokens=None, training_receipt=None, thinking="default",
-               m5_prefill=False, prompt_lookup=False, vision_cache=False, api_key_file=None, api_key_sha256=None):
+               m5_prefill=False, prompt_lookup=False, vision_cache=False, api_key_file=None, api_key_sha256=None,
+               system_prompt=None, default_temperature=None, default_top_p=None):
     """Render the start plan and local file identities without side effects."""
     access = None
     if api_key_file is not None:
@@ -293,10 +294,18 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         if not jit and runtime != "tasks":
             raise ServeError("jit_required", "Authenticated serving requires a supervised endpoint.", "Use --jit.")
     if runtime == "tasks":
-        if adapter_path is not None or training_receipt is not None or m5_prefill or prompt_lookup or vision_cache or strata_decoding is not None or strata_speculation or strata_expert_memory_gb is not None or strata_context_tokens is not None or thinking != "default":
+        if adapter_path is not None or training_receipt is not None or m5_prefill or prompt_lookup or vision_cache or strata_decoding is not None or strata_speculation or strata_expert_memory_gb is not None or strata_context_tokens is not None or thinking != "default" or system_prompt is not None or default_temperature is not None or default_top_p is not None:
             raise ServeError("invalid_arguments", "Task endpoints accept local models and their memory policy.", "Remove chat, adapter and Strata options.")
         from .task_serving import plan_start as plan_task_endpoint
         return _authenticated_plan(plan_task_endpoint(repo, path, port, receipts_dir, hf_cache, memory_policy), api_key_sha256, access)
+    from . import inference_defaults
+    try:
+        request_defaults = inference_defaults.validate(system_prompt, default_temperature, default_top_p)
+    except ValueError as error:
+        raise ServeError('invalid_arguments', str(error), 'Review the request defaults.') from None
+    if request_defaults and (not jit or runtime == 'tasks'):
+        raise ServeError('invalid_arguments', 'Request defaults require a managed chat gateway.',
+                         'Use --jit with a text or vision runtime.')
     if thinking not in ("default", "off"):
         raise ServeError("invalid_arguments", "thinking must be default or off.", "Pass --thinking off or omit it.")
     if type(m5_prefill) is not bool or (m5_prefill and runtime != "mlx_lm"):
@@ -515,6 +524,8 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         plan["adapter_identity"] = adapter_identity
     if thinking == "off":
         plan["thinking"] = "off" if recipe.get("thinking_off_argv") else "unsupported"
+    if request_defaults:
+        plan['request_defaults'] = request_defaults
     if binding is not None:
         plan["training_binding"] = binding
     if jit:
@@ -787,6 +798,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             raise ServeError("invalid_arguments", "Unsafe JIT configuration path.", "Review a fresh serve plan.")
         config = {key: plan[key] for key in ("local_path", "fingerprint", "worker_argv", "max_tokens")}
         config["runtime"] = plan["runtime"]
+        if 'request_defaults' in plan:
+            config['request_defaults'] = plan['request_defaults']
         config.update({key: plan[key] for key in ("private_worker", "access_key_file", "access_key_sha256", "api_key_sha256", "auth_runtime_sha256") if key in plan})
         if plan["runtime"] == "tasks":
             config.update(task_identity=plan["task_identity"], task_kinds=plan["task_kinds"], port=plan["port"],

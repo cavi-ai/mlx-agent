@@ -36,6 +36,8 @@ from mlx_agent.messages_api import (MessagesRequestError, StreamTranslator, Work
 from mlx_agent.transactions import _atomic_in_directory
 from mlx_agent.residency import MemoryRegistry, MemoryAdmissionError
 from mlx_agent import allocator_cache
+from mlx_agent.inference_telemetry import InferenceTelemetry
+from mlx_agent import inference_defaults
 from mlx_agent.compute import ComputeBusy, ComputeLease, ExecutionAdmission, group_members, process_identity
 
 MAX_BODY = 16 * 1024 * 1024
@@ -162,6 +164,11 @@ class ModelWorker:
         self.worker_argv = None
         self.model_state = "unloaded"
         self.active_requests = 0
+        self.inference_telemetry = InferenceTelemetry()
+        defaults = config.get('request_defaults', {})
+        if not isinstance(defaults, dict) or set(defaults) - {'system_prompt', 'temperature', 'top_p'}:
+            raise ValueError('Invalid request defaults.')
+        self.request_defaults = inference_defaults.validate(defaults.get('system_prompt'), defaults.get('temperature'), defaults.get('top_p'))
         self.execution = ExecutionAdmission("serve:" + config.get("model", config["local_path"]), config.get("compute_state_dir"),
             shared=lambda: self.memory_registry.shared_execution_enabled())
         self.worker_group = None
@@ -248,6 +255,8 @@ class ModelWorker:
             self._refresh()
             result = {"model_state": self.model_state, "active_requests": self.active_requests,
                     "worker_pid": self.process.pid if self.process and self.process.poll() is None else None,
+                    "inference_telemetry": self.inference_telemetry.snapshot(),
+                    "request_defaults": inference_defaults.summary(self.request_defaults),
                     "worker_port": self.worker_port if self.model_state == "loaded" else None,
                     "last_error": self.last_error, "memory_policy": dict(self.memory_policy),
                     "execution": {"active_requests": self.execution.users, "waiting_requests": self.execution.waiting},
@@ -1082,6 +1091,9 @@ class GatewayHandler(BaseHTTPRequestHandler):
                     selector.unregister(self.connection)
 
     def _memory_output(self, payload):
+        measurement = getattr(self, '_measurement', None)
+        if measurement is not None:
+            measurement.observe_json(payload)
         controller = self.server.controller
         if controller.memory_materialized or controller.memory_transition_blocked or controller.memory_reservation is None:
             return
@@ -1100,13 +1112,17 @@ class GatewayHandler(BaseHTTPRequestHandler):
         try:
             if len(payload) > MAX_BODY:
                 raise WorkerResponseError("Model worker response exceeds 16 MiB.")
-            value = translate(json.loads(payload))
+            original = json.loads(payload)
+            if getattr(self, '_measurement', None) is not None:
+                self._measurement.observe(original)
+            value = translate(original)
         except WorkerResponseError as error:
             raise GatewayError(502, "invalid_worker_response", str(error))
         except (ValueError, TypeError, KeyError, IndexError, AttributeError):
             raise GatewayError(502, "invalid_worker_response", "Model worker returned an invalid response.")
         self.server.controller._materialized_memory()
         self._json(200, value)
+        self._inference_success = True
         return value
 
     def _stream(self, response, translator):
@@ -1120,6 +1136,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.close_connection = True
         self.wfile.write(b"".join(translator.start()))
+        finished = False
         try:
             while line := response.readline(MAX_BODY):
                 if line.startswith(b":"):
@@ -1132,7 +1149,10 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 data = line[len(b"data: "):].strip()
                 if data == b"[DONE]":
                     self.wfile.write(b"".join(translator.finish()))
+                    finished = True
                     break
+                if getattr(self, '_measurement', None) is not None:
+                    self._measurement.observe_json(data)
                 events = translator.chunk(json.loads(data))
                 self.server.controller._materialized_memory()
                 self.wfile.write(b"".join(events))
@@ -1144,6 +1164,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
         except (ValueError, TypeError, AttributeError):
             self.wfile.write(b"".join(translator.fail("Model worker returned an invalid streamed response.")))
         self.wfile.flush()
+        self._inference_success = finished
 
     def do_GET(self):
         try:
@@ -1165,6 +1186,8 @@ class GatewayHandler(BaseHTTPRequestHandler):
             self._error(error)
 
     def do_POST(self):
+        self._measurement = None
+        self._inference_success = False
         connection = None
         leased = False
         response_started = False
@@ -1236,6 +1259,8 @@ class GatewayHandler(BaseHTTPRequestHandler):
             legacy_mlx = runtime is None and Path(self.server.config["worker_argv"][0]).name == "mlx_lm.server"
             if runtime == "mlx_lm" or legacy_mlx:
                 chat_completions.decode_tool_arguments(body)
+            body = inference_defaults.apply(body, self.server.controller.request_defaults)
+            self._measurement = self.server.controller.inference_telemetry.begin()
             port = self.server.controller.acquire(cancelled=self._client_gone)
             leased = True
             connection = self.server.controller.connection(timeout=120)
@@ -1284,11 +1309,15 @@ class GatewayHandler(BaseHTTPRequestHandler):
             self.close_connection = True
             if response.status == 200 and body.get("stream") and self.path == "/v1/chat/completions":
                 stream = chat_completions.ChunkStream()
+                finished = False
                 while line := response.readline(MAX_BODY):
+                    if line.strip() == b'data: [DONE]':
+                        finished = True
                     if line.startswith(b'data: ') and line.strip() != b'data: [DONE]':
                         self._memory_output(line[len(b'data: '):])
                     self.wfile.write(stream.line(line))
                     self.wfile.flush()
+                self._inference_success = finished
                 return
             if response.status == 200 and not body.get("stream"):
                 payload = response.read(MAX_BODY + 1)
@@ -1297,8 +1326,11 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 self.wfile.write(chat_completions.complete_body(payload, self.server.end_text)
                                  if len(payload) <= MAX_BODY else payload)
             while chunk := response.read1(65536):
+                if body.get('stream'):
+                    self._measurement.feed(chunk)
                 self.wfile.write(chunk)
                 self.wfile.flush()
+            self._inference_success = response.status == 200 and (not body.get('stream') or self._measurement.stream_done)
         except GatewayError as error:
             if not self._client_gone():
                 self._error(error)
@@ -1306,6 +1338,8 @@ class GatewayHandler(BaseHTTPRequestHandler):
             if not response_started and not self._client_gone():
                 self._error(GatewayError(503, "worker_unavailable", "Model worker connection failed."))
         finally:
+            if self._measurement is not None:
+                self._measurement.finish(success=self._inference_success)
             try:
                 if leased and submitted and (response is None or not response.isclosed()):
                     try:

@@ -490,7 +490,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "3960235782f51514e69c415032bc38848d85752583de2a72028b7d15cec42fbc"
+      "sha256": "dd42f0805144d737927a829fdb8b31ba02db573567d0a4cf2e10e2dc19de58a0"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -633,8 +633,16 @@
       "sha256": "a50e6db8890497a2e399f510f3b4ee8538d62969f8aab1cb5a3a00671be7956c"
     },
     {
+      "path": "src/mlx_agent/inference_defaults.py",
+      "sha256": "ab4e6055e820054b729593005c3db68de4b34cfe0078a8a6211898cb44c5ea99"
+    },
+    {
       "path": "src/mlx_agent/inference_runner.py",
       "sha256": "5ca51b193911cf79ae7fd3d9dafa143fbdedb8bb1a13209b05065d28aea861f6"
+    },
+    {
+      "path": "src/mlx_agent/inference_telemetry.py",
+      "sha256": "9e13930b3f317c9788dbf3270376a029e85c0b87e570113b467c80d93923719b"
     },
     {
       "path": "src/mlx_agent/installer.py",
@@ -658,7 +666,7 @@
     },
     {
       "path": "src/mlx_agent/jit_serve.py",
-      "sha256": "e5eee6806185ecbc257b9acc3afec9978ba72f9bd9956faf3c08013fc26ec997"
+      "sha256": "3e7611b5c9906425c512bfef07d395520b5f31d3afa1e439c06d39e7305ad168"
     },
     {
       "path": "src/mlx_agent/kokoro_runtime.py",
@@ -1142,7 +1150,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "513f4fce135c8e95951947f6e2f48e519e9d10c3888bc0a5d36e408194da5fd9"
+      "sha256": "5a23591fe2861febb1e90e7779ea9b6a3ca10ddb4c6b995abc45886de8f3794f"
     },
     {
       "path": "src/mlx_agent/serve_profiles.py",

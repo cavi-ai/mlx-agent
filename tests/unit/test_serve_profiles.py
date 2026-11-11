@@ -22,6 +22,26 @@ class ServeProfileTests(unittest.TestCase):
         profiles.save_profile('working', settings, self.root)
         self.assertEqual(profiles.load_profile('working', self.root), settings)
 
+    def test_cli_saves_task_budget_without_adding_strata_settings(self):
+        import io
+        from contextlib import redirect_stdout
+        from mlx_agent.cli import main
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = main(['serve', 'profile', 'save', 'tasks', '--receipts-dir', str(self.root),
+                         '--min-headroom-gb', '2', '--memory-budget-gb', '12', '--json'])
+        self.assertEqual(code, 0, output.getvalue())
+        settings = profiles.load_profile('tasks', self.root)
+        self.assertEqual(settings['memory_budget_gb'], 12)
+        self.assertNotIn('strata_context_tokens', settings)
+        self.assertNotIn('strata_decoding', settings)
+
+    def test_task_budget_profile_needs_no_strata_context_or_decoding(self):
+        settings = dict(min_headroom_gb=2, idle_timeout=0, keep_loaded=False,
+                        unload_under_pressure=False, memory_budget_gb=12)
+        profiles.save_profile('tasks', settings, self.root)
+        self.assertEqual(profiles.load_profile('tasks', self.root), settings)
+
     def test_round_trip_replace_delete_and_private_storage(self):
         profiles.save_profile("shared", self.settings, self.root)
         self.assertEqual(profiles.load_profile("shared", self.root), self.settings)

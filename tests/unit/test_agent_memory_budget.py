@@ -88,6 +88,73 @@ class AgentBudgetTests(unittest.TestCase):
         self.registry.settle('first', resident_bytes=70)
         self.cold('second', resident=45, workspace=10)
 
+    def test_capped_jobs_share_admission_and_growth_consumes_the_reservation(self):
+        self.budget(limit=220, reserve=20)
+        self.cold('first')
+        self.assertEqual(self.registry.reserve_execution('first', 100), 100)
+        self.cold('second', resident=50)
+        self.assertEqual(self.registry.reserve_execution('second', 90), 90)
+        budget = self.registry.snapshot()['agent_budget']
+        self.assertEqual(budget['accounted_bytes'], 195)
+        self.assertTrue(budget['within_budget'])
+        self.registry.launching('first')
+        self.registry.bind_worker('first', 201, 'worker', 201)
+        # Materializing the worker cannot add its usage on top of its ceiling.
+        self.assertEqual(self.registry.snapshot()['agent_budget']['accounted_bytes'], 195)
+        self.registry.settle('first', resident_bytes=60)
+        self.registry.reserve_workspace('first', 10, lambda: 10000)
+        self.registry.reserve_execution('first', 100)
+        self.rows[201]['rss'] = 95
+        budget = self.registry.snapshot()['agent_budget']
+        self.assertEqual(budget['accounted_bytes'], 195)
+        self.assertEqual(budget['allocations']['first']['pending_bytes'], 5)
+        self.assertTrue(budget['within_budget'])
+        self.registry.settle('first', resident_bytes=95)
+        self.assertEqual(self.registry.snapshot()['agent_budget']['accounted_bytes'], 190)
+
+    def test_cap_admission_failure_preserves_rows_and_does_not_take_partial_capacity(self):
+        self.budget(limit=180, reserve=20)
+        self.cold('first')
+        self.registry.reserve_execution('first', 100)
+        self.cold('second', resident=40, workspace=10)
+        before = (self.root / 'memory.json').read_bytes()
+        with self.assertRaises(MemoryAdmissionError) as caught:
+            self.registry.reserve_execution('second', 60)
+        self.assertEqual(caught.exception.code, 'agent_memory_budget_exceeded')
+        self.assertEqual((self.root / 'memory.json').read_bytes(), before)
+        self.assertEqual(self.registry.snapshot()['agent_budget']['accounted_bytes'], 155)
+        self.registry.release('first')
+        self.assertEqual(self.registry.reserve_execution('second', 60), 60)
+
+    def test_cap_smaller_than_model_or_workspace_fails_before_dispatch(self):
+        self.budget()
+        self.cold('first')
+        before = (self.root / 'memory.json').read_bytes()
+        with self.assertRaises(MemoryAdmissionError) as caught:
+            self.registry.reserve_execution('first', 69)
+        self.assertEqual(caught.exception.code, 'job_memory_cap_exceeded')
+        self.assertEqual(caught.exception.details['required_bytes'], 70)
+        self.assertEqual((self.root / 'memory.json').read_bytes(), before)
+
+    def test_cap_without_shared_policy_is_enforced_and_does_not_enable_sharing(self):
+        self.cold('first')
+        self.assertFalse(self.registry.shared_execution_enabled())
+        self.assertEqual(self.registry.reserve_execution('first', 80), 80)
+        import json
+        row = json.loads((self.root / 'memory.json').read_text())['entries']['first']
+        self.assertEqual(row['reserved_bytes'], 80)
+        self.assertEqual(row['execution_bytes'], 80)
+        self.budget()
+        self.assertTrue(self.registry.shared_execution_enabled())
+
+    def test_full_job_ceiling_must_also_fit_system_headroom(self):
+        self.budget()
+        self.cold('first')
+        with self.assertRaises(MemoryAdmissionError) as caught:
+            self.registry.reserve_execution('first', 100, probe=lambda: 99)
+        self.assertEqual(caught.exception.code, 'insufficient_headroom')
+        self.assertEqual(self.registry.snapshot()['reserved_bytes'], 70)
+
     def test_corrupt_or_symlink_policy_cannot_disable_an_existing_budget(self):
         self.budget()
         path = self.root / 'budget.json'

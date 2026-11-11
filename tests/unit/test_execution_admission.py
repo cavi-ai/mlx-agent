@@ -23,6 +23,25 @@ class ExecutionAdmissionTests(unittest.TestCase):
         self.root = Path(self.temp.name).resolve()
         self.compute = self.root / 'compute'
 
+    def test_served_backends_share_host_ownership_and_release_independently(self):
+        first = ExecutionAdmission('serve:first', self.compute, shared=True)
+        second = ExecutionAdmission('serve:second', self.compute, shared=True)
+        self.addCleanup(first.close)
+        self.addCleanup(second.close)
+        first.acquire()
+        second.acquire()
+        first.acquire()
+        records = [json.loads(path.read_text()) for path in self.compute.glob('execution-*.json')]
+        self.assertEqual({record['operation'] for record in records}, {'serve:first', 'serve:second'})
+        first.release(lambda _: None)
+        first.release(lambda _: None)
+        self.assertEqual(len(list(self.compute.glob('execution-*.json'))), 1)
+        with self.assertRaises(ComputeBusy):
+            ComputeLease('conversion', self.compute).__enter__()
+        second.release(lambda _: None)
+        with ComputeLease('conversion', self.compute):
+            pass
+
     def test_timeout_cancellation_and_same_backend_reference_count(self):
         admission = ExecutionAdmission('coding', self.compute)
         self.addCleanup(admission.close)

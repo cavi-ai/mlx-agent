@@ -798,7 +798,7 @@
     },
     {
       "path": "src/mlx_agent/resident_runner.py",
-      "sha256": "f1ccdf0f5452286e2679f4c078e340a2811d3827175c02177f97b9945256ec81"
+      "sha256": "8e50a25fc3a9015ce371c454e01d205f5360c113b0828f9c0634f57724c86741"
     },
     {
       "path": "src/mlx_agent/resident_worker.py",

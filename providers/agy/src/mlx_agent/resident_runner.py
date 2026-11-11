@@ -132,6 +132,12 @@ class ResidentRunner:
             raise ValueError('Idle inspection requires a loaded worker.')
         pid = self.process.pid
         expected = {pid: self.identity}
+        # Framework launchers may exec a different binary before worker readiness.
+        command = self.identity.split(None, 5)[-1]
+        worker_executable, marker, _ = command.partition(
+            ' ' + str(Path(__file__).with_name('resident_worker.py')) + ' --response-fd ')
+        if not marker:
+            raise ValueError('The ready worker interpreter cannot be identified.')
         environment = self.environment if self.environment is not None else os.environ
         # multiprocessing forwards the worker's inherited warning options.
         # Match that exact suffix, rather than accepting arbitrary Python flags.
@@ -146,7 +152,7 @@ class ResidentRunner:
             if warning_flags:
                 executable = executable.removesuffix(warning_flags)
             if (parent != pid or not marker or not re.fullmatch(r'[0-9]+\)', descriptor)
-                    or Path(executable).resolve() != Path(self.executable).resolve()):
+                    or Path(executable).resolve() != Path(worker_executable).resolve()):
                 raise ValueError('Unexpected child prevents resident worker idle handoff.')
             expected[member] = identity
         return expected

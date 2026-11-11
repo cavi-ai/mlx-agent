@@ -47,7 +47,7 @@ Adopt runs deterministic, synthetic role probes against a serving runtime before
 
 ## Bench
 
-`mlx-agent bench run --repo <id> --runtime <ollama|lmstudio|mlx_lm|mlx-vlm|litellm>` measures TTFT and decode/prefill tok/s of an already-served model (one warm-up + N timed runs) and emits `runtime_measured` evidence. It never starts servers or downloads models; use `mlx-agent serve start` (mlx_lm, mlx-vlm) or each runtime's own pull/load command first.
+`mlx-agent bench run --repo <id> --runtime <ollama|lmstudio|mlx_lm|mlx-vlm|strata|splash|litellm>` measures TTFT and decode/prefill tok/s of an already-served model (one warm-up + N timed runs) and emits `runtime_measured` evidence. It never starts servers or downloads models; use `mlx-agent serve start` (mlx_lm, mlx-vlm, strata, splash) or each runtime's own pull/load command first.
 
 ## Serve
 

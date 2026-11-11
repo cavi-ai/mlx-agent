@@ -180,6 +180,35 @@ hashes (`decode_profile`) and requires a fresh preview if they change. A foreign
 entrypoint retains its native arguments and records `adapter_enabled: false`.
 Other serving runtimes reject the option. It can be combined with `--m5-prefill`.
 
+## Splash
+
+`--runtime splash` serves local weights through an installed Splash 1.4.0 or
+later launcher (`brew install incoai/tap/splash`; Apple M3 or newer, macOS 26.4
+or later). Serve finds `splash` through `MLX_AGENT_SPLASH`, `PATH`, Homebrew and
+`~/.local/bin`, and never installs it.
+
+```bash
+python3 scripts/mlx-agent serve start --path /absolute/strata/profile --runtime splash --json
+python3 scripts/mlx-agent serve start --path /absolute/model.gguf --runtime splash --splash-draft-model /absolute/draft --splash-max-memory-gb 48 --splash-max-context 65536 --json
+```
+
+`--path` selects a GGUF file or any part of a split GGUF, a directory holding
+one GGUF model, a quantized MLX directory, or a prepared Strata profile, whose
+GGUF is served unchanged. Every split part must be present. The server runs with
+`--offline` on `127.0.0.1` and lists the model as `local/<name>`.
+
+- `--splash-draft-model` selects a local DFlash2 draft directory
+  (`config.json` with `dflash_config`, and safetensors weights).
+- `--splash-max-memory-gb` caps Splash memory in decimal GB (1–1024).
+- `--splash-max-context` caps context in tokens (512–1,010,000).
+- `--thinking off` sets the default reasoning effort to `none`.
+
+The preview binds the launcher, its reported version, and the content of the
+target and draft files; a change requires a fresh preview. Splash rejects
+`--repo`, `--jit` and adapters and releases idle weights itself. Stop signals
+the receipt's process group and waits 20 seconds before a forced kill, since
+Splash gives its engine 15 seconds to exit.
+
 ## Load on request
 
 JIT keeps an endpoint reachable without retaining a loaded model worker:

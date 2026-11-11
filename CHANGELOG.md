@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add Splash as a serving runtime for local GGUF, MLX and Strata profile weights, with `strata` and `splash` bench labels.
+
 - Coordinate estimated memory admission across resident model endpoints and report worker allocations, model loads and cache reuse.
 
 - Keep task models resident during compute contention and reliably reap stopped worker processes.

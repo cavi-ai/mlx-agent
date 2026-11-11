@@ -20,6 +20,30 @@
       "readiness": "http://127.0.0.1:{port}/v1/models",
       "install_hint": "make install-strata in mlx-workbench"
     },
+    "splash": {
+      "executable": "splash",
+      "argv": [
+        "{executable}",
+        "serve",
+        "--model",
+        "{served_model}",
+        "--model-dir",
+        "{splash_target}",
+        "--offline",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "{port}"
+      ],
+      "adapter_argv": null,
+      "thinking_off_argv": [
+        "--default-reasoning-effort",
+        "none"
+      ],
+      "default_port": 8086,
+      "readiness": "http://127.0.0.1:{port}/ready",
+      "install_hint": "brew install incoai/tap/splash"
+    },
     "mlx_lm": {
       "executable": "mlx_lm.server",
       "argv": [

@@ -9,6 +9,7 @@ Choose one for the model format and task you intend to run.
 | `mlx_lm` | Native text serving; default text conversion, LoRA, and fusion path | 8080 |
 | `mlx-vlm` | Native vision/language serving and media tasks | 8083 |
 | `strata` | Prepared Strata GGUF profiles with expert-memory and decoding controls | Selected with `--port` |
+| `splash` | Local GGUF, quantized MLX or prepared Strata profiles served by an installed Splash launcher | 8086 |
 | `tasks` | Capability-bound HTTP tasks over an installed model backend | Selected with `--port` |
 | LM Studio | Desktop-managed models with a local OpenAI-compatible server | 1234 |
 | Ollama | Runtime-managed models and tags through its local API | 11434 |
@@ -20,7 +21,7 @@ Serve's `--port` and Fleet's `--port-map role=port` allow explicit choices.
 
 ## Native MLX servers
 
-`serve start` supports `mlx_lm`, `mlx-vlm`, `strata`, and `tasks` with reviewed
+`serve start` supports `mlx_lm`, `mlx-vlm`, `strata`, `splash`, and `tasks` with reviewed
 arguments and local weights. The selected runtime or backend must already be
 installed. `--path` selects a
 local directory; `--repo` selects a cached repository. Text adapters use
@@ -31,6 +32,11 @@ Strata requires a prepared compatible GGUF profile. Its memory budget covers
 weights, expert cache, draft state, context and runtime allowances; saved profiles
 retain the selected budget and decoding mode. This budget is distinct from the
 activation-cache limits used by video and 3D generation.
+
+Splash serves a local GGUF file, a quantized MLX directory, or the GGUF of a
+prepared Strata profile through an installed Splash 1.4.0 or later launcher on
+an Apple M3 or newer with macOS 26.4 or later. It runs offline and never
+downloads weights or drafts. See [Serve](../lifecycle/serve.md#splash).
 
 Task serving advertises the selected model's task kinds through its HTTP endpoint.
 Jobs retain verified input/output artifacts and support status and cancellation.

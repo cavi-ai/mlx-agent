@@ -721,6 +721,8 @@ class JITServingTests(unittest.TestCase):
             '--port', '{worker_port}', '--trace', str(second_trace)], memory_policy={'execution_wait_seconds': 3})
         second = ModelWorker(second_config)
         self.addCleanup(second.close)
+        # This case exercises execution ordering, independently of host headroom.
+        self.server.controller.memory_probe = second.memory_probe = lambda: 8_000_000_000
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
             first = pool.submit(self.request, 'POST', '/v1/chat/completions', {'messages': []})
             deadline = time.monotonic() + 5

@@ -196,10 +196,17 @@ def _artifact_reference(value):
         raise TaskError("invalid_task_record", "Task artifact evidence is invalid.")
 
 
-def capabilities():
+def capabilities(model_path=None):
     from .task_kinds import KINDS
-    return {"schema": "task-capabilities/1", "request_schema": REQUEST_SCHEMA, "run_schema": RUN_SCHEMA,
-            "tasks": [kind.capability() for kind in KINDS.values()]}
+    result = {"schema": "task-capabilities/1", "request_schema": REQUEST_SCHEMA, "run_schema": RUN_SCHEMA,
+              "tasks": [kind.capability() for kind in KINDS.values()]}
+    if model_path is not None:
+        from .media_settings import model_settings
+        result["model"], settings = model_settings(model_path)
+        for task in result["tasks"]:
+            if task["kind"] in settings:
+                task["denoiser_cache"] = settings[task["kind"]]
+    return result
 
 
 def finite_number(value):

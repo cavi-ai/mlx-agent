@@ -17,6 +17,19 @@ python3 scripts/mlx-agent task capabilities --json
 Capabilities describe the contract; they do not certify a selected model's
 readiness, output quality or memory fit.
 
+To inspect optional media settings for one local model, add
+`--model-path /absolute/local/model`. This reads a bounded `config.json` without
+loading weights or creating a task store. The response adds `model.path` and
+`model.config_sha256`; clients can compare this binding before confirming a job.
+
+Video and mesh entries include a `denoiser_cache` descriptor: supported `modes`,
+the `off` default, an `approximate` flag and `cache_memory_mib` bounds/default.
+Adaptive reuse is offered for single-model Wan2.1 text-to-video and TripoSG only.
+Other architectures advertise only `off` with an `unavailable_reason`.
+The feature-cache allowance is 8–4,096 MiB, default 256 MiB; it is separate from
+model weights and allocator memory. Reuse can change frames or geometry.
+Planners recheck the same eligibility rules when accepting generation settings.
+
 ## Start a task
 
 Save a UTF-8 JSON file using schema `task-request/1`. Classification uses the

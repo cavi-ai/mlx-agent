@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .backends import backend_python, is_installed, load_manifests, load_registries, lookup
 from .inference_runner import InferenceError, RunnerContract, invoke
+from .media_settings import supports_adaptive_reuse
 
 MESH_SCHEMA = "mesh/1"
 MESH_RUNNER = Path(__file__).with_name("mesh_runner.py")
@@ -70,7 +71,7 @@ def plan_mesh(model_path, image, out, steps=None, seed=42, resolution=None, guid
         raise MeshError('invalid_arguments', 'Denoiser cache must be off or adaptive.', 'Use --denoiser-cache adaptive.')
     if type(cache_memory_mib) is not int or not 8 <= cache_memory_mib <= 4096:
         raise MeshError('invalid_arguments', 'Cache memory must be 8..4096 MiB.', 'Use --cache-memory-mib 256.')
-    if denoiser_cache == 'adaptive' and config.get('model_type') != 'triposg':
+    if denoiser_cache == 'adaptive' and not supports_adaptive_reuse(config, 'mesh_generation'):
         raise MeshError('invalid_arguments', 'Adaptive mesh denoiser caching requires TripoSG.', 'Use --denoiser-cache off for this model.')
     manifests = load_manifests() if manifests is None else manifests
     registries = load_registries(manifests, root) if registries is None else registries

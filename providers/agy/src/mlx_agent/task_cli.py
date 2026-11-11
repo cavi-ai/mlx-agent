@@ -32,6 +32,8 @@ def add_arguments(parser):
             action.add_argument("--id", required=True, help="task UUID returned by start")
         elif command == "list":
             action.add_argument("--limit", type=int, default=20, help="maximum recent records, 1..100 (default: 20)")
+        elif command == "capabilities":
+            action.add_argument("--model-path", type=Path, help="inspect optional model-specific settings without loading weights")
 
 
 def summary(record):
@@ -66,9 +68,9 @@ def run(arguments):
     action = arguments.task_command
     operation = "task." + action
     try:
-        store = TaskStore(arguments.state_dir)
+        store = TaskStore(arguments.state_dir) if action != "capabilities" else None
         if action == "capabilities":
-            data = capabilities()
+            data = capabilities(model_path=getattr(arguments, "model_path", None))
         elif action == "verify-model":
             data = verify_task_model(arguments.id, store.root)
         elif action == "list":

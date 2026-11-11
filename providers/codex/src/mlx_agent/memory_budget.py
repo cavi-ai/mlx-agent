@@ -146,7 +146,9 @@ def account(policy, entries, rows, owner, replacement=None):
                 amount = max(amount, rss(pids - counted))
                 counted.update(pids)
             pending += amount
-            allocations[key] = {'resident_bytes': 0, 'pending_bytes': amount}
+            allocations[key] = {'resident_bytes': 0, 'pending_bytes': amount,
+                                'observed_bytes': rss(pids) if worker is not None else 0,
+                                'execution_bytes': entry.get('execution_bytes')}
             continue
         worker = entry['worker']
         pids = set()
@@ -162,9 +164,14 @@ def account(policy, entries, rows, owner, replacement=None):
         charged = max(estimate, rss(uncounted))
         resident += charged
         counted.update(pids)
-        pending += (entry['reserved_bytes'] if new_amount is None else new_amount) + entry['growth_bytes']
-        allocations[key] = {'resident_bytes': charged,
-                            'pending_bytes': (entry['reserved_bytes'] if new_amount is None else new_amount) + entry['growth_bytes']}
+        if new_amount is None and 'execution_bytes' in entry:
+            # Actual allocations consume their reservation rather than adding to it.
+            workspace = max(0, entry['execution_bytes'] - charged)
+        else:
+            workspace = (entry['reserved_bytes'] if new_amount is None else new_amount) + entry['growth_bytes']
+        pending += workspace
+        allocations[key] = {'resident_bytes': charged, 'pending_bytes': workspace,
+                            'observed_bytes': rss(pids), 'execution_bytes': entry.get('execution_bytes')}
     if replacement is not None and replacement[0] not in entries:
         pending += replacement[1]
     for pid in owners - counted:

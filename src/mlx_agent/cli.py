@@ -1050,7 +1050,7 @@ def _add_memory_arguments(parser, clear_budget=False):
     _add_allocator_cache_arguments(parser)
     budgets = parser.add_mutually_exclusive_group()
     budgets.add_argument("--memory-budget-gb", type=float, default=None,
-                        help="Strata JIT estimated total model-memory allowance in GB; default reserve: 2 GB")
+                        help="Strata model allowance or task job memory cap in GB; default reserve: 2 GB")
     if clear_budget:
         budgets.add_argument("--clear-memory-budget", action="store_true",
                              help="remove the model budget after active requests finish")
@@ -1119,7 +1119,7 @@ def _run_serve(arguments):
                 keys = ("memory_budget_gb", "min_headroom_gb", "strata_context_tokens", "strata_decoding",
                         "idle_timeout", "keep_loaded", "unload_under_pressure")
                 settings = {key: getattr(arguments, key) for key in keys if getattr(arguments, key) is not None}
-                strata = any(key in settings for key in ("memory_budget_gb", "strata_context_tokens", "strata_decoding"))
+                strata = any(key in settings for key in ("strata_context_tokens", "strata_decoding"))
                 if strata:
                     settings.setdefault("strata_context_tokens", 16384)
                     settings.setdefault("strata_decoding", "plain")
@@ -1194,7 +1194,7 @@ def _run_serve(arguments):
         selected_runtime = "mlx_lm" if arguments.training_receipt and arguments.runtime == "auto" else arguments.runtime
         runtime, executable = resolve_serve_runtime(
             arguments.repo, arguments.path, selected_runtime, recipes, hf_cache=arguments.hf_cache)
-        if arguments.profile and "memory_budget_gb" in settings and runtime != "strata":
+        if arguments.profile and any(key in settings for key in ("strata_context_tokens", "strata_decoding")) and runtime != "strata":
             raise ServeError("invalid_arguments", "Profiles with Strata settings require the Strata runtime.",
                              "Select a prepared Strata model or a profile containing only common settings.")
         if arguments.strata_speculation is not None and runtime != "strata":

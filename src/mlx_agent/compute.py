@@ -1,9 +1,10 @@
-"""One host compute owner shared by native and agent entrypoints."""
+"""Persisted host ownership: exclusive operations and shared served executions."""
 from __future__ import annotations
 
 import fcntl
 import json
 import os
+import secrets
 from pathlib import Path
 import stat
 import subprocess
@@ -62,7 +63,10 @@ def group_members(pgid):
 
 
 class ComputeLease:
-    def __init__(self, operation, root=None, inspector=process_identity, alive=process_alive, group_probe=group_members):
+    def __init__(self, operation, root=None, inspector=process_identity, alive=process_alive, group_probe=group_members, shared=False):
+        self.shared = shared
+        self.host_descriptor = None
+        self.record_path = None
         self.operation = operation
         self.root = Path(root) if root is not None else compute_root()
         self.inspector, self.alive = inspector, alive
@@ -94,51 +98,105 @@ class ComputeLease:
         except FileExistsError:
             descriptor = os.open(self.root / "owner.json", flags)
         self.descriptor = descriptor
+        pending_path = None
         try:
             info = os.fstat(descriptor)
-            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_nlink != 1:
                 raise ValueError("Compute ownership must be a private regular file.")
             try:
-                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(descriptor, (fcntl.LOCK_SH if self.shared else fcntl.LOCK_EX) | fcntl.LOCK_NB)
             except BlockingIOError:
                 raise ComputeBusy("Another model operation owns this host.") from None
-            raw = os.read(descriptor, 8193)
-            if len(raw) > 8192:
-                raise ValueError("Compute ownership record is invalid.")
-            record = json.loads(raw) if raw else {}
-            if record:
-                fields = {"schema", "pid", "identity", "operation"}
-                if isinstance(record, dict) and record.get("schema") == 2:
-                    fields.add("execution_group")
-                if not isinstance(record, dict) or set(record) != fields:
-                    raise ValueError("Compute ownership record is invalid.")
-                pid = record["pid"]
-                if type(pid) is not int or pid <= 0 or record["schema"] not in (1, 2):
-                    raise ValueError("Compute ownership record is invalid.")
-                if record["schema"] == 2:
-                    group = record["execution_group"]
-                    if (not isinstance(group, dict) or set(group) != {"pgid", "leader_identity"}
-                            or type(group["pgid"]) is not int or group["pgid"] <= 0
-                            or not isinstance(group["leader_identity"], str) or not group["leader_identity"]):
-                        raise ValueError("Compute execution group is invalid.")
-                    try:
-                        members = self.group_probe(group["pgid"])
-                    except (OSError, ValueError, subprocess.SubprocessError) as error:
-                        raise ComputeBusy("The recorded execution group cannot be inspected; compute ownership is retained.") from error
-                    if members:
-                        raise ComputeBusy("A recorded task execution group still owns host compute (group {0}).".format(group["pgid"]))
-                observed = self.inspector(pid)
-                if self.alive(pid) and (record["identity"] is None or observed is None or observed == record["identity"]):
-                    raise ComputeBusy("Host compute is owned by " + str(record["operation"]) + " (pid " + str(pid) + ").")
+            self._check_record(descriptor)
+            self._check_executions()
+            if self.shared:
+                self.host_descriptor = descriptor
+                self.record_path = self.root / ("execution-" + secrets.token_hex(16) + ".json")
+                staging = self.record_path.with_name('.' + self.record_path.name + '.pending')
+                self.descriptor = os.open(staging, flags | os.O_CREAT | os.O_EXCL, 0o600)
+                pending_path = staging
+                try:
+                    fcntl.flock(self.descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    raise ComputeBusy("Another process is claiming this execution record.") from None
             identity = self.inspector(os.getpid())
             if identity is None:
                 raise ComputeBusy("The current process identity could not be established.")
             self._write({"schema": 1, "pid": os.getpid(), "identity": identity, "operation": self.operation})
+            if pending_path is not None:
+                # Publish only a locked, complete record; scanners never see creation in flight.
+                os.replace(pending_path, self.record_path)
+                pending_path = None
             return self
         except BaseException:
-            os.close(descriptor)
-            self.descriptor = None
+            try:
+                if pending_path is not None:
+                    pending_path.unlink(missing_ok=True)
+            finally:
+                if self.descriptor is not None and self.descriptor != descriptor:
+                    os.close(self.descriptor)
+                os.close(descriptor)
+                self.host_descriptor = self.descriptor = None
             raise
+
+    def _check_record(self, descriptor):
+        raw = os.pread(descriptor, 8193, 0)
+        if len(raw) > 8192:
+            raise ValueError("Compute ownership record is invalid.")
+        record = json.loads(raw) if raw else {}
+        if not isinstance(record, dict):
+            raise ValueError("Compute ownership record is invalid.")
+        if record:
+            fields = {"schema", "pid", "identity", "operation"}
+            if isinstance(record, dict) and record.get("schema") == 2:
+                fields.add("execution_group")
+            if not isinstance(record, dict) or set(record) != fields:
+                raise ValueError("Compute ownership record is invalid.")
+            pid = record["pid"]
+            if (type(pid) is not int or pid <= 0 or type(record["schema"]) is not int
+                    or record["schema"] not in (1, 2)
+                    or not isinstance(record['operation'], str) or not record['operation']
+                    or record['identity'] is not None and not isinstance(record['identity'], str)):
+                raise ValueError("Compute ownership record is invalid.")
+            if record["schema"] == 2:
+                group = record["execution_group"]
+                if (not isinstance(group, dict) or set(group) != {"pgid", "leader_identity"}
+                        or type(group["pgid"]) is not int or group["pgid"] <= 0
+                        or not isinstance(group["leader_identity"], str) or not group["leader_identity"]):
+                    raise ValueError("Compute execution group is invalid.")
+                try:
+                    members = self.group_probe(group["pgid"])
+                except (OSError, ValueError, subprocess.SubprocessError) as error:
+                    raise ComputeBusy("The recorded execution group cannot be inspected; compute ownership is retained.") from error
+                if members:
+                    raise ComputeBusy("A recorded task execution group still owns host compute (group {0}).".format(group["pgid"]))
+            observed = self.inspector(pid)
+            if self.alive(pid) and (record["identity"] is None or observed is None or observed == record["identity"]):
+                raise ComputeBusy("Host compute is owned by " + str(record["operation"]) + " (pid " + str(pid) + ").")
+
+    def _check_executions(self):
+        # A crashed gateway releases its flock, but its worker group may survive.
+        # Active shared records are protected by their own flock and the host lock.
+        for path in self.root.glob("execution-*.json"):
+            try:
+                descriptor = os.open(path, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK)
+            except FileNotFoundError:
+                continue
+            try:
+                info = os.fstat(descriptor)
+                if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                        or info.st_mode & 0o077 or info.st_nlink != 1):
+                    raise ValueError("Compute ownership must be a private regular file.")
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    if not self.shared:
+                        raise ComputeBusy("A served execution still owns host compute.") from None
+                    continue
+                self._check_record(descriptor)
+                path.unlink(missing_ok=True)
+            finally:
+                os.close(descriptor)
 
     def enter_wait(self, seconds=0, cancelled=lambda: False):
         """Bounded admission; cancellation never transfers ownership."""
@@ -213,9 +271,14 @@ class ComputeLease:
                         group_stopped = False
                 if not self.detached and group_stopped:
                     self._write({})
+                    if self.record_path is not None:
+                        self.record_path.unlink()
             finally:
                 os.close(self.descriptor)
                 self.descriptor = None
+                if self.host_descriptor is not None:
+                    os.close(self.host_descriptor)
+                    self.host_descriptor = None
 
 
 def guarded_start(operation, launch, *args, **kwargs):
@@ -235,7 +298,8 @@ def guarded_start(operation, launch, *args, **kwargs):
 
 class ExecutionAdmission:
     """Batch requests to one backend under one shared host lease."""
-    def __init__(self, operation, root=None):
+    def __init__(self, operation, root=None, shared=False):
+        self.shared = shared
         self.operation, self.root = operation, root
         self.condition = threading.Condition()
         self.lease = None
@@ -254,7 +318,7 @@ class ExecutionAdmission:
                     if self.users:
                         self.users += 1
                         return
-                    lease = ComputeLease(self.operation, self.root)
+                    lease = ComputeLease(self.operation, self.root, shared=self.shared() if callable(self.shared) else self.shared)
                     try:
                         lease.__enter__()
                     except ComputeBusy:

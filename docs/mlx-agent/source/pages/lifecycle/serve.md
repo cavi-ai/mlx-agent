@@ -15,7 +15,45 @@ overhead. `--include-pid PID` includes an existing agent process and its family,
 bound to that process's start identity; changing only the limits preserves those
 bindings. All values use decimal GB. Unknown accounting blocks new allocations.
 
-Typed workers receive an MLX allocation ceiling before executing a job. The
+### Per-route task job caps
+
+Set `--memory-budget-gb` on a typed task route to cap each job's total memory,
+including resident weights and workspace. The value is decimal GB (1–1024).
+For example, preview a route with a 12 GB cap, then confirm that preview:
+
+```sh
+mlx-agent serve start --path /absolute/local/model --runtime tasks --port 8085 --memory-budget-gb 12 --json
+mlx-agent serve policy --port 8085 --expected-pid <gateway-pid> --memory-budget-gb 16 --json
+```
+
+`serve policy` saves changes for subsequent jobs; an active job keeps its admitted
+cap. Omission preserves the cap; `--clear-memory-budget` removes it. Saved
+profiles accept `--memory-budget-gb` without Strata context or decoding settings
+for task routes. Status exposes the cap as `memory_policy.model_memory_budget_gb`.
+For Strata, the same option retains its model-allocation meaning.
+
+With a shared agent budget configured, capped task routes and served text routes
+can execute together. The sum of resident memory, job reservations, external
+agents and process overhead must fit admission. A job reserves its full cap or
+fails with `agent_memory_budget_exceeded`; it never silently receives a smaller
+cap. A cap below the model and workspace estimate fails with
+`job_memory_cap_exceeded`. Increase the route cap or retry after another job
+finishes. System-headroom checks still apply. `serve budget --json` reports the
+accounted totals and each active allocation's `execution_bytes` ceiling.
+Observed allocations consume that reservation, avoiding a second charge as a
+worker grows. Completion releases workspace while retaining any idle weights.
+
+An uncapped task keeps exclusive host execution and the existing remaining-pool
+ceiling. Without a shared budget, all execution remains exclusive; a configured
+task cap still sets its MLX allocation ceiling. Conversion, training, cache
+maintenance and other non-serving operations always require exclusive ownership.
+Each shared execution persists its process identity and worker group separately;
+orphaned groups retain ownership until confirmed stopped. Legacy ownership
+records continue to block admission while their owner or group may be alive.
+
+Typed workers receive an MLX allocation ceiling before executing a job, leaving
+512 MB of the admitted capacity for process overhead. Allocation failures are
+returned as job errors; increase the route cap when its workspace needs more. The
 gateway also observes process-family memory and stops only its own model worker
 on a measured breach. This policy does not control unrelated applications or
 replace system-headroom checks. Existing servers must be restarted on a supporting
@@ -326,7 +364,8 @@ Omitting the budget in a later policy update preserves it; `serve policy
 --clear-memory-budget` explicitly returns to the original allocation settings.
 A budget defaults to
 a 2 GB reserve when no headroom is supplied and cannot be combined with an
-explicit expert-memory limit at startup. These settings require Strata JIT.
+explicit expert-memory limit at startup. These allocation settings require Strata JIT; typed task routes use the option
+as a per-job ceiling instead.
 
 ### Idle and pressure controls
 
@@ -489,7 +528,8 @@ wait up to 30 seconds instead. Cancelling a waiting job preserves its idle model
 releases idle weights without closing its port; active jobs must finish or be
 cancelled first. Status reports residency, worker PID, active jobs and memory policy.
 Headroom admission and optional idle/pressure handling use the same controls as
-chat JIT endpoints. Text KV estimates and Strata budgets apply to their own runtimes.
+chat JIT endpoints. Task routes also accept the per-job cap described above.
+Text KV estimates and Strata allocation budgets apply to their own runtimes.
 
 JIT and typed task endpoints coordinate estimated memory admission on the host.
 Pending loads and task workspace share the largest headroom reserve configured
@@ -526,10 +566,13 @@ These endpoints do not implement chat completions, Messages or Responses.
 
 ### Shared execution admission
 
-Resident coding, vision and typed-model endpoints share host execution ownership
-with other guarded model operations. Idle endpoints retain their weights without
+Resident coding, vision and typed-model endpoints coordinate host execution
+ownership with other guarded model operations. Idle endpoints retain their weights without
 holding execution ownership. Requests to one text backend can use its native
-batching; another model waits or receives HTTP 503 `compute_busy`.
+batching. Without a shared memory budget, another model waits or receives
+HTTP 503 `compute_busy`. With that budget, served text routes and capped task
+routes share execution subject to memory admission. Uncapped task routes and
+non-serving operations remain exclusive.
 
 `--execution-wait` accepts 0–3600 seconds and defaults to 0. It is available on
 `serve start`, `serve policy` and saved profiles. Waiting requests count toward
@@ -540,7 +583,8 @@ releasing execution. Automatic idle and pressure unloads defer while another
 model owns execution. This is bounded waiting, without FIFO ordering or preemption.
 
 Common profiles work with coding, vision, classification and generation endpoints.
-Profiles containing a Strata budget, context or decoding settings require Strata.
+Profiles containing Strata context or decoding settings require Strata. A budget
+without those settings can also cap typed task jobs.
 Explicit launch flags override saved values. For retained typed models, include
 `--keep-loaded --no-release-after-request --no-unload-under-pressure` when saving
 the profile. Status reports active and waiting text requests in `execution`.

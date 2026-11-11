@@ -1,5 +1,6 @@
 """Capability-bound serving plans and durable inference over a resident backend."""
 import json
+import math
 import hashlib
 import os
 from pathlib import Path
@@ -96,8 +97,8 @@ def plan_start(repo, path, port, receipts_dir, hf_cache, memory_policy):
         raise ServeError('invalid_arguments', 'Port must be between 1 and 65535.', 'Choose a valid loopback port.')
     try:
         policy = validate_memory_policy({'release_after_request': True} if memory_policy is None else memory_policy)
-        if policy.get('context_tokens') is not None or policy.get('model_memory_budget_gb') is not None:
-            raise ValueError('Task endpoints use headroom reserves without text KV or Strata budgets.')
+        if policy.get('context_tokens') is not None:
+            raise ValueError('Task endpoints do not use text KV context settings.')
     except ValueError as error:
         raise ServeError('invalid_arguments', str(error), 'Review the memory policy.') from error
     root = receipts_root(receipts_dir).absolute()
@@ -139,8 +140,8 @@ class TaskModelWorker(ModelWorker):
                 'last_reclaim': state.get('last_reclaim'), 'error': state.get('error')}
 
     def configure(self, changes):
-        if changes.get('context_tokens') is not None or changes.get('model_memory_budget_gb') is not None:
-            raise GatewayError(400, 'invalid_policy', 'Task endpoints use headroom reserves without text KV or Strata budgets.')
+        if changes.get('context_tokens') is not None:
+            raise GatewayError(400, 'invalid_policy', 'Task endpoints do not use text KV context settings.')
         try:
             desired = validate_memory_policy(dict(self.memory_policy, **changes))
         except (ValueError, TypeError) as error:
@@ -167,7 +168,7 @@ class TaskModelWorker(ModelWorker):
             if reason is None and desired['cache_reclaim'] == 'idle':
                 reason = 'policy'
         try:
-            with ComputeLease('cache:' + self.config['local_path']) as lease:
+            with ComputeLease('cache:' + self.config['local_path'], self.config.get('compute_state_dir')) as lease:
                 try:
                     lease.bind_process_group(self.resident.process.pid)
                     success = self.resident.control_cache(desired, reclaim=reason)
@@ -312,10 +313,15 @@ class TaskModelWorker(ModelWorker):
             raise error
 
     def _execute(self, identifier):
-        lease = ComputeLease("task:" + identifier)
+        lease = None
         leased = False
         dispatched = False
         try:
+            with self.condition:
+                self.memory_guard_error = None
+                budget_gb = self.memory_policy.get('model_memory_budget_gb')
+            lease = ComputeLease("task:" + identifier, self.config.get('compute_state_dir'),
+                shared=budget_gb is not None and self.memory_registry.shared_execution_enabled())
             lease.enter_wait(self.memory_policy.get('execution_wait_seconds', 0),
                 cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'])
             leased = True
@@ -333,7 +339,8 @@ class TaskModelWorker(ModelWorker):
                 raise TaskError('identity_changed', 'The model task backend changed.')
             self._check_memory() if not self.resident.loaded else self._reserve_workspace()
             try:
-                capacity = self.memory_registry.reserve_execution(self.memory_token)
+                capacity = self.memory_registry.reserve_execution(self.memory_token,
+                    None if budget_gb is None else math.ceil(budget_gb * 1e9), self.memory_probe)
             except MemoryAdmissionError as error:
                 raise GatewayError(503, error.code, str(error)) from error
             worker_limit = None if capacity is None else max(1, capacity - 512_000_000)
@@ -388,7 +395,12 @@ class TaskModelWorker(ModelWorker):
             unresolved = False
             admission_denied = isinstance(error, (ComputeBusy, InterruptedError)) and not leased
             admission_denied |= (not dispatched and isinstance(error,GatewayError)
-                and error.code in ('insufficient_headroom','memory_unknown','memory_registry_busy', 'agent_memory_budget_exceeded'))
+                and error.code in ('insufficient_headroom','memory_unknown','memory_registry_busy', 'agent_memory_budget_exceeded', 'job_memory_cap_exceeded'))
+            if admission_denied and leased and self.memory_reservation is not None:
+                if self.resident.process is None:
+                    self._release_memory()
+                elif self.memory_materialized:
+                    self.memory_reservation = self.memory_registry.settle(self.memory_token)
             # No work was dispatched if the host lease was denied. Keep the
             # existing idle worker and its state available for the next request.
             if not admission_denied:
@@ -400,6 +412,8 @@ class TaskModelWorker(ModelWorker):
                 error = TaskError('compute_busy', str(error), 'Wait for the current host model operation to finish, then start a new job.')
             if unresolved:
                 error = TaskError('task_stop_unconfirmed', 'The owned model worker has not stopped safely.', 'Inspect the worker and retry the owned endpoint stop; its identity is retained.')
+            if not unresolved and self.memory_guard_error is not None:
+                error = GatewayError(503, *self.memory_guard_error)
             cancelled = self.store.get(identifier)['cancel_requested']
             if isinstance(error, InterruptedError) and not cancelled:
                 error = TaskError('endpoint_stopped', 'The model endpoint stopped during inference.',
@@ -412,6 +426,8 @@ class TaskModelWorker(ModelWorker):
             _finish(self.store, identifier, 'cancelled' if cancelled and not unresolved else 'failed',
                     error=None if cancelled and not unresolved else _error(error), execution_unresolved=unresolved)
         finally:
+            with self.condition:
+                self.memory_guard_error = None
             if leased:
                 lease.__exit__(None, None, None)
             self.release()

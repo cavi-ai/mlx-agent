@@ -162,11 +162,13 @@ class ModelWorker:
         self.worker_argv = None
         self.model_state = "unloaded"
         self.active_requests = 0
-        self.execution = ExecutionAdmission("serve:" + config.get("model", config["local_path"]), config.get("compute_state_dir"))
+        self.execution = ExecutionAdmission("serve:" + config.get("model", config["local_path"]), config.get("compute_state_dir"),
+            shared=lambda: self.memory_registry.shared_execution_enabled())
         self.worker_group = None
         self.worker_identity = None
         self.execution_unresolved = False
         self.last_error = None
+        self.memory_guard_error = None
         self.closed = False
         self.log = None
         self.memory_policy = validate_memory_policy(config.get("memory_policy"))
@@ -288,13 +290,13 @@ class ModelWorker:
                 raise GatewayError(400, "invalid_policy", str(error)) from error
             if self.config.get("runtime") == "strata" and "context_tokens" in policy:
                 raise GatewayError(400, "invalid_policy", STRATA_CONTEXT)
-            if self.config.get("runtime") != "strata" and "model_memory_budget_gb" in policy:
-                raise GatewayError(400, "invalid_policy", "Model memory budgets currently require Strata.")
+            if self.config.get("runtime") not in ("strata", "tasks") and "model_memory_budget_gb" in policy:
+                raise GatewayError(400, "invalid_policy", "Model memory budgets require Strata or a task endpoint.")
             if self.config.get('runtime') != 'tasks' and allocator_cache.requested(policy):
                 raise GatewayError(400, 'cache_control_unavailable', 'Allocator cache controls require a resident task backend.')
             config = dict(self.config, memory_policy=policy)
             budget_changed = policy.get("model_memory_budget_gb") != self.memory_policy.get("model_memory_budget_gb")
-            if budget_changed:
+            if budget_changed and self.config.get("runtime") == "strata":
                 if self.model_state in ("loading", "unloading"):
                     raise GatewayError(409, "model_busy", "Finish the current model transition before changing its budget.")
                 from mlx_agent.strata_runtime import StrataError, read_model, memory_allocation
@@ -327,7 +329,7 @@ class ModelWorker:
             self.config.update(config)
             self.memory_policy = policy
             self._set_memory_headroom(policy['minimum_headroom_gb'] or 0)
-            if budget_changed and self.model_state == "loaded":
+            if budget_changed and self.config.get("runtime") == "strata" and self.model_state == "loaded":
                 self.memory_budget_pending = True
             self.policy_revision += 1
             return self.status()
@@ -501,6 +503,8 @@ class ModelWorker:
                 return self.worker_port
         except BaseException as error:
             self.release(compute=admitted)
+            if isinstance(error, MemoryAdmissionError):
+                raise GatewayError(503, error.code, str(error)) from error
             if isinstance(error, ComputeBusy):
                 raise GatewayError(503, "compute_busy", str(error)) from error
             if isinstance(error, InterruptedError):
@@ -852,17 +856,24 @@ class ModelWorker:
             budget = {'status': 'unavailable', 'error': str(error)}
         if budget is None:
             return
-        threshold = budget.get('limit_bytes', 0) - budget.get('reserve_bytes', 0) // 2
-        if budget.get('status') == 'unavailable' or budget['observed_bytes'] > threshold:
+        allocation = budget.get('allocations', {}).get(self.memory_token, {})
+        ceiling = allocation.get('execution_bytes')
+        job_breach = ceiling is not None and allocation.get('observed_bytes', 0) > ceiling
+        if budget.get('status') == 'unavailable' or not budget.get('within_budget', False) or job_breach:
             with self.condition:
                 if (self.process is not worker or self.closed
                         or self.model_state not in ('loading', 'loaded')):
                     return
                 # Claim this transition before a concurrent manual or idle unload.
                 self.model_state = 'unloading'
+                self.memory_guard_error = (
+                    'job_memory_cap_exceeded' if job_breach else 'agent_memory_budget_exceeded',
+                    'Job memory cap exceeded; increase --memory-budget-gb.' if job_breach
+                    else 'The shared agent memory admission was exceeded or unavailable.')
             self.close()
             with self.condition:
-                self.last_error = ('Agent memory guard stopped the owned model worker.'
+                self.last_error = (('Job memory cap exceeded; increase --memory-budget-gb.' if job_breach
+                    else 'Agent memory guard stopped the owned model worker.')
                     + (' ' + budget['error'] if budget.get('error') else ''))
                 self.model_state = 'failed'
                 self._persist()

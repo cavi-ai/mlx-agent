@@ -299,6 +299,29 @@ id, and an `index` when streamed; a turn that calls tools ends with the
 end-of-sequence token, which `mlx_lm` 0.29.1 leaves in place. Worker errors
 pass through unchanged.
 
+### Request defaults and usage
+
+Managed chat gateways accept `--system-prompt`, `--default-temperature` (0–2)
+and `--default-top-p` (0–1) with `serve start --jit`. The system prompt is bounded
+to 8,192 UTF-8 bytes. These settings participate in serve preview and confirmation.
+Sampling defaults fill omitted fields. A default system prompt is added only to
+chat requests without a system or developer message; explicit client settings take
+precedence. Typed task endpoints do not accept these defaults.
+
+`serve status` includes `request_defaults` for a gateway, with a system-prompt
+SHA-256 instead of its text. Its `inference_telemetry` schema 1 reports counters
+for that gateway process: accepted, completed, failed and measured requests;
+reported input/output tokens; and the latest response duration and output rate.
+The duration includes admission, loading and response time, so this rate is
+end-to-end response throughput rather than the model's decode speed.
+
+Token totals include only completed replies with valid worker-reported usage.
+`measured_requests` identifies that subset; missing usage is `null`, not an estimate
+or a zero. Stream observations do not request extra usage or change forwarded
+responses. Counters reset with the gateway process and retain numeric measurements
+only. Status uses the existing protected control endpoint. Direct workers and
+external hosts that do not report these metrics remain unavailable.
+
 ### Anthropic Messages API
 
 The JIT gateway also answers `POST /v1/messages` in the Anthropic Messages

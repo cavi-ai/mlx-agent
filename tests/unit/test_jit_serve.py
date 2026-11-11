@@ -26,6 +26,7 @@ p.add_argument('--host', default='127.0.0.1')
 p.add_argument('--adapter-path'); p.add_argument('--mutate-adapter', action='store_true')
 p.add_argument('--reply-delay', type=float, default=0); p.add_argument('--keepalive', action='store_true')
 p.add_argument('--stream-release')
+p.add_argument('--usage', action='store_true')
 a = p.parse_args()
 with open(a.trace, 'a') as f: f.write('start\\n')
 if a.mutate_adapter:
@@ -46,15 +47,26 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(b'data: {"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}\\n\\n')
             self.wfile.write(b'data: [DONE]\\n\\n')
         elif body.get('stream'):
-            self.wfile.write(b'data: {"choices":[]}\\n\\n'); self.wfile.flush()
+            if a.usage:
+                self.wfile.write(b'data: {"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}\\n\\n')
+            else:
+                self.wfile.write(b'data: {"choices":[]}\\n\\n')
+            self.wfile.flush()
             if a.stream_release:
                 deadline = time.monotonic() + 10
                 while not Path(a.stream_release).exists() and time.monotonic() < deadline: time.sleep(.01)
             else: time.sleep(0.3)
-            try: self.wfile.write(b'data: [DONE]\\n\\n')
+            try:
+                if a.usage:
+                    self.wfile.write(b'data: {"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":2}}\\n\\n')
+                self.wfile.write(b'data: [DONE]\\n\\n')
             except BrokenPipeError: pass
         else:
-            self.wfile.write(json.dumps({'model': body['model'], 'offline': os.environ.get('HF_HUB_OFFLINE')}).encode())
+            reply = {'model': body['model'], 'offline': os.environ.get('HF_HUB_OFFLINE')}
+            if a.usage:
+                reply.update(usage={'prompt_tokens':7,'completion_tokens':2}, request=body,
+                             choices=[{'index':0,'message':{'role':'assistant','content':'hi'},'finish_reason':'stop'}])
+            self.wfile.write(json.dumps(reply).encode())
 class Server(ThreadingHTTPServer):
     def server_bind(self):
         TCPServer.server_bind(self)
@@ -83,14 +95,18 @@ class JITServingTests(unittest.TestCase):
             'worker_argv': [sys.executable, str(self.worker), '--model', str(self.model), '--port', '{worker_port}', '--trace', str(self.trace)],
             'max_tokens': 8192,
         }
-        self.server = make_server(self.config, port=0)
+        self.server = self.start_gateway(self.config)
         self.port = self.server.server_port
-        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+
+    def start_gateway(self, config):
+        server = make_server(config, port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         self.addCleanup(thread.join, 2)
-        self.addCleanup(self.server.server_close)
-        self.addCleanup(self.server.controller.close)
-        self.addCleanup(self.server.shutdown)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.controller.close)
+        self.addCleanup(server.shutdown)
+        return server
 
     def request(self, method, path, body=None, headers=None):
         connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=10)
@@ -100,6 +116,57 @@ class JITServingTests(unittest.TestCase):
             return response.status, json.loads(response.read())
         finally:
             connection.close()
+
+    def test_request_defaults_reach_worker_and_status_keeps_prompt_private(self):
+        config = dict(self.config, request_defaults={'system_prompt': 'Be concise.', 'temperature': 0.6, 'top_p': 0.9})
+        config['worker_argv'] = self.config['worker_argv'] + ['--usage']
+        self.server = self.start_gateway(config)
+        self.port = self.server.server_port
+        status, reply = self.request('POST', '/v1/chat/completions',
+            {'model': str(self.model), 'messages': [{'role': 'user', 'content': 'Hello'}], 'temperature': 0})
+        self.assertEqual(status, 200)
+        self.assertEqual(reply['request']['messages'][0], {'role': 'system', 'content': 'Be concise.'})
+        self.assertEqual(reply['request']['temperature'], 0)
+        self.assertEqual(reply['request']['top_p'], 0.9)
+        status, snapshot = self.request('GET', '/_mlx/status', headers={'Authorization': 'Bearer test-control-token'})
+        self.assertEqual(status, 200)
+        self.assertNotIn('Be concise.', json.dumps(snapshot))
+        self.assertEqual(len(snapshot['request_defaults']['system_prompt_sha256']), 64)
+        self.assertEqual(snapshot['inference_telemetry']['input_tokens'], 7)
+        self.assertEqual(snapshot['inference_telemetry']['output_tokens'], 2)
+        self.assertEqual(self.request('GET', '/_mlx/status')[0], 403)
+
+    def test_usage_is_counted_once_for_each_streaming_api(self):
+        self.config['worker_argv'] += ['--usage']
+        for path in ('/v1/chat/completions', '/v1/completions', '/v1/messages', '/v1/responses'):
+            body = {'model': str(self.model), 'max_tokens': 8, 'stream': True}
+            if path == '/v1/completions': body['prompt'] = 'Hello'
+            elif path == '/v1/responses':
+                body['input'] = 'Hello'
+                body['max_output_tokens'] = body.pop('max_tokens')
+            else: body['messages'] = [{'role': 'user', 'content': 'Hello'}]
+            connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=10)
+            try:
+                connection.request('POST', path, json.dumps(body))
+                response = connection.getresponse()
+                payload = response.read()
+                self.assertEqual(response.status, 200, path + ': ' + payload.decode(errors='replace'))
+                self.assertTrue(payload, path)
+            finally:
+                connection.close()
+        snapshot = self.request('GET', '/_mlx/status', headers={'Authorization': 'Bearer test-control-token'})[1]['inference_telemetry']
+        self.assertEqual(snapshot['completed_requests'], 4)
+        self.assertEqual(snapshot['measured_requests'], 4)
+        self.assertEqual((snapshot['input_tokens'], snapshot['output_tokens']), (28, 8))
+
+    def test_request_defaults_are_reviewed_in_gateway_plan(self):
+        arguments = dict(repo=None, runtime='mlx_lm', recipes=load_recipes(), path=str(self.model),
+                         jit=True, receipts_dir=str(self.root), system_prompt='Be concise.', default_temperature=0.4)
+        plan = plan_start(**arguments)
+        self.assertEqual(plan['request_defaults'], {'system_prompt': 'Be concise.', 'temperature': 0.4})
+        with self.assertRaises(ServeError): plan_start(**dict(arguments, jit=False))
+        with self.assertRaises(ServeError): plan_start(**dict(arguments, runtime='tasks'))
+        with self.assertRaises(ServeError): plan_start(**dict(arguments, default_top_p=2))
 
     def test_busy_memory_registry_does_not_terminate_the_loaded_worker(self):
         import fcntl
@@ -654,6 +721,8 @@ class JITServingTests(unittest.TestCase):
             '--port', '{worker_port}', '--trace', str(second_trace)], memory_policy={'execution_wait_seconds': 3})
         second = ModelWorker(second_config)
         self.addCleanup(second.close)
+        # This case exercises execution ordering, independently of host headroom.
+        self.server.controller.memory_probe = second.memory_probe = lambda: 8_000_000_000
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
             first = pool.submit(self.request, 'POST', '/v1/chat/completions', {'messages': []})
             deadline = time.monotonic() + 5

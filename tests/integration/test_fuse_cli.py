@@ -4,6 +4,7 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from mlx_agent.cli import main
 
@@ -11,7 +12,7 @@ from mlx_agent.cli import main
 class FuseCliTests(unittest.TestCase):
     def _run(self, argv):
         buffer = io.StringIO()
-        with redirect_stdout(buffer):
+        with TemporaryDirectory() as compute, patch("mlx_agent.compute.compute_root", return_value=Path(compute).resolve()), redirect_stdout(buffer):
             code = main(argv)
         return code, buffer.getvalue()
 

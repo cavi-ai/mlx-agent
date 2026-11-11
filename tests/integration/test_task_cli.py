@@ -61,6 +61,20 @@ class TaskCliTests(unittest.TestCase):
         self.assertTrue(all(task["model_verification"] for task in value["data"]["tasks"]))
         code, value = self.run_cli("list")
         self.assertEqual(value["data"], {"tasks": [], "has_more": False})
+
+    def test_model_capabilities_are_read_only_and_bound_to_config(self):
+        model = self.root / "local model"
+        model.mkdir()
+        (model / "config.json").write_text('{"model_type":"triposg"}')
+        with patch("mlx_agent.task_cli.TaskStore", side_effect=AssertionError("read-only capabilities")):
+            code, value = self.run_cli("capabilities", "--model-path", str(model))
+        self.assertEqual(code, 0)
+        self.assertEqual(value["data"]["model"]["path"], str(model))
+        tasks = {task["kind"]: task for task in value["data"]["tasks"]}
+        self.assertEqual(tasks["mesh_generation"]["denoiser_cache"]["modes"], ["off", "adaptive"])
+        code, value = self.run_cli("capabilities", "--model-path", str(self.root / "missing"))
+        self.assertEqual(code, 2)
+        self.assertEqual(value["error"]["code"], "model_unreadable")
         self.assertFalse(self.state.exists())
 
     def test_status_and_cancel_use_the_same_persisted_id(self):

@@ -964,6 +964,9 @@ def _add_serve_arguments(parser):
     start.add_argument("--training-receipt", default=None, help="completed LoRA receipt selecting its pinned base and adapter")
     start.add_argument("--thinking", choices=["default", "off"], default="default",
                        help="off asks the chat template to skip reasoning (mlx_lm, splash); other runtimes report unsupported")
+    start.add_argument('--system-prompt', help='default chat system prompt when the client supplies none (--jit)')
+    start.add_argument('--default-temperature', type=float, help='temperature when the client omits it (--jit, 0–2)')
+    start.add_argument('--default-top-p', type=float, help='top-p when the client omits it (--jit, 0–1)')
     start.add_argument("--m5-prefill", action="store_true",
                        help="opt-in M5 affine Q4 prompt kernel; unsupported hardware/models use native MLX")
     start.add_argument("--prompt-lookup", action="store_true",
@@ -1228,6 +1231,9 @@ def _run_serve(arguments):
                                                            or arguments.unload_under_pressure
                                                            or arguments.memory_budget_gb is not None) else None,
             thinking=arguments.thinking,
+            system_prompt=arguments.system_prompt,
+            default_temperature=arguments.default_temperature,
+            default_top_p=arguments.default_top_p,
             m5_prefill=arguments.m5_prefill,
             prompt_lookup=arguments.prompt_lookup,
             vision_cache=arguments.vision_cache,

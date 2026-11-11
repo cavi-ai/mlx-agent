@@ -15,6 +15,7 @@ MIN_VERSION = (1, 4, 0)
 _VERSION = re.compile(r"Splash (\d+)\.(\d+)\.(\d+)")
 _SPLIT = re.compile(r"(.+)-(\d{5})-of-(\d{5})\.gguf")
 # Splash's --model rule: an OWNER/REPO repository ID without "--" or "..".
+_OWNER = re.compile(r"[A-Za-z0-9_](?:[A-Za-z0-9._-]*[A-Za-z0-9_])?")
 _SERVED_NAME = re.compile(r"[A-Za-z0-9_](?:[A-Za-z0-9._-]{0,94}[A-Za-z0-9_])?")
 _LAUNCHER_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "~/.local/bin")
 _INSTALL = ("Install Splash 1.4.0 or later on an Apple M3 or newer with macOS 26.4 or later "
@@ -88,6 +89,12 @@ def _gguf_parts(path):
     return parts
 
 
+def _repository_id(value):
+    owner, _, name = value.partition("/")
+    return (_OWNER.fullmatch(owner) is not None and _SERVED_NAME.fullmatch(name) is not None
+            and "--" not in value and ".." not in value and not value.endswith(".git"))
+
+
 def _served_model(name):
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", name)
     cleaned = re.sub(r"-{2,}", "-", re.sub(r"\.{2,}", ".", cleaned))[:96].strip("-.") or "model"
@@ -96,9 +103,15 @@ def _served_model(name):
     return "local/" + cleaned
 
 
-def read_target(path):
-    """Resolve a local target without loading weights: a GGUF file or part, a GGUF or MLX directory, or a Strata profile."""
+def read_target(path, served_model=None):
+    """Resolve a local target without loading weights: a GGUF file or part, a GGUF or MLX directory, or a Strata profile.
+
+    ``served_model`` is a cached repository's ID, which the API then reports; otherwise the name is ``local/<name>``.
+    """
     root = Path(path).expanduser().absolute()
+    if served_model is not None and not _repository_id(served_model):
+        raise SplashError("invalid_repo", "Splash cannot report {0} as an OWNER/REPO model ID.".format(served_model),
+                          "Serve the snapshot with --path instead.")
     try:
         source = None
         if root.is_dir() and (root / "strata-model.json").is_file():
@@ -142,7 +155,7 @@ def read_target(path):
         return {"path": str(root), "target": str(target), "source": source, "format": weight_format,
                 "architecture": architecture if isinstance(architecture, str) else None,
                 "files": [str(item) for item in files], "weight_bytes": sum(item.stat().st_size for item in files),
-                "served_model": _served_model(name), "fingerprint": _fingerprint(identities)}
+                "served_model": served_model or _served_model(name), "fingerprint": _fingerprint(identities)}
     except SplashError:
         raise
     except FileNotFoundError as error:

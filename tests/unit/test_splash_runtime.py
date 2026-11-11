@@ -10,6 +10,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 from mlx_agent.serve import (ServeError, load_recipes, plan_start, resolve_serve_runtime, start_serve,
                              status_serve, stop_serve)
+from mlx_agent.splash_runtime import SplashError, read_target
 from .test_gguf import write_gguf
 
 SCHEMA = Path(__file__).resolve().parents[2] / "schemas/serve-receipt.schema.json"
@@ -105,6 +106,31 @@ class SplashServeTests(unittest.TestCase):
         plan = self.plan(model)
         self.assertEqual((plan["weight_format"], plan["splash_target"]), ("mlx", str(model)))
 
+    def test_cached_mlx_repository_is_served_under_its_repository_id(self):
+        repo, hf = "mlx-community/Qwen3.8-27B-4bit", str(self.root / "hf")
+        self.assertEqual(self.code(lambda: plan_start(repo, "splash", load_recipes(), hf_cache=hf)), "model_not_local")
+        entry = self.root / "hf/models--mlx-community--Qwen3.8-27B-4bit"
+        snapshot = entry / "snapshots/abc123"
+        snapshot.mkdir(parents=True)
+        (entry / "refs").mkdir()
+        (entry / "refs/main").write_text("abc123")
+        (snapshot / "config.json").write_text(json.dumps({"model_type": "qwen3_5", "quantization": {"bits": 4, "group_size": 64}}))
+        (snapshot / "model.safetensors").write_bytes(b"weights")
+        self.assertEqual(resolve_serve_runtime(repo, None, "splash", load_recipes(), hf_cache=hf), ("splash", self.launcher))
+        plan = plan_start(repo, "splash", load_recipes(), hf_cache=hf, receipts_dir=self.receipts)
+        self.assertEqual(plan["argv"][2:6], ["--model", repo, "--model-dir", str(snapshot)])
+        receipt = self.start(plan)["receipt"]
+        validator = Draft202012Validator(json.loads(SCHEMA.read_text()), format_checker=FormatChecker())
+        self.assertEqual(list(validator.iter_errors(receipt)), [])
+        self.assertEqual((receipt["repo"], receipt["splash_served_model"]), (repo, repo))
+        command = "python -u -P -m server.server prepared --model {0} --port 8086".format(repo)
+        self.assertTrue(status_serve(self.receipts, pid_alive=lambda pid: True, pid_command=lambda pid: command)[0]["argv_match"])
+        (snapshot / "model.safetensors").write_bytes(b"other weights")
+        self.assertEqual(self.code(lambda: self.start(plan)), "preview_stale")
+        with self.assertRaises(SplashError) as error:
+            read_target(snapshot, served_model="pub/name--copy")
+        self.assertEqual(error.exception.code, "invalid_repo")
+
     def test_launcher_must_report_a_release_with_split_gguf_support(self):
         target = write_gguf(self.root / "model.gguf")
         self.install("Splash 1.3.9")
@@ -118,7 +144,6 @@ class SplashServeTests(unittest.TestCase):
         target = write_gguf(self.root / "model.gguf")
         adapter = self.root / "adapter"
         adapter.mkdir()
-        self.assertEqual(self.code(lambda: plan_start("pub/model", "splash", load_recipes())), "invalid_arguments")
         self.assertEqual(self.code(lambda: self.plan(target, jit=True)), "invalid_arguments")
         self.assertEqual(self.code(lambda: self.plan(target, adapter_path=str(adapter))), "unsupported_runtime")
         self.assertEqual(self.code(lambda: plan_start("pub/model", "mlx_lm", load_recipes(),

@@ -1138,7 +1138,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "f95e5a27c6a11f67fa55d2ef17b9a02829b65af1cff30730a5490842a2bba8f7"
+      "sha256": "a45497f181ed6aaf3f517149bdb3765915177031ae322fdd81ea1a7dec391cdc"
     },
     {
       "path": "src/mlx_agent/serve_profiles.py",
@@ -1166,7 +1166,7 @@
     },
     {
       "path": "src/mlx_agent/splash_runtime.py",
-      "sha256": "f1eb17b221d09979f8954be326ffb961dd19fa0bc6e72e6d18908012f50d579e"
+      "sha256": "ae51f0a9c8f97719aad55be20cd6bbde916f21a0e9fe65628b1f9cbedca5b2cd"
     },
     {
       "path": "src/mlx_agent/strata_runtime.py",

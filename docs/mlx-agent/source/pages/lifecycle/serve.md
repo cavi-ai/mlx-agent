@@ -227,13 +227,24 @@ or later). Serve finds `splash` through `MLX_AGENT_SPLASH`, `PATH`, Homebrew and
 
 ```bash
 python3 scripts/mlx-agent serve start --path /absolute/strata/profile --runtime splash --json
+python3 scripts/mlx-agent serve start --path /absolute/mlx/model --runtime splash --json
+python3 scripts/mlx-agent serve start --repo mlx-community/Qwen3.8-27B-4bit --runtime splash --json
 python3 scripts/mlx-agent serve start --path /absolute/model.gguf --runtime splash --splash-draft-model /absolute/draft --splash-max-memory-gb 48 --splash-max-context 65536 --json
 ```
 
 `--path` selects a GGUF file or any part of a split GGUF, a directory holding
 one GGUF model, a quantized MLX directory, or a prepared Strata profile, whose
-GGUF is served unchanged. Every split part must be present. The server runs with
-`--offline` on `127.0.0.1` and lists the model as `local/<name>`.
+GGUF is served unchanged. Every split part must be present. `--repo` serves the
+cached Hugging Face snapshot of an MLX or GGUF repository. Weights are linked
+in place, never copied or converted. The server runs with `--offline` on
+`127.0.0.1` and lists the model under its `--repo` ID, or as `local/<name>`
+for `--path`.
+
+Splash 1.6 serves the Qwen3.8-27B, Qwen3.6-35B-A3B, Qwen3.5-122B-A10B and
+Qwen3.8-Flash-Next families and their fine-tunes. MLX weights must be
+quantized (affine 2–8 bits, mxfp4 or nvfp4). Every model decodes with its
+family's DFlash2 draft: pass `--splash-draft-model`, or keep the family's
+draft in the Hugging Face cache. Splash refuses to start without one.
 
 - `--splash-draft-model` selects a local DFlash2 draft directory
   (`config.json` with `dflash_config`, and safetensors weights).
@@ -243,7 +254,7 @@ GGUF is served unchanged. Every split part must be present. The server runs with
 
 The preview binds the launcher, its reported version, and the content of the
 target and draft files; a change requires a fresh preview. Splash rejects
-`--repo`, `--jit` and adapters and releases idle weights itself. Stop signals
+`--jit` and adapters and releases idle weights itself. Stop signals
 the receipt's process group and waits 20 seconds before a forced kill, since
 Splash gives its engine 15 seconds to exit.
 

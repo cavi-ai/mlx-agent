@@ -139,10 +139,10 @@ def resolve_serve_runtime(repo, path, runtime, recipes, hf_cache=None,
     if runtime == "splash":
         from .splash_runtime import SplashError, installed_runtime, read_target
         try:
-            if path is None:
-                raise SplashError("model_not_local", "Splash serves local files only.",
-                                  "Pass --path to a local GGUF file, GGUF or MLX directory, or Strata profile.")
-            read_target(path)
+            if local is None:
+                raise SplashError("model_not_local", "Splash serves local files or a cached repository only.",
+                                  "Pass --path to local weights, or --repo for a model in the Hugging Face cache.")
+            read_target(local)
             return "splash", installed_runtime()["launcher"]
         except SplashError as error:
             raise ServeError(error.code, str(error), error.remediation) from error
@@ -451,10 +451,18 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
     if runtime == "splash":
         from .splash_runtime import SplashError, installed_runtime, read_draft, read_target, serve_arguments
         try:
-            if not has_path or adapter_path is not None or jit:
-                raise SplashError("invalid_arguments", "Splash serves a local --path without a LoRA adapter or --jit.",
-                                  "Pass --path to local files; Splash releases idle weights itself.")
-            splash_target = read_target(local_path)
+            if adapter_path is not None or jit:
+                raise SplashError("invalid_arguments", "Splash serves local weights without a LoRA adapter or --jit.",
+                                  "Remove the adapter and --jit; Splash releases idle weights itself.")
+            splash_model_dir = local_path
+            if has_repo:
+                from .convert import cached_snapshot
+                snapshot = cached_snapshot(repo.strip(), hf_cache)
+                if snapshot is None:
+                    raise SplashError("model_not_local", "The repository is not in the Hugging Face cache: " + repo.strip(),
+                                      "Download it first; serve never downloads models.")
+                splash_model_dir = str(snapshot)
+            splash_target = read_target(splash_model_dir, served_model=repo.strip() if has_repo else None)
             splash_draft = read_draft(splash_draft_model) if splash_draft_model is not None else None
             splash_argv = serve_arguments(splash_draft, splash_max_memory_gb, splash_max_context_tokens)
             splash_runtime = installed_runtime()
@@ -540,6 +548,7 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
     elif splash_target:
         plan.update(splash_version=splash_runtime["version"], splash_runtime_fingerprint=splash_runtime["fingerprint"],
                     splash_model_fingerprint=splash_target["fingerprint"], splash_target=splash_target["target"],
+                    splash_model_dir=splash_model_dir,
                     splash_served_model=splash_target["served_model"], splash_source=splash_target["source"],
                     splash_draft_model=splash_draft["path"] if splash_draft else None,
                     splash_draft_fingerprint=splash_draft["fingerprint"] if splash_draft else None,
@@ -708,7 +717,7 @@ def _require_splash_identity(plan):
         return
     from .splash_runtime import SplashError, installed_runtime, read_draft, read_target
     try:
-        current = (read_target(plan["path"])["fingerprint"],
+        current = (read_target(plan["splash_model_dir"])["fingerprint"],
                    read_draft(plan["splash_draft_model"])["fingerprint"] if plan.get("splash_draft_model") else None,
                    installed_runtime(plan["argv"][0])["fingerprint"])
     except SplashError as error:

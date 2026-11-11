@@ -114,4 +114,13 @@ python3 scripts/mlx-agent bench aggregate --exports ./bench-exports --out ./aggr
 
 Both start commands need their reviewed `--confirm --preview-hash` step. `--runtime strata` and `--runtime splash` default to ports 8084 and 8086. Run one server at a time when memory cannot hold both models.
 
+The same pattern compares MLX-LM and Splash on one quantized MLX model. Splash reads the existing MLX weights in place:
+
+```bash
+python3 scripts/mlx-agent serve start --repo <mlx repo> --runtime mlx_lm --port 8080 --json
+python3 scripts/mlx-agent serve start --repo <mlx repo> --runtime splash --port 8086 --json
+python3 scripts/mlx-agent bench run --repo <mlx repo> --runtime mlx_lm --workload prefill --export ./bench-exports/mlx.jsonl --json
+python3 scripts/mlx-agent bench run --repo <mlx repo> --runtime splash --workload prefill --export ./bench-exports/mlx.jsonl --json
+```
+
 Anonymous exports do not bind weight hashes, runtime revisions, sampler settings, or cache state. For a controlled comparison, record those identities separately and use the same workload and hardware conditions. Repeat prompts may reuse runtime caches; these measurements do not establish cold-start performance.

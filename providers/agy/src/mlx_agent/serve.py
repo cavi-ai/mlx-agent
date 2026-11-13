@@ -752,6 +752,22 @@ def _require_task_identity(plan):
         raise ServeError("preview_stale", str(error), "Review a fresh task serving plan.") from error
 
 
+def recheck_bound_identity(plan):
+    """One pass over every identity bound into a reviewed serving plan."""
+    for check in (
+        _require_auth_identity,
+        _require_task_identity,
+        _require_training_binding,
+        _require_adapter_identity,
+        _require_prefill_identity,
+        _require_decode_identity,
+        _require_vision_identity,
+        _require_splash_identity,
+        _require_access_identity,
+    ):
+        check(plan)
+
+
 def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
                 which=None, model_present=None, path_present=None, port_free=None,
                 wired_claims=None, spawn=None, readiness=None,
@@ -780,16 +796,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "The supplied preview hash does not match this start plan.",
             "Re-run serve start without --confirm and review the fresh plan.",
         )
-    _require_auth_identity(plan)
-    _require_task_identity(plan)
-    _require_training_binding(plan)
-    _require_adapter_identity(plan)
-    _require_prefill_identity(plan)
-    _require_decode_identity(plan)
-    _require_vision_identity(plan)
-    _require_splash_identity(plan)
-
-    _require_access_identity(plan)
+    recheck_bound_identity(plan)
 
     if plan["runtime"] == "strata" and not plan.get("jit"):
         from .jit_serve import available_memory_bytes
@@ -903,15 +910,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "Inspect the serve log at {0}.".format(log_path),
         )
     try:
-        _require_auth_identity(plan)
-        _require_task_identity(plan)
-        _require_training_binding(plan)
-        _require_adapter_identity(plan)
-        _require_prefill_identity(plan)
-        _require_decode_identity(plan)
-        _require_vision_identity(plan)
-        _require_splash_identity(plan)
-        _require_access_identity(plan)
+        recheck_bound_identity(plan)
     except ServeError:
         _terminate_pid(pid)
         raise

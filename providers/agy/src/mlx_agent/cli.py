@@ -2243,7 +2243,7 @@ def _run_convert(arguments):
 
 def _convert_scan(arguments):
     from .convert import ConvertError, load_receipts
-    from .gguf import MAX_SCAN_FILES, default_gguf_roots, inventory
+    from .gguf import MAX_SCAN_FILES, default_gguf_roots, families, inventory
     from .taxonomy import annotate_inventory
     roots = arguments.gguf_roots if arguments.gguf_roots is not None else (
         [] if arguments.mlx_roots is not None else default_gguf_roots())
@@ -2267,6 +2267,9 @@ def _convert_scan(arguments):
     from .splash_runtime import annotate_support
     report = annotate_inventory(report)
     annotate_support(report["outputs"])
+    task_types = {item["path"]: item["task"].get("type") for item in report["models"] + report["outputs"]
+                  if isinstance(item.get("task"), dict)}
+    report["families"] = families(report["storage"]["items"], task_types)
     return report
 
 

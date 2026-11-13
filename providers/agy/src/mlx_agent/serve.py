@@ -610,10 +610,8 @@ def _authenticated_plan(plan, digest, access=None):
     if digest is not None:
         from .inference_auth import runtime_fingerprint
         plan.update(api_key_sha256=digest, auth_runtime_sha256=runtime_fingerprint(), **(access or {}))
-        if (plan['runtime'] == 'mlx_lm' and Path(plan['worker_argv'][0]).name == 'mlx_lm.server'
-                and not any(plan.get(key) for key in ('prefill_kernel', 'decode_profile', 'vision_profile'))):
-            from .private_serve import identity
-            plan['private_worker'] = identity()
+        from .worker_transport import choose
+        choose(plan).mark(plan)
         plan['readiness'] = 'http://127.0.0.1:{}/_mlx/status'.format(plan['port'])
     plan['preview_hash'] = _preview_hash({key: value for key, value in plan.items() if key != 'preview_hash'})
     return plan
@@ -865,32 +863,12 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         config_path = Path(plan["control_config"])
         if config_path.parent != root.absolute() or config_path.is_symlink():
             raise ServeError("invalid_arguments", "Unsafe JIT configuration path.", "Review a fresh serve plan.")
-        config = {key: plan[key] for key in ("local_path", "fingerprint", "worker_argv", "max_tokens")}
-        config["runtime"] = plan["runtime"]
-        if 'request_defaults' in plan:
-            config['request_defaults'] = plan['request_defaults']
-        config.update({key: plan[key] for key in ("private_worker", "access_key_file", "access_key_sha256", "api_key_sha256", "auth_runtime_sha256") if key in plan})
-        if plan["runtime"] == "tasks":
-            config.update(task_identity=plan["task_identity"], task_kinds=plan["task_kinds"], port=plan["port"],
-                          task_runtime_fingerprint=plan["task_runtime_fingerprint"],
-                          task_state_dir=str(root.absolute().parent / "tasks" / str(plan["port"])))
-        if plan.get("adapter_path") is not None:
-            config.update(adapter_path=plan["adapter_path"], adapter_identity=plan["adapter_identity"])
-        if plan.get("training_binding") is not None:
-            config["training_binding"] = plan["training_binding"]
-        if "readiness_deadline" in plan:
-            config["worker_readiness_seconds"] = plan["readiness_deadline"]
-        if plan["runtime"] == "strata":
-            config["strata_expert_memory_gb"] = plan.get("strata_expert_memory_gb")
-            config["strata_context_tokens"] = plan.get("strata_context_tokens", 131072)
-            config["strata_speculation"] = plan.get("strata_speculation", False)
-            config["strata_decoding"] = plan["strata_decoding"]
-            if "strata_memory_allocation" in plan:
-                config["strata_memory_allocation"] = plan["strata_memory_allocation"]
-        config.update(model=plan["repo"] or plan["path"], control_token=secrets.token_hex(32),
-                      memory_policy=plan.get("memory_policy"), config_path=str(config_path),
-                      state_path=str(root.absolute() / "{}.jit-state.json".format(plan["port"])),
-                      log_path=str(root.absolute() / "{}.worker.log".format(plan["port"])))
+        from .worker_transport import gateway_config
+        config = gateway_config(plan, control_token=secrets.token_hex(32),
+                                state_path=str(root.absolute() / "{}.jit-state.json".format(plan["port"])),
+                                log_path=root.absolute() / "{}.worker.log".format(plan["port"]),
+                                config_path=config_path,
+                                task_state_dir=str(root.absolute().parent / "tasks" / str(plan["port"])))
         _atomic_in_directory(root, config_path.name, json.dumps(config).encode(), 0o600)
         if plan.get("api_key_sha256") is not None:
             readiness_headers["Authorization"] = "Bearer " + config["control_token"]

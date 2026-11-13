@@ -790,7 +790,7 @@
     },
     {
       "path": "src/mlx_agent/protected_service.py",
-      "sha256": "462851861c673ea1fbeefba1ae17d4a3ae4d2bc052e2b7d4a824218240a356c2"
+      "sha256": "f367036c00d5a445c0623ea05ecc8c32a41bc32ac4926b0b33056054c66e4238"
     },
     {
       "path": "src/mlx_agent/protected_worker.py",
@@ -1158,7 +1158,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "d8d4f5c3a1d422ea7fc45512fea4477ccff78d7896130c6351d56d81f6dbd572"
+      "sha256": "10033fac24996d330d2b1844188ebed66f8f27c0918a27de2a19e4b190915bc1"
     },
     {
       "path": "src/mlx_agent/serve_profiles.py",
@@ -1299,6 +1299,10 @@
     {
       "path": "src/mlx_agent/worker_telemetry.py",
       "sha256": "ca48142efb7c33bbb4414ea9fdd1155faa811456502157e91dd5fce7d45b0446"
+    },
+    {
+      "path": "src/mlx_agent/worker_transport.py",
+      "sha256": "cd50aa9f1cd8e45499dca947cb3706f8d3709cfa4f1238e32b683e4de86f9ce4"
     }
   ],
   "schema_version": 2,

@@ -167,6 +167,24 @@ the Ollama copy is kept, since only Ollama removes its blobs. A safetensors
 model joins the MLX `variant` groups through its `config.json` layer. Models
 listed in both manifest trees count once, and models sharing a blob are one copy.
 
+`storage` lists every model once in `items`: a GGUF model with all its shards
+(and the projectors beside it when it is the only model in its folder), a model
+folder, or an Ollama model with its manifest and blobs. Each item has its `root`,
+`store` (`folder`, `huggingface` or `ollama`), `bytes` and `files`: each file's
+disk identity (`id`), path and size. A file reached through several models or
+links counts once, so `disk_bytes` is what the models occupy, split by `roots`
+and `stores`. Each root also reports `total_bytes`, every file beneath it, and
+`other`: the outermost folders and files holding bytes that belong to no
+recognized model. Removing models frees the files no remaining model uses.
+Outputs carry `bytes`, and a Hugging Face cache snapshot its `repo`.
+
+`families` groups copies of one model across formats and stores: models whose
+architecture, layer count, hidden width and attention heads match (fine-tunes
+and quantizations of one base model), else whose names match without
+quantization labels. Embedding and classification models stay apart from
+generators of the same architecture. Each family has a `name`, its `members`
+(item paths), `copies` and `bytes`, each file counted once.
+
 Conversion runs two steps in one job: `transformers` dequantizes the GGUF back to Hugging Face weights, then `mlx_lm.convert` quantizes those to MLX. The intermediate checkpoint is full precision and removed afterwards, so budget roughly twice the source model's fp16 size in free disk while the job runs. It needs `torch`, `transformers`, and `gguf` importable by the same interpreter; missing pieces are named and never installed for you.
 
 Qwen3.5-family GGUFs (`qwen35`, including Qwen3.6 and Qwen3.8 checkpoints) convert through a bundled port instead, which needs only `gguf` and `mlx` and writes no intermediate checkpoint. The port writes the MLX-VLM `qwen3_5_text` layout, drops the multi-token-prediction block and rebuilds the tokenizer from the GGUF vocabulary. When the GGUF's folder holds exactly one Qwen3-VL projector (`mmproj`) that matches the model's width, the plan names it and the output becomes the `qwen3_5` vision-language model. These outputs are served through the `mlx-vlm` backend. A GGUF holding only a multi-token-prediction block is a speculative-decoding drafter and is refused at plan time.

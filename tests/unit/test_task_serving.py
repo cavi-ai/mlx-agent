@@ -589,3 +589,100 @@ def predict(*args):
             'state': 'test', 'questions': {'route': {'type': 'choice', 'instructions': 'Choose.'}}}})
         self.assertEqual(status, 400, value)
         self.assertIsNone(self.server.controller.resident.process)
+
+
+class EmbeddingHTTPTests(unittest.TestCase):
+    request = TaskHTTPTests.request
+    close_server = TaskHTTPTests.close_server
+
+    def setUp(self):
+        import os
+        import threading
+        from mlx_agent.compute import ComputeLease
+        from mlx_agent.task_identity import capture_identity
+        from mlx_agent.task_serve import TaskServer
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.model = self.root / 'model'
+        self.model.mkdir()
+        (self.model / 'config.json').write_text('{"model_type":"qwen3"}')
+        (self.model / 'model.safetensors').write_bytes(b'fixture')
+        (self.root / 'mlx_embeddings.py').write_text('''
+class Rows:
+    def __init__(self, rows): self.rows = rows
+    def tolist(self): return self.rows
+class Result:
+    def __init__(self, rows): self.text_embeds = Rows(rows)
+def load(path, **options): return object(), object()
+def generate(model, tokenizer, texts, max_length):
+    return Result([[float(len(text)), float(max_length), 0.5] for text in texts])
+''')
+        identity = capture_identity(self.model, load_manifests()['mlx-embeddings'], Path(sys.executable))
+        config = {'local_path': str(self.model), 'model': str(self.model), 'runtime': 'tasks', 'fingerprint': 'unused',
+            'port': 0, 'task_identity': identity, 'task_kinds': ['embedding'], 'task_state_dir': str(self.root / 'tasks'),
+            'max_tokens': 0, 'worker_argv': [sys.executable], 'control_token': 'a' * 32,
+            'memory_state_dir': str(self.root / 'memory'), 'compute_state_dir': str(self.root / 'compute'),
+            'memory_policy': {'keep_loaded': True}}
+        self.server = TaskServer(('127.0.0.1', 0), config)
+        self.server.controller.config['port'] = self.server.server_port
+        self.server.controller.resident.environment = dict(os.environ, PYTHONPATH=str(self.root))
+        self.port = self.server.server_port
+        def planner(model, request):
+            return {'backend': 'mlx-embeddings', 'model': model, 'request': request,
+                'count': len(json.loads(Path(request).read_text())['input']),
+                'argv': [sys.executable, str(Path(task_serving.__file__).with_name('embed_runner.py')),
+                         '--model', model, '--request', request]}
+        for context in (patch('mlx_agent.task_kinds.plan_embed', side_effect=planner),
+                        patch('mlx_agent.inference_runner.sync_ports'),
+                        patch('mlx_agent.task_serving.ComputeLease', side_effect=lambda operation, root=None, **options: ComputeLease(operation, self.root / 'compute', **options))):
+            context.start()
+            self.addCleanup(context.stop)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.addCleanup(self.close_server)
+
+    def embed(self, value, headers=None):
+        return self.request('POST', '/v1/embeddings', dict({'model': str(self.model)}, **value), headers)
+
+    def test_openai_embeddings_return_ordered_vectors_from_the_resident_model(self):
+        status, value = self.embed({'input': 'hello'})
+        self.assertEqual(status, 200, value)
+        self.assertEqual(value, {'object': 'list', 'model': str(self.model),
+            'data': [{'object': 'embedding', 'index': 0, 'embedding': [5.0, 8192.0, 0.5]}]})
+        texts = ['x' * (index % 40 + 1) for index in range(130)]
+        status, value = self.embed({'input': texts, 'dimensions': 3})
+        self.assertEqual(status, 200, value)
+        self.assertEqual([row['index'] for row in value['data']], list(range(130)))
+        self.assertEqual([row['embedding'][0] for row in value['data']], [float(len(text)) for text in texts])
+        self.assertEqual(len(self.server.controller.store.list()), 3)
+        self.assertEqual(self.server.controller.active_requests, 0)
+
+    def test_accepts_the_gateway_model_aliases_and_echoes_the_requested_name(self):
+        status, value = self.request('POST', '/v1/embeddings', {'model': self.model.name, 'input': 'hello'})
+        self.assertEqual(status, 200, value)
+        self.assertEqual(value['model'], self.model.name)
+
+    def test_base64_encoding_packs_little_endian_float32(self):
+        import base64
+        import struct
+        status, value = self.embed({'input': ['abc', 'abcdefg'], 'encoding_format': 'base64'})
+        self.assertEqual(status, 200, value)
+        self.assertEqual([list(struct.unpack('<3f', base64.b64decode(row['embedding']))) for row in value['data']],
+                         [[3.0, 8192.0, 0.5], [7.0, 8192.0, 0.5]])
+
+    def test_refuses_other_models_token_input_and_unmatched_dimensions(self):
+        self.assertEqual(self.request('POST', '/v1/embeddings', {'model': 'other', 'input': 'a'})[0], 404)
+        for body in ({'input': [[1, 2, 3]]}, {'input': []}, {'input': 'a', 'encoding_format': 'int8'},
+                     {'input': 'a', 'input_type': 'query'}):
+            with self.subTest(body=body):
+                self.assertEqual(self.embed(body)[0], 400)
+        status, value = self.embed({'input': 'a', 'dimensions': 1024})
+        self.assertEqual((status, value['error']['code']), (400, 'unsupported_dimensions'))
+
+    def test_requires_the_api_key(self):
+        import hashlib
+        token = 'client-' + 'b' * 40
+        self.server.config['api_key_sha256'] = hashlib.sha256(token.encode()).hexdigest()
+        self.assertEqual(self.embed({'input': 'a'})[0], 401)
+        self.assertEqual(self.embed({'input': 'a'}, {'Authorization': 'Bearer ' + token})[0], 200)

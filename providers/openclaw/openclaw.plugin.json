@@ -1,0 +1,22 @@
+{
+  "id": "mlx-agent",
+  "categories": ["models"],
+  "activation": { "onStartup": false },
+  "providers": ["mlx-agent"],
+  "modelCatalog": { "discovery": { "mlx-agent": "refreshable" } },
+  "modelPricing": { "providers": { "mlx-agent": { "external": false } } },
+  "setup": { "providers": [{ "id": "mlx-agent", "envVars": ["MLX_AGENT_API_KEY"] }] },
+  "providerAuthChoices": [
+    {
+      "provider": "mlx-agent",
+      "method": "custom",
+      "choiceId": "mlx-agent",
+      "choiceLabel": "MLX Agent",
+      "choiceHint": "Authenticated local MLX models",
+      "groupId": "mlx-agent",
+      "groupLabel": "MLX Agent",
+      "groupHint": "Authenticated local MLX models"
+    }
+  ],
+  "configSchema": { "type": "object", "additionalProperties": false, "properties": {} }
+}

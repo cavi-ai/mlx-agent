@@ -141,6 +141,8 @@ A directory counts as an MLX output only when its `config.json` carries a `quant
 
 Each output carries a `task` label and, except Strata profiles, a `backend` object: the backend that runs it for that task (`mlx-lm`, `mlx-vlm`, `mlx-audio`, …) and whether it is `installed`. A config without a `model_type` is matched by the folder's (or cached repository's) leading word, as the backends themselves do; Kokoro resolves to `mlx-audio` text to speech.
 
+With Splash installed, each quantized MLX output also carries `splash`: the `family` Splash's engine finds its `config.json` to describe, or `family: null` and the engine's `reason`. Only outputs with a family serve through `--runtime splash`.
+
 Duplicate groups use two labels. `exact` groups match a sampled content signature
 or the same header structure and quantization; members outside `keep` count
 toward `reclaimable_bytes`. This classification is not a full-file byte comparison.
@@ -164,6 +166,24 @@ GGUF model joins the GGUF groups by its model blob; when it duplicates a file,
 the Ollama copy is kept, since only Ollama removes its blobs. A safetensors
 model joins the MLX `variant` groups through its `config.json` layer. Models
 listed in both manifest trees count once, and models sharing a blob are one copy.
+
+`storage` lists every model once in `items`: a GGUF model with all its shards
+(and the projectors beside it when it is the only model in its folder), a model
+folder, or an Ollama model with its manifest and blobs. Each item has its `root`,
+`store` (`folder`, `huggingface` or `ollama`), `bytes` and `files`: each file's
+disk identity (`id`), path and size. A file reached through several models or
+links counts once, so `disk_bytes` is what the models occupy, split by `roots`
+and `stores`. Each root also reports `total_bytes`, every file beneath it, and
+`other`: the outermost folders and files holding bytes that belong to no
+recognized model. Removing models frees the files no remaining model uses.
+Outputs carry `bytes`, and a Hugging Face cache snapshot its `repo`.
+
+`families` groups copies of one model across formats and stores: models whose
+architecture, layer count, hidden width and attention heads match (fine-tunes
+and quantizations of one base model), else whose names match without
+quantization labels. Embedding and classification models stay apart from
+generators of the same architecture. Each family has a `name`, its `members`
+(item paths), `copies` and `bytes`, each file counted once.
 
 Conversion runs two steps in one job: `transformers` dequantizes the GGUF back to Hugging Face weights, then `mlx_lm.convert` quantizes those to MLX. The intermediate checkpoint is full precision and removed afterwards, so budget roughly twice the source model's fp16 size in free disk while the job runs. It needs `torch`, `transformers`, and `gguf` importable by the same interpreter; missing pieces are named and never installed for you.
 

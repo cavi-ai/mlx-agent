@@ -168,7 +168,10 @@ def account(policy, entries, rows, owner, replacement=None):
             # Actual allocations consume their reservation rather than adding to it.
             workspace = max(0, entry['execution_bytes'] - charged)
         else:
-            workspace = (entry['reserved_bytes'] if new_amount is None else new_amount) + entry['growth_bytes']
+            # A settled reservation already holds its growth allowance; measured
+            # growth beyond the resident estimate consumes it rather than adding to it.
+            grown = min(entry['growth_bytes'], max(0, charged - entry['resident_bytes']))
+            workspace = max(0, (entry['reserved_bytes'] if new_amount is None else new_amount) - grown)
         pending += workspace
         allocations[key] = {'resident_bytes': charged, 'pending_bytes': workspace,
                             'observed_bytes': rss(pids), 'execution_bytes': entry.get('execution_bytes')}

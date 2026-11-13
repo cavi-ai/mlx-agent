@@ -110,6 +110,35 @@ Use the result's `receipts_dir` for controls. `--expected-pid` and
 a changed process is refused. Errors from an unavailable location are reported
 separately from services found elsewhere.
 
+## Front door
+
+`serve front-door` puts one authenticated loopback port in front of every
+discovered route that verifies the same API key:
+
+```bash
+mlx-agent serve front-door --port 8090 --api-key-file /absolute/private/model.key
+```
+
+Start each route with the same key, through `--api-key-file` or
+`--api-key-sha256`. The front door lists only live JIT gateways and typed
+endpoints whose receipts record that key digest. Routes without a key, with
+another key or with a changed process are never listed or forwarded to.
+Repeat `--receipts-dir PATH` to include locations outside the service index.
+
+`GET /v1/models` names each route by its model directory, or by its Hub
+repository for a cached snapshot, without local paths. A name served by more
+than one route is withheld and refused with `ambiguous_model`. Requests to
+`/v1/chat/completions`, `/v1/completions`, `/v1/messages` and `/v1/responses`
+go to the JIT gateway serving `model`; `/v1/embeddings` goes to a typed
+endpoint that advertises `embedding`. The request body and the client's
+credential are forwarded unchanged and the route checks the key again.
+Responses, including event streams, are relayed as they arrive.
+
+The front door applies the same key, Host and Origin checks as a gateway;
+`GET /health` stays open. It runs in the foreground and loads no model; the
+routes keep their own loading, memory admission and lifecycle. Stored
+response reads and `/v1/tasks` stay on each route's own port.
+
 ## Serve a trained adapter
 
 Use a completed LoRA receipt to select the base snapshot and adapter together:
@@ -245,6 +274,8 @@ Qwen3.8-Flash-Next families and their fine-tunes. MLX weights must be
 quantized (affine 2–8 bits, mxfp4 or nvfp4). Every model decodes with its
 family's DFlash2 draft: pass `--splash-draft-model`, or keep the family's
 draft in the Hugging Face cache. Splash refuses to start without one.
+`convert scan` reports each quantized MLX output's Splash family, as Splash's
+engine checks its configuration.
 
 - `--splash-draft-model` selects a local DFlash2 draft directory
   (`config.json` with `dflash_config`, and safetensors weights).
@@ -622,9 +653,21 @@ at `GET /v1/tasks/ID/artifacts/result`, including results too large to return
 inline. The server retains accepted jobs if the client disconnects. Endpoint
 interruption is recorded as interrupted when its job is next inspected.
 
+An endpoint that advertises `embedding` also answers OpenAI
+`POST /v1/embeddings` with `{"model":"...","input":...}`. `model` is the `id`
+from `GET /v1/models` or the model directory name, as a gateway accepts, and is
+echoed in the response; `input` is one string or a list of strings. Token
+arrays and `input_type` are refused. `encoding_format` is `float` (default) or
+`base64` little-endian float32. `dimensions`, when sent, must equal the model's
+native width. Inputs run as embedding jobs of up to 128 texts with a maximum
+length of 8192 tokens, and the response returns once every job has finished.
+Embedding requests queue behind each other; a request made while a
+`/v1/tasks` job runs is refused with `model_busy`. The response has no `usage`.
+
 Typed endpoint history lives in `.mlx-agent-receipts/tasks/PORT` under the chosen
 `--receipts-dir`. CLI inspection uses that exact path as `task --state-dir`.
 These endpoints do not implement chat completions, Messages or Responses.
+Embedding endpoints also serve `POST /v1/embeddings`.
 
 
 ### Shared execution admission

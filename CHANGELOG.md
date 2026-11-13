@@ -2,9 +2,17 @@
 
 ## Unreleased
 
+- Return OpenAI tool calls from MLX-VLM models whose chat template writes `<tool_call><function=` without a newline, such as MiMo-V2.6 and Qwen3.5, instead of raw tool-call text.
+
+- Add the `mlx-agent` OpenClaw provider plugin: it discovers front-door chat models with the gateway key and leaves embedding and task endpoints out of the chat catalog.
+
+- Add `serve front-door`: one authenticated loopback port that lists discovered routes sharing its API key by path-free model name and routes chat, Messages, Responses and embeddings to them.
+
+- Serve OpenAI `POST /v1/embeddings` from typed embedding endpoints, with float or base64 output and batched inputs.
+
 - Add the `mlx-task` command and skill to every provider for durable local inference tasks, widen `mlx-advisor` to the whole model lifecycle, and document agent integration and the MCP server.
 
-- Add Splash as a serving runtime for local GGUF, MLX and Strata profile weights and cached repositories, with `strata` and `splash` bench labels.
+- Add Splash as a serving runtime for local GGUF, MLX and Strata profile weights and cached repositories, with `strata` and `splash` bench labels and the Splash family of each quantized MLX output in `convert scan`.
 
 - Coordinate estimated memory admission across resident model endpoints and report worker allocations, model loads and cache reuse.
 
@@ -23,6 +31,10 @@
 - Reap exited serving children and close the parent's log handle so stop can recognize completed processes.
 
 - Size paged Strata MTP expert caches using the validated packed draft-head storage, with the existing startup allowance and resident-loading threshold.
+
+- Update opentelemetry-api to 1.45.2 in backend locks.
+
+- Report in `convert scan` the disk each model occupies with every file counted once, the bytes under each root that belong to no model, and families of copies of one model across MLX, GGUF and Ollama.
 
 ## 0.12.0 - 2026-11-07
 

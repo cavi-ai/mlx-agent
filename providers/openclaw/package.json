@@ -1,0 +1,12 @@
+{
+  "name": "@cavi-ai/mlx-agent-openclaw",
+  "private": true,
+  "description": "OpenClaw provider for chat models served by an mlx-agent front door",
+  "type": "module",
+  "peerDependencies": {
+    "openclaw": ">=2026.11.3"
+  },
+  "openclaw": {
+    "extensions": ["./index.js"]
+  }
+}

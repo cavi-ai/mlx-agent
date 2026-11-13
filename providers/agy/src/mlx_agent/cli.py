@@ -937,6 +937,12 @@ def _add_serve_arguments(parser):
     service.add_argument("--port", type=int)
     service.add_argument("--runtime-executable", default="mlx_lm.server")
     service.add_argument("--max-tokens", type=int, default=8192)
+    front = actions.add_parser("front-door", help="route one authenticated loopback port to discovered model routes by name")
+    front.add_argument("--port", type=int, required=True)
+    front_key = front.add_mutually_exclusive_group(required=True)
+    front_key.add_argument("--api-key-file")
+    front_key.add_argument("--api-key-sha256")
+    front.add_argument("--receipts-dir", action="append", default=[])
     private = actions.add_parser("private-worker", help="serve an existing model over a supervisor-owned Unix listener")
     private.add_argument("--describe", action="store_true", help="report the private transport protocol without starting a model")
     private.add_argument("--model")
@@ -2218,7 +2224,7 @@ def _run_convert(arguments):
 
 def _convert_scan(arguments):
     from .convert import ConvertError, load_receipts
-    from .gguf import MAX_SCAN_FILES, default_gguf_roots, inventory
+    from .gguf import MAX_SCAN_FILES, default_gguf_roots, families, inventory
     from .taxonomy import annotate_inventory
     roots = arguments.gguf_roots if arguments.gguf_roots is not None else (
         [] if arguments.mlx_roots is not None else default_gguf_roots())
@@ -2239,7 +2245,13 @@ def _convert_scan(arguments):
         report = dict(report, models=[
             item for item in report["models"] if item["status"] == "pending"
         ])
-    return annotate_inventory(report)
+    from .splash_runtime import annotate_support
+    report = annotate_inventory(report)
+    annotate_support(report["outputs"])
+    task_types = {item["path"]: item["task"].get("type") for item in report["models"] + report["outputs"]
+                  if isinstance(item.get("task"), dict)}
+    report["families"] = families(report["storage"]["items"], task_types)
+    return report
 
 
 def _human_bytes(count):
@@ -2863,6 +2875,13 @@ def main(argv=None):
             return service_main(raw[2:])
         except (OSError, ValueError, ImportError, RuntimeError):
             print("Protected MLX service unavailable; verify its runtime, private key and local model.", file=sys.stderr)
+            return 1
+    if raw[:2] == ["serve", "front-door"]:
+        from .front_door import main as front_main
+        try:
+            return front_main(raw[2:])
+        except (OSError, ValueError):
+            print("MLX front door unavailable; verify its port and private key.", file=sys.stderr)
             return 1
     if raw[:2] == ["serve", "private-worker"]:
         from .private_serve import main as private_main

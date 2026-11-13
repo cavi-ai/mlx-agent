@@ -85,6 +85,20 @@ class GatewayError(RuntimeError):
         self.status, self.code = status, code
 
 
+def public_model_name(local_path):
+    """Path-free name of a local model: its Hub repository for cache snapshots, else its directory."""
+    local = Path(local_path)
+    if local.parent.name == "snapshots" and local.parent.parent.name.startswith("models--"):
+        return local.parent.parent.name[len("models--"):].replace("--", "/")
+    return local.name
+
+
+def model_aliases(config):
+    """Request names accepted for an endpoint's one configured local model."""
+    return {config["model"], config["local_path"], "default_model", Path(config["local_path"]).name,
+            public_model_name(config["local_path"])}
+
+
 def model_fingerprint(path):
     """File identity manifest, deliberately not a model-quality assessment."""
     root = Path(path)
@@ -884,6 +898,7 @@ class GatewayServer(ThreadingHTTPServer):
         self.responses = collections.OrderedDict()
         self.responses_lock = threading.Lock()
         self.end_text = chat_completions.end_of_sequence(config["local_path"])
+        self.tool_parser = chat_completions.vlm_tool_parser(config["local_path"]) if config.get("runtime") == "mlx-vlm" else None
         super().__init__(address, GatewayHandler)
 
     def remember(self, response):
@@ -1183,13 +1198,8 @@ class GatewayHandler(BaseHTTPRequestHandler):
                     raise GatewayError(400, "invalid_request", str(error))
             elif self.path not in ("/v1/chat/completions", "/v1/completions"):
                 raise GatewayError(404, "not_found", "Unknown inference endpoint.")
-            aliases = {self.server.config["model"], self.server.config["local_path"], "default_model"}
-            local = Path(self.server.config["local_path"])
-            aliases.add(local.name)
-            if local.parent.name == "snapshots" and local.parent.parent.name.startswith("models--"):
-                aliases.add(local.parent.parent.name[len("models--"):].replace("--", "/"))
             requested = body.get("model", "default_model")
-            if not isinstance(requested, str) or requested not in aliases:
+            if not isinstance(requested, str) or requested not in model_aliases(self.server.config):
                 raise GatewayError(400, "model_not_allowed", "This endpoint serves only its configured local model.")
             if any(body.get(key) not in (None, "default_model") for key in ("adapter_path", "adapter", "draft_model", "draft_adapter")):
                 raise GatewayError(400, "model_not_allowed", "Request-selected adapters and draft models are refused.")
@@ -1204,6 +1214,8 @@ class GatewayHandler(BaseHTTPRequestHandler):
             legacy_mlx = runtime is None and Path(self.server.config["worker_argv"][0]).name == "mlx_lm.server"
             if runtime == "mlx_lm" or legacy_mlx:
                 chat_completions.decode_tool_arguments(body)
+            elif runtime == "mlx-vlm" and self.server.tool_parser and body.get("tools"):
+                body.setdefault("tool_parser", self.server.tool_parser)
             body = inference_defaults.apply(body, self.server.controller.request_defaults)
             self._measurement = self.server.controller.inference_telemetry.begin()
             port = self.server.controller.acquire(cancelled=self._client_gone)

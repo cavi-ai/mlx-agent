@@ -1,14 +1,17 @@
 import hashlib
-import json
+import io
 import json
 import struct
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from mlx_agent import cli
 from mlx_agent.gguf import (
     GGUFError,
     describe_gguf,
+    families,
     file_signature,
     group_duplicates,
     group_mlx_duplicates,
@@ -519,6 +522,106 @@ class OllamaTests(unittest.TestCase):
                 blob.unlink()
         self.assertTrue(manifest.exists())
         self.assertEqual(inventory([self.root])["ollama"], [])
+
+
+def write_shaped_model(directory, layers, width, heads, bits=4, weights=b"weights"):
+    location = Path(directory)
+    location.mkdir(parents=True, exist_ok=True)
+    config = {"model_type": "qwen3_5", "num_hidden_layers": layers, "hidden_size": width,
+              "num_attention_heads": heads, "quantization": {"group_size": 64, "bits": bits}}
+    (location / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    (location / "model.safetensors").write_bytes(weights)
+    return location
+
+
+class StorageTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+
+    def test_copies_of_one_model_in_every_format_form_one_family(self):
+        mlx = write_shaped_model(self.root / "lmstudio" / "Pi-Model-27B-MLX-8bit", 64, 5120, 24, bits=8)
+        tuned = write_shaped_model(self.root / "lmstudio" / "Pi-Model-27B-Uncensored-MLX", 64, 5120, 24, weights=b"tuned")
+        gguf = write_gguf(self.root / "lmstudio" / "tune" / "Pi-Tune-27B-MTP-Q6_K.gguf", architecture="qwen35",
+                          name="Pi Tune", block_count=65, extra=(
+                              _kv("qwen35.nextn_predict_layers", _UINT32, 1),
+                              _kv("qwen35.embedding_length", _UINT32, 5120),
+                              _kv("qwen35.attention.head_count", _UINT32, 24)))
+        config = {"model_type": "qwen3_5",
+                  "text_config": {"num_hidden_layers": 64, "hidden_size": 5120, "num_attention_heads": 24}}
+        manifest = write_ollama_model(
+            self.root / "ollama", "pi-model", "27b-mlx",
+            [("json", json.dumps(config).encode("utf-8"), "config.json"), ("tensor", b"tensor", "lm_head.weight")],
+            {"model_format": "safetensors", "file_type": "nvfp4"},
+        )
+        smaller = write_shaped_model(self.root / "lmstudio" / "Pi-Model-9B-MLX-4bit", 32, 4096, 16, weights=b"small")
+        out = io.StringIO()
+        with TemporaryDirectory() as receipts, redirect_stdout(out):
+            code = cli.main(["convert", "scan", "--gguf-root", str(self.root), "--receipts-dir", receipts,
+                             "--no-signature", "--json"])
+        self.assertEqual(code, 0, out.getvalue())
+        found = {family["name"]: family["members"] for family in json.loads(out.getvalue())["data"]["families"]}
+        self.assertEqual(found, {
+            "Pi-Model-27B": sorted(str(path) for path in (mlx, tuned, gguf, manifest)),
+            "Pi-Model-9B": [str(smaller)],
+        })
+
+    def test_an_embedding_model_is_not_a_copy_of_a_generator_with_its_architecture(self):
+        chat = write_shaped_model(self.root / "Qwen-4B-MLX-4bit", 36, 2560, 32, weights=b"chat")
+        embedding = write_shaped_model(self.root / "Qwen-Embedding-4B-MLX-8bit", 36, 2560, 32, bits=8, weights=b"embed")
+        items = inventory([self.root])["storage"]["items"]
+        self.assertEqual([family["members"] for family in families(items)], [sorted([str(chat), str(embedding)])])
+        split = families(items, {str(embedding): "embedding"})
+        self.assertEqual(sorted(family["members"] for family in split), [[str(chat)], [str(embedding)]])
+
+    def test_files_that_several_models_share_count_once(self):
+        with TemporaryDirectory() as source:
+            content = write_gguf(Path(source, "rho.gguf"), name="Rho Model", padding=b"x" * 4096).read_bytes()
+        store = self.root / "ollama"
+        tags = [write_ollama_model(store, "rho", tag, [("model", content, None), ("template", template, None)],
+                                   {"model_format": "gguf"}) for tag, template in (("latest", b"chat"), ("q4", b"plain"))]
+        blob = self.root / "hub" / "models--org--Xi-Model-4bit" / "blobs" / "weights"
+        blob.parent.mkdir(parents=True)
+        blob.write_bytes(b"w" * 1000)
+        for revision in ("one", "two"):
+            snapshot = write_mlx_model(self.root / "hub" / "models--org--Xi-Model-4bit" / "snapshots" / revision)
+            (snapshot / "model.safetensors").unlink()
+            (snapshot / "model.safetensors").symlink_to(blob)
+        report = inventory([self.root])
+        stored = report["storage"]
+        on_disk = sum(path.stat().st_size for path in self.root.rglob("*") if path.is_file() and not path.is_symlink())
+        self.assertEqual(stored["disk_bytes"], on_disk)
+        self.assertEqual(sum(store["bytes"] for store in stored["stores"]), on_disk)
+        self.assertGreater(sum(item["bytes"] for item in stored["items"]), on_disk)
+        self.assertEqual(stored["roots"], [{"root": str(self.root), "bytes": on_disk, "total_bytes": on_disk, "other": []}])
+        ollama = [{file["id"] for file in item["files"]} for item in stored["items"] if item["kind"] == "ollama"]
+        self.assertEqual([item["path"] for item in stored["items"] if item["kind"] == "ollama"], sorted(map(str, tags)))
+        self.assertTrue(ollama[0] & ollama[1])
+        self.assertEqual([(output["repo"], output["bytes"]) for output in report["outputs"]],
+                         [("org/Xi-Model-4bit", 1000 + (snapshot / "config.json").stat().st_size)] * 2)
+
+    def test_files_that_belong_to_no_model_are_reported_by_the_folder_holding_them(self):
+        write_shaped_model(self.root / "lmstudio" / "org" / "Pi-Model-MLX-4bit", 28, 1024, 16)
+        unknown = self.root / "lmstudio" / "org" / "Unknown-bf16"
+        unknown.mkdir()
+        (unknown / "model.safetensors").write_bytes(b"u" * 100)
+        (self.root / "comfyui" / "checkpoints").mkdir(parents=True)
+        (self.root / "comfyui" / "checkpoints" / "model.ckpt").write_bytes(b"c" * 50)
+        root = inventory([self.root])["storage"]["roots"][0]
+        self.assertEqual(root["other"], [{"path": str(unknown), "bytes": 100},
+                                         {"path": str(self.root / "comfyui"), "bytes": 50}])
+        self.assertEqual(root["total_bytes"], root["bytes"] + 150)
+
+    def test_a_split_gguf_is_one_item_with_the_projector_beside_it(self):
+        folder = self.root / "Omega-GGUF"
+        first = write_gguf(folder / "Omega-Q4_K_M-00001-of-00002.gguf", name="Omega")
+        second = write_gguf(folder / "Omega-Q4_K_M-00002-of-00002.gguf", name="Omega")
+        projector = write_gguf(folder / "mmproj-Omega-F16.gguf", architecture="clip")
+        items = inventory([self.root])["storage"]["items"]
+        files = (first, second, projector)
+        self.assertEqual([(item["path"], sorted(stored["path"] for stored in item["files"]), item["bytes"]) for item in items],
+                         [(str(first), sorted(map(str, files)), sum(path.stat().st_size for path in files))])
 
 
 class InventoryTests(unittest.TestCase):

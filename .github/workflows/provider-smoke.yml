@@ -8,7 +8,7 @@ on:
         required: true
         default: none
         type: choice
-        options: [none, codex, agy, all]
+        options: [none, codex, agy, openclaw, all]
       run_live:
         description: Run an authenticated provider CLI smoke; credentials and license consent must already be configured on the runner.
         required: true
@@ -63,6 +63,11 @@ jobs:
         run: |
           bash tests/smoke/agy.sh >/dev/null
           printf 'Agy isolated lifecycle: passed\n' > smoke-results/agy.txt
+      - name: OpenClaw isolated provider smoke
+        if: inputs.provider == 'openclaw' || inputs.provider == 'all'
+        run: |
+          bash tests/smoke/openclaw.sh >/dev/null
+          printf 'OpenClaw isolated provider discovery: passed\n' > smoke-results/openclaw.txt
       - name: Upload non-secret smoke evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

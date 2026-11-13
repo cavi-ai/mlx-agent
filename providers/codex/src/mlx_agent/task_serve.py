@@ -1,24 +1,68 @@
 """Loopback HTTP interface for typed model jobs and model residency controls."""
 import argparse
+import base64
 import json
 import hashlib
 import os
 from pathlib import Path
 import signal
+import struct
 import sys
 import threading
 
 if __package__ in (None, ''):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from mlx_agent.jit_serve import GatewayError, GatewayHandler, GatewayServer, MAX_BODY
+from mlx_agent.jit_serve import GatewayError, GatewayHandler, GatewayServer, MAX_BODY, model_aliases
 from mlx_agent.task_contracts import TaskError
 from mlx_agent.task_runtime import task_result
 from mlx_agent.task_serving import TaskModelWorker
 from mlx_agent import task_kinds
 
+EMBEDDING_BATCH = 128
+EMBEDDING_FIELDS = frozenset(('model', 'input', 'encoding_format', 'dimensions', 'user'))
+
 
 class TaskHandler(GatewayHandler):
+    def _embeddings(self, body):
+        config, controller = self.server.config, self.server.controller
+        if 'embedding' not in config['task_kinds']:
+            raise GatewayError(404, 'not_found', 'This endpoint does not serve text embeddings.')
+        texts = [body.get('input')] if isinstance(body.get('input'), str) else body.get('input')
+        dimensions = body.get('dimensions')
+        if (set(body) - EMBEDDING_FIELDS or not isinstance(texts, list) or not texts
+                or any(not isinstance(text, str) for text in texts)
+                or body.get('encoding_format', 'float') not in ('float', 'base64')
+                or dimensions is not None and (type(dimensions) is not int or dimensions < 1)):
+            raise GatewayError(400, 'invalid_request', 'Embeddings take text input with float or base64 encoding.')
+        if not isinstance(body.get('model'), str) or body['model'] not in model_aliases(config):
+            raise GatewayError(404, 'model_not_found', 'This endpoint serves a different model.')
+        vectors = []
+        with self.server.embedding_lock:
+            for start in range(0, len(texts), EMBEDDING_BATCH):
+                identifier = controller.submit({'kind': 'embedding', 'parameters': {
+                    'input': texts[start:start + EMBEDDING_BATCH], 'max_length': 8192}})['id']
+                # The job settles its record before releasing the model.
+                with controller.condition:
+                    controller.condition.wait_for(lambda: controller.active_requests == 0)
+                record = controller.record(identifier)
+                if record['state'] != 'succeeded':
+                    error = record.get('error') or {}
+                    raise GatewayError(503, error.get('code', 'embedding_failed'),
+                                       error.get('message', 'The embedding job did not finish.'))
+                outcome = task_result(identifier, controller.store.root)
+                result = outcome['result']
+                if result is None:
+                    result = json.loads(Path(outcome['artifact']['path']).read_bytes())
+                vectors.extend(result['embeddings'])
+        if dimensions is not None and dimensions != len(vectors[0]):
+            raise GatewayError(400, 'unsupported_dimensions',
+                               'This model returns {0}-dimensional embeddings.'.format(len(vectors[0])))
+        encode = body.get('encoding_format') == 'base64'
+        return {'object': 'list', 'model': body['model'], 'data': [{'object': 'embedding', 'index': index,
+            'embedding': base64.b64encode(struct.pack('<%df' % len(vector), *vector)).decode() if encode else vector}
+            for index, vector in enumerate(vectors)]}
+
     def _artifact(self, identifier, name):
         record = self.server.controller.record(identifier)
         outcome = task_result(identifier, self.server.controller.store.root)
@@ -104,6 +148,8 @@ class TaskHandler(GatewayHandler):
                 self._json(200, controller.configure(body))
             elif self.path == '/v1/tasks':
                 self._json(202, controller.submit(body))
+            elif self.path == '/v1/embeddings':
+                self._json(200, self._embeddings(body))
             elif self.path.startswith('/v1/tasks/') and self.path.endswith('/cancel'):
                 parts = self.path.split('/')
                 if len(parts) != 5 or body:
@@ -123,6 +169,7 @@ class TaskServer(GatewayServer):
         super().__init__(address, config)
         self.RequestHandlerClass = TaskHandler
         self.controller = TaskModelWorker(config)
+        self.embedding_lock = threading.Lock()
 
 
 def main():

@@ -1,13 +1,16 @@
+import io
 import json
 import os
 import signal
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 from jsonschema import Draft202012Validator, FormatChecker
 
+from mlx_agent import cli
 from mlx_agent.serve import (ServeError, load_recipes, plan_start, resolve_serve_runtime, start_serve,
                              status_serve, stop_serve)
 from mlx_agent.splash_runtime import SplashError, read_target
@@ -105,6 +108,32 @@ class SplashServeTests(unittest.TestCase):
         (model / "config.json").write_text(json.dumps({"model_type": "qwen3", "quantization": {"bits": 4}}))
         plan = self.plan(model)
         self.assertEqual((plan["weight_format"], plan["splash_target"]), ("mlx", str(model)))
+
+    def test_scan_reports_the_family_the_splash_engine_finds_for_each_quantized_output(self):
+        models = self.root / "models"
+        for name, width in (("Qwen3.8-27B-4bit", 5120), ("Other-9B-4bit", 4096)):
+            (models / name).mkdir(parents=True)
+            (models / name / "model.safetensors").write_bytes(b"weights")
+            (models / name / "config.json").write_text(json.dumps(
+                {"model_type": "qwen3_5", "text_config": {"hidden_size": width}, "quantization": {"bits": 4}}))
+
+        def scan():
+            out = io.StringIO()
+            with patch("mlx_agent.gguf.default_gguf_roots", return_value=[]), redirect_stdout(out):
+                self.assertEqual(cli.main(["convert", "scan", "--mlx-root", str(models), "--receipts-dir",
+                                           self.receipts, "--no-signature", "--json"]), 0)
+            return {item["name"]: item.get("splash") for item in json.loads(out.getvalue())["data"]["outputs"]}
+
+        self.assertEqual(scan(), {"Other-9B-4bit": None, "Qwen3.8-27B-4bit": None})
+        engine = self.root / "libexec/engine/splash"
+        engine.parent.mkdir(parents=True)
+        engine.write_text("#!/bin/sh\nif grep -q '\"hidden_size\": 5120' \"$4\"; then echo '{\"family\": \"Qwen3.8-27B\"}'; "
+                          "else echo 'error: no supported model has this architecture' >&2; exit 1; fi\n")
+        engine.chmod(0o755)
+        self.assertEqual(scan(), {
+            "Other-9B-4bit": {"family": None, "reason": "no supported model has this architecture"},
+            "Qwen3.8-27B-4bit": {"family": "Qwen3.8-27B"},
+        })
 
     def test_cached_mlx_repository_is_served_under_its_repository_id(self):
         repo, hf = "mlx-community/Qwen3.8-27B-4bit", str(self.root / "hf")

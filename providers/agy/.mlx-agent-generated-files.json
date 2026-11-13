@@ -494,7 +494,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "593cd1ec766d930b270539ed75e23c8878f742135d1d985542459d5f788bc05b"
+      "sha256": "d9bd00e47ab53cc8d00c6fac1004c0d251c0f05095b0eb7270136588493e27ec"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -1182,7 +1182,7 @@
     },
     {
       "path": "src/mlx_agent/splash_runtime.py",
-      "sha256": "ae51f0a9c8f97719aad55be20cd6bbde916f21a0e9fe65628b1f9cbedca5b2cd"
+      "sha256": "c4ff079c64f1a2ea7b1bcf556f662ca530c74aa216508b007e6f037d065c2bf0"
     },
     {
       "path": "src/mlx_agent/strata_runtime.py",

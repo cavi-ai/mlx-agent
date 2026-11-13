@@ -66,6 +66,47 @@ def installed_runtime(launcher=None, run=subprocess.run):
     return {"launcher": str(path), "resolved": str(resolved), "version": text, "fingerprint": digest.hexdigest()}
 
 
+def _engine(runtime):
+    """The engine binary of a released Splash installation, beside its launcher's bin folder."""
+    engine = Path(runtime["resolved"]).parents[1] / "libexec" / "engine" / "splash"
+    return engine if engine.is_file() and os.access(engine, os.X_OK) else None
+
+
+def annotate_support(outputs, run=subprocess.run):
+    """Add ``splash`` to each quantized MLX output: the family Splash's engine finds its config to describe, else its refusal.
+
+    The engine's ``model-check`` is the rule Splash holds every start to. Nothing is added without an installed
+    release whose engine knows the check; Strata profiles keep their own runtime.
+    """
+    try:
+        engine = _engine(installed_runtime(run=run))
+    except SplashError:
+        return outputs
+    if engine is None:
+        return outputs
+    for output in outputs:
+        if output.get("runtime") is not None or not isinstance(output.get("quantization"), dict):
+            continue
+        try:
+            result = run([str(engine), "model-check", "mlx-affine", "none", str(Path(output["path"]) / "config.json")],
+                         capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.SubprocessError):
+            return outputs
+        if result.returncode == os.EX_USAGE:
+            return outputs
+        if result.returncode == 0:
+            try:
+                family = json.loads(result.stdout)["family"]
+            except (ValueError, TypeError, KeyError):
+                continue
+            if isinstance(family, str):
+                output["splash"] = {"family": family}
+            continue
+        refusals = [line[len("error: "):] for line in (result.stderr or "").splitlines() if line.startswith("error: ")]
+        output["splash"] = {"family": None, "reason": refusals[-1] if refusals else None}
+    return outputs
+
+
 def _identity(paths):
     from .strata_runtime import file_identity
     return {str(path): file_identity(path) for path in paths}

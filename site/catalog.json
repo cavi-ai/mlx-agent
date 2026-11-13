@@ -64,6 +64,12 @@
       "command": "mlx-fleet",
       "description": "Preview and confirm a one-shot per-role router configuration.",
       "arguments": ["assign", "from-adoption", "runtime-map"]
+    },
+    {
+      "slug": "task",
+      "command": "mlx-task",
+      "description": "Run, track and collect durable local inference tasks.",
+      "arguments": ["request", "id", "state-dir"]
     }
   ],
   "skills": [
@@ -73,7 +79,8 @@
     {"slug": "mlx-bench", "activation": "natural-language"},
     {"slug": "mlx-doctor", "activation": "natural-language"},
     {"slug": "mlx-watch", "activation": "natural-language"},
-    {"slug": "mlx-fleet", "activation": "natural-language"}
+    {"slug": "mlx-fleet", "activation": "natural-language"},
+    {"slug": "mlx-task", "activation": "natural-language"}
   ],
   "runtimes": [
     {"slug": "ollama", "optional": true},
@@ -88,42 +95,42 @@
       "minimum_version": "2.1.143",
       "last_tested_version": "2.1.198",
       "scopes": ["user", "project"],
-      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"]
+      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task"]
     },
     "codex": {
       "install_guide": "docs/install/codex.md",
       "minimum_version": "0.137.0",
       "last_tested_version": "0.137.0",
       "scopes": ["user", "project"],
-      "commands": ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire", "mlx-agent:mlx-bench", "mlx-agent:mlx-doctor", "mlx-agent:mlx-watch", "mlx-agent:mlx-fleet"]
+      "commands": ["mlx-agent:mlx-scout", "mlx-agent:mlx-adopt", "mlx-agent:mlx-wire", "mlx-agent:mlx-bench", "mlx-agent:mlx-doctor", "mlx-agent:mlx-watch", "mlx-agent:mlx-fleet", "mlx-agent:mlx-task"]
     },
     "agy": {
       "install_guide": "docs/install/agy.md",
       "minimum_version": "1.1.14",
       "last_tested_version": "1.1.14",
       "scopes": ["user", "project"],
-      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"]
+      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task"]
     },
     "opencode": {
       "install_guide": "docs/install/opencode.md",
       "minimum_version": "1.17.7",
       "last_tested_version": "1.18.9",
       "scopes": ["user", "project"],
-      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"]
+      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task"]
     },
     "openclaw": {
       "install_guide": "docs/install/openclaw.md",
       "minimum_version": "2026.10.3",
       "last_tested_version": "2026.10.5",
       "scopes": ["user", "project"],
-      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"]
+      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task"]
     },
     "hermes": {
       "install_guide": "docs/install/hermes.md",
       "minimum_version": "0.19.1",
       "last_tested_version": "0.19.1",
       "scopes": ["user", "project"],
-      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet"]
+      "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task"]
     },
     "agentskills": {
       "install_guide": "docs/install/index.md",

@@ -141,6 +141,8 @@ A directory counts as an MLX output only when its `config.json` carries a `quant
 
 Each output carries a `task` label and, except Strata profiles, a `backend` object: the backend that runs it for that task (`mlx-lm`, `mlx-vlm`, `mlx-audio`, …) and whether it is `installed`. A config without a `model_type` is matched by the folder's (or cached repository's) leading word, as the backends themselves do; Kokoro resolves to `mlx-audio` text to speech.
 
+With Splash installed, each quantized MLX output also carries `splash`: the `family` Splash's engine finds its `config.json` to describe, or `family: null` and the engine's `reason`. Only outputs with a family serve through `--runtime splash`.
+
 Duplicate groups use two labels. `exact` groups match a sampled content signature
 or the same header structure and quantization; members outside `keep` count
 toward `reclaimable_bytes`. This classification is not a full-file byte comparison.

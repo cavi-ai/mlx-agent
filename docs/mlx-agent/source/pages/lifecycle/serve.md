@@ -245,6 +245,8 @@ Qwen3.8-Flash-Next families and their fine-tunes. MLX weights must be
 quantized (affine 2–8 bits, mxfp4 or nvfp4). Every model decodes with its
 family's DFlash2 draft: pass `--splash-draft-model`, or keep the family's
 draft in the Hugging Face cache. Splash refuses to start without one.
+`convert scan` reports each quantized MLX output's Splash family, as Splash's
+engine checks its configuration.
 
 - `--splash-draft-model` selects a local DFlash2 draft directory
   (`config.json` with `dflash_config`, and safetensors weights).

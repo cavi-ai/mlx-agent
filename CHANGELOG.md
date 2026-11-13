@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Serve OpenAI `POST /v1/embeddings` from typed embedding endpoints, with float or base64 output and batched inputs.
+
 - Add the `mlx-task` command and skill to every provider for durable local inference tasks, widen `mlx-advisor` to the whole model lifecycle, and document agent integration and the MCP server.
 
 - Add Splash as a serving runtime for local GGUF, MLX and Strata profile weights and cached repositories, with `strata` and `splash` bench labels and the Splash family of each quantized MLX output in `convert scan`.

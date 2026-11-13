@@ -2258,7 +2258,10 @@ def _convert_scan(arguments):
         report = dict(report, models=[
             item for item in report["models"] if item["status"] == "pending"
         ])
-    return annotate_inventory(report)
+    from .splash_runtime import annotate_support
+    report = annotate_inventory(report)
+    annotate_support(report["outputs"])
+    return report
 
 
 def _human_bytes(count):

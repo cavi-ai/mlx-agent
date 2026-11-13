@@ -30,6 +30,8 @@ PROVIDERS = ("claude", "codex", "agy", "opencode", "openclaw", "hermes", "agents
 NATIVE_PROVIDERS = ("claude", "codex", "agy", "opencode", "openclaw", "hermes")
 COMMANDS = ("mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task")
 EVIDENCE_FIELDS = ("schema", "install_round_trip", "native_discovery", "bundle_execution", "model_backed_invocation")
+# Three dotted numbers inside a longer run, such as a loopback address, are not a version.
+VERSION_PATTERN = re.compile(r"\b(?<!\d\.)\d+\.\d+\.\d+\b(?!\.\d)")
 
 
 class DocumentationContractTests(unittest.TestCase):
@@ -227,11 +229,11 @@ class DocumentationContractTests(unittest.TestCase):
         for entry in self.matrix["providers"].values():
             if entry["id"] != "agentskills":
                 self.assertIn(entry["display_name"], self.readme)
-        documented_versions = set(re.findall(r"\b\d+\.\d+\.\d+\b", self.readme))
+        documented_versions = set(VERSION_PATTERN.findall(self.readme))
         documented_versions.update(
             version
             for path in (ROOT / "docs" / "install").glob("*.md")
-            for version in re.findall(r"\b\d+\.\d+\.\d+\b", path.read_text(encoding="utf-8"))
+            for version in VERSION_PATTERN.findall(path.read_text(encoding="utf-8"))
         )
         matrix_versions = {
             entry["last_tested_version"] for entry in self.matrix["providers"].values()

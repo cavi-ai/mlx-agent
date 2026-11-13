@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add the `mlx-agent` OpenClaw provider plugin: it discovers front-door chat models with the gateway key and leaves embedding and task endpoints out of the chat catalog.
+
 - Add `serve front-door`: one authenticated loopback port that lists discovered routes sharing its API key by path-free model name and routes chat, Messages, Responses and embeddings to them.
 
 - Serve OpenAI `POST /v1/embeddings` from typed embedding endpoints, with float or base64 output and batched inputs.

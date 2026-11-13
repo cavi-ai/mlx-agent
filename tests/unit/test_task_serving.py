@@ -658,6 +658,11 @@ def generate(model, tokenizer, texts, max_length):
         self.assertEqual(len(self.server.controller.store.list()), 3)
         self.assertEqual(self.server.controller.active_requests, 0)
 
+    def test_accepts_the_gateway_model_aliases_and_echoes_the_requested_name(self):
+        status, value = self.request('POST', '/v1/embeddings', {'model': self.model.name, 'input': 'hello'})
+        self.assertEqual(status, 200, value)
+        self.assertEqual(value['model'], self.model.name)
+
     def test_base64_encoding_packs_little_endian_float32(self):
         import base64
         import struct

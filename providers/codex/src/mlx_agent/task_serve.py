@@ -13,7 +13,7 @@ import threading
 if __package__ in (None, ''):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from mlx_agent.jit_serve import GatewayError, GatewayHandler, GatewayServer, MAX_BODY
+from mlx_agent.jit_serve import GatewayError, GatewayHandler, GatewayServer, MAX_BODY, model_aliases
 from mlx_agent.task_contracts import TaskError
 from mlx_agent.task_runtime import task_result
 from mlx_agent.task_serving import TaskModelWorker
@@ -35,7 +35,7 @@ class TaskHandler(GatewayHandler):
                 or body.get('encoding_format', 'float') not in ('float', 'base64')
                 or dimensions is not None and (type(dimensions) is not int or dimensions < 1)):
             raise GatewayError(400, 'invalid_request', 'Embeddings take text input with float or base64 encoding.')
-        if body.get('model') != config['model']:
+        if not isinstance(body.get('model'), str) or body['model'] not in model_aliases(config):
             raise GatewayError(404, 'model_not_found', 'This endpoint serves a different model.')
         vectors = []
         with self.server.embedding_lock:
@@ -59,7 +59,7 @@ class TaskHandler(GatewayHandler):
             raise GatewayError(400, 'unsupported_dimensions',
                                'This model returns {0}-dimensional embeddings.'.format(len(vectors[0])))
         encode = body.get('encoding_format') == 'base64'
-        return {'object': 'list', 'model': config['model'], 'data': [{'object': 'embedding', 'index': index,
+        return {'object': 'list', 'model': body['model'], 'data': [{'object': 'embedding', 'index': index,
             'embedding': base64.b64encode(struct.pack('<%df' % len(vector), *vector)).decode() if encode else vector}
             for index, vector in enumerate(vectors)]}
 

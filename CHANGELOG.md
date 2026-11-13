@@ -24,6 +24,8 @@
 
 - Size paged Strata MTP expert caches using the validated packed draft-head storage, with the existing startup allowance and resident-loading threshold.
 
+- Report in `convert scan` the disk each model occupies with every file counted once, the bytes under each root that belong to no model, and families of copies of one model across MLX, GGUF and Ollama.
+
 ## 0.12.0 - 2026-11-07
 
 - Add Strata total-memory budgets, live budget changes and saved usage profiles. Choose plain, verified prompt-lookup or MTP decoding; unused draft heads stay unloaded.

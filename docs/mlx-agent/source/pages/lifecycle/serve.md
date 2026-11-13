@@ -624,9 +624,20 @@ at `GET /v1/tasks/ID/artifacts/result`, including results too large to return
 inline. The server retains accepted jobs if the client disconnects. Endpoint
 interruption is recorded as interrupted when its job is next inspected.
 
+An endpoint that advertises `embedding` also answers OpenAI
+`POST /v1/embeddings` with `{"model":"...","input":...}`. `model` must equal the
+`id` from `GET /v1/models`; `input` is one string or a list of strings. Token
+arrays and `input_type` are refused. `encoding_format` is `float` (default) or
+`base64` little-endian float32. `dimensions`, when sent, must equal the model's
+native width. Inputs run as embedding jobs of up to 128 texts with a maximum
+length of 8192 tokens, and the response returns once every job has finished.
+Embedding requests queue behind each other; a request made while a
+`/v1/tasks` job runs is refused with `model_busy`. The response has no `usage`.
+
 Typed endpoint history lives in `.mlx-agent-receipts/tasks/PORT` under the chosen
 `--receipts-dir`. CLI inspection uses that exact path as `task --state-dir`.
 These endpoints do not implement chat completions, Messages or Responses.
+Embedding endpoints also serve `POST /v1/embeddings`.
 
 
 ### Shared execution admission

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Serve OpenAI `POST /v1/embeddings` from typed embedding endpoints, with float or base64 output and batched inputs.
+
 - Add the `mlx-task` command and skill to every provider for durable local inference tasks, widen `mlx-advisor` to the whole model lifecycle, and document agent integration and the MCP server.
 
 - Add Splash as a serving runtime for local GGUF, MLX and Strata profile weights and cached repositories, with `strata` and `splash` bench labels and the Splash family of each quantized MLX output in `convert scan`.
@@ -23,6 +25,8 @@
 - Reap exited serving children and close the parent's log handle so stop can recognize completed processes.
 
 - Size paged Strata MTP expert caches using the validated packed draft-head storage, with the existing startup allowance and resident-loading threshold.
+
+- Update opentelemetry-api to 1.45.2 in backend locks.
 
 - Report in `convert scan` the disk each model occupies with every file counted once, the bytes under each root that belong to no model, and families of copies of one model across MLX, GGUF and Ollama.
 

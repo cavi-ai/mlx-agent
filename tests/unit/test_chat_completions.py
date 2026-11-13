@@ -59,8 +59,37 @@ ANSWERED = QUESTION + [
     {"role": "tool", "tool_call_id": "call_1", "content": "Lisbon: 23 degrees Celsius."}]
 
 
-class ChatCompletionsGatewayTests(unittest.TestCase):
-    def setUp(self):
+# Answers with the tool_parser field of the request it received.
+PARSER_WORKER = '''
+import argparse, json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import TCPServer
+p = argparse.ArgumentParser()
+p.add_argument('--model'); p.add_argument('--port', type=int)
+a = p.parse_args()
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args): pass
+    def do_GET(self):
+        self.send_response(200); self.end_headers(); self.wfile.write(b'{}')
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+        message = {'role': 'assistant', 'content': json.dumps(body.get('tool_parser'))}
+        self.send_response(200); self.end_headers()
+        self.wfile.write(json.dumps({'id': 'chatcmpl-1', 'object': 'chat.completion', 'model': 'local', 'created': 1,
+                                     'choices': [{'index': 0, 'finish_reason': 'stop', 'message': message}]}).encode())
+class Server(ThreadingHTTPServer):
+    def server_bind(self):
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+Server(('127.0.0.1', a.port), Handler).serve_forever()
+'''
+
+# MiMo-V2.6 and Qwen3.5 render Qwen3-Coder XML calls with no newline after <tool_call>.
+ADJACENT_TOOL_CALL_TEMPLATE = "{{- '<tool_call><function=' ~ tool_call.name ~ '>' -}}"
+
+
+class GatewayTestCase(unittest.TestCase):
+    def serve(self, worker, runtime, chat_template=None):
         temp = TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         root = Path(temp.name)
@@ -68,10 +97,12 @@ class ChatCompletionsGatewayTests(unittest.TestCase):
         self.model.mkdir()
         (self.model / "config.json").write_text("{}")
         (self.model / "tokenizer_config.json").write_text(json.dumps({"eos_token": "<|im_end|>"}))
+        if chat_template is not None:
+            (self.model / "chat_template.jinja").write_text(chat_template)
         (self.model / "model.safetensors").write_bytes(b"fixture")
-        (root / "worker.py").write_text(WORKER)
+        (root / "worker.py").write_text(worker)
         config = {
-            "runtime": "mlx_lm",
+            "runtime": runtime,
             "model": str(self.model), "local_path": str(self.model), "fingerprint": model_fingerprint(self.model),
             "control_token": "test-control-token", "max_tokens": 8192,
             "worker_argv": [sys.executable, str(root / "worker.py"), "--model", str(self.model), "--port", "{worker_port}"],
@@ -94,6 +125,11 @@ class ChatCompletionsGatewayTests(unittest.TestCase):
             return text
         finally:
             connection.close()
+
+
+class ChatCompletionsGatewayTests(GatewayTestCase):
+    def setUp(self):
+        self.serve(WORKER, "mlx_lm")
 
     def test_unstreamed_tool_calls_have_ids_and_the_tool_calls_finish_reason(self):
         [choice] = json.loads(self.post("/v1/chat/completions", {"messages": QUESTION, "tools": TOOLS}))["choices"]
@@ -134,6 +170,24 @@ class ChatCompletionsGatewayTests(unittest.TestCase):
         self.server.config["worker_argv"][0] = "mlx_lm.server"
         chat = json.loads(self.post("/v1/chat/completions", {"messages": ANSWERED, "tools": TOOLS}))
         self.assertEqual(chat["choices"][0]["message"]["content"], "It is 23 degrees.")
+
+
+class VisionToolParserTests(GatewayTestCase):
+    def setUp(self):
+        self.serve(PARSER_WORKER, "mlx-vlm", ADJACENT_TOOL_CALL_TEMPLATE)
+
+    def sent_parser(self, body):
+        return json.loads(json.loads(self.post("/v1/chat/completions", body))["choices"][0]["message"]["content"])
+
+    def test_tool_requests_name_the_xml_parser_for_adjacent_tool_call_templates(self):
+        self.assertEqual(self.sent_parser({"messages": QUESTION, "tools": TOOLS}), "qwen3_coder")
+        messages = json.loads(self.post("/v1/messages", {"max_tokens": 64, "messages": [{"role": "user", "content": "Weather?"}],
+                                                         "tools": [{"name": "get_weather", "input_schema": TOOLS[0]["function"]["parameters"]}]}))
+        self.assertEqual(messages["content"], [{"type": "text", "text": '"qwen3_coder"'}])
+        self.assertIsNone(self.sent_parser({"messages": QUESTION}))
+        self.assertEqual(self.sent_parser({"messages": QUESTION, "tools": TOOLS, "tool_parser": "json_tools"}), "json_tools")
+        self.server.config["runtime"] = "mlx_lm"
+        self.assertIsNone(self.sent_parser({"messages": QUESTION, "tools": TOOLS}))
 
 
 if __name__ == "__main__":

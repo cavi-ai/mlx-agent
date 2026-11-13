@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Return OpenAI tool calls from MLX-VLM models whose chat template writes `<tool_call><function=` without a newline, such as MiMo-V2.6 and Qwen3.5, instead of raw tool-call text.
+
 - Add the `mlx-agent` OpenClaw provider plugin: it discovers front-door chat models with the gateway key and leaves embedding and task endpoints out of the chat catalog.
 
 - Add `serve front-door`: one authenticated loopback port that lists discovered routes sharing its API key by path-free model name and routes chat, Messages, Responses and embeddings to them.

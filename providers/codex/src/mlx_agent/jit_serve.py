@@ -953,6 +953,7 @@ class GatewayServer(ThreadingHTTPServer):
         self.responses = collections.OrderedDict()
         self.responses_lock = threading.Lock()
         self.end_text = chat_completions.end_of_sequence(config["local_path"])
+        self.tool_parser = chat_completions.vlm_tool_parser(config["local_path"]) if config.get("runtime") == "mlx-vlm" else None
         super().__init__(address, GatewayHandler)
 
     def remember(self, response):
@@ -1268,6 +1269,8 @@ class GatewayHandler(BaseHTTPRequestHandler):
             legacy_mlx = runtime is None and Path(self.server.config["worker_argv"][0]).name == "mlx_lm.server"
             if runtime == "mlx_lm" or legacy_mlx:
                 chat_completions.decode_tool_arguments(body)
+            elif runtime == "mlx-vlm" and self.server.tool_parser and body.get("tools"):
+                body.setdefault("tool_parser", self.server.tool_parser)
             body = inference_defaults.apply(body, self.server.controller.request_defaults)
             self._measurement = self.server.controller.inference_telemetry.begin()
             port = self.server.controller.acquire(cancelled=self._client_gone)

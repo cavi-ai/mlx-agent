@@ -46,6 +46,30 @@ def end_of_sequence(model_path):
     return token if isinstance(token, str) and token else None
 
 
+def _chat_template(model_path):
+    path = Path(model_path)
+    try:
+        return (path / "chat_template.jinja").read_text(encoding="utf-8")
+    except OSError:
+        pass
+    try:
+        config = json.loads((path / "tokenizer_config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    template = config.get("chat_template") if isinstance(config, dict) else None
+    return template if isinstance(template, str) else json.dumps(template)
+
+
+def vlm_tool_parser(model_path):
+    """Return the MLX-VLM tool parser a model's template needs but the server does not infer, or None.
+
+    MLX-VLM selects its Qwen3-Coder XML parser only when the template puts a newline
+    between <tool_call> and <function=. Templates that render them adjacent fall back
+    to the JSON parser, and every call then arrives as plain text.
+    """
+    return "qwen3_coder" if "<tool_call><function=" in _chat_template(model_path) else None
+
+
 def _identifier():
     return "call_" + secrets.token_hex(12)
 

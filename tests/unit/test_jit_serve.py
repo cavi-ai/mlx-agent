@@ -604,6 +604,22 @@ class JITServingTests(unittest.TestCase):
             self.assertEqual(self.request('POST','/v1/chat/completions',{'messages':[]})[0],200)
         self.assertEqual(controller.memory_registry.snapshot()['reserved_bytes'],2_000_000_000)
 
+    def test_agent_budget_charges_kv_growth_once_after_first_output(self):
+        controller=self.server.controller
+        controller.configure({'minimum_headroom_gb':0,'context_tokens':2048})
+        controller.memory_probe=lambda:20_000_000_000
+        controller.memory_registry.configure_budget(9_000_000_000,0)
+        with mock.patch('mlx_agent.jit_serve._kv_cache_bytes',return_value=5_000_000_000):
+            self.assertEqual(self.request('POST','/v1/chat/completions',{'messages':[]})[0],200)
+        controller.guard_agent_budget()
+        self.assertEqual(controller.model_state,'loaded',controller.last_error)
+        budget=controller.memory_registry.snapshot()['agent_budget']
+        allocation=budget['allocations'][controller.memory_token]
+        # The measured worker consumes its 5 GB KV allowance, so the loaded model is
+        # charged exactly the cold reservation: 8 B weights, 1.5 GB workspace, 5 GB KV.
+        self.assertEqual(allocation['resident_bytes']+allocation['pending_bytes'],6_500_000_008)
+        self.assertTrue(budget['within_budget'])
+
     def test_settlement_contention_retains_coding_reservation_until_retry(self):
         from mlx_agent.residency import MemoryAdmissionError
         controller=self.server.controller

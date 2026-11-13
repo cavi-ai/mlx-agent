@@ -494,7 +494,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "2fbe7ddd2bc12ae5abe609f1c02937ac2f7d47a962aca714df93249a3459c8dd"
+      "sha256": "1b02f9d7071455955a97073dfbde9aa899930c1b50814e9545f307adcdf02e9c"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -601,6 +601,10 @@
       "sha256": "edc541aed67e8b8bebf5ffae1cf77e7f0dc30f0cca22387f1e96b6903c392c39"
     },
     {
+      "path": "src/mlx_agent/front_door.py",
+      "sha256": "072f6b5f88e1a2c8aa4b76f59557075eb71bd87eb765ef45acf9f7d3124a6e56"
+    },
+    {
       "path": "src/mlx_agent/fuse.py",
       "sha256": "1a4068b405a409464939778fbd9caed0e321613dcb7be98767f77d93843ef3a5"
     },
@@ -670,7 +674,7 @@
     },
     {
       "path": "src/mlx_agent/jit_serve.py",
-      "sha256": "3e7611b5c9906425c512bfef07d395520b5f31d3afa1e439c06d39e7305ad168"
+      "sha256": "2b44d8e25be55cb0766eb7f385a5e259f33d59b4cf36a655d423ced4a7819a99"
     },
     {
       "path": "src/mlx_agent/kokoro_runtime.py",
@@ -1222,7 +1226,7 @@
     },
     {
       "path": "src/mlx_agent/task_serve.py",
-      "sha256": "fe0ca434735f551034cccffcb04776fcc209e87608fffdf7456c85694cf88d77"
+      "sha256": "ff3ac21d72bf795240daf04682fde64742e84ab518d967bf63c73997be934443"
     },
     {
       "path": "src/mlx_agent/task_serving.py",

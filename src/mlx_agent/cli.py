@@ -1073,28 +1073,13 @@ def _add_memory_arguments(parser, clear_budget=False):
 
 
 def _memory_arguments(arguments):
-    policy = {"idle_timeout_seconds": arguments.idle_timeout or 0, "keep_loaded": bool(arguments.keep_loaded),
-              "minimum_headroom_gb": arguments.min_headroom_gb}
-    for key in ('allocator_cache_limit_mib', 'cache_reclaim'):
-        if getattr(arguments, key, None) is not None:
-            policy[key] = getattr(arguments, key)
-    if getattr(arguments, 'clear_allocator_cache_limit', False):
-        policy['allocator_cache_limit_mib'] = None
-    if getattr(arguments, "execution_wait_seconds", None) is not None:
-        policy["execution_wait_seconds"] = arguments.execution_wait_seconds
-    if getattr(arguments, "release_after_request", None) is not None:
-        policy["release_after_request"] = arguments.release_after_request
-    if arguments.memory_budget_gb is not None:
-        policy["model_memory_budget_gb"] = arguments.memory_budget_gb
-    if getattr(arguments, "clear_memory_budget", False):
-        if arguments.memory_budget_gb is not None:
-            raise ValueError("Choose --memory-budget-gb or --clear-memory-budget.")
-        policy["model_memory_budget_gb"] = None
-    if arguments.context_tokens is not None:
-        policy["context_tokens"] = arguments.context_tokens
-    if arguments.unload_under_pressure is not None:
-        policy["unload_under_pressure"] = arguments.unload_under_pressure
-    return policy
+    from .memory_policy import from_cli
+    return from_cli(arguments)
+
+
+def _start_memory_policy(arguments, runtime):
+    from .memory_policy import for_start
+    return for_start(arguments, runtime)
 
 
 def _run_serve(arguments):
@@ -1225,11 +1210,7 @@ def _run_serve(arguments):
             strata_decoding=arguments.strata_decoding,
             strata_expert_memory_gb=arguments.strata_expert_memory_gb,
             strata_context_tokens=arguments.strata_context_tokens,
-            memory_policy=_memory_arguments(arguments) if (arguments.release_after_request is not None or arguments.idle_timeout is not None or arguments.keep_loaded
-                                                           or arguments.min_headroom_gb is not None
-                                                           or arguments.context_tokens is not None
-                                                           or arguments.unload_under_pressure
-                                                           or arguments.memory_budget_gb is not None) else None,
+            memory_policy=_start_memory_policy(arguments, runtime),
             thinking=arguments.thinking,
             system_prompt=arguments.system_prompt,
             default_temperature=arguments.default_temperature,

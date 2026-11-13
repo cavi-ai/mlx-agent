@@ -1222,7 +1222,7 @@
     },
     {
       "path": "src/mlx_agent/task_serve.py",
-      "sha256": "b21c3b7b31c2904c33b08ed95e18cfc979d34f1945d8ec6332b2e47a63038abe"
+      "sha256": "fe0ca434735f551034cccffcb04776fcc209e87608fffdf7456c85694cf88d77"
     },
     {
       "path": "src/mlx_agent/task_serving.py",

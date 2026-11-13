@@ -24,6 +24,8 @@
 
 - Size paged Strata MTP expert caches using the validated packed draft-head storage, with the existing startup allowance and resident-loading threshold.
 
+- Update opentelemetry-api to 1.45.2 in backend locks.
+
 ## 0.12.0 - 2026-11-07
 
 - Add Strata total-memory budgets, live budget changes and saved usage profiles. Choose plain, verified prompt-lookup or MTP decoding; unused draft heads stay unloaded.

@@ -1149,6 +1149,10 @@
       "sha256": "8797212e99c5e052dd9966648f768495b2ac35b1f769504915b27cb29bd6b913"
     },
     {
+      "path": "src/mlx_agent/runtime_plan.py",
+      "sha256": "36c610a787d42f99d0d65511891ef99384232b13975ad34d307bb97c3c7db7ba"
+    },
+    {
       "path": "src/mlx_agent/runtime_preference.py",
       "sha256": "70bda205136b4219ca8406e743a363ef39aa2d3c3a664ddd21e6e70e53158bf8"
     },
@@ -1158,7 +1162,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "d8d4f5c3a1d422ea7fc45512fea4477ccff78d7896130c6351d56d81f6dbd572"
+      "sha256": "f456921caa742eb91cb29a105b3c57c2819b39ad3cacdfa149c9ec6c5d14a0ad"
     },
     {
       "path": "src/mlx_agent/serve_profiles.py",
@@ -1186,11 +1190,11 @@
     },
     {
       "path": "src/mlx_agent/splash_runtime.py",
-      "sha256": "c4ff079c64f1a2ea7b1bcf556f662ca530c74aa216508b007e6f037d065c2bf0"
+      "sha256": "5f07dd4f94a456152006285ea5834feb8050e2af270d45cf07d40b0f9d3535af"
     },
     {
       "path": "src/mlx_agent/strata_runtime.py",
-      "sha256": "f135e2f2e3c5864383c69417703f7e87c64cc6b8728ffd3229cc62a235db6ad1"
+      "sha256": "f49cb69a0f868e99e569023637e7a24489c32dac79d26657fdc5a26669b9a70d"
     },
     {
       "path": "src/mlx_agent/study_recipes.py",

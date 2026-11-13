@@ -399,6 +399,46 @@ def main():
     return 0
 
 
+def plan_contribution(local_path, has_path, adapter_path, strata_speculation, strata_decoding,
+                      strata_context_tokens, strata_expert_memory_gb, memory_policy, runtime_executable):
+    """Strata's part of a serving plan. Raises StrataError; the caller maps it."""
+    from .runtime_plan import Contribution
+    if not has_path or adapter_path is not None or type(strata_speculation) is not bool:
+        raise StrataError("strata_model_required", "Strata requires a local GGUF profile without a LoRA adapter.")
+    model = read_model(local_path)
+    context = 131072 if strata_context_tokens is None else strata_context_tokens
+    decoding = resolve_decoding(model, strata_speculation, strata_decoding)
+    uses_draft = decoding == "mtp"
+    budget = (memory_policy or {}).get("model_memory_budget_gb")
+    allocation = None
+    if budget is not None:
+        if strata_expert_memory_gb is not None:
+            raise StrataError("invalid_arguments", "Choose a total model memory budget or an expert budget.")
+        allocation = memory_allocation(model, budget, context, uses_draft)
+        memory_bytes = allocation["estimated_resident_bytes"]
+    else:
+        memory_bytes = memory_estimate(model, strata_expert_memory_gb, context, uses_draft)
+    runtime = installed_runtime()
+    if runtime_executable is not None and runtime_executable != runtime["python"]:
+        raise StrataError("strata_not_installed", "The reviewed Strata executable changed.")
+    argv = ["--runtime-root", runtime["root"], "--speculation", "on" if strata_speculation else "off",
+            "--decoding", decoding, "--context-tokens", str(context),
+            "--expected-model-fingerprint", model["fingerprint"],
+            "--expected-runtime-fingerprint", runtime["fingerprint"]]
+    if strata_expert_memory_gb is not None:
+        argv += ["--expert-memory-gb", str(strata_expert_memory_gb)]
+    if allocation is not None:
+        argv += ["--memory-budget-gb", str(budget)]
+    fields = {"strata_model_fingerprint": model["fingerprint"], "strata_runtime_fingerprint": runtime["fingerprint"],
+              "weight_format": "gguf", "weight_quantization": model["quantization"], "weights_preserved": True,
+              "strata_speculation": strata_speculation, "strata_decoding": decoding,
+              "strata_expert_memory_gb": strata_expert_memory_gb, "strata_context_tokens": context,
+              "strata_memory_estimate_bytes": memory_bytes, "readiness_deadline": 900}
+    if allocation is not None:
+        fields["strata_memory_allocation"] = allocation
+    return Contribution(argv, {"executable": runtime["python"]}, fields)
+
+
 if __name__ == "__main__":
     # The Strata interpreter gets this package alone, never the installing environment's site-packages.
     _package = Path(__file__).resolve().parent

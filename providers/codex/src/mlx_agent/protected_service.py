@@ -17,7 +17,7 @@ def identity():
     root = Path(__file__).parent
     digest = hashlib.sha256()
     for name in ("cli.py", "protected_service.py", "private_serve.py", "serving_access.py", "jit_serve.py", "serve.py",
-                 "inference_auth.py", "protected_worker.py"):
+                 "inference_auth.py", "protected_worker.py", "worker_transport.py"):
         digest.update(name.encode())
         digest.update((root / name).read_bytes())
     return {"protocol": PROTOCOL, "source_sha256": digest.hexdigest()}
@@ -49,11 +49,9 @@ def main(argv=None):
         plan = plan_start(None, "mlx_lm", load_recipes(), path=args.model, jit=True,
                           receipts_dir=directory, port=args.port, max_tokens=args.max_tokens,
                           api_key_file=args.api_key_file, runtime_executable=args.runtime_executable)
-        config = {key: plan[key] for key in ("local_path", "fingerprint", "worker_argv", "max_tokens",
-                                            "private_worker", "access_key_file", "access_key_sha256",
-                                            "api_key_sha256", "auth_runtime_sha256")}
-        config.update(runtime="mlx_lm", model=plan["path"], control_token=secrets.token_hex(32),
-                      state_path=str(Path(directory) / "state.json"))
+        from .worker_transport import gateway_config
+        config = gateway_config(plan, control_token=secrets.token_hex(32),
+                                state_path=str(Path(directory) / "state.json"))
         _require_access_identity(plan)
         server = make_server(config, args.port)
         previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}

@@ -347,22 +347,14 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
             raise ServeError("invalid_training_receipt", str(error), "Select a completed receipt whose base and adapter files are unchanged.") from error
         path, adapter_path = binding["base_path"], binding["adapter_path"]
     if memory_policy is not None:
-        from .jit_serve import validate_memory_policy
+        from .memory_policy import PolicyRejected, enforce_launch, validate
         try:
-            memory_policy = validate_memory_policy(memory_policy)
+            memory_policy = validate(memory_policy)
+            enforce_launch(memory_policy, runtime, jit)
+        except PolicyRejected as error:
+            raise ServeError(error.code, str(error), error.remediation) from error
         except ValueError as error:
             raise ServeError("invalid_arguments", str(error), "Correct the memory policy.") from error
-        from .allocator_cache import requested
-        if requested(memory_policy):
-            raise ServeError('cache_control_unavailable', 'Allocator cache controls require a resident task backend.',
-                             'Select a supported task model; inspect allocator_cache in endpoint status.')
-        if not jit:
-            raise ServeError("jit_required", "Memory policy requires a JIT endpoint.", "Use --jit.")
-        if runtime != "strata" and "model_memory_budget_gb" in memory_policy:
-            raise ServeError("invalid_arguments", "Model memory budgets currently require Strata.", "Select a prepared Strata profile.")
-        if runtime == "strata" and "context_tokens" in memory_policy:
-            from .jit_serve import STRATA_CONTEXT
-            raise ServeError("invalid_arguments", STRATA_CONTEXT, "Remove --context-tokens.")
     has_repo = isinstance(repo, str) and bool(repo.strip())
     has_path = isinstance(path, str) and bool(path.strip())
     if has_repo == has_path:
@@ -554,10 +546,8 @@ def _authenticated_plan(plan, digest, access=None):
     if digest is not None:
         from .inference_auth import runtime_fingerprint
         plan.update(api_key_sha256=digest, auth_runtime_sha256=runtime_fingerprint(), **(access or {}))
-        if (plan['runtime'] == 'mlx_lm' and Path(plan['worker_argv'][0]).name == 'mlx_lm.server'
-                and not any(plan.get(key) for key in ('prefill_kernel', 'decode_profile', 'vision_profile'))):
-            from .private_serve import identity
-            plan['private_worker'] = identity()
+        from .worker_transport import choose
+        choose(plan).mark(plan)
         plan['readiness'] = 'http://127.0.0.1:{}/_mlx/status'.format(plan['port'])
     plan['preview_hash'] = _preview_hash({key: value for key, value in plan.items() if key != 'preview_hash'})
     return plan
@@ -696,6 +686,22 @@ def _require_task_identity(plan):
         raise ServeError("preview_stale", str(error), "Review a fresh task serving plan.") from error
 
 
+def recheck_bound_identity(plan):
+    """One pass over every identity bound into a reviewed serving plan."""
+    for check in (
+        _require_auth_identity,
+        _require_task_identity,
+        _require_training_binding,
+        _require_adapter_identity,
+        _require_prefill_identity,
+        _require_decode_identity,
+        _require_vision_identity,
+        _require_splash_identity,
+        _require_access_identity,
+    ):
+        check(plan)
+
+
 def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
                 which=None, model_present=None, path_present=None, port_free=None,
                 wired_claims=None, spawn=None, readiness=None,
@@ -724,16 +730,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "The supplied preview hash does not match this start plan.",
             "Re-run serve start without --confirm and review the fresh plan.",
         )
-    _require_auth_identity(plan)
-    _require_task_identity(plan)
-    _require_training_binding(plan)
-    _require_adapter_identity(plan)
-    _require_prefill_identity(plan)
-    _require_decode_identity(plan)
-    _require_vision_identity(plan)
-    _require_splash_identity(plan)
-
-    _require_access_identity(plan)
+    recheck_bound_identity(plan)
 
     if plan["runtime"] == "strata" and not plan.get("jit"):
         from .jit_serve import available_memory_bytes
@@ -809,32 +806,12 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         config_path = Path(plan["control_config"])
         if config_path.parent != root.absolute() or config_path.is_symlink():
             raise ServeError("invalid_arguments", "Unsafe JIT configuration path.", "Review a fresh serve plan.")
-        config = {key: plan[key] for key in ("local_path", "fingerprint", "worker_argv", "max_tokens")}
-        config["runtime"] = plan["runtime"]
-        if 'request_defaults' in plan:
-            config['request_defaults'] = plan['request_defaults']
-        config.update({key: plan[key] for key in ("private_worker", "access_key_file", "access_key_sha256", "api_key_sha256", "auth_runtime_sha256") if key in plan})
-        if plan["runtime"] == "tasks":
-            config.update(task_identity=plan["task_identity"], task_kinds=plan["task_kinds"], port=plan["port"],
-                          task_runtime_fingerprint=plan["task_runtime_fingerprint"],
-                          task_state_dir=str(root.absolute().parent / "tasks" / str(plan["port"])))
-        if plan.get("adapter_path") is not None:
-            config.update(adapter_path=plan["adapter_path"], adapter_identity=plan["adapter_identity"])
-        if plan.get("training_binding") is not None:
-            config["training_binding"] = plan["training_binding"]
-        if "readiness_deadline" in plan:
-            config["worker_readiness_seconds"] = plan["readiness_deadline"]
-        if plan["runtime"] == "strata":
-            config["strata_expert_memory_gb"] = plan.get("strata_expert_memory_gb")
-            config["strata_context_tokens"] = plan.get("strata_context_tokens", 131072)
-            config["strata_speculation"] = plan.get("strata_speculation", False)
-            config["strata_decoding"] = plan["strata_decoding"]
-            if "strata_memory_allocation" in plan:
-                config["strata_memory_allocation"] = plan["strata_memory_allocation"]
-        config.update(model=plan["repo"] or plan["path"], control_token=secrets.token_hex(32),
-                      memory_policy=plan.get("memory_policy"), config_path=str(config_path),
-                      state_path=str(root.absolute() / "{}.jit-state.json".format(plan["port"])),
-                      log_path=str(root.absolute() / "{}.worker.log".format(plan["port"])))
+        from .worker_transport import gateway_config
+        config = gateway_config(plan, control_token=secrets.token_hex(32),
+                                state_path=str(root.absolute() / "{}.jit-state.json".format(plan["port"])),
+                                log_path=root.absolute() / "{}.worker.log".format(plan["port"]),
+                                config_path=config_path,
+                                task_state_dir=str(root.absolute().parent / "tasks" / str(plan["port"])))
         _atomic_in_directory(root, config_path.name, json.dumps(config).encode(), 0o600)
         if plan.get("api_key_sha256") is not None:
             readiness_headers["Authorization"] = "Bearer " + config["control_token"]
@@ -847,15 +824,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "Inspect the serve log at {0}.".format(log_path),
         )
     try:
-        _require_auth_identity(plan)
-        _require_task_identity(plan)
-        _require_training_binding(plan)
-        _require_adapter_identity(plan)
-        _require_prefill_identity(plan)
-        _require_decode_identity(plan)
-        _require_vision_identity(plan)
-        _require_splash_identity(plan)
-        _require_access_identity(plan)
+        recheck_bound_identity(plan)
     except ServeError:
         _terminate_pid(pid)
         raise
@@ -1131,7 +1100,7 @@ def reclaim_serve_cache(port, receipts_dir=None, expected_pid=None, expected_sta
 
 
 def configure_serve_memory(port, policy, receipts_dir=None, expected_pid=None, expected_start=None):
-    from .jit_serve import validate_memory_policy
+    from .memory_policy import validate as validate_memory_policy
     clear_budget = isinstance(policy, dict) and "model_memory_budget_gb" in policy and policy["model_memory_budget_gb"] is None
     try:
         policy = validate_memory_policy(policy)

@@ -220,15 +220,42 @@ def predict(model, tokenizer, state, questions):
         controller.guard_agent_budget()
         stopped = self.wait(identifier)
         self.assertEqual(stopped['error']['code'], 'job_memory_cap_exceeded')
-        # A later persisted job encounters the stopped endpoint, not the old breach.
-        request = controller.store.read_request(identifier)
-        later = controller.store.create(request, controller.config['task_identity'])
-        controller._execute(later['id'])
-        failed = controller.store.get(later['id'])
+        # A later job reports its own failure, not the old breach.
+        failed = self.wait(self.start('fail'))
         self.assertEqual(failed['state'], 'failed')
-        self.assertEqual(failed['error']['code'], 'endpoint_stopped')
+        self.assertEqual(failed['error']['code'], 'decide_failed')
         self.assertEqual(controller.memory_registry.snapshot()['entries'], 0)
         self.assertEqual(list((self.root / 'compute').glob('execution-*.json')), [])
+
+    def test_guard_stop_keeps_the_endpoint_admitting_jobs(self):
+        from mlx_agent.memory_budget import process_snapshot
+        controller = self.server.controller
+        controller.memory_registry.configure_budget(8_000_000_000, 1_000_000_000)
+        controller.memory_probe = lambda: 100_000_000_000
+        controller.configure({'model_memory_budget_gb': 2})
+        mlx = self.root / 'mlx'
+        mlx.mkdir()
+        (mlx / '__init__.py').write_text('')
+        (mlx / 'core.py').write_text('def set_memory_limit(limit): pass\n')
+        identifier = self.start('wait')
+        deadline = time.monotonic() + 5
+        while controller.store.get(identifier)['state'] == 'starting' and time.monotonic() < deadline:
+            time.sleep(.01)
+        self.assertEqual(controller.store.get(identifier)['state'], 'running')
+        worker = controller.resident.process
+        def probe():
+            rows = process_snapshot()
+            if worker.pid in rows:
+                rows[worker.pid]['rss'] = 2_000_000_001
+            return rows
+        controller.memory_registry.process_probe = probe
+        controller.guard_agent_budget()
+        self.assertEqual(self.wait(identifier)['error']['code'], 'job_memory_cap_exceeded')
+        self.assertIsNotNone(worker.poll())
+        # The guard released only its worker; the same endpoint admits and runs the next job.
+        record = self.wait(self.start())
+        self.assertEqual(record['state'], 'succeeded', record)
+        self.assertEqual(self.request('GET', '/v1/tasks/' + record['id'] + '/result')[0], 200)
 
     def test_denied_cap_releases_cold_reservation_before_retry(self):
         controller = self.server.controller

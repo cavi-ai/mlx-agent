@@ -48,6 +48,15 @@ def srgb_to_linear(color):
     return np.where(color <= 0.04045, color / 12.92, ((color + 0.055) / 1.055) ** 2.4).astype(np.float32)
 
 
+def vertex_materials(attributes):
+    """Linear base color and glTF occlusion-roughness-metallic per vertex from decoded base color, metallic,
+    roughness (channels 0-4); occlusion is 1."""
+    attributes = np.asarray(attributes, dtype=np.float32)
+    channels = np.clip(attributes[:, [4, 3]], 0.0, 1.0)
+    occlusion = np.ones((len(attributes), 1), dtype=np.float32)
+    return srgb_to_linear(attributes[:, :3]), np.concatenate([occlusion, channels], axis=1)
+
+
 def voxel_colors(points, coords, colors, grid, reach=3):
     """The color of the voxel holding each point (P, 3) in the unit cube centered on the origin, else of the closest
     occupied voxel within ``reach`` cells, else the mean color."""
@@ -235,14 +244,14 @@ def generate(model, image, out, steps=12, seed=42, resolution=1024, guidance=7.5
     vertices, faces = decimate(vertices, faces, max_faces)
     previous, cursor = cursor, time.perf_counter()
     stages["decimation"] = cursor - previous
-    colors = None
+    colors = materials = None
     if paint:
         upright = np.stack([vertices[:, 0], -vertices[:, 2], vertices[:, 1]], axis=1)
-        colors = srgb_to_linear(voxel_colors(upright, voxels, attributes[:, :3], level_resolution))
-    write_glb(out, vertices, faces, colors)
+        colors, materials = vertex_materials(voxel_colors(upright, voxels, attributes[:, :5], level_resolution))
+    write_glb(out, vertices, faces, colors, materials)
     stages["export"] = time.perf_counter() - cursor
     return {"path": str(out), "seconds": round(time.perf_counter() - started, 3), "steps": steps,
             "seed": seed, "resolution": level_resolution, "vertices": len(vertices), "faces": len(faces),
-            "voxels": len(voxels), "vertex_colors": paint,
+            "voxels": len(voxels), "vertex_colors": paint, "pbr": paint,
             "stage_seconds": {name: round(value, 3) for name, value in stages.items()},
             "peak_memory_gb": round(mx.get_peak_memory() / 1e9, 3)}

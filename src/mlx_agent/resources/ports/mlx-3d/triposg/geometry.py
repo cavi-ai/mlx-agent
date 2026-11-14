@@ -46,8 +46,9 @@ def decimate(vertices, faces, max_faces):
     return points.astype(np.float32), triangles
 
 
-def write_glb(path, vertices, faces, colors=None):
-    """A binary glTF mesh; ``colors`` (V, 3), linear RGB in [0, 1], become the COLOR_0 vertex attribute."""
+def write_glb(path, vertices, faces, colors=None, materials=None):
+    """A binary glTF mesh; ``colors`` (V, 3), linear RGB in [0, 1], become the COLOR_0 vertex attribute and
+    ``materials`` (V, 3), linear occlusion, roughness and metallic in [0, 1], become COLOR_1."""
     vertices = np.ascontiguousarray(vertices, dtype="<f4")
     faces = np.ascontiguousarray(faces, dtype="<u4")
     if vertices.ndim != 2 or vertices.shape[1] != 3 or not len(vertices) or not np.isfinite(vertices).all():
@@ -58,16 +59,28 @@ def write_glb(path, vertices, faces, colors=None):
         colors = np.ascontiguousarray(colors, dtype="<f4")
         if colors.shape != vertices.shape or not np.isfinite(colors).all() or colors.min() < 0 or colors.max() > 1:
             raise ValueError("Vertex colors must be one RGB value in [0, 1] per vertex.")
+    if materials is not None:
+        # glTF numbers COLOR_n attributes from 0 without gaps.
+        if colors is None:
+            raise ValueError("Vertex materials need vertex colors.")
+        materials = np.ascontiguousarray(materials, dtype="<f4")
+        if (materials.shape != vertices.shape or not np.isfinite(materials).all()
+                or materials.min() < 0 or materials.max() > 1):
+            raise ValueError("Vertex materials must be one occlusion, roughness and metallic value in [0, 1] "
+                             "per vertex.")
     positions, indices = vertices.tobytes(), faces.tobytes()
     binary = positions + indices
     document = _document(vertices, faces, len(positions), len(indices))
-    if colors is not None:
-        document["meshes"][0]["primitives"][0]["attributes"]["COLOR_0"] = 2
-        document["bufferViews"].append({"buffer": 0, "byteOffset": len(binary), "byteLength": colors.nbytes,
+    for name, values in (("COLOR_0", colors), ("COLOR_1", materials)):
+        if values is None:
+            continue
+        document["meshes"][0]["primitives"][0]["attributes"][name] = len(document["accessors"])
+        document["accessors"].append({"bufferView": len(document["bufferViews"]), "componentType": 5126,
+                                      "count": len(values), "type": "VEC3"})
+        document["bufferViews"].append({"buffer": 0, "byteOffset": len(binary), "byteLength": values.nbytes,
                                         "target": 34962})
-        document["accessors"].append({"bufferView": 2, "componentType": 5126, "count": len(colors), "type": "VEC3"})
-        binary += colors.tobytes()
-        document["buffers"][0]["byteLength"] = len(binary)
+        binary += values.tobytes()
+    document["buffers"][0]["byteLength"] = len(binary)
     encoded = json.dumps(document, separators=(",", ":")).encode()
     encoded += b" " * (-len(encoded) % 4)
     binary += b"\x00" * (-len(binary) % 4)

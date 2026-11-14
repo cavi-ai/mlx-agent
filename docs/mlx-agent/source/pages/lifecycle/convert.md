@@ -88,11 +88,12 @@ keeps its full frame and background removal is not performed.
 
 After the shape, the texture flow at the mesh's level (512, else 1024) samples a
 texture latent from the image and the shape latent, with the checkpoint's own
-guidance, and the texture decoder turns it into a base color for every voxel of
-the mesh. The output is a GLB mesh whose `COLOR_0` vertex attribute holds that
-color in linear RGB, each vertex taking the voxel that holds it or the closest
-occupied one within three cells. Metallic and roughness are not written. The
-result reports `vertex_colors`, and `stage_seconds` reports `conditioning`,
+guidance, and the texture decoder turns it into base color, metallic and
+roughness for every voxel of the mesh. The output is a GLB mesh whose `COLOR_0`
+vertex attribute holds the base color in linear RGB and whose `COLOR_1` holds
+occlusion (1), roughness and metallic in glTF's channel order, each vertex taking
+the voxel that holds it or the closest occupied one within three cells. The
+result reports `vertex_colors` and `pbr`, and `stage_seconds` reports `conditioning`,
 `sparse_structure`, `shape_latent_512`, `shape_latent_high`, `texture_latent`,
 `decode`, `texture_decode`, `mesh`, `decimation` and `export`. A model converted
 before the texture stage holds no texture weights and writes the mesh without

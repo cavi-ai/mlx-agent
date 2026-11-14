@@ -290,6 +290,43 @@ class Trellis2NativeTests(unittest.TestCase):
         np.testing.assert_allclose(pipeline.srgb_to_linear([0.0, 0.04045, 0.5, 1.0, 2.0]),
                                    [0.0, 0.04045 / 12.92, 0.21404114, 1.0, 1.0], rtol=1e-6)
 
+    def test_decoded_attributes_split_into_linear_color_and_gltf_material_channels(self):
+        import numpy as np
+        pipeline = port('pipeline')
+        # TRELLIS.2 decodes base color, metallic, roughness, alpha; glTF packs occlusion, roughness, metallic.
+        decoded = np.array([[0.5, 1.0, 0.0, 0.9, 0.2, 1.0], [0.0, 0.04045, 1.2, -0.1, 1.3, 0.5]], dtype=np.float32)
+        colors, materials = pipeline.vertex_materials(decoded)
+        np.testing.assert_allclose(colors, pipeline.srgb_to_linear(decoded[:, :3]), rtol=1e-6)
+        np.testing.assert_allclose(materials, [[1.0, 0.2, 0.9], [1.0, 1.0, 0.0]], rtol=1e-6)
+
+    def test_glb_carries_pbr_materials_as_a_second_float_color_attribute(self):
+        import struct
+        import numpy as np
+        write_glb = importlib.import_module(SHELL + '.triposg.geometry').write_glb
+        vertices = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=np.float32)
+        faces = np.array([[0, 1, 2]], dtype=np.uint32)
+        colors = np.full((3, 3), 0.5, dtype=np.float32)
+        materials = np.array([[1.0, 0.25, 0.0], [1.0, 0.5, 1.0], [1.0, 0.75, 0.5]], dtype=np.float32)
+        with TemporaryDirectory() as folder:
+            write_glb(Path(folder) / 'pbr.glb', vertices, faces, colors, materials)
+            data = (Path(folder) / 'pbr.glb').read_bytes()
+            with self.assertRaisesRegex(ValueError, 'need vertex colors'):
+                write_glb(Path(folder) / 'orphan.glb', vertices, faces, None, materials)
+            with self.assertRaisesRegex(ValueError, 'Vertex materials'):
+                write_glb(Path(folder) / 'range.glb', vertices, faces, colors, materials * 2)
+            self.assertFalse((Path(folder) / 'orphan.glb').exists())
+            self.assertFalse((Path(folder) / 'range.glb').exists())
+        size = struct.unpack('<I', data[12:16])[0]
+        document, binary = json.loads(data[20:20 + size]), data[28 + size:]
+        attributes = document['meshes'][0]['primitives'][0]['attributes']
+        for name, expected in (('COLOR_0', colors), ('COLOR_1', materials)):
+            accessor = document['accessors'][attributes[name]]
+            view = document['bufferViews'][accessor['bufferView']]
+            self.assertEqual((accessor['componentType'], accessor['type'], accessor['count']), (5126, 'VEC3', 3))
+            stored = np.frombuffer(binary[view['byteOffset']:view['byteOffset'] + view['byteLength']], dtype='<f4')
+            self.assertEqual(stored.reshape(3, 3).tolist(), expected.tolist())
+        self.assertEqual(document['buffers'][0]['byteLength'], 36 + 12 + 36 + 36)
+
     def test_glb_carries_vertex_colors_as_a_float_color_attribute(self):
         import struct
         import numpy as np

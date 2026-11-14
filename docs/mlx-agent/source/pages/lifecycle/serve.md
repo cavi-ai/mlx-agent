@@ -285,9 +285,23 @@ engine checks its configuration.
 
 The preview binds the launcher, its reported version, and the content of the
 target and draft files; a change requires a fresh preview. Splash rejects
-`--jit` and adapters and releases idle weights itself. Stop signals
+adapters and releases idle weights itself. Stop signals
 the receipt's process group and waits 20 seconds before a forced kill, since
 Splash gives its engine 15 seconds to exit.
+
+`--jit` serves a Splash model directory or Strata profile through the
+load-on-request gateway, so `--api-key-sha256` and the front door work as
+for the other runtimes:
+
+```bash
+python3 scripts/mlx-agent serve start --path /absolute/strata/profile --runtime splash --jit --api-key-sha256 <digest> --splash-max-memory-gb 54 --json
+```
+
+The gateway starts Splash's own Python launcher with a fresh worker key in
+`SPLASH_API_KEY` and its process ID in `SPLASH_APP_PID`, so Splash stops when
+the gateway exits. Requests reach Splash under its served name. Memory
+admission reserves `--splash-max-memory-gb` when it is set, otherwise the
+target and draft weights plus 10% and 1.5 GB.
 
 ## Load on request
 

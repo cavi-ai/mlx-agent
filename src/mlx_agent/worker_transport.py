@@ -83,6 +83,8 @@ def gateway_config(plan, *, control_token, state_path, log_path=None, config_pat
         config["strata_decoding"] = plan["strata_decoding"]
         if "strata_memory_allocation" in plan:
             config["strata_memory_allocation"] = plan["strata_memory_allocation"]
+    if plan["runtime"] == "splash":
+        config.update({key: plan[key] for key in ("splash_served_model", "splash_weight_bytes", "splash_max_memory_gb")})
     config.update(model=plan["repo"] or plan["path"], control_token=control_token,
                   memory_policy=plan.get("memory_policy"), state_path=state_path)
     if config_path is not None:

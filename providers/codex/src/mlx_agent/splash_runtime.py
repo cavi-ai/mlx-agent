@@ -72,6 +72,15 @@ def _engine(runtime):
     return engine if engine.is_file() and os.access(engine, os.X_OK) else None
 
 
+def worker_entry(runtime):
+    """The Python program the shell launcher runs, which a supervised worker starts directly."""
+    libexec = Path(runtime["resolved"]).parents[1] / "libexec"
+    python, launcher = libexec / "python" / "bin" / "python3", libexec / "install" / "launcher.py"
+    if not (python.is_file() and os.access(python, os.X_OK) and launcher.is_file()):
+        raise SplashError("splash_not_installed", "The Splash installation has no launcher program for --jit.")
+    return [str(python), str(launcher)]
+
+
 def annotate_support(outputs, run=subprocess.run):
     """Add ``splash`` to each quantized MLX output: the family Splash's engine finds its config to describe, else its refusal.
 
@@ -215,9 +224,10 @@ def read_draft(path):
         if not isinstance(config, dict) or not isinstance(config.get("dflash_config"), dict) or not weights:
             raise ValueError("The directory is not a DFlash2 draft (config.json dflash_config and safetensors weights).")
         identities = _identity([root / "config.json", *weights])
+        size = sum(item.stat().st_size for item in weights)
     except (OSError, ValueError, TypeError) as error:
         raise SplashError("splash_draft_invalid", str(error), remediation) from error
-    return {"path": str(root), "fingerprint": _fingerprint(identities)}
+    return {"path": str(root), "fingerprint": _fingerprint(identities), "weight_bytes": size}
 
 
 def serve_arguments(draft=None, max_memory_gb=None, max_context_tokens=None):
@@ -242,9 +252,9 @@ def plan_contribution(local_path, has_repo, repo, hf_cache, adapter_path, jit, r
                       draft_model, max_memory_gb, max_context_tokens):
     """Splash's part of a serving plan. Raises SplashError; the caller maps it."""
     from .runtime_plan import Contribution
-    if adapter_path is not None or jit:
-        raise SplashError("invalid_arguments", "Splash serves local weights without a LoRA adapter or --jit.",
-                          "Remove the adapter and --jit; Splash releases idle weights itself.")
+    if adapter_path is not None:
+        raise SplashError("invalid_arguments", "Splash serves local weights without a LoRA adapter.",
+                          "Remove the adapter path.")
     model_dir = local_path
     if has_repo:
         from .convert import cached_snapshot
@@ -253,12 +263,16 @@ def plan_contribution(local_path, has_repo, repo, hf_cache, adapter_path, jit, r
             raise SplashError("model_not_local", "The repository is not in the Hugging Face cache: " + repo.strip(),
                               "Download it first; serve never downloads models.")
         model_dir = str(snapshot)
+    if jit and not Path(model_dir).is_dir():
+        raise SplashError("invalid_arguments", "--jit serves a model directory.",
+                          "Select the directory that holds the GGUF, or the Strata profile.")
     target = read_target(model_dir, served_model=repo.strip() if has_repo else None)
     draft = read_draft(draft_model) if draft_model is not None else None
     runtime = installed_runtime()
     if runtime_executable is not None and runtime_executable != runtime["launcher"]:
         raise SplashError("splash_not_installed", "The reviewed Splash launcher changed.")
-    fields = {"splash_version": runtime["version"], "splash_runtime_fingerprint": runtime["fingerprint"],
+    fields = {"splash_launcher": runtime["launcher"],
+              "splash_version": runtime["version"], "splash_runtime_fingerprint": runtime["fingerprint"],
               "splash_model_fingerprint": target["fingerprint"], "splash_target": target["target"],
               "splash_model_dir": model_dir, "splash_served_model": target["served_model"],
               "splash_source": target["source"], "splash_draft_model": draft["path"] if draft else None,
@@ -266,5 +280,8 @@ def plan_contribution(local_path, has_repo, repo, hf_cache, adapter_path, jit, r
               "splash_max_memory_gb": max_memory_gb, "splash_max_context_tokens": max_context_tokens,
               "weight_format": target["format"], "weight_bytes": target["weight_bytes"],
               "weights_preserved": True, "readiness_deadline": 900}
+    if jit:
+        fields.update(splash_worker_entry=worker_entry(runtime),
+                      splash_weight_bytes=target["weight_bytes"] + (draft["weight_bytes"] if draft else 0))
     values = {"executable": runtime["launcher"], "served_model": target["served_model"], "splash_target": target["target"]}
     return Contribution(serve_arguments(draft, max_memory_gb, max_context_tokens), values, fields)

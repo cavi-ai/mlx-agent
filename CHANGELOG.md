@@ -12,7 +12,7 @@
 
 - Add the `mlx-task` command and skill to every provider for durable local inference tasks, widen `mlx-advisor` to the whole model lifecycle, and document agent integration and the MCP server.
 
-- Add Splash as a serving runtime for local GGUF, MLX and Strata profile weights and cached repositories, with `strata` and `splash` bench labels and the Splash family of each quantized MLX output in `convert scan`.
+- Add Splash as a serving runtime for local GGUF, MLX and Strata profile weights and cached repositories, with authenticated `--jit` serving behind the front door, `strata` and `splash` bench labels and the Splash family of each quantized MLX output in `convert scan`.
 
 - Coordinate estimated memory admission across resident model endpoints and report worker allocations, model loads and cache reuse.
 

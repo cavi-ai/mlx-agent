@@ -9,6 +9,7 @@ import signal
 import struct
 import sys
 import threading
+import time
 
 if __package__ in (None, ''):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -21,9 +22,43 @@ from mlx_agent import task_kinds
 
 EMBEDDING_BATCH = 128
 EMBEDDING_FIELDS = frozenset(('model', 'input', 'encoding_format', 'dimensions', 'user'))
+SYSTEMONE_FIELDS = frozenset(('model', 'state', 'questions'))
 
 
 class TaskHandler(GatewayHandler):
+    def _settled(self, identifier, failure, message):
+        """The result of a submitted job once it has settled; the caller holds the job lock."""
+        controller = self.server.controller
+        # The job settles its record before releasing the model.
+        with controller.condition:
+            controller.condition.wait_for(lambda: controller.active_requests == 0)
+        record = controller.record(identifier)
+        if record['state'] != 'succeeded':
+            error = record.get('error') or {}
+            raise GatewayError(503, error.get('code', failure), error.get('message', message))
+        outcome = task_result(identifier, controller.store.root)
+        result = outcome['result']
+        if result is None:
+            result = json.loads(Path(outcome['artifact']['path']).read_bytes())
+        return result
+
+    def _systemone(self, body):
+        """TypeSafe System One decisions: typed questions about one state, answered synchronously."""
+        config = self.server.config
+        if 'classification' not in config['task_kinds']:
+            raise GatewayError(404, 'not_found', 'This endpoint does not serve decisions.')
+        if set(body) - SYSTEMONE_FIELDS:
+            raise GatewayError(400, 'invalid_request', 'Decisions take a model, a state and questions.')
+        if not isinstance(body.get('model'), str) or body['model'] not in model_aliases(config):
+            raise GatewayError(404, 'model_not_found', 'This endpoint serves a different model.')
+        started = time.monotonic()
+        with self.server.job_lock:
+            identifier = self.server.controller.submit({'kind': 'classification', 'parameters': {
+                'state': body.get('state'), 'questions': body.get('questions')}})['id']
+            result = self._settled(identifier, 'decision_failed', 'The decision job did not finish.')
+        return {'model': body['model'], 'answers': result['answers'], 'usage': result.get('usage'),
+                'latency_ms': round((time.monotonic() - started) * 1000, 1)}
+
     def _embeddings(self, body):
         config, controller = self.server.config, self.server.controller
         if 'embedding' not in config['task_kinds']:
@@ -38,22 +73,11 @@ class TaskHandler(GatewayHandler):
         if not isinstance(body.get('model'), str) or body['model'] not in model_aliases(config):
             raise GatewayError(404, 'model_not_found', 'This endpoint serves a different model.')
         vectors = []
-        with self.server.embedding_lock:
+        with self.server.job_lock:
             for start in range(0, len(texts), EMBEDDING_BATCH):
                 identifier = controller.submit({'kind': 'embedding', 'parameters': {
                     'input': texts[start:start + EMBEDDING_BATCH], 'max_length': 8192}})['id']
-                # The job settles its record before releasing the model.
-                with controller.condition:
-                    controller.condition.wait_for(lambda: controller.active_requests == 0)
-                record = controller.record(identifier)
-                if record['state'] != 'succeeded':
-                    error = record.get('error') or {}
-                    raise GatewayError(503, error.get('code', 'embedding_failed'),
-                                       error.get('message', 'The embedding job did not finish.'))
-                outcome = task_result(identifier, controller.store.root)
-                result = outcome['result']
-                if result is None:
-                    result = json.loads(Path(outcome['artifact']['path']).read_bytes())
+                result = self._settled(identifier, 'embedding_failed', 'The embedding job did not finish.')
                 vectors.extend(result['embeddings'])
         if dimensions is not None and dimensions != len(vectors[0]):
             raise GatewayError(400, 'unsupported_dimensions',
@@ -144,6 +168,8 @@ class TaskHandler(GatewayHandler):
                 self._json(202, controller.submit(body))
             elif self.path == '/v1/embeddings':
                 self._json(200, self._embeddings(body))
+            elif self.path == '/v1/systemone':
+                self._json(200, self._systemone(body))
             elif self.path.startswith('/v1/tasks/') and self.path.endswith('/cancel'):
                 parts = self.path.split('/')
                 if len(parts) != 5 or body:
@@ -163,7 +189,7 @@ class TaskServer(GatewayServer):
         super().__init__(address, config)
         self.RequestHandlerClass = TaskHandler
         self.controller = TaskModelWorker(config)
-        self.embedding_lock = threading.Lock()
+        self.job_lock = threading.Lock()
 
 
 def main():

@@ -112,6 +112,7 @@
     "src/mlx_agent/_m5_prefill.py",
     "src/mlx_agent/_prompt_lookup.py",
     "src/mlx_agent/_vision_cache.py",
+    "src/mlx_agent/acestep_fsq.py",
     "src/mlx_agent/acestep_runner.py",
     "src/mlx_agent/adoption.py",
     "src/mlx_agent/allocator_cache.py",

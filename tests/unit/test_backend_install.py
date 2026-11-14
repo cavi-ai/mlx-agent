@@ -202,6 +202,35 @@ class BackendRunnerTests(unittest.TestCase):
             self.assertIn("--no-build-isolation", installs[1])
             self.assertGreater(installs[1].index("--no-binary=docopt"), installs[1].index("--only-binary=:all:"))
 
+    def test_ace_step_requires_generation_imports_before_install_marker(self):
+        from mlx_agent import backend_runner
+        from subprocess import CompletedProcess
+
+        with TemporaryDirectory() as directory:
+            target = Path(directory, "ace-step")
+            trash = Path(directory, "trash")
+            commands = []
+
+            def run(command, **kwargs):
+                commands.append(command)
+                if command[1:3] == ["-m", "venv"]:
+                    target.mkdir()
+                return CompletedProcess(command, 1 if "AceStepHandler" in command[-1] else 0)
+
+            with patch.object(backend_runner.subprocess, "run", side_effect=run):
+                code = backend_runner.main([
+                    "--id", "ace-step", "--version", "1.5.0", "--package", "acestep",
+                    "--lock", "/ace.lock", "--target", str(target), "--python", sys.executable,
+                    "--trash", str(trash), "--preview-hash", "h",
+                ])
+            self.assertNotEqual(code, 0)
+            self.assertFalse(target.exists())
+            self.assertFalse(list(trash.rglob(INSTALL_MARKER)))
+            canary = commands[-1][-1]
+            for symbol in ("mlx.core", "soundfile", "_CHECKPOINT_TO_VARIANT", "AceStepHandler",
+                           "GenerationConfig", "GenerationParams", "generate_music", "LLMHandler"):
+                self.assertIn(symbol, canary)
+
     def test_runner_refuses_existing_target(self):
         from mlx_agent import backend_runner
 

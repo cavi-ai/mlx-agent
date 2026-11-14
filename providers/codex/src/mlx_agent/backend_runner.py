@@ -59,6 +59,13 @@ def main(argv=None):
         steps.insert(1, [venv_python, "-m", "pip", "install", "--disable-pip-version-check", "--no-input",
                          "--require-hashes", "--no-deps", "--only-binary=:all:", "-r", build_lock])
         steps[2] += ["--no-binary=ace-step", "--no-build-isolation"]
+        steps[3] = [venv_python, "-c", (
+            "import mlx.core; import soundfile; "
+            "from acestep.model_downloader import _CHECKPOINT_TO_VARIANT; "
+            "from acestep.handler import AceStepHandler; "
+            "from acestep.inference import GenerationConfig, GenerationParams, generate_music; "
+            "from acestep.llm_inference import LLMHandler"
+        )]
     for step in steps:
         print("$ " + " ".join(step), flush=True)
         completed = subprocess.run(step, stdin=subprocess.DEVNULL, check=False)

@@ -251,3 +251,20 @@ class AceStepMusicTests(unittest.TestCase):
             (staged / "modeling_acestep_v15_turbo.py").write_text("# synced code\n")
         self.assertEqual((self.model / "modeling_acestep_v15_turbo.py").read_text(), "# published model code\n")
         self.assertEqual((self.model / "model.safetensors").read_bytes(), b"weights")
+
+    def test_staged_quantizer_adaptation_preserves_original_checkpoint(self):
+        from mlx_agent import acestep_runner
+        original_code = (self.model / "modeling_acestep_v15_turbo.py").read_bytes()
+        original_config = (self.model / "config.json").read_bytes()
+        original_weights = (self.model / "model.safetensors").read_bytes()
+        with TemporaryDirectory() as directory:
+            staged = acestep_runner.stage(self.model, "acestep-5Hz-lm-1.7B", directory) / self.model.name
+            code = staged / "modeling_acestep_v15_turbo.py"
+            code.write_text("from vector_quantize_pytorch import ResidualFSQ\n")
+            acestep_runner.adapt_quantizer(staged)
+            self.assertEqual(code.read_text(), "from acestep_fsq import ResidualFSQ\n")
+            with self.assertRaisesRegex(RuntimeError, "unexpected"):
+                acestep_runner.adapt_quantizer(staged)
+        self.assertEqual((self.model / "modeling_acestep_v15_turbo.py").read_bytes(), original_code)
+        self.assertEqual((self.model / "config.json").read_bytes(), original_config)
+        self.assertEqual((self.model / "model.safetensors").read_bytes(), original_weights)

@@ -2,3 +2,4 @@ build>=1.2,<2
 cavi-api-client @ git+https://github.com/cavi-ai/cavi-api-client.git@main#subdirectory=python
 coverage>=7.16,<8
 jsonschema[format]>=4.23,<5
+pip-audit==2.7.3

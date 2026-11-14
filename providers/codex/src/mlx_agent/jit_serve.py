@@ -307,12 +307,12 @@ class ModelWorker:
         except ServeError as error:
             raise GatewayError(503, error.code, str(error)) from error
 
-    def _check_memory(self):
+    def _check_memory(self, *, weight_bytes=None):
         with self.condition:
             self.load_blocked_reason = None
             policy = dict(self.memory_policy)
             config = dict(self.config)
-        outcome = reservation(policy, config)
+        outcome = reservation(policy, config, weight_bytes=weight_bytes)
         if outcome is None:
             self.load_blocked_reason = "Model or context memory estimate is unavailable."
             raise GatewayError(503, "memory_unknown", self.load_blocked_reason)
@@ -372,10 +372,10 @@ class ModelWorker:
             self.memory_materialized = True
             self.last_error = None
 
-    def _reserve_workspace(self):
+    def _reserve_workspace(self, extra_bytes=0):
         try:
             self.memory_check = self.memory_registry.reserve_workspace(
-                self.memory_token, self.workspace_bytes, self.memory_probe)
+                self.memory_token, self.workspace_bytes + extra_bytes, self.memory_probe)
             self.memory_reservation = self.memory_check
         except MemoryAdmissionError as error:
             self.memory_check = error.details

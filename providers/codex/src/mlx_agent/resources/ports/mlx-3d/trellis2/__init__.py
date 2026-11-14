@@ -9,3 +9,8 @@ def load(path):
 def generate(model, image, out, **kwargs):
     from .pipeline import generate as generate_mesh
     return generate_mesh(model, image, out, **kwargs)
+
+
+def prepare(model, resolution):
+    from .pipeline import prepare as prepare_model
+    return prepare_model(model, resolution)

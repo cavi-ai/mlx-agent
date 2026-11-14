@@ -294,6 +294,8 @@ class MemoryRegistry:
             budget = self._agent_budget(rows, (key, 0))
             resident = row['resident_bytes'] if row['phase'] == 'resident' else 0
             minimum = row['resident_bytes'] + row['workspace_bytes'] + row['growth_bytes']
+            if row['phase'] == 'resident':
+                minimum = max(minimum, resident + row['reserved_bytes'] + row['growth_bytes'])
             if budget is not None:
                 current = budget['allocations'][key]
                 resident = current['resident_bytes']

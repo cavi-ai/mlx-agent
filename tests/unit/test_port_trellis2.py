@@ -124,6 +124,43 @@ class Trellis2ConversionRefusalTests(unittest.TestCase):
 
 @unittest.skipUnless(HAS_MLX, 'requires MLX on Apple Silicon')
 class Trellis2NativeTests(unittest.TestCase):
+    def test_components_load_lazily_and_reuse_union_atomically(self):
+        import mlx.core as mx
+        from unittest.mock import patch
+        pipeline = port('pipeline')
+        names = pipeline.COMPONENTS + pipeline.TEXTURE_COMPONENTS
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'config.json').write_text(json.dumps({'model_type': 'trellis2', 'components': {name: {} for name in names}}))
+            for name in names:
+                mx.save_safetensors(str(root / (name + '.safetensors')), {'value': mx.array([1.0])})
+            real_load = mx.load
+            with patch.object(pipeline.mx, 'load', wraps=real_load) as load:
+                model = pipeline.load(root)
+                self.assertEqual(load.call_count, 0)
+                with self.assertRaises(ValueError):
+                    pipeline.prepare(model, 256)
+                self.assertEqual(load.call_count, 0)
+                pipeline.prepare(model, 512)
+                self.assertEqual(load.call_count, 7)
+                self.assertNotIn('shape_flow_1024', model.weights)
+                pipeline.prepare(model, 512)
+                self.assertEqual(load.call_count, 7)
+                def fail_second(path):
+                    if path.endswith('tex_flow_1024.safetensors'):
+                        raise OSError('component read failed')
+                    return real_load(path)
+                load.side_effect = fail_second
+                before = model.component_statistics()
+                with self.assertRaises(OSError):
+                    pipeline.prepare(model, 1024)
+                self.assertEqual(model.component_statistics(), before)
+                load.side_effect = real_load
+                pipeline.prepare(model, 1024)
+                pipeline.prepare(model, 512)
+                self.assertEqual(set(model.weights), set(names))
+                self.assertTrue(all(count == 1 for count in model.component_statistics()['loads'].values()))
+
     def setUp(self):
         import mlx.core as mx
         previous = mx.default_device()

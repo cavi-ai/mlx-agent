@@ -253,6 +253,7 @@
     "src/mlx_agent/resources/ports/mlx-3d/trellis2/LICENSE",
     "src/mlx_agent/resources/ports/mlx-3d/trellis2/NOTICE",
     "src/mlx_agent/resources/ports/mlx-3d/trellis2/__init__.py",
+    "src/mlx_agent/resources/ports/mlx-3d/trellis2/components.py",
     "src/mlx_agent/resources/ports/mlx-3d/trellis2/convert.py",
     "src/mlx_agent/resources/ports/mlx-3d/trellis2/dinov3.py",
     "src/mlx_agent/resources/ports/mlx-3d/trellis2/dual_grid.py",

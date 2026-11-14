@@ -3,17 +3,18 @@
 import json
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 import mlx.core as mx
 import numpy as np
 from PIL import Image
 
-from . import dinov3, dual_grid, flow, sparse, structure
+from . import components, dinov3, dual_grid, flow, sparse, structure
 from ..triposg.geometry import decimate, write_glb
 from ..triposg.weights import Weights
 
 COMPONENTS = ("image_encoder", "ss_flow", "ss_decoder", "shape_flow_512", "shape_flow_1024", "shape_decoder")
-TEXTURE_COMPONENTS = ("tex_flow_512", "tex_flow_1024", "tex_decoder")
+TEXTURE_COMPONENTS = components.TEXTURE
 DECODERS = ("shape_decoder", "tex_decoder")
 RESOLUTIONS = (512, 1024, 1536)
 MAX_TOKENS = 49152
@@ -39,7 +40,7 @@ def _kernels(values):
 
 def textured(config):
     """Whether the converted model carries the texture stage."""
-    return all(name in config.get("components", {}) for name in TEXTURE_COMPONENTS)
+    return components.textured(config)
 
 
 def srgb_to_linear(color):
@@ -77,18 +78,53 @@ def voxel_colors(points, coords, colors, grid, reach=3):
     return out
 
 
+class Model(NamedTuple):
+    config: dict
+    weights: object
+
+    def component_statistics(self):
+        return self.weights.statistics()
+
+
+class ComponentWeights(dict):
+    def __init__(self, path, config):
+        super().__init__()
+        self.path, self.config = Path(path), config
+        self.loads, self.seconds, self.bytes = {}, {}, {}
+
+    def statistics(self):
+        return {'schema': 'resident-components/1', 'resident': sorted(self),
+                'loads': dict(self.loads), 'load_seconds': dict(self.seconds),
+                'checkpoint_bytes': dict(self.bytes)}
+
+
 def load(path):
     path = Path(path)
-    config = json.loads((path / "config.json").read_text())
-    if config.get("model_type") != "trellis2":
-        raise ValueError("Pass a converted TRELLIS.2 model directory.")
-    quantization = config.get("quantization", {})
-    weights = {}
-    for name in COMPONENTS + (TEXTURE_COMPONENTS if textured(config) else ()):
-        values = mx.load(str(path / (name + ".safetensors")))
-        weights[name] = Weights(_kernels(values) if name in DECODERS else values, **quantization)
-    mx.eval(*[value for component in weights.values() for value in component.values.values()])
-    return config, weights
+    config = json.loads((path / 'config.json').read_text())
+    if config.get('model_type') != 'trellis2':
+        raise ValueError('Pass a converted TRELLIS.2 model directory.')
+    return Model(config, ComponentWeights(path, config))
+
+
+def prepare(model, resolution):
+    config, weights = model
+    needed = components.required_components(config, resolution)
+    missing = [name for name in needed if name not in weights]
+    sizes = components.checkpoint_bytes(weights.path, missing)
+    pending, times = {}, {}
+    for name in missing:
+        started = time.monotonic()
+        values = mx.load(str(weights.path / (name + '.safetensors')))
+        prepared = Weights(_kernels(values) if name in DECODERS else values, **config.get('quantization', {}))
+        mx.eval(*prepared.values.values())
+        pending[name] = prepared
+        times[name] = time.monotonic() - started
+    weights.update(pending)
+    for name in missing:
+        weights.loads[name] = weights.loads.get(name, 0) + 1
+        weights.seconds[name] = weights.seconds.get(name, 0) + times[name]
+        weights.bytes[name] = sizes[name]
+    return model
 
 
 def _noise(rng, shape):
@@ -118,6 +154,7 @@ def generate(model, image, out, steps=12, seed=42, resolution=1024, guidance=7.5
     config, weights = model
     if resolution not in RESOLUTIONS:
         raise ValueError("TRELLIS.2 resolution must be 512, 1024 or 1536.")
+    prepare(model, resolution)
     settings = config["pipeline"]
     started = time.perf_counter()
     stages = {}

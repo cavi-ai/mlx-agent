@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- TRELLIS.2 loads only the components needed for each mesh resolution and retains them for later resident tasks.
+
 - Add the Kev classification port (`jaredpalmer/kev-4b` over Qwen3-4B-Base, 8-bit or unquantized), and serve TypeSafe System One decisions at `POST /v1/systemone` on classification task routes and the front door.
 - TRELLIS.2 conversion includes the texture stage, and `convert mesh` writes each vertex's base color to the GLB as `COLOR_0`.
 - The shared memory budget charges nothing for a reservation owner that has exited, so the memory guard no longer stops loaded workers when another endpoint exits.

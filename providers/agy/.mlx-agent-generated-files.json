@@ -750,7 +750,7 @@
     },
     {
       "path": "src/mlx_agent/music.py",
-      "sha256": "8269ed8c48def52238ebc25dff78db752103797e58165084cdee3fb6c4a33c30"
+      "sha256": "82c3e396d4c0ea636c64764b03b2ec2709c11749703d022c2993929bad61b440"
     },
     {
       "path": "src/mlx_agent/music_requantize_runner.py",
@@ -1238,7 +1238,7 @@
     },
     {
       "path": "src/mlx_agent/task_kinds.py",
-      "sha256": "5569044d91f61ea7a3537bb670bd51bda9bedc78b4db9f88da801dc03542f4be"
+      "sha256": "1f4ed76ee8ec09b8c1f0fb2233fb9e84ff1fc756bf34b0f634741b0fc031b0c6"
     },
     {
       "path": "src/mlx_agent/task_mp4_validator.py",

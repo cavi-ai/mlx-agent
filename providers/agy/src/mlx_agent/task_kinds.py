@@ -222,7 +222,8 @@ def _plan_classification(model, parameters, output, media, directory):
 def _plan_music(model, parameters, output, media, directory):
     return plan_music(model, parameters["caption"], parameters["lyrics"], output,
                       duration=parameters["duration"], steps=parameters["steps"], seed=parameters["seed"],
-                      bpm=parameters["bpm"], time_signature=parameters["time_signature"], reference=parameters["reference"])
+                      bpm=parameters.get("bpm"), time_signature=parameters.get("time_signature"),
+                      reference=parameters.get("reference"))
 
 
 def _plan_transcribe(model, parameters, output, media, directory):

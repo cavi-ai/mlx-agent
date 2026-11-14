@@ -43,8 +43,9 @@ def validate_parameters(caption, lyrics, duration=15.0, steps=30, seed=42, bpm=N
         if path is None or not path.is_absolute() or not path.is_file() or path.suffix.lower() not in REFERENCE_FORMATS:
             raise MusicError("invalid_arguments", "The reference must be an existing absolute audio file.",
                              "Pass --reference as a {0} file.".format(", ".join(REFERENCE_FORMATS)))
-    return {"caption": caption, "lyrics": lyrics, "duration": duration, "steps": steps, "seed": seed,
-            "bpm": bpm, "time_signature": time_signature, "reference": reference}
+    settings = {"bpm": bpm, "time_signature": time_signature, "reference": reference}
+    return dict({"caption": caption, "lyrics": lyrics, "duration": duration, "steps": steps, "seed": seed},
+                **{key: value for key, value in settings.items() if value is not None})
 
 
 def _acestep_planner(model):

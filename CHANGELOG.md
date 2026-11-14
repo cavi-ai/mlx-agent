@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `convert speak`, `music`, `generate`, `video` and `describe` run on a live typed endpoint that already serves the same model instead of loading it a second time.
 - Reclaim idle task allocator cache once before retrying a refused admission when pressure reclamation is enabled.
 - TRELLIS.2 `convert mesh` writes roughness and metallic as `COLOR_1` (occlusion, roughness, metallic) and reports `pbr`.
 - Task endpoints read process groups and agent memory in-process instead of listing every host process with `ps`, so a warm job's lease and memory checks take milliseconds.

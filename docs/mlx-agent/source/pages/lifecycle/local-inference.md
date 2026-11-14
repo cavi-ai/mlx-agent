@@ -11,6 +11,13 @@ For retained classification and media results, including generated meshes,
 and cancellation across client exits,
 use [Durable inference tasks](tasks.md).
 
+When a live typed endpoint (`serve start --runtime tasks`) already serves the same
+model directory and advertises the task kind, `convert speak`, `music`, `generate`,
+`video` and `describe` submit the job to that endpoint instead of loading the model
+again. The output artifact is written to `--out`, and the result carries
+`served: {port, task_id}`. A busy endpoint returns `model_busy`. With no such
+endpoint, the command runs locally.
+
 ## Speech
 
 ```bash

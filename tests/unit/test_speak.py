@@ -1,8 +1,12 @@
+import hashlib
 import io
 import json
+import os
 import subprocess
+import threading
 import unittest
 from contextlib import redirect_stdout
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
@@ -217,6 +221,79 @@ class SpeakTests(unittest.TestCase):
             with redirect_stdout(buffer):
                 code = cli.main(argv[:argv.index("--timeout") + 1] + ["0"] + argv[argv.index("--timeout") + 2:])
             self.assertEqual((code, json.loads(buffer.getvalue())["error"]["code"]), (2, "convert_failed"))
+
+    def test_cli_speaks_on_the_endpoint_that_already_serves_the_model(self):
+        model = self.model()
+        wav, key = b"RIFF" + bytes(60), "k" * 40
+        state, requests = {"busy": False}, []
+
+        class Endpoint(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def answer(self, status, body, content_type="application/json"):
+                data = body if isinstance(body, bytes) else json.dumps(body).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                requests.append((self.path, self.headers.get("Authorization"), body))
+                if state["busy"]:
+                    return self.answer(409, {"error": {"code": "model_busy", "message": "Finish the active model job."}})
+                self.answer(202, {"id": "job-1", "state": "queued"})
+
+            def do_GET(self):
+                if self.path == "/v1/tasks/job-1":
+                    self.answer(200, {"id": "job-1", "state": "succeeded"})
+                elif self.path == "/v1/tasks/job-1/result":
+                    reference = {"bytes": len(wav), "sha256": hashlib.sha256(wav).hexdigest()}
+                    self.answer(200, {"result": dict(RESULT, path="/endpoint/output.wav", output_artifact=reference)})
+                elif self.path == "/v1/tasks/job-1/artifacts/output":
+                    self.answer(200, wav, "audio/wav")
+                else:
+                    self.answer(404, {"error": {"code": "not_found", "message": "Unknown task endpoint."}})
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Endpoint)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        port = server.server_address[1]
+        receipts = self.root / "receipts" / ".mlx-agent-receipts" / "serve"
+        receipts.mkdir(parents=True)
+        for path, text in ((self.root / "access.key", key), (receipts / "{0}.jit-config.json".format(port), json.dumps(
+                {"access_key_file": str(self.root / "access.key"), "api_key_sha256": hashlib.sha256(key.encode()).hexdigest()}))):
+            with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as target:
+                target.write(text)
+        service = {"runtime": "tasks", "alive": True, "argv_match": True, "path": str(model), "port": port,
+                   "receipts_dir": str(self.root / "receipts"), "task_kinds": ["speak"]}
+        argv = ["convert", "speak", "--path", str(model), "--text", "Hello there.", "--out", self.out,
+                "--voice", "af_heart", "--speed", "1.5", "--lang-code", "a", "--json"]
+        with mock.patch("mlx_agent.speak.load_manifests", return_value=self.manifests), \
+                mock.patch("mlx_agent.speak.load_registries", return_value=self.registries), \
+                mock.patch("mlx_agent.speak.is_installed", return_value=True), \
+                mock.patch("mlx_agent.service_registry.discover_services", return_value={"services": [service]}), \
+                mock.patch("mlx_agent.speak.run_speak", side_effect=AssertionError("loaded a second copy")):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = cli.main(argv)
+            payload = json.loads(buffer.getvalue())
+            self.assertEqual((code, payload["status"]), (0, "ok"))
+            self.assertEqual((payload["data"]["path"], payload["data"]["served"]), (self.out, {"port": port, "task_id": "job-1"}))
+            self.assertEqual(Path(self.out).read_bytes(), wav)
+            self.assertEqual(requests, [("/v1/tasks", "Bearer " + key, {"kind": "speak", "parameters": {
+                "text": "Hello there.", "voice": "af_heart", "speed": 1.5, "lang_code": "a"}})])
+
+            state["busy"] = True
+            busy_out = str(self.root / "busy.wav")
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = cli.main(argv[:argv.index("--out") + 1] + [busy_out] + argv[argv.index("--out") + 2:])
+            self.assertEqual((code, json.loads(buffer.getvalue())["error"]["code"]), (2, "model_busy"))
+            self.assertFalse(Path(busy_out).exists())
 
 
 if __name__ == "__main__":

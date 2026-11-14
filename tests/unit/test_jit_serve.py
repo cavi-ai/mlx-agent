@@ -205,6 +205,36 @@ class JITServingTests(unittest.TestCase):
         self.assertEqual(controller.unload()['model_state'], 'unloaded')
         self.assertFalse(controller.closed)
 
+    def test_exited_owner_of_another_reservation_does_not_stop_the_loaded_worker(self):
+        from mlx_agent.compute import process_identity
+        from mlx_agent.jit_serve import ModelWorker
+        from mlx_agent.residency import MemoryRegistry
+        controller = ModelWorker(self.config)
+        self.addCleanup(controller.close)
+        controller.memory_registry.configure_budget(64_000_000_000, 8_000_000_000)
+        sleeper = [sys.executable, '-c', 'import time;time.sleep(30)']
+        process = subprocess.Popen(sleeper, start_new_session=True)
+        self.addCleanup(process.kill)
+        controller.process = process
+        controller.model_state = 'loaded'
+        # Another route's gateway reserves memory for its worker, then exits while the worker runs.
+        owner = subprocess.Popen(sleeper, start_new_session=True)
+        self.addCleanup(owner.kill)
+        orphan = subprocess.Popen(sleeper, start_new_session=True)
+        self.addCleanup(orphan.kill)
+        other = MemoryRegistry(self.config['memory_state_dir'], owner=(owner.pid, process_identity(owner.pid)))
+        other.reserve('other', 'b' * 64, 1_000_000, 0, 0, lambda: 100_000_000_000)
+        other.launching('other')
+        other.bind_worker('other', orphan.pid, process_identity(orphan.pid), orphan.pid)
+        owner.kill()
+        owner.wait()
+        controller.guard_agent_budget()
+        self.assertEqual(controller.model_state, 'loaded', controller.last_error)
+        self.assertIsNone(process.poll())
+        budget = controller.memory_registry.snapshot()['agent_budget']
+        self.assertTrue(budget['within_budget'], budget)
+        self.assertIn('other', budget['allocations'])
+
     def test_chat_runtime_advertises_allocator_controls_as_unavailable(self):
         control = {'Authorization': 'Bearer test-control-token'}
         code, value = self.request('POST', '/_mlx/policy', {'allocator_cache_limit_mib': 4}, headers=control)

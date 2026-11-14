@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The shared memory budget charges nothing for a reservation owner that has exited, so the memory guard no longer stops loaded workers when another endpoint exits.
+
 - A memory-guard stop releases only the model worker; the endpoint keeps admitting requests instead of refusing them until restarted.
 
 - A live model load refuses when Splash, task, adapter, training, kernel, vision, access, or model files no longer match the reviewed serving plan.

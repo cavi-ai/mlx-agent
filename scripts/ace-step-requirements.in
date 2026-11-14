@@ -1,8 +1,8 @@
 # Curated ACE-Step runtime dependencies for Python 3.12 on macOS arm64.
-# Resolve with MACOSX_DEPLOYMENT_TARGET=14.0 uv pip compile scripts/ace-step-requirements.in
-# --python-version 3.12 --python-platform aarch64-apple-darwin --only-binary :all:
-# --generate-hashes --output-file src/mlx_agent/resources/backends/ace-step.lock
-# Add the pinned, hashed ACE-Step source archive entry from the existing lock after resolution.
+# Resolve from the repository root (keep the pinned ACE-Step source entry):
+# MACOSX_DEPLOYMENT_TARGET=14.0 uv pip compile scripts/ace-step-requirements.in --python-version 3.12 --python-platform aarch64-apple-darwin --only-binary :all: --generate-hashes --output-file .run/ace-step-dependencies.lock
+# Replace only the versioned dependencies in ace-step.lock with the resolved entries,
+# retain the pinned, hashed ACE-Step source entry, then remove the temporary file.
 accelerate==1.15.0
 attrs==25.4.0
 brotli==1.2.1

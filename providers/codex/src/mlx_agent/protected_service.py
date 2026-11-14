@@ -17,7 +17,7 @@ def identity():
     root = Path(__file__).parent
     digest = hashlib.sha256()
     for name in ("cli.py", "identity_pass.py", "protected_service.py", "private_serve.py", "serving_access.py",
-                 "jit_serve.py", "serve.py", "inference_auth.py", "protected_worker.py", "worker_transport.py"):
+                 "jit_serve.py", "serve.py", "serving_plan.py", "inference_auth.py", "protected_worker.py", "worker_transport.py"):
         digest.update(name.encode())
         digest.update((root / name).read_bytes())
     return {"protocol": PROTOCOL, "source_sha256": digest.hexdigest()}

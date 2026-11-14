@@ -1986,6 +1986,9 @@ def _add_convert_arguments(parser):
     music.add_argument("--duration", type=float, default=15.0)
     music.add_argument("--steps", type=int, default=30)
     music.add_argument("--seed", type=int, default=42)
+    music.add_argument("--bpm", type=int, help="tempo for ACE-Step models (30..300)")
+    music.add_argument("--time-signature", type=int, help="beats per bar for ACE-Step models: 2, 3, 4 or 6")
+    music.add_argument("--reference", help="absolute audio file whose style ACE-Step models follow")
     music.add_argument("--timeout", type=int, default=3600)
     music.add_argument("--json", action="store_true")
     speak = actions.add_parser(
@@ -2103,7 +2106,8 @@ def _run_convert(arguments):
             if not 1 <= arguments.timeout <= 14400:
                 raise ValueError("--timeout must be 1..14400 seconds")
             plan = plan_music(arguments.path, arguments.caption, arguments.lyrics, arguments.out,
-                              duration=arguments.duration, steps=arguments.steps, seed=arguments.seed)
+                              duration=arguments.duration, steps=arguments.steps, seed=arguments.seed,
+                              bpm=arguments.bpm, time_signature=arguments.time_signature, reference=arguments.reference)
             from .compute import guarded_start
             result = guarded_start("music", run_music, plan, timeout=arguments.timeout)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])

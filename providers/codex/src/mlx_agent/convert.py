@@ -188,6 +188,11 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
             "No optional backend named {0}.".format(backend),
             "Run mlx-agent backend list to see the declared backends.",
         )
+    if backend == "ace-step":
+        raise ConvertError(
+            "invalid_arguments", "ACE-Step checkpoints run as published; the ace-step backend converts nothing.",
+            "Generate with mlx-agent convert music --path <ACE-Step checkpoint folder>.",
+        )
     widths = conversion_bits(model_type, backend, manifests)
     if q_bits == UNQUANTIZED_BITS and q_bits not in widths:
         raise ConvertError("invalid_arguments", "This conversion has no unquantized recipe.", _bits_hint(widths))

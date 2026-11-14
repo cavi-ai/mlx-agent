@@ -1,0 +1,19 @@
+{
+  "schema": "backend/1",
+  "id": "ace-step",
+  "version": "1.5.0",
+  "builtin": false,
+  "package": "acestep",
+  "convert": "acestep.models.mlx.dit_convert",
+  "lock": "ace-step.lock",
+  "categories": {
+    "music_generation": "models"
+  },
+  "remap_files": {},
+  "registry": {
+    "music_generation": {
+      "model_types": ["acestep"],
+      "remapping": {}
+    }
+  }
+}

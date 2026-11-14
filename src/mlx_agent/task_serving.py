@@ -438,14 +438,14 @@ class TaskModelWorker(ModelWorker):
                 lease.__exit__(None, None, None)
             self.release()
 
-    def close(self):
+    def _halt(self):
         with self.condition:
             self.closed = True
         if self.job_thread:
             self.job_thread.join(timeout=10)
         if self.job_thread and self.job_thread.is_alive():
             raise OSError('The owned model job is still stopping.')
-        super().close()
+        super()._halt()
 
     def record(self, identifier):
         record = task_status(identifier, self.store.root)

@@ -13,11 +13,28 @@ from mlx_agent.cli import main
 from mlx_agent.transactions import (
     ConcurrentTransactionError, Receipt, Transaction, _filesystem_target_lock_digest,
     _target_lock_digest, _target_lock_name, legacy_lock_problem, load_receipt, preview_rollback,
-    rollback,
+    rollback, LEGACY_LOCK_MIGRATION, _LEGACY_LOCK_MARKER,
+    _read_legacy_migration_state, _write_legacy_migration_state,
 )
 
 
 class TransactionTests(unittest.TestCase):
+    def test_large_legacy_migration_marker_round_trip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            parent = "f" * 64
+            stamp = "2026-11-14T12:00:00+00:00"
+            state = {
+                "version": LEGACY_LOCK_MIGRATION,
+                "targets": {format(i, "064x"): {"migrated_at": stamp, "parent": parent}
+                            for i in range(12000)},
+                "parents": {parent: {"migrated_at": stamp}},
+                "unscoped": False,
+            }
+            _write_legacy_migration_state(root, state)
+            self.assertGreater((root / _LEGACY_LOCK_MARKER).stat().st_size, 1048576)
+            self.assertEqual(state, _read_legacy_migration_state(root))
+
     def _change(self, path, content, endpoint=None):
         return {"path": str(path), "content": content, "runtime": "mlx_lm", "endpoint": endpoint}
 

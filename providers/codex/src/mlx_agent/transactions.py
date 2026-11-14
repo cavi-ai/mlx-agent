@@ -384,7 +384,8 @@ def _read_legacy_migration_state(lock_root):
             return {"version": LEGACY_LOCK_MIGRATION, "targets": {}, "parents": {}, "unscoped": False}
         if not stat.S_ISREG(os.fstat(descriptor).st_mode):
             raise ValueError("legacy lock migration marker is not a regular file")
-        value = json.loads(os.read(descriptor, 1048576).decode("utf-8"))
+        with os.fdopen(descriptor, "r", encoding="utf-8", closefd=False) as source:
+            value = json.load(source)
         # The prior release-candidate marker had no target map. Treat it as
         # an unscoped barrier: it cannot prove which physical parents migrated.
         if value == {"version": LEGACY_LOCK_MIGRATION}:

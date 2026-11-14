@@ -144,6 +144,14 @@ class ServeCliTests(unittest.TestCase):
             code, output = self._run(args + ['--jit', '--min-headroom-gb', 'nan'])
             self.assertEqual(code, 2)
             self.assertEqual(json.loads(output)['error']['code'], 'invalid_arguments')
+            code, output = self._run(args + ['--jit', '--execution-wait', '30'])
+            waited = json.loads(output)['data']['plan']['memory_policy']
+            self.assertEqual(code, 2)
+            self.assertEqual(waited['execution_wait_seconds'], 30)
+            code, output = self._run(args + ['--execution-wait', '30'])
+            self.assertEqual((code, json.loads(output)['error']['code']), (2, 'jit_required'))
+            code, output = self._run(args + ['--jit', '--allocator-cache-limit-mib', '64'])
+            self.assertEqual(json.loads(output)['error']['code'], 'cache_control_unavailable')
 
     def test_policy_command_passes_full_policy_and_requires_expected_pid(self):
         with mock.patch('mlx_agent.serve.configure_serve_memory', return_value={'status': 'configured'}) as configure:

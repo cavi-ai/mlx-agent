@@ -714,7 +714,7 @@
     },
     {
       "path": "src/mlx_agent/memory_budget.py",
-      "sha256": "0636e638222d5140c42664c652519afc3dbd06f0f3a247ab7fade1494f7c69d5"
+      "sha256": "f59b03f8592a26f9d290f42c761f95b507299af9a7988f000c7f95380dfe59cf"
     },
     {
       "path": "src/mlx_agent/memory_policy.py",

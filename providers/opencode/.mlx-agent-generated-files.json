@@ -1,78 +1,24 @@
 {
   "files": [
-    {
-      "path": "agents/mlx-advisor.md",
-      "sha256": "a5e6220793a1d452ade68d925a70ef06ed297d8c727abfc3e3edab4a99d35eae"
-    },
-    {
-      "path": "commands/mlx-adopt.md",
-      "sha256": "938a5efc0511e464fa3b4c4057319cb897118fa1dd7ced2b1702d927104969d8"
-    },
-    {
-      "path": "commands/mlx-bench.md",
-      "sha256": "e4bbd26600bd450b38dbed46ece8e30c9723465b2a2c12e37fd26b7241498a4e"
-    },
-    {
-      "path": "commands/mlx-doctor.md",
-      "sha256": "05e3fe9382228fcacd543eaf89ed5a33de097db6df3393917ed8c46301b3d695"
-    },
-    {
-      "path": "commands/mlx-fleet.md",
-      "sha256": "8eefd70154f4852773d660167dafdb60447b0f7fb7b8ad3fcbc49564e57380a6"
-    },
-    {
-      "path": "commands/mlx-scout.md",
-      "sha256": "791716331dc36caea09b65f7d6b32bb578d8f2f86451ee0d2a00d06745193fca"
-    },
-    {
-      "path": "commands/mlx-task.md",
-      "sha256": "beab294ca5b4315cde434ce8135e7811a840caa670c8f35ba94c20c46b5e2ce7"
-    },
-    {
-      "path": "commands/mlx-watch.md",
-      "sha256": "f4cd88f4d1a2534a9e0538fa31c44dfdebb79e3124ec1d612a501d962b77ffec"
-    },
-    {
-      "path": "commands/mlx-wire.md",
-      "sha256": "6efefcfb5e5bad73b1792bfe957f1d2d6b916d853bcd199c4f32b84bd3e384e4"
-    },
-    {
-      "path": "plugins/mlx-agent-command.ts",
-      "sha256": "dae6dfae44c41736cab140e2b09a4450cbcc95bec20a49733d507dfa14ffcbb4"
-    },
-    {
-      "path": "skills/mlx-adopt/SKILL.md",
-      "sha256": "6ab1c33d3fd7e16bd55b3459cbe433dc3ac94ef48101d77c5741905807265b8a"
-    },
-    {
-      "path": "skills/mlx-bench/SKILL.md",
-      "sha256": "f4c9d486cd4d7b1a985d276b51bf99d89111000f406724b1fe3f56ad3196187a"
-    },
-    {
-      "path": "skills/mlx-doctor/SKILL.md",
-      "sha256": "4693913aeb21a237e0bec167cd79b1f1fb89200302b87a2615c8ca621162cc25"
-    },
-    {
-      "path": "skills/mlx-fleet/SKILL.md",
-      "sha256": "59743844042bb236787a348e903fa177ca7be24ba20dccc4d63f7d1f55799d6e"
-    },
-    {
-      "path": "skills/mlx-scout/SKILL.md",
-      "sha256": "3ed81a6ed29c7200eb72dab3f1c7cf9828e5890237213678eb6b7e8159f9fa84"
-    },
-    {
-      "path": "skills/mlx-task/SKILL.md",
-      "sha256": "cf4835fa42472032c8bc045d476fdee29d5e9b13ff9ad4713160b42bc32137e0"
-    },
-    {
-      "path": "skills/mlx-watch/SKILL.md",
-      "sha256": "44758973b8bd8069bd2d3aff4e988fba477eb8204c8e18ccda523e0ce81e8a04"
-    },
-    {
-      "path": "skills/mlx-wire/SKILL.md",
-      "sha256": "c7fc49b3e0aa5a4aef40adfe5ece04e48bac05243e22c76a015c396dff313bc8"
-    }
+    "agents/mlx-advisor.md",
+    "commands/mlx-adopt.md",
+    "commands/mlx-bench.md",
+    "commands/mlx-doctor.md",
+    "commands/mlx-fleet.md",
+    "commands/mlx-scout.md",
+    "commands/mlx-task.md",
+    "commands/mlx-watch.md",
+    "commands/mlx-wire.md",
+    "plugins/mlx-agent-command.ts",
+    "skills/mlx-adopt/SKILL.md",
+    "skills/mlx-bench/SKILL.md",
+    "skills/mlx-doctor/SKILL.md",
+    "skills/mlx-fleet/SKILL.md",
+    "skills/mlx-scout/SKILL.md",
+    "skills/mlx-task/SKILL.md",
+    "skills/mlx-watch/SKILL.md",
+    "skills/mlx-wire/SKILL.md"
   ],
-  "schema_version": 2,
+  "schema_version": 3,
   "surface": "opencode-package"
 }

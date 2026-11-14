@@ -3,6 +3,7 @@
 ## Unreleased
 
 - The shared memory budget charges nothing for a reservation owner that has exited, so the memory guard no longer stops loaded workers when another endpoint exits.
+- Add the optional `ace-step` backend: `convert music` runs ACE-Step 1.5 checkpoints with their planner, and takes `--bpm`, `--time-signature` and `--reference` for them.
 
 - A memory-guard stop releases only the model worker; the endpoint keeps admitting requests instead of refusing them until restarted.
 

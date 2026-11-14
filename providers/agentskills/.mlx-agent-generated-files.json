@@ -1,38 +1,14 @@
 {
   "files": [
-    {
-      "path": "mlx-adopt/SKILL.md",
-      "sha256": "92d8c86cb1f61dc86596427132c304430bd12dbe492b65abc421c78a93e8e76c"
-    },
-    {
-      "path": "mlx-bench/SKILL.md",
-      "sha256": "42e5f7f39a14dce4c216fcbc39a829e6bc38c503aa1e33b662734ea6a0945155"
-    },
-    {
-      "path": "mlx-doctor/SKILL.md",
-      "sha256": "20d1de4316f897a44e316b1ed67aa26547388ff31ec44be088f3b3fdec3f2b74"
-    },
-    {
-      "path": "mlx-fleet/SKILL.md",
-      "sha256": "fe858cafe34bd722d9b47761ec6146767a2b42bc04bfe60f3f9bbc12843c0f0d"
-    },
-    {
-      "path": "mlx-scout/SKILL.md",
-      "sha256": "ef70b2981f92b0b2d1f27cf1e434d4dad3049fed47084cc477d2ac17164ea2f4"
-    },
-    {
-      "path": "mlx-task/SKILL.md",
-      "sha256": "a249cb0d6f50f9921cd5d12059882816175bbf88cfc69afaad244cf340955275"
-    },
-    {
-      "path": "mlx-watch/SKILL.md",
-      "sha256": "6e05d91dd0a26296776f7f08aa4abd6ab826cf08ca9029b3a30e6ee2d1152a47"
-    },
-    {
-      "path": "mlx-wire/SKILL.md",
-      "sha256": "fcdc3c7990b4b79e8957cc243c7ee27180294c7d5d11097dde4de233847c060f"
-    }
+    "mlx-adopt/SKILL.md",
+    "mlx-bench/SKILL.md",
+    "mlx-doctor/SKILL.md",
+    "mlx-fleet/SKILL.md",
+    "mlx-scout/SKILL.md",
+    "mlx-task/SKILL.md",
+    "mlx-watch/SKILL.md",
+    "mlx-wire/SKILL.md"
   ],
-  "schema_version": 2,
+  "schema_version": 3,
   "surface": "agentskills-package"
 }

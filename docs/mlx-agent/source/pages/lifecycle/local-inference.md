@@ -45,6 +45,22 @@ repeated prompt encodings. Retained workers can reuse caption/lyric encodings
 across jobs. These paths preserve sampling controls and checkpoint precision;
 floating-point changes can produce different audio from the same seed.
 
+The `ace-step` backend runs ACE-Step 1.5 checkpoints such as `acestep-v15-turbo`
+and `acestep-v15-xl-sft`. Pass the DiT folder inside the ACE-Step `checkpoints/`
+folder; `vae` and `Qwen3-Embedding-0.6B` must sit beside it. When an
+`acestep-5Hz-lm-*` planner sits there too, it plans the song's structure and
+metadata before the DiT renders it. Turbo checkpoints take 1 to 20 steps (8 is
+typical) at shift 3; the others take up to 64 steps at guidance 7.
+
+```bash
+python3 scripts/mlx-agent convert music --path /absolute/ACE-Step-1.5/checkpoints/acestep-v15-turbo --caption "minimal tech house, four-on-the-floor kick" --out /absolute/output/music.wav --duration 120 --steps 8 --seed 7 --bpm 120 --time-signature 4 --json
+```
+
+`--bpm` (30 to 300), `--time-signature` (2, 3, 4 or 6 beats per bar) and
+`--reference` (an absolute audio file whose style the take follows) apply to
+ACE-Step checkpoints only. ACE-Step loads from a temporary folder of links to the
+checkpoint files, so the model folder is never written.
+
 ## Vision and classification
 
 ```bash

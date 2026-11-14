@@ -42,11 +42,38 @@ python3 scripts/mlx-agent intake fetch --help
 | `serve discover` | Find services across registered receipt locations and installed runtime inventories. |
 | `serve protected-service/private-worker` | Run authenticated supervised services or private workers for an existing service manager. |
 | `serve unload/policy` | Release JIT workers or update an owned gateway's memory policy. |
-| `serve profile save/show/list/delete` | Save and reuse Strata memory, headroom, context and decoding settings. |
+| `serve profile save/show/list/delete` | Save and reuse serving memory, headroom, residency and execution settings. |
+| `serve workflow save/show/list/delete/preview/start/status/stop/resolve` | Define, review and manage a named set of local serving endpoints. |
 | `lora inspect/start/status/stop` | Inspect prerequisites, train an adapter, inspect jobs, or stop owned training. |
 | `fuse start/status` | Merge an adapter into standalone weights. |
 | `doctor models` | Inspect model inventory, config drift, and endpoint health. |
 | `watch snapshot/diff` | Retain and compare owned-model Hub state. |
+
+### Serving workflows
+
+A serving workflow binds named roles to existing local models, runtime settings and ports. Create the resource profiles first with `serve profile save`; the workflow refers to those profiles by name. For example, save a JSON file such as:
+
+```json
+{"schema":"serving-workflow/1","name":"studio","members":{
+  "coding":{"path":"/models/coder","runtime":"mlx_lm","port":8086,"profile":"coding"},
+  "classifier":{"path":"/models/classifier","runtime":"tasks","port":8085,"profile":"small"}
+}}
+```
+
+Use local paths or already cached repositories supported by the selected runtime. Serving does not download models. Each member may specify an `api_key_file` reference; keep the key itself out of the workflow file.
+
+```sh
+mlx-agent serve workflow save --name studio --file workflow.json
+mlx-agent serve workflow preview --name studio --json
+mlx-agent serve workflow start --name studio --confirm --preview-hash PREVIEW_HASH
+mlx-agent serve workflow status --name studio --json
+mlx-agent serve workflow resolve --name studio --role classifier --json
+mlx-agent serve workflow stop --name studio
+```
+
+Copy `preview_hash` from the reviewed preview. The resource forecast is advisory: an unknown estimate is not a fit guarantee, and admission checks current memory when work starts. A reachable endpoint can be unloaded; JIT and task models load on their first request and follow the chosen residency policy afterward. If activation reports a partial state, inspect workflow status and use workflow stop to clean up its created endpoints. Reused endpoints are left running.
+
+Resolution returns `serving-workflow-role/1` with the selected endpoint's `origin`, `base_url`, `model_id`, `runtime`, supported `operations`, `task_kinds`, optional `credential_ref`, and process identity. The origin has no `/v1` suffix; the base URL includes it once. For typed tasks, send exactly `{"kind": ..., "parameters": ...}` to that role's `/v1/tasks` endpoint. Use the same endpoint for that job's status, result, artifacts and cancellation. Select roles explicitly even when models support the same task kind.
 
 `convert video` and `convert mesh` accept `--denoiser-cache adaptive` and
 `--cache-memory-mib` for supported Wan2.1 T2V and TripoSG models. These caches

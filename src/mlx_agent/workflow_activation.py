@@ -67,10 +67,14 @@ def _service_status(member, root, expected_plan=None):
             'active_requests': state.get('active_requests')}
 
 
-def _member_identity(role, plan_hash, receipt, ownership):
+def _member_identity(role, plan, receipt, ownership):
+    if receipt.get('runtime') != plan['runtime'] or receipt.get('task_kinds', []) != plan.get('task_kinds', []):
+        raise ValueError('Service capabilities differ from the reviewed plan.')
     return {'role': role, 'port': receipt['port'], 'pid': receipt['pid'],
             'process_started_at': receipt.get('process_started_at'),
-            'member_plan_hash': plan_hash, 'ownership': ownership, 'state': 'active'}
+            'member_plan_hash': plan['preview_hash'], 'ownership': ownership, 'state': 'active',
+            'runtime': plan['runtime'], 'model_id': plan.get('repo') or plan.get('path'),
+            'task_kinds': plan.get('task_kinds', []), 'credential_ref': plan.get('access_key_file')}
 
 
 def _repeat_activation(value, name, preview_hash, root):
@@ -131,7 +135,7 @@ def start_workflow(name, preview_hash, *, receipts_dir=None):
                     if candidate != reviewed['candidate']:
                         raise ValueError('Reused service identity changed: ' + role)
                     child = workflow_sets._private_json(Path(candidate['receipt']))
-                    item = _member_identity(role, plan['preview_hash'], child, 'reused')
+                    item = _member_identity(role, plan, child, 'reused')
                     _service_status(item, receipts_dir, plan)
                 else:
                     # Mark in-flight before launch: an interruption must not silently discard ownership uncertainty.
@@ -139,7 +143,7 @@ def start_workflow(name, preview_hash, *, receipts_dir=None):
                                                'state': 'launching', 'member_plan_hash': plan['preview_hash']}
                     _write(path, result)
                     outcome = start_serve(plan, receipts_dir=receipts_dir, confirm=True, preview_hash=plan['preview_hash'])
-                    item = _member_identity(role, plan['preview_hash'], outcome['receipt'], 'created')
+                    item = _member_identity(role, plan, outcome['receipt'], 'created')
                 result['members'][role] = item
                 _write(path, result)
                 if not item['process_started_at']:
@@ -179,6 +183,53 @@ def status_workflow(name, *, receipts_dir=None):
             item.get('endpoint_state') != 'available' for item in result['members'].values()):
         result['state'] = 'partial'
     return result
+
+
+def resolve_workflow_role(name, role, *, receipts_dir=None):
+    workflow_sets._name(role)
+    value = _read(_path(name, receipts_dir))
+    if value['state'] == 'stopped':
+        raise ValueError('Workflow activation is stopped.')
+    member = value['members'].get(role)
+    if not isinstance(member, dict) or member.get('state') != 'active':
+        raise ValueError('Workflow role is missing or not active.')
+    receipt = _owned_receipt(member, receipts_dir)
+    runtime, model, kinds = member.get('runtime'), member.get('model_id'), member.get('task_kinds')
+    credential = member.get('credential_ref')
+    if (runtime not in ('tasks', 'mlx_lm', 'mlx-vlm', 'strata', 'splash')
+            or not isinstance(model, str) or not model or not isinstance(kinds, list)
+            or any(not isinstance(kind, str) for kind in kinds)
+            or (credential is not None and (not isinstance(credential, str) or not Path(credential).is_absolute()))):
+        raise ValueError('Workflow role metadata is unavailable.')
+    if (receipt.get('runtime') != runtime or (receipt.get('repo') or receipt.get('path')) != model
+            or receipt.get('task_kinds', []) != kinds):
+        raise ValueError('Workflow role capability identity changed.')
+    config = workflow_sets._private_json(receipts_root(receipts_dir) / (str(member['port']) + '.jit-config.json'))
+    if (config.get('runtime') != runtime or config.get('model') != model
+            or config.get('task_kinds', []) != kinds or config.get('access_key_file') != credential
+            or config.get('api_key_sha256') != receipt.get('api_key_sha256')):
+        raise ValueError('Workflow role configuration changed.')
+    state = _jit_control(receipt, receipts_root(receipts_dir), 'status')
+    if state.get('api_key_sha256') != receipt.get('api_key_sha256'):
+        raise ValueError('Workflow role credential identity changed.')
+    if runtime == 'tasks':
+        operations = [{'method': method, 'path': path} for method, path in (
+            ('POST', '/v1/tasks'), ('GET', '/v1/tasks/{id}'), ('GET', '/v1/tasks/{id}/result'),
+            ('GET', '/v1/tasks/{id}/artifacts/{name}'), ('POST', '/v1/tasks/{id}/cancel'))]
+        if 'embedding' in kinds:
+            operations.append({'method': 'POST', 'path': '/v1/embeddings'})
+    else:
+        operations = [{'method': 'POST', 'path': path} for path in (
+            '/v1/chat/completions', '/v1/messages', '/v1/responses')]
+        operations.append({'method': 'GET', 'path': '/v1/responses/{id}'})
+    operations.append({'method': 'GET', 'path': '/v1/models'})
+    origin = 'http://127.0.0.1:' + str(member['port'])
+    return {'schema': 'serving-workflow-role/1', 'workflow': name, 'activation_id': value['activation_id'],
+            'workflow_state': value['state'], 'role': role, 'runtime': runtime, 'origin': origin,
+            'base_url': origin + '/v1', 'model_id': model, 'operations': operations,
+            'task_kinds': kinds, 'credential_ref': credential, 'model_state': state['model_state'],
+            'endpoint_identity': {'pid': member['pid'], 'process_started_at': member['process_started_at'],
+                                  'member_plan_hash': member['member_plan_hash']}}
 
 
 def stop_workflow(name, *, receipts_dir=None):

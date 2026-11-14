@@ -50,6 +50,74 @@ class WorkflowActivationTests(unittest.TestCase):
         except Exception:
             pass
 
+    def test_resolve_chat_role_uses_live_owned_endpoint(self):
+        preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        running = activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
+        resolved = activation.resolve_workflow_role('studio', 'coding', receipts_dir=self.root)
+        self.assertEqual(resolved['schema'], 'serving-workflow-role/1')
+        self.assertEqual(resolved['activation_id'], running['activation_id'])
+        self.assertEqual(resolved['origin'], 'http://127.0.0.1:' + str(self.port))
+        self.assertEqual(resolved['base_url'], resolved['origin'] + '/v1')
+        self.assertEqual(resolved['runtime'], 'mlx_lm')
+        self.assertEqual(resolved['model_id'], str(self.root / 'model'))
+        self.assertIn({'method': 'POST', 'path': '/v1/chat/completions'}, resolved['operations'])
+        self.assertIsNone(resolved['credential_ref'])
+        self.assertNotIn('control_token', str(resolved))
+        self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
+        with self.assertRaises(ValueError):
+            activation.resolve_workflow_role('studio', 'coding', receipts_dir=self.root)
+
+    def test_resolve_retains_normalized_credential_reference_across_cwd(self):
+        import json
+        key = self.root / 'key.txt'
+        key.write_text('x' * 48)
+        key.chmod(0o600)
+        self.definition['members']['coding']['api_key_file'] = 'key.txt'
+        workflow_sets._path('studio', self.root).write_text(json.dumps(self.definition))
+        previous = Path.cwd()
+        try:
+            os.chdir(self.root)
+            preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+            started = activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
+            self.assertEqual(started['state'], 'active', started)
+            os.chdir('/')
+            descriptor = activation.resolve_workflow_role('studio', 'coding', receipts_dir=self.root)
+            self.assertEqual(descriptor['credential_ref'], str(key))
+            self.assertNotIn('x' * 48, json.dumps(descriptor))
+            self.assertNotIn('control_token', json.dumps(descriptor))
+            retained = activation._path('studio', self.root).read_text()
+            self.assertNotIn('x' * 48, retained)
+            self.assertNotIn('control_token', retained)
+        finally:
+            os.chdir(previous)
+        self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
+
+    def test_resolve_active_member_of_partial_activation(self):
+        preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
+        path = activation._path('studio', self.root)
+        record = activation._read(path)
+        record['state'] = 'partial'
+        activation._write(path, record)
+        result = activation.resolve_workflow_role('studio', 'coding', receipts_dir=self.root)
+        self.assertEqual(result['workflow_state'], 'partial')
+        with patch('mlx_agent.workflow_activation._jit_control', side_effect=RuntimeError('unavailable')):
+            with self.assertRaises(RuntimeError):
+                activation.resolve_workflow_role('studio', 'coding', receipts_dir=self.root)
+        self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
+
+    def test_resolve_rejects_changed_identity_and_missing_role(self):
+        preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
+        with self.assertRaises(ValueError):
+            activation.resolve_workflow_role('studio', 'other', receipts_dir=self.root)
+        path = activation._path('studio', self.root)
+        record = activation._read(path)
+        record['members']['coding']['process_started_at'] = 'wrong'
+        activation._write(path, record)
+        with self.assertRaises(ValueError):
+            activation.resolve_workflow_role('studio', 'coding', receipts_dir=self.root)
+
     def test_lazy_activation_status_and_owned_stop(self):
         preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
         result = activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
@@ -99,6 +167,7 @@ class WorkflowActivationTests(unittest.TestCase):
         workflow_sets._path('studio', self.root).unlink()
         (self.root / '.mlx-agent-receipts' / 'serve' / 'profiles' / 'small.json').unlink()
         self.assertEqual(activation.status_workflow('studio', receipts_dir=self.root)['members']['coding']['endpoint_state'], 'available')
+        self.assertEqual(activation.resolve_workflow_role('studio', 'coding', receipts_dir=self.root)['runtime'], 'mlx_lm')
         self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
 
     def test_reused_cold_gateway_survives_workflow_stop(self):

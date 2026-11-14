@@ -1046,12 +1046,14 @@ def _add_serve_arguments(parser):
             action.add_argument("--replace", action="store_true")
     workflow = actions.add_parser("workflow", help="manage local serving workflows")
     workflow_actions = workflow.add_subparsers(dest="workflow_command", required=True)
-    for command in ("save", "show", "list", "delete", "preview", "start", "status", "stop"):
+    for command in ("save", "show", "list", "delete", "preview", "start", "status", "stop", "resolve"):
         action = workflow_actions.add_parser(command)
         if command != "list":
             action.add_argument("--name", required=True)
         if command == "save":
             action.add_argument("--file", required=True)
+        if command == "resolve":
+            action.add_argument("--role", required=True)
         if command == "start":
             action.add_argument("--confirm", action="store_true", required=True)
             action.add_argument("--preview-hash", required=True)
@@ -1153,12 +1155,14 @@ def _run_serve(arguments):
         if arguments.serve_command == "workflow":
             from . import workflow_sets
             command = arguments.workflow_command
-            if command in ("start", "status", "stop"):
+            if command in ("start", "status", "stop", "resolve"):
                 from . import workflow_activation
                 if command == "start":
                     data = workflow_activation.start_workflow(arguments.name, arguments.preview_hash, receipts_dir=arguments.receipts_dir)
                 elif command == "status":
                     data = workflow_activation.status_workflow(arguments.name, receipts_dir=arguments.receipts_dir)
+                elif command == "resolve":
+                    data = workflow_activation.resolve_workflow_role(arguments.name, arguments.role, receipts_dir=arguments.receipts_dir)
                 else:
                     data = workflow_activation.stop_workflow(arguments.name, receipts_dir=arguments.receipts_dir)
             elif command == "save":

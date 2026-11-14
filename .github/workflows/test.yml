@@ -54,6 +54,12 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - name: Install development validators
         run: python -m pip install -r requirements-dev.txt
+      - name: Audit optional backend locks
+        if: runner.os == 'Linux'
+        run: |
+          for lock in src/mlx_agent/resources/backends/*.lock; do
+            python -m pip_audit --no-deps --disable-pip --require-hashes -r "$lock" --progress-spinner off
+          done
       - name: Install native mesh test dependencies
         if: runner.os == 'macOS'
         run: python -m pip install --require-hashes -r src/mlx_agent/resources/backends/mlx-3d.lock

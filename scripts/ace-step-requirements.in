@@ -1,0 +1,58 @@
+# Curated ACE-Step runtime dependencies for Python 3.12 on macOS arm64.
+# Resolve with MACOSX_DEPLOYMENT_TARGET=14.0 uv pip compile scripts/ace-step-requirements.in
+# --python-version 3.12 --python-platform aarch64-apple-darwin --only-binary :all:
+# --generate-hashes --output-file src/mlx_agent/resources/backends/ace-step.lock
+# Add the pinned, hashed ACE-Step source archive entry from the existing lock after resolution.
+accelerate==1.15.0
+attrs==25.4.0
+brotli==1.2.1
+certifi==2026.10.23
+cffi==2.0.0
+charset-normalizer==3.4.4
+cycler==0.12.1
+diffusers==0.38.0
+einops==0.8.2
+einx==0.3.0
+filelock==4.2.4
+frozendict==2.4.7
+fsspec==2026.9.0
+idna==3.20
+jinja2==3.1.6
+kiwisolver==1.4.9
+lightning==2.6.6
+lightning-utilities==0.15.2
+loguru==0.7.3
+lycoris-lora==3.4.0
+markupsafe==3.0.3
+matplotlib==3.10.8
+mpmath==1.3.0
+numpy==2.3.5
+orjson==3.11.6
+packaging==26.0
+pillow==13.0.0
+protobuf==6.33.5
+pyparsing==3.3.2
+python-dateutil==2.9.0.post0
+pyyaml==6.0.3
+regex==2026.1.15
+requests==2.34.2
+rich==14.3.1
+scipy==1.17.0
+setuptools==84.2.1
+six==1.17.0
+soundfile==0.13.1
+sympy==1.14.0
+toml==0.10.2
+torch==2.14.1
+torchmetrics==1.8.2
+tqdm==4.67.1
+transformers==5.18.0
+typing-extensions==4.15.0
+urllib3==2.8.0
+vector-quantize-pytorch==1.27.20
+mlx-lm
+torchaudio
+torchvision
+torchcodec
+torchao
+peft

@@ -335,11 +335,12 @@ class ExecutionAdmission:
             finally:
                 self.waiting -= 1
 
-    def bind(self, pid):
+    def bind(self, pid, refresh=False):
+        """Bind the backend group; `refresh` records the leader again after it execs."""
         with self.condition:
             if self.lease is None:
                 raise ComputeBusy('Model startup requires execution admission.')
-            if self.lease.execution_group and self.lease.execution_group['pgid'] == pid:
+            if not refresh and self.lease.execution_group and self.lease.execution_group['pgid'] == pid:
                 return
             self.lease.bind_process_group(pid)
 

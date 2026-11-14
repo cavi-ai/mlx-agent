@@ -132,14 +132,21 @@ class WeightSession:
         with worker.condition:
             context = worker.memory_policy.get("context_tokens")
             worker.load_blocked_reason = None
-        weights = sum(item.stat().st_size for item in Path(worker.config["local_path"]).rglob("*")
-                      if item.is_file() and item.suffix in (".safetensors", ".npz", ".bin", ".gguf"))
+        if worker.config.get("runtime") == "splash":
+            # Only the served target and draft load; a Strata profile also holds files Splash never reads.
+            weights = worker.config["splash_weight_bytes"]
+        else:
+            weights = sum(item.stat().st_size for item in Path(worker.config["local_path"]).rglob("*")
+                          if item.is_file() and item.suffix in (".safetensors", ".npz", ".bin", ".gguf"))
         if weights and worker.config.get("adapter_path") is not None:
             weights += worker.config["adapter_identity"]["adapters.safetensors"]["bytes"]
         kv = 0 if context is None else _kv_cache_bytes(worker.config["local_path"], context)
         runtime_bytes = 1_500_000_000
         dynamic_bytes = runtime_bytes + (kv or 0)
         size = math.ceil(weights * 1.10 + kv + 1.5e9) if weights and kv is not None else None
+        if worker.config.get("runtime") == "splash" and worker.config.get("splash_max_memory_gb") is not None:
+            # Splash keeps its Metal memory within the reviewed cap.
+            size = math.ceil(worker.config["splash_max_memory_gb"] * 1e9)
         if worker.config.get("runtime") == "strata":
             from mlx_agent.strata_runtime import memory_allocation, memory_estimate, memory_growth_allowance, read_model
             model = read_model(worker.config["local_path"])
@@ -579,6 +586,11 @@ class ModelWorker:
                 argv = worker_command(argv, self.config["local_path"], descriptor)
                 extra["pass_fds"] = (descriptor,)
             environment = dict(os.environ, HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_DATASETS_OFFLINE="1")
+            splash = self.config.get("runtime") == "splash"
+            if splash:
+                # Splash execs its server over this worker, so it watches the gateway itself.
+                environment.pop("SPLASH_API_KEY", None)
+                environment["SPLASH_APP_PID"] = str(os.getpid())
             if private or self.config.get("api_key_sha256") is not None:
                 from mlx_agent.inference_auth import runtime_fingerprint
                 from mlx_agent.protected_worker import command, WORKER_DIGEST
@@ -586,9 +598,13 @@ class ModelWorker:
                     raise GatewayError(503, "authentication_changed", "Authentication runtime changed. Review a fresh serve plan.")
                 import secrets
                 self.worker_key = secrets.token_urlsafe(32)
-                environment[WORKER_DIGEST] = hashlib.sha256(self.worker_key.encode()).hexdigest()
-                if not private:
-                    argv = command(argv, self.config.get("runtime") or "mlx_lm")
+                if splash:
+                    # Splash checks its own key on every route but /health, /ready and its chat page.
+                    environment["SPLASH_API_KEY"] = self.worker_key
+                else:
+                    environment[WORKER_DIGEST] = hashlib.sha256(self.worker_key.encode()).hexdigest()
+                    if not private:
+                        argv = command(argv, self.config.get("runtime") or "mlx_lm")
             from mlx_agent.owned_worker import command as owned_command
             ready_read, ready_write = os.pipe()
             gate_read, gate_write = os.pipe()
@@ -656,6 +672,10 @@ class ModelWorker:
             else:
                 raise GatewayError(503, "model_load_failed",
                                    "Model worker did not become ready in {} seconds.".format(readiness_seconds))
+            if splash:
+                # Splash's launcher execs its server over the owned worker: bind the server that answered.
+                self.worker_identity = process_identity(process.pid)
+                self.execution.bind(process.pid, refresh=True)
             self._bind_memory(process,process_identity(process.pid))
             if model_fingerprint(self.config["local_path"]) != self.config["fingerprint"]:
                 raise GatewayError(503, "model_changed", "Model files changed while loading.")
@@ -1254,8 +1274,9 @@ class GatewayHandler(BaseHTTPRequestHandler):
             if not isinstance(tokens, int) or isinstance(tokens, bool) or tokens <= 0:
                 raise GatewayError(400, "invalid_body", "max_tokens must be a positive integer.")
             body["max_tokens"] = min(tokens, self.server.config["max_tokens"])
-            body["model"] = self.server.config["local_path"]
             runtime = self.server.config.get("runtime")
+            # Splash answers only to its served name.
+            body["model"] = self.server.config["splash_served_model" if runtime == "splash" else "local_path"]
             # Existing receipts predate the runtime field; recognize only the
             # exact native console entrypoint for those configurations.
             legacy_mlx = runtime is None and Path(self.server.config["worker_argv"][0]).name == "mlx_lm.server"

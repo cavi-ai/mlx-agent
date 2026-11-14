@@ -525,7 +525,11 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                              "Select an existing local model directory; serving never downloads weights.")
         local = local.resolve()
         worker = list(argv)
-        worker[worker.index("--model") + 1] = str(local)
+        if splash is not None:
+            # Splash's --model is the served name; its --model-dir already names the local target.
+            worker[:1] = plan["splash_worker_entry"]
+        else:
+            worker[worker.index("--model") + 1] = str(local)
         worker[worker.index("--port") + 1] = "{worker_port}"
         # Both supported runtimes expose --host. The VLM default binds all
         # interfaces, so explicitly fence the private worker to loopback.
@@ -664,7 +668,7 @@ def _require_splash_identity(plan):
     try:
         current = (read_target(plan["splash_model_dir"])["fingerprint"],
                    read_draft(plan["splash_draft_model"])["fingerprint"] if plan.get("splash_draft_model") else None,
-                   installed_runtime(plan["argv"][0])["fingerprint"])
+                   installed_runtime(plan["splash_launcher"])["fingerprint"])
     except SplashError as error:
         raise ServeError("preview_stale", str(error), "Review a fresh Splash serve plan.") from error
     if current != (plan["splash_model_fingerprint"], plan["splash_draft_fingerprint"], plan["splash_runtime_fingerprint"]):
@@ -984,7 +988,7 @@ def _argv_matches(receipt, command, require_port=True):
     argv = receipt.get("argv") or []
     if not argv:
         return False
-    if receipt.get("runtime") == "splash":
+    if receipt.get("runtime") == "splash" and not receipt.get("jit"):
         # The launcher execs Splash's server on its own prepared copy of the target.
         return ("-m server.server" in command and "--model {0} ".format(receipt.get("splash_served_model")) in command + " "
                 and (not require_port or "--port {0} ".format(receipt.get("port")) in command + " "))

@@ -13,6 +13,8 @@ from ..triposg.geometry import decimate, write_glb
 from ..triposg.weights import Weights
 
 COMPONENTS = ("image_encoder", "ss_flow", "ss_decoder", "shape_flow_512", "shape_flow_1024", "shape_decoder")
+TEXTURE_COMPONENTS = ("tex_flow_512", "tex_flow_1024", "tex_decoder")
+DECODERS = ("shape_decoder", "tex_decoder")
 RESOLUTIONS = (512, 1024, 1536)
 MAX_TOKENS = 49152
 CASCADE_FLOOR = 1024
@@ -35,6 +37,46 @@ def _kernels(values):
     return out
 
 
+def textured(config):
+    """Whether the converted model carries the texture stage."""
+    return all(name in config.get("components", {}) for name in TEXTURE_COMPONENTS)
+
+
+def srgb_to_linear(color):
+    color = np.clip(np.asarray(color, dtype=np.float32), 0.0, 1.0)
+    return np.where(color <= 0.04045, color / 12.92, ((color + 0.055) / 1.055) ** 2.4).astype(np.float32)
+
+
+def voxel_colors(points, coords, colors, grid, reach=3):
+    """The color of the voxel holding each point (P, 3) in the unit cube centered on the origin, else of the closest
+    occupied voxel within ``reach`` cells, else the mean color."""
+    coords = np.asarray(coords, dtype=np.int64)
+    colors = np.asarray(colors, dtype=np.float32)
+    cells = np.clip(np.floor((np.asarray(points, dtype=np.float64) + 0.5) * grid).astype(np.int64), 0, grid - 1)
+    span = grid + 2 * reach
+    keys = ((coords[:, 0] + reach) * span + coords[:, 1] + reach) * span + coords[:, 2] + reach
+    order = np.argsort(keys, kind="stable")
+    ordered = keys[order]
+    out = np.tile(colors.mean(axis=0), (len(cells), 1))
+    pending = np.arange(len(cells))
+    side = np.arange(-reach, reach + 1)
+    offsets = np.stack(np.meshgrid(side, side, side, indexing="ij"), axis=-1).reshape(-1, 3)
+    distance = np.abs(offsets).max(axis=1)
+    for radius in range(reach + 1):
+        ring = offsets[distance == radius]
+        ring = ring[np.argsort((ring ** 2).sum(axis=1), kind="stable")]
+        for offset in ring:
+            if not len(pending):
+                return out
+            cell = cells[pending] + reach + offset
+            query = (cell[:, 0] * span + cell[:, 1]) * span + cell[:, 2]
+            position = np.minimum(np.searchsorted(ordered, query), len(ordered) - 1)
+            hit = ordered[position] == query
+            out[pending[hit]] = colors[order[position[hit]]]
+            pending = pending[~hit]
+    return out
+
+
 def load(path):
     path = Path(path)
     config = json.loads((path / "config.json").read_text())
@@ -42,9 +84,9 @@ def load(path):
         raise ValueError("Pass a converted TRELLIS.2 model directory.")
     quantization = config.get("quantization", {})
     weights = {}
-    for name in COMPONENTS:
+    for name in COMPONENTS + (TEXTURE_COMPONENTS if textured(config) else ()):
         values = mx.load(str(path / (name + ".safetensors")))
-        weights[name] = Weights(_kernels(values) if name == "shape_decoder" else values, **quantization)
+        weights[name] = Weights(_kernels(values) if name in DECODERS else values, **quantization)
     mx.eval(*[value for component in weights.values() for value in component.values.values()])
     return config, weights
 
@@ -124,9 +166,31 @@ def generate(model, image, out, steps=12, seed=42, resolution=1024, guidance=7.5
         slat = _denormalize(slat[0], normalization)
         previous, cursor = cursor, time.perf_counter()
         stages["shape_latent_high"] = cursor - previous
-    voxels, vertices, crossed, split = sparse.decode(weights["shape_decoder"], decoder, slat, coords)
+    paint = textured(config)
+    texture_latent = None
+    if paint:
+        name = "tex_flow_512" if resolution == LOW_RESOLUTION else "tex_flow_1024"
+        tex, cond = config["components"][name], cond_low if cond_high is None else cond_high
+        shape = (slat - mx.array(normalization["mean"], dtype=mx.float32)) / mx.array(normalization["std"],
+                                                                                    dtype=mx.float32)
+        params = settings["tex_slat_sampler"]
+        noise = _noise(rng, (1, len(coords), tex["in_channels"] - shape.shape[-1]))
+        texture_latent = flow.sample(weights[name], tex, noise, cond, mx.zeros_like(cond),
+                                     flow.rope_tables(coords, head_dim), extra=shape[None],
+                                     **_sampler(params, steps, params["guidance_strength"]))
+        texture_latent = _denormalize(texture_latent[0], settings["tex_slat_normalization"])
+        previous, cursor = cursor, time.perf_counter()
+        stages["texture_latent"] = cursor - previous
+    subdivisions = []
+    voxels, vertices, crossed, split = sparse.decode(weights["shape_decoder"], decoder, slat, coords, subdivisions)
     previous, cursor = cursor, time.perf_counter()
     stages["decode"] = cursor - previous
+    attributes = None
+    if paint:
+        _, attributes = sparse.decode_attributes(weights["tex_decoder"], config["components"]["tex_decoder"],
+                                                 texture_latent, coords, subdivisions)
+        previous, cursor = cursor, time.perf_counter()
+        stages["texture_decode"] = cursor - previous
     vertices, faces = dual_grid.to_mesh(voxels, vertices, crossed, split, level_resolution)
     vertices = gltf_axes(vertices)
     previous, cursor = cursor, time.perf_counter()
@@ -134,9 +198,14 @@ def generate(model, image, out, steps=12, seed=42, resolution=1024, guidance=7.5
     vertices, faces = decimate(vertices, faces, max_faces)
     previous, cursor = cursor, time.perf_counter()
     stages["decimation"] = cursor - previous
-    write_glb(out, vertices, faces)
+    colors = None
+    if paint:
+        upright = np.stack([vertices[:, 0], -vertices[:, 2], vertices[:, 1]], axis=1)
+        colors = srgb_to_linear(voxel_colors(upright, voxels, attributes[:, :3], level_resolution))
+    write_glb(out, vertices, faces, colors)
     stages["export"] = time.perf_counter() - cursor
     return {"path": str(out), "seconds": round(time.perf_counter() - started, 3), "steps": steps,
             "seed": seed, "resolution": level_resolution, "vertices": len(vertices), "faces": len(faces),
-            "voxels": len(voxels), "stage_seconds": {name: round(value, 3) for name, value in stages.items()},
+            "voxels": len(voxels), "vertex_colors": paint,
+            "stage_seconds": {name: round(value, 3) for name, value in stages.items()},
             "peak_memory_gb": round(mx.get_peak_memory() / 1e9, 3)}

@@ -216,11 +216,11 @@ class ResolveTests(unittest.TestCase):
         self.validator.validate(payload)
         self.assertEqual((payload["verdict"], payload["backend"], payload["model_type"]),
                          ("convertible_after_install", "mlx-3d", "trellis2"))
-        self.assertEqual(payload["download_bytes"], 10 * 1000 + 300 + 147_000_000 + 700 + 1_212_559_808)
+        self.assertEqual(payload["download_bytes"], 16 * 1000 + 300 + 147_000_000 + 700 + 1_212_559_808)
         self.assertEqual(payload["warnings"], [])
         del infos["facebook/dinov3-vitl16-pretrain-lvd1689m"]
         payload = resolve("microsoft/TRELLIS.2-4B", client=ReposClient(infos), manifests=manifests, registries=registries)
-        self.assertEqual(payload["download_bytes"], 10 * 1000 + 300 + 147_000_000)
+        self.assertEqual(payload["download_bytes"], 16 * 1000 + 300 + 147_000_000)
         self.assertEqual(len(payload["warnings"]), 1)
         self.assertTrue(payload["warnings"][0].startswith("facebook/dinov3-vitl16-pretrain-lvd1689m size unavailable"))
 

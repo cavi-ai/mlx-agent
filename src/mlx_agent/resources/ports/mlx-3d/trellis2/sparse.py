@@ -88,18 +88,20 @@ def subdivide(voxels, feats, keep):
     return coords, split
 
 
-def up_block(w, name, voxels, out_channels):
-    """Channel-to-space residual block: predicts which octants exist and moves channels into them."""
-    subdiv = w.linear(name + ".to_subdiv", voxels.feats)
+def up_block(w, name, voxels, out_channels, keep=None):
+    """Channel-to-space residual block: moves channels into the octants that exist, predicted here unless ``keep``
+    (N, 8) gives them. Returns the child voxels and the octants kept."""
+    if keep is None:
+        keep = np.array(w.linear(name + ".to_subdiv", voxels.feats) > 0)
     h = nn.silu(_norm(w, name + ".norm1", voxels.feats))
     h = sparse_conv(w, name + ".conv1", voxels.replace(h)).feats
-    coords, (h, skip) = subdivide(voxels, (h, voxels.feats), np.array(subdiv > 0))
+    coords, (h, skip) = subdivide(voxels, (h, voxels.feats), keep)
     child = Voxels(h, coords)
     h = nn.silu(mx.fast.layer_norm(h, None, None, 1e-6))
     h = sparse_conv(w, name + ".conv2", child.replace(h)).feats
     repeat = out_channels // skip.shape[1]
     skip = mx.repeat(skip, repeat, axis=1) if repeat > 1 else skip
-    return child.replace(h + skip)
+    return child.replace(h + skip), keep
 
 
 def _levels(config):
@@ -107,8 +109,9 @@ def _levels(config):
     return [(level, channels[level], blocks[level]) for level in range(len(blocks))]
 
 
-def run(w, config, feats, coords, stop_level=None):
-    """Decoder trunk: returns the last level's voxels, or the coordinates reached at ``stop_level``."""
+def run(w, config, feats, coords, stop_level=None, subdivisions=None, guide=None):
+    """Decoder trunk: returns the last level's voxels, or the coordinates reached at ``stop_level``. A list passed as
+    ``subdivisions`` receives each level's kept octants; ``guide`` replays such a list instead of predicting them."""
     voxels = Voxels(w.linear("from_latent", feats), coords)
     channels = config["model_channels"]
     for level, width, count in _levels(config):
@@ -118,14 +121,26 @@ def run(w, config, feats, coords, stop_level=None):
             voxels = convnext_block(w, "blocks.{0}.{1}".format(level, index), voxels)
             mx.eval(voxels.feats)
         if level < len(channels) - 1:
-            voxels = up_block(w, "blocks.{0}.{1}".format(level, count), voxels, channels[level + 1])
+            voxels, keep = up_block(w, "blocks.{0}.{1}".format(level, count), voxels, channels[level + 1],
+                                    None if guide is None else guide[level])
+            if subdivisions is not None:
+                subdivisions.append(keep)
             mx.eval(voxels.feats)
     return voxels
 
 
-def decode(w, config, feats, coords):
+def decode_attributes(w, config, feats, coords, guide):
+    """Per-voxel attributes in [0, 1] (base color, metallic, roughness, alpha) on the voxels a shape decode produced
+    with the subdivisions ``guide``; rows follow that decode's voxel order."""
+    voxels = run(w, config, feats, coords, guide=guide)
+    h = w.linear("output_layer", mx.fast.layer_norm(voxels.feats, None, None, 1e-5)) * 0.5 + 0.5
+    mx.eval(h)
+    return voxels.coords, np.array(h)
+
+
+def decode(w, config, feats, coords, subdivisions=None):
     """Per-voxel dual vertex (3), edge crossing flags (3) and quad split weight (1) at the output level."""
-    voxels = run(w, config, feats, coords)
+    voxels = run(w, config, feats, coords, subdivisions=subdivisions)
     h = w.linear("output_layer", mx.fast.layer_norm(voxels.feats, None, None, 1e-5))
     margin = 0.5
     vertices = (1 + 2 * margin) * mx.sigmoid(h[:, 0:3]) - margin

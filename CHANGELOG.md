@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- A memory-guard stop releases only the model worker; the endpoint keeps admitting requests instead of refusing them until restarted.
+
 - A live model load refuses when Splash, task, adapter, training, kernel, vision, access, or model files no longer match the reviewed serving plan.
 - Endpoint memory reservation uses the Splash and Strata sizes stored on the serving plan.
 

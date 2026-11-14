@@ -340,7 +340,7 @@ class TaskModelWorker(ModelWorker):
             plan = kind.plan(request, directory, media)
             if plan['backend'] != record['identity']['backend'] or plan['argv'][0] != self.resident.executable:
                 raise TaskError('identity_changed', 'The model task backend changed.')
-            self._check_memory() if not self.resident.loaded else self._reserve_workspace()
+            self.weights.reserve_workspace() if self.resident.loaded else self.weights.admit()
             try:
                 capacity = self.memory_registry.reserve_execution(self.memory_token,
                     None if budget_gb is None else math.ceil(budget_gb * 1e9), self.memory_probe)
@@ -352,7 +352,7 @@ class TaskModelWorker(ModelWorker):
                     raise InterruptedError('Endpoint stopping.')
                 self.model_state = 'loading' if not self.resident.loaded else 'loaded'
             if self.resident.process is None:
-                self._launching_memory()
+                self.weights.launching()
                 self.resident._start(cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'])
             with self.condition:
                 if self.closed:
@@ -365,7 +365,7 @@ class TaskModelWorker(ModelWorker):
             if not worker_identity:
                 raise TaskError('task_identity_unavailable', 'Cannot establish the model worker identity.')
             if not self.memory_materialized:
-                self._bind_memory(self.process,worker_identity)
+                self.weights.bind(self.process, worker_identity)
             self.store.transition(identifier, ('starting',), {'state': 'running', 'execution': {'pid': self.process.pid, 'identity': worker_identity}})
             dispatched = True
             result = kind.run(plan, runner=lambda argv, **options: self.resident.run(argv,

@@ -137,16 +137,10 @@ class TaskHandler(GatewayHandler):
                     raise ValueError()
             except (ValueError, UnicodeError):
                 raise GatewayError(400, 'invalid_body', 'Expected a JSON object of at most 1 MiB.') from None
+            if self._dispatch_control(body):
+                return
             controller = self.server.controller
-            if self.path == '/_mlx/unload':
-                self._json(200, controller.unload())
-            elif self.path == '/_mlx/cache':
-                if body:
-                    raise GatewayError(400, 'invalid_body', 'Cache reclaim requires an empty object.')
-                self._json(200, controller.reclaim_cache())
-            elif self.path == '/_mlx/policy':
-                self._json(200, controller.configure(body))
-            elif self.path == '/v1/tasks':
+            if self.path == '/v1/tasks':
                 self._json(202, controller.submit(body))
             elif self.path == '/v1/embeddings':
                 self._json(200, self._embeddings(body))

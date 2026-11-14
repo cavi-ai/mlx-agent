@@ -117,6 +117,116 @@ def model_fingerprint(path):
     return hashlib.sha256(json.dumps(rows, separators=(",", ":")).encode()).hexdigest()
 
 
+class WeightSession:
+    """Reserve, bind, settle, and release the weights for one endpoint.
+
+    Chat acquisition and task execution both use this. The worker keeps the
+    same method names so existing callers still reach it.
+    """
+
+    def __init__(self, worker):
+        self.worker = worker
+
+    def admit(self):
+        worker = self.worker
+        with worker.condition:
+            context = worker.memory_policy.get("context_tokens")
+            worker.load_blocked_reason = None
+        weights = sum(item.stat().st_size for item in Path(worker.config["local_path"]).rglob("*")
+                      if item.is_file() and item.suffix in (".safetensors", ".npz", ".bin", ".gguf"))
+        if weights and worker.config.get("adapter_path") is not None:
+            weights += worker.config["adapter_identity"]["adapters.safetensors"]["bytes"]
+        kv = 0 if context is None else _kv_cache_bytes(worker.config["local_path"], context)
+        runtime_bytes = 1_500_000_000
+        dynamic_bytes = runtime_bytes + (kv or 0)
+        size = math.ceil(weights * 1.10 + kv + 1.5e9) if weights and kv is not None else None
+        if worker.config.get("runtime") == "strata":
+            from mlx_agent.strata_runtime import memory_allocation, memory_estimate, memory_growth_allowance, read_model
+            model = read_model(worker.config["local_path"])
+            context = worker.config.get("strata_context_tokens", 131072)
+            budget = worker.memory_policy.get("model_memory_budget_gb")
+            capacity = worker.config.get("strata_expert_memory_gb")
+            if budget is not None:
+                allocation = memory_allocation(model, budget, context, worker._strata_speculation())
+                size = allocation["estimated_resident_bytes"]
+                capacity = 0 if allocation["mode"] == "resident" else allocation["expert_memory_gb"]
+            else:
+                size = memory_estimate(model, capacity, context, worker._strata_speculation())
+            runtime_bytes = 5_000_000_000
+            dynamic_bytes = memory_growth_allowance(model, context, capacity, worker._strata_speculation())
+        if size is None:
+            worker.load_blocked_reason = "Model or context memory estimate is unavailable."
+            raise GatewayError(503, "memory_unknown", worker.load_blocked_reason)
+        worker.workspace_bytes = min(math.ceil(size), runtime_bytes)
+        worker.growth_bytes = min(math.ceil(size) - worker.workspace_bytes, max(0, dynamic_bytes - worker.workspace_bytes))
+        model_key = hashlib.sha256(json.dumps([str(Path(worker.config["local_path"]).resolve()),
+            worker.config.get("fingerprint"), worker.config.get("runtime"), worker.config["worker_argv"]],
+            sort_keys=True).encode()).hexdigest()
+        try:
+            worker.memory_reservation = worker.memory_registry.reserve(worker.memory_token, model_key,
+                math.ceil(size) - worker.workspace_bytes - worker.growth_bytes, worker.workspace_bytes,
+                lambda: math.ceil((worker.memory_policy["minimum_headroom_gb"] or 0) * 1e9), worker.memory_probe,
+                growth_bytes=worker.growth_bytes)
+            worker.memory_check = worker.memory_reservation
+        except MemoryAdmissionError as error:
+            worker.memory_check = error.details
+            worker.load_blocked_reason = str(error)
+            raise GatewayError(503, error.code, str(error)) from error
+
+    def release(self):
+        worker = self.worker
+        if worker.memory_reservation is not None:
+            worker.memory_registry.release(worker.memory_token)
+            worker.memory_reservation = None
+        worker.worker_memory = None
+        worker.memory_materialized = False
+        worker.memory_transition_blocked = False
+
+    def set_headroom(self, gigabytes):
+        worker = self.worker
+        if worker.memory_reservation is not None:
+            try:
+                worker.memory_reservation = worker.memory_registry.set_headroom(worker.memory_token, math.ceil(gigabytes * 1e9))
+            except MemoryAdmissionError as error:
+                raise GatewayError(503, error.code, str(error)) from error
+
+    def launching(self):
+        worker = self.worker
+        if worker.memory_reservation is not None:
+            worker.memory_reservation = worker.memory_registry.launching(worker.memory_token)
+
+    def bind(self, process, identity):
+        worker = self.worker
+        if worker.memory_reservation is not None:
+            worker.memory_reservation = worker.memory_registry.bind_worker(
+                worker.memory_token, process.pid, identity, os.getpgid(process.pid))
+
+    def settle(self):
+        worker = self.worker
+        if worker.memory_reservation is not None and not worker.memory_materialized and not worker.memory_transition_blocked:
+            try:
+                worker.memory_reservation = worker.memory_registry.settle(worker.memory_token,
+                    workspace_bytes=worker.workspace_bytes + worker.growth_bytes)
+            except MemoryAdmissionError as error:
+                if error.code != "memory_registry_busy":
+                    raise GatewayError(503, error.code, str(error)) from error
+                worker.memory_transition_blocked = True
+                worker.last_error = "Memory reservation remains pending: " + str(error)
+                return
+            worker.memory_materialized = True
+            worker.last_error = None
+
+    def reserve_workspace(self):
+        worker = self.worker
+        try:
+            worker.memory_check = worker.memory_registry.reserve_workspace(
+                worker.memory_token, worker.workspace_bytes, worker.memory_probe)
+            worker.memory_reservation = worker.memory_check
+        except MemoryAdmissionError as error:
+            worker.memory_check = error.details
+            raise GatewayError(503, error.code, str(error)) from error
+
+
 class ModelWorker:
     def __init__(self, config):
         self.config = config
@@ -165,6 +275,7 @@ class ModelWorker:
         self.growth_bytes = 0
         self.memory_materialized = False
         self.memory_transition_blocked = False
+        self.weights = WeightSession(self)
 
     def _persist(self):
         state_path = self.config.get("state_path")
@@ -303,96 +414,27 @@ class ModelWorker:
             return self.status()
 
     def _check_memory(self):
-        with self.condition:
-            reserve = self.memory_policy["minimum_headroom_gb"]
-            context = self.memory_policy.get("context_tokens")
-            self.load_blocked_reason = None
-        weights = sum(item.stat().st_size for item in Path(self.config["local_path"]).rglob("*")
-                      if item.is_file() and item.suffix in (".safetensors", ".npz", ".bin", ".gguf"))
-        if weights and self.config.get("adapter_path") is not None:
-            weights += self.config["adapter_identity"]["adapters.safetensors"]["bytes"]
-        kv = 0 if context is None else _kv_cache_bytes(self.config["local_path"], context)
-        runtime_bytes = 1_500_000_000
-        dynamic_bytes = runtime_bytes + (kv or 0)
-        size = math.ceil(weights * 1.10 + kv + 1.5e9) if weights and kv is not None else None
-        if self.config.get("runtime") == "strata":
-            from mlx_agent.strata_runtime import read_model, memory_estimate, memory_allocation, memory_growth_allowance
-            model = read_model(self.config["local_path"])
-            context = self.config.get("strata_context_tokens", 131072)
-            budget = self.memory_policy.get("model_memory_budget_gb")
-            capacity = self.config.get('strata_expert_memory_gb')
-            if budget is not None:
-                allocation = memory_allocation(model,budget,context,self._strata_speculation())
-                size = allocation['estimated_resident_bytes']
-                capacity = 0 if allocation['mode']=='resident' else allocation['expert_memory_gb']
-            else:
-                size = memory_estimate(model,capacity,context,self._strata_speculation())
-            runtime_bytes = 5_000_000_000
-            dynamic_bytes = memory_growth_allowance(model,context,capacity,self._strata_speculation())
-        if size is None:
-            self.load_blocked_reason = 'Model or context memory estimate is unavailable.'
-            raise GatewayError(503,'memory_unknown',self.load_blocked_reason)
-        self.workspace_bytes = min(math.ceil(size),runtime_bytes)
-        self.growth_bytes = min(math.ceil(size)-self.workspace_bytes,max(0,dynamic_bytes-self.workspace_bytes))
-        model_key = hashlib.sha256(json.dumps([str(Path(self.config['local_path']).resolve()),
-            self.config.get('fingerprint'),self.config.get('runtime'),self.config['worker_argv']],sort_keys=True).encode()).hexdigest()
-        try:
-            self.memory_reservation = self.memory_registry.reserve(self.memory_token,model_key,
-                math.ceil(size)-self.workspace_bytes-self.growth_bytes,self.workspace_bytes,
-                lambda:math.ceil((self.memory_policy['minimum_headroom_gb'] or 0)*1e9),self.memory_probe,
-                growth_bytes=self.growth_bytes)
-            self.memory_check = self.memory_reservation
-        except MemoryAdmissionError as error:
-            self.memory_check = error.details
-            self.load_blocked_reason = str(error)
-            raise GatewayError(503,error.code,str(error)) from error
+        self.weights.admit()
 
     def _release_memory(self):
-        if self.memory_reservation is not None:
-            self.memory_registry.release(self.memory_token)
-            self.memory_reservation = None
-        self.worker_memory = None
-        self.memory_materialized = False
-        self.memory_transition_blocked = False
+        self.weights.release()
 
-    def _set_memory_headroom(self,gigabytes):
-        if self.memory_reservation is not None:
-            try:
-                self.memory_reservation = self.memory_registry.set_headroom(self.memory_token,math.ceil(gigabytes*1e9))
-            except MemoryAdmissionError as error:
-                raise GatewayError(503,error.code,str(error)) from error
+    def _set_memory_headroom(self, gigabytes):
+        self.weights.set_headroom(gigabytes)
 
     def _launching_memory(self):
-        if self.memory_reservation is not None:
-            self.memory_reservation = self.memory_registry.launching(self.memory_token)
+        self.weights.launching()
 
     def _bind_memory(self, process, identity):
-        if self.memory_reservation is not None:
-            self.memory_reservation = self.memory_registry.bind_worker(self.memory_token,process.pid,identity,os.getpgid(process.pid))
+        self.weights.bind(process, identity)
 
     def _materialized_memory(self):
         # Readiness alone does not prove that an asynchronous model loader has
         # allocated its weights. Keep cold allocations reserved until output.
-        if self.memory_reservation is not None and not self.memory_materialized and not self.memory_transition_blocked:
-            try:
-                self.memory_reservation = self.memory_registry.settle(self.memory_token,
-                    workspace_bytes=self.workspace_bytes+self.growth_bytes)
-            except MemoryAdmissionError as error:
-                if error.code != 'memory_registry_busy':
-                    raise GatewayError(503,error.code,str(error)) from error
-                self.memory_transition_blocked = True
-                self.last_error = 'Memory reservation remains pending: ' + str(error)
-                return
-            self.memory_materialized = True
-            self.last_error = None
+        self.weights.settle()
 
     def _reserve_workspace(self):
-        try:
-            self.memory_check = self.memory_registry.reserve_workspace(self.memory_token,self.workspace_bytes,self.memory_probe)
-            self.memory_reservation = self.memory_check
-        except MemoryAdmissionError as error:
-            self.memory_check = error.details
-            raise GatewayError(503,error.code,str(error)) from error
+        self.weights.reserve_workspace()
 
     def _resident_check(self, policy, available, scope):
         known = type(available) is int and available >= 0
@@ -1145,6 +1187,20 @@ class GatewayHandler(BaseHTTPRequestHandler):
         except GatewayError as error:
             self._error(error)
 
+    def _dispatch_control(self, body):
+        """Shared unload, cache, and policy routes for chat and task endpoints."""
+        if self.path == "/_mlx/unload":
+            self._json(200, self.server.controller.unload())
+        elif self.path == "/_mlx/cache":
+            if body:
+                raise GatewayError(400, "invalid_body", "Cache reclaim requires an empty object.")
+            self._json(200, self.server.controller.reclaim_cache())
+        elif self.path == "/_mlx/policy":
+            self._json(200, self.server.controller.configure(body))
+        else:
+            return False
+        return True
+
     def do_POST(self):
         self._measurement = None
         self._inference_success = False
@@ -1173,16 +1229,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 raise GatewayError(400, "invalid_body", "Expected a JSON object.")
             if not isinstance(body, dict):
                 raise GatewayError(400, "invalid_body", "Expected a JSON object.")
-            if self.path == "/_mlx/unload":
-                self._json(200, self.server.controller.unload())
-                return
-            if self.path == "/_mlx/cache":
-                if body:
-                    raise GatewayError(400, 'invalid_body', 'Cache reclaim requires an empty object.')
-                self._json(200, self.server.controller.reclaim_cache())
-                return
-            if self.path == "/_mlx/policy":
-                self._json(200, self.server.controller.configure(body))
+            if self._dispatch_control(body):
                 return
             translated = self.path in ("/v1/messages", "/v1/responses")
             allow_images = self.server.config.get("runtime") == "mlx-vlm"

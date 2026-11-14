@@ -125,6 +125,7 @@ class ModelWorker:
         self.last_error = None
         self.memory_guard_error = None
         self.closed = False
+        self.shutdown_requested = False
         self.log = None
         self.memory_policy = validate_memory_policy(config.get("memory_policy"))
         reject_cache_outside_tasks(self.memory_policy, config.get("runtime"))
@@ -800,12 +801,15 @@ class ModelWorker:
                     'job_memory_cap_exceeded' if job_breach else 'agent_memory_budget_exceeded',
                     'Job memory cap exceeded; increase --memory-budget-gb.' if job_breach
                     else 'The shared agent memory admission was exceeded or unavailable.')
-            self.close()
+            self._halt()
             with self.condition:
                 self.last_error = (('Job memory cap exceeded; increase --memory-budget-gb.' if job_breach
                     else 'Agent memory guard stopped the owned model worker.')
                     + (' ' + budget['error'] if budget.get('error') else ''))
                 self.model_state = 'failed'
+                # Only the worker stops; the next request passes memory admission again.
+                self.closed = self.shutdown_requested
+                self.condition.notify_all()
                 self._persist()
 
     def unload(self):
@@ -837,13 +841,19 @@ class ModelWorker:
 
     def close(self):
         with self.condition:
-            self.closed = True
-            self.condition.notify_all()
-        self._stop_worker()
+            self.shutdown_requested = True
+        self._halt()
         self.execution.close()
         with self.condition:
             self.model_state = "unloaded"
             self._persist()
+
+    def _halt(self):
+        """Refuse new work, cancel running work and stop the owned worker."""
+        with self.condition:
+            self.closed = True
+            self.condition.notify_all()
+        self._stop_worker()
 
 
 class GatewayServer(ThreadingHTTPServer):

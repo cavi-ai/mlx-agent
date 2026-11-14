@@ -402,7 +402,8 @@ def main():
 def plan_contribution(local_path, has_path, adapter_path, strata_speculation, strata_decoding,
                       strata_context_tokens, strata_expert_memory_gb, memory_policy, runtime_executable):
     """Strata's part of a serving plan. Raises StrataError; the caller maps it."""
-    from .runtime_plan import Contribution
+    # This file is also executed by path, so the package import stays inside the function.
+    from .serving_plan import Contribution
     if not has_path or adapter_path is not None or type(strata_speculation) is not bool:
         raise StrataError("strata_model_required", "Strata requires a local GGUF profile without a LoRA adapter.")
     model = read_model(local_path)

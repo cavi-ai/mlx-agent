@@ -11,6 +11,7 @@ from pathlib import Path
 from .allocator_cache import FIELDS as CACHE_FIELDS
 from .allocator_cache import from_memory, requested
 from .contextfit import CONTEXT_MAX, CONTEXT_MIN, extract_architecture, kv_cache_bytes
+from .serving_plan import memory_basis
 
 STRATA_CONTEXT = "Strata JIT admission already includes the KV cache at --strata-context-tokens."
 TASK_CONTEXT = "Task endpoints do not use text KV context settings."
@@ -272,30 +273,29 @@ def reservation(policy, config):
     estimate, allocation, and growth are the values already stored on the plan.
     """
     context = policy.get("context_tokens")
-    runtime = config.get("runtime")
+    basis = memory_basis(config)
     runtime_bytes = 1_500_000_000
     weights = 0
     kv = 0
-    if runtime == "splash":
-        weights = config["splash_weight_bytes"]
-    elif runtime != "strata":
+    if basis.kind == "splash":
+        weights = basis.weights
+    elif basis.kind != "strata":
         weights = _weight_bytes(config["local_path"])
-    if runtime != "strata" and weights and config.get("adapter_path") is not None:
+    if basis.kind != "strata" and weights and config.get("adapter_path") is not None:
         weights += config["adapter_identity"]["adapters.safetensors"]["bytes"]
-    if runtime != "strata":
+    if basis.kind != "strata":
         kv = 0 if context is None else _kv_cache_bytes(config["local_path"], context)
     dynamic_bytes = runtime_bytes + (kv or 0)
     size = math.ceil(weights * 1.10 + kv + 1.5e9) if weights and kv is not None else None
-    if runtime == "splash" and config.get("splash_max_memory_gb") is not None:
-        size = math.ceil(config["splash_max_memory_gb"] * 1e9)
-    if runtime == "strata":
+    if basis.kind == "splash" and basis.cap_gb is not None:
+        size = math.ceil(basis.cap_gb * 1e9)
+    if basis.kind == "strata":
         runtime_bytes = 5_000_000_000
         if policy.get("model_memory_budget_gb") is not None:
-            allocation = config.get("strata_memory_allocation") or {}
-            size = allocation.get("estimated_resident_bytes")
+            size = basis.allocation_bytes
         else:
-            size = config.get("strata_memory_estimate_bytes")
-        dynamic_bytes = config.get("strata_memory_growth_bytes")
+            size = basis.estimate_bytes
+        dynamic_bytes = basis.growth_bytes
         if size is None or dynamic_bytes is None:
             size = None
     if size is None:

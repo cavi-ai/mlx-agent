@@ -67,6 +67,65 @@ class TaskServingTests(unittest.TestCase):
 
 
 class TaskHTTPTests(unittest.TestCase):
+    def test_execution_admits_selected_cold_and_warm_growth_before_dispatch(self):
+        from mlx_agent.task_serving import _trellis_component_budget
+        controller = self.server.controller
+        controller.memory_probe = lambda: 100_000_000_000
+        path = self.root / 'trellis'
+        path.mkdir()
+        names = ('image_encoder', 'ss_flow', 'ss_decoder', 'shape_flow_512', 'shape_flow_1024',
+                 'shape_decoder', 'tex_flow_512', 'tex_flow_1024', 'tex_decoder')
+        (path / 'config.json').write_text(json.dumps({'model_type': 'trellis2', 'components': {n: {} for n in names}}))
+        for i, name in enumerate(names, 1):
+            (path / (name + '.safetensors')).write_bytes(b'x' * i)
+        resident = ['image_encoder', 'ss_flow', 'ss_decoder', 'shape_flow_512', 'shape_decoder', 'tex_flow_512', 'tex_decoder']
+        telemetry = {'schema':'worker-memory/1', 'active_bytes':1, 'cache_bytes':0, 'peak_bytes':1,
+                     'loads':1, 'cache_hits':0, 'load_seconds':0., 'captured_at':1.,
+                     'components': {'schema':'resident-components/1', 'resident':resident,
+                       'loads':{n:1 for n in resident}, 'load_seconds':{n:0. for n in resident},
+                       'checkpoint_bytes':{n:1 for n in resident}}}
+        observed = []
+        cold, warm = controller._check_memory, controller._reserve_workspace
+        def check(*, weight_bytes=None):
+            observed.append(('cold', weight_bytes))
+            return cold(weight_bytes=weight_bytes)
+        def reserve(extra_bytes=0):
+            observed.append(('warm', extra_bytes))
+            return warm(extra_bytes)
+        def component_budget(_path, _kind, _plan, _telemetry, *, warm):
+            return _trellis_component_budget(path, 'mesh_generation',
+                {'argv': ['runner', '--resolution', '1024' if warm else '512']},
+                telemetry if warm else None, warm=warm)
+        with patch('mlx_agent.task_serving._trellis_component_budget', side_effect=component_budget), \
+             patch.object(controller, '_check_memory', side_effect=check), \
+             patch.object(controller, '_reserve_workspace', side_effect=reserve):
+            self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+            pid = controller.resident.process.pid
+            self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+            self.assertEqual(controller.resident.process.pid, pid)
+            controller.memory_policy['model_memory_budget_gb'] = 1.5
+            denied = self.wait(self.start())
+            self.assertEqual(denied['error']['code'], 'job_memory_cap_exceeded')
+            self.assertEqual(controller.resident.process.pid, pid)
+        self.assertEqual(observed, [('cold', 32), ('warm', 15), ('warm', 15)])
+
+    def test_resident_component_statistics_reach_worker_status(self):
+        port = self.root / 'fixture_port.py'
+        source = port.read_text().replace('def load(path): return Model(), None', """class Loaded(tuple):
+    def component_statistics(self):
+        return {'schema':'resident-components/1', 'resident':['image_encoder'],
+                'loads':{'image_encoder':1}, 'load_seconds':{'image_encoder':0.25},
+                'checkpoint_bytes':{'image_encoder':24}}
+def load(path): return Loaded((Model(), None))""", 1)
+        port.write_text(source)
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        memory = self.server.controller.status()['worker_memory']
+        self.assertEqual(memory['components']['resident'], ['image_encoder'])
+        self.assertEqual(memory['components']['loads'], {'image_encoder':1})
+        self.assertEqual(memory['components']['checkpoint_bytes'], {'image_encoder':24})
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        self.assertEqual(self.server.controller.status()['worker_memory']['cache_hits'], 1)
+
     def test_authentication_covers_jobs_results_artifacts_and_cancellation(self):
         import hashlib
         token = 'client-' + 'a' * 40

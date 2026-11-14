@@ -283,6 +283,11 @@ stable steps and may change geometry. It is off by default. Jobs above the
 feature budget use full computation; result metadata reports actual reused
 steps and the feature-memory reservation.
 
+TRELLIS.2 loads the components needed for the requested resolution and reuses
+them while its task worker remains resident. Worker memory status can report the
+resident component names, load counts, load times and checkpoint file sizes;
+checkpoint sizes are not measurements of resident RAM.
+
 The engine retains a verified copy of the input image and publishes an owned
 `output.glb` artifact with the `mesh/1` result. Status, cancellation and result
 verification use the same task commands as the other media kinds. Tasks never

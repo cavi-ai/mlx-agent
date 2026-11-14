@@ -61,6 +61,21 @@ class MeshPlanningTests(unittest.TestCase):
         self.assertEqual(port.generate.call_args.kwargs['denoiser_cache'],'adaptive')
         self.assertEqual(port.generate.call_args.kwargs['cache_memory_mib'],64)
 
+    def test_runner_includes_component_preparation_in_load_time(self):
+        port = mock.Mock()
+        port.generate.return_value = {'path': str(self.out), 'stage_seconds': {}}
+        model = object()
+        args = ['--module','fixture','--model',str(self.model),'--image',str(self.image),'--out',str(self.out),
+                '--steps','1','--seed','42','--resolution','512','--guidance','7','--max-faces','500000']
+        output = io.StringIO()
+        with mock.patch.object(mesh_runner.importlib, 'import_module', return_value=port), \
+             mock.patch.object(mesh_runner, 'load_model', return_value=model), \
+             mock.patch.object(mesh_runner.time, 'monotonic', side_effect=[10., 12.5]), \
+             contextlib.redirect_stdout(output):
+            mesh_runner.main(args)
+        port.prepare.assert_called_once_with(model, 512)
+        self.assertEqual(json.loads(output.getvalue())['load_seconds'], 2.5)
+
     def test_defaults_to_the_upstream_resolution_and_face_cap(self):
         args = self.plan()['argv']
         self.assertEqual(args[args.index('--resolution')+1], '512')

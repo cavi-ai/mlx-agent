@@ -20,7 +20,7 @@ The preview renders the exact `mlx_lm.convert` argv before anything runs. Legacy
 MLX-LM, MLX-VLM, MLX-Audio and MLX-Embeddings conversions and GGUF files without a port accept 4, 5, 6 and 8 bits.
 MLX-Video and mflux converters, exported music checkpoints and the GGUF ports
 (DeepSeek-V4 DSpark, Qwen3.5) accept 4 and 8. Ports convert at the widths they were
-checked at: Audio8 at 4 and 8, Laya at 6 and 8, TripoSG, TRELLIS.2 and Pixal3D at 8 and 32 (unquantized).
+checked at: Audio8 at 4 and 8, Laya at 6 and 8, Kev, TripoSG, TRELLIS.2 and Pixal3D at 8 and 32 (unquantized).
 `intake resolve` reports the offered widths as `q_bits`, and `convert scan` reports each GGUF's
 widths the same way; a vision projector or a drafter no port converts reports none.
 

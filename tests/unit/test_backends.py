@@ -313,7 +313,7 @@ class ClassificationPortTests(unittest.TestCase):
         return load_manifests(directory)
 
     def test_laya_is_a_classification_port_with_its_own_converter_and_signature(self):
-        self.assertEqual(self.manifest["ports"], {"classification": ["laya"]})
+        self.assertEqual(self.manifest["ports"], {"classification": ["kev", "laya"]})
         self.assertEqual(port_converter("Laya", "mlx-embeddings", self.manifests), "mlx_embeddings.classifiers.laya.convert")
         self.assertIsNone(port_converter("bert", "mlx-embeddings", self.manifests))
         self.assertIsNone(port_converter("audio8_asr_infinite", "mlx-audio", self.manifests))
@@ -348,6 +348,34 @@ class ClassificationPortTests(unittest.TestCase):
             if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", None) == "SOURCE_FILES"
         )
         self.assertEqual(sorted(port_files("laya", "mlx-embeddings", self.manifests)), sorted(sources))
+
+    def test_kev_converts_its_adapter_over_the_pinned_qwen3_base(self):
+        import ast
+        from mlx_agent.backends import recipe_for
+
+        self.assertEqual(port_converter("kev", "mlx-embeddings", self.manifests), "mlx_embeddings.classifiers.kev.convert")
+        self.assertEqual(port_bits("kev", "mlx-embeddings", self.manifests), [8, 32])
+        signature = port_files("kev", "mlx-embeddings", self.manifests)
+        self.assertEqual(port_for_files(signature + ["README.md", "tokenizer.json", "train.log"], self.manifests), "kev")
+        self.assertIsNone(port_for_files([name for name in signature if name != "head.pt"], self.manifests))
+        recipe = recipe_for("jaredpalmer/kev-4b", self.manifests)
+        self.assertEqual({key: recipe[key] for key in ("port", "base", "base_revision", "lora", "lora_scale")},
+                         {"port": "kev", "base": "Qwen/Qwen3-4B-Base", "base_revision": "906bfd4b4dc7f14ee4320094d8b41684abff8539",
+                          "lora": "adapter_model.safetensors", "lora_scale": 1.0})
+        source = (PORTS_DIR / "mlx-embeddings" / "kev" / "convert.py").read_text(encoding="utf-8")
+        constants = {
+            node.targets[0].id: ast.literal_eval(node.value)
+            for node in ast.parse(source).body
+            if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id in ("QUANTIZE_INCLUDE", "GROUP_SIZE", "CHECKPOINT_FILES")
+        }
+        rule = quantize_rule("kev", "mlx-embeddings", self.manifests)
+        self.assertEqual((tuple(rule["include"]), rule["group_size"]), (constants["QUANTIZE_INCLUDE"], constants["GROUP_SIZE"]))
+        self.assertEqual(sorted(signature), sorted(constants["CHECKPOINT_FILES"]))
+        registries = load_registries(self.manifests, root=Path(self.directory.name), find_spec=lambda name: None)
+        hits = lookup("kev", self.manifests, registries)
+        self.assertEqual([(hit["backend"], hit["category"], hit["module"]) for hit in hits],
+                         [("mlx-embeddings", "classification", "mlx_embeddings.classifiers.kev")])
 
     def test_image_ports_resolve_by_pipeline_class_and_curated_recipe(self):
         from mlx_agent.backends import port_for_pipeline, recipe_for

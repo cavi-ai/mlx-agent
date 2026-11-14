@@ -490,6 +490,35 @@ def predict(*args):
         self.assertEqual(value['error']['code'], 'invalid_policy')
         self.assertIsNone(self.server.controller.resident.process)
 
+    def test_cancel_after_lease_before_dispatch_preserves_warm_worker(self):
+        from mlx_agent.compute import ComputeLease
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        process = controller.resident.process
+        before = controller.memory_registry.snapshot()
+        original_enter = ComputeLease.enter_wait
+
+        def cancel_after_enter(lease, *args, **kwargs):
+            original_enter(lease, *args, **kwargs)
+            controller.store.request_cancel(lease.operation.removeprefix('task:'))
+
+        with patch.object(ComputeLease, 'enter_wait', cancel_after_enter):
+            cancelled = self.wait(self.start())
+        self.assertEqual(cancelled['state'], 'cancelled')
+        self.assertIs(controller.resident.process, process)
+        self.assertIsNone(process.poll())
+        self.assertEqual(controller.memory_registry.snapshot(), before)
+        self.assertEqual(controller.active_requests, 0)
+        self.assertEqual(list((self.root / 'compute').glob('execution-*.json')), [])
+        self.assertEqual(controller.status()['worker_memory']['loads'], 1)
+        identifier = self.start()
+        self.assertEqual(self.wait(identifier)['state'], 'succeeded')
+        status, result = self.request('GET', '/v1/tasks/' + identifier + '/result')
+        self.assertEqual(status, 200)
+        self.assertEqual(result['result']['answers']['calls'], 2)
+        self.assertIs(controller.resident.process, process)
+        self.assertEqual(controller.status()['worker_memory']['loads'], 1)
+
     def test_waiting_job_and_cancelled_waiter_preserve_residency(self):
         from mlx_agent.compute import ComputeLease
         self.assertEqual(self.wait(self.start())['state'], 'succeeded')

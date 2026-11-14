@@ -338,6 +338,65 @@ class MemoryRegistry:
         with self._locked():
             return read_policy(self.root) is not None
 
+    def inspect(self):
+        """Inspect existing state without creating, pruning or rewriting it."""
+        result = {'state': 'unknown', 'entries': {}, 'agent_budget': None, 'errors': []}
+        directory = lock = None
+        try:
+            try:
+                _, directory = _walk_directory(self.root)
+            except ValueError as error:
+                if str(error).startswith('path component does not exist:'):
+                    result['state'] = 'uninitialized'
+                    return result
+                raise
+            info = os.fstat(directory)
+            if info.st_uid != os.getuid() or info.st_mode & 0o077:
+                raise ValueError('Memory state requires a private owned directory.')
+            try:
+                lock = os.open('memory.lock', os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
+            except FileNotFoundError:
+                if any(os.path.lexists(self.root / name) for name in ('memory.json', 'budget.json')):
+                    raise ValueError('Memory registry lock is missing.')
+                result['state'] = 'uninitialized'
+                return result
+            info = os.fstat(lock)
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_nlink != 1:
+                raise ValueError('Invalid memory lock.')
+            fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            current = os.stat('memory.lock', dir_fd=directory, follow_symlinks=False)
+            if (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino):
+                raise ValueError('Memory lock identity changed.')
+            try:
+                fd = os.open('memory.json', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+            except FileNotFoundError:
+                value = {'schema': SCHEMA, 'entries': {}}
+            else:
+                with os.fdopen(fd, 'rb') as stream:
+                    info = os.fstat(stream.fileno())
+                    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_nlink != 1 or info.st_size > MAX_BYTES:
+                        raise ValueError('Invalid memory registry file.')
+                    value = self._validate(json.loads(stream.read(MAX_BYTES + 1)))
+            rows = value['entries']
+            for row in rows.values():
+                owner = row['owner']
+                if not self.alive(owner[0]) or self.inspector(owner[0]) != owner[1]:
+                    raise ValueError('Memory reservation ownership is uncertain.')
+                worker = row['worker']
+                if worker is not None and (not self.alive(worker['pid']) or self.inspector(worker['pid']) != worker['identity']):
+                    raise ValueError('Memory worker ownership is uncertain.')
+            result['entries'] = rows
+            result['agent_budget'] = self._agent_budget(rows)
+            result['state'] = 'ok'
+        except (OSError, ValueError, TypeError, KeyError, SubprocessError) as error:
+            result['errors'].append(str(error))
+        finally:
+            if lock is not None:
+                os.close(lock)
+            if directory is not None:
+                os.close(directory)
+        return result
+
     def snapshot(self):
         with self._locked() as rows:
             result = self._summary(rows)

@@ -46,7 +46,8 @@ def predict(model, tokenizer, state, questions):
         self.launcher.write_text('''
 import os, runpy, sys
 from pathlib import Path
-from mlx_agent import task_kinds, task_serving, inference_runner, task_serve
+from mlx_agent import task_kinds, task_serving, inference_runner, task_serve, jit_serve
+jit_serve.available_memory_bytes = lambda: 0
 root = str(Path(__file__).resolve().parent)
 task_serving.backend_environment = lambda: {"PATH": os.environ.get("PATH", ""), "PYTHONPATH": root}
 inference_runner.sync_ports = lambda *args, **kwargs: None
@@ -59,6 +60,7 @@ original_init = task_serve.TaskServer.__init__
 def isolated_init(self, address, config):
     config = dict(config, compute_state_dir=str(Path(root) / "compute"), memory_state_dir=str(Path(root) / "compute"))
     original_init(self, address, config)
+    self.controller.memory_probe = lambda: 32_000_000_000
 task_serve.TaskServer.__init__ = isolated_init
 task_serve.main()
 ''')

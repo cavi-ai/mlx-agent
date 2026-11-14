@@ -1,5 +1,4 @@
 import copy
-import hashlib
 import importlib.util
 import json
 import os
@@ -198,7 +197,15 @@ class GeneratedAdapterTests(unittest.TestCase):
                 self.assertEqual("ok", payload["status"])
                 self.assertEqual("discover", json.loads(payload["stdout"])["operation"])
 
-    def test_generation_removes_only_hash_matched_stale_inventoried_files(self):
+    def test_inventory_ignores_file_content_so_edits_to_one_file_merge_cleanly(self):
+        generator = load_generator()
+        surface = Path("providers/agy")
+        one = generator._inventory_content(surface, {Path("src/mlx_agent/cli.py"): b"one\n"})
+        two = generator._inventory_content(surface, {Path("src/mlx_agent/cli.py"): b"two\n"})
+        self.assertEqual(one, two)
+        self.assertEqual(["src/mlx_agent/cli.py"], json.loads(one)["files"])
+
+    def test_generation_removes_stale_inventoried_files_and_keeps_handwritten_ones(self):
         generator = load_generator()
         with tempfile.TemporaryDirectory() as directory:
             output_root = Path(directory)
@@ -215,18 +222,20 @@ class GeneratedAdapterTests(unittest.TestCase):
             self.assertFalse(stale.exists())
             self.assertEqual("preserve me\n", handwritten.read_text(encoding="utf-8"))
 
-    def test_stale_cleanup_fails_closed_for_modified_generated_file(self):
+    def test_stale_cleanup_fails_closed_for_a_stale_path_that_is_no_longer_a_file(self):
         generator = load_generator()
         with tempfile.TemporaryDirectory() as directory:
             output_root = Path(directory)
             generator.generate(("claude", "agentskills"), output_root)
             stale = output_root / "providers" / "agentskills" / "mlx-scout" / "SKILL.md"
-            stale.write_text("user edit\n", encoding="utf-8")
+            stale.unlink()
+            stale.mkdir()
+            (stale / "notes.md").write_text("user notes\n", encoding="utf-8")
             rendered = generator._render(json.loads((ROOT / "plugin.json").read_text(encoding="utf-8")), ("claude", "agentskills"))
             del rendered[Path("providers/agentskills/mlx-scout/SKILL.md")]
-            with self.assertRaisesRegex(ValueError, "hash does not match"):
+            with self.assertRaisesRegex(ValueError, "not a regular file"):
                 generator._remove_stale_inventoried_files(output_root, rendered)
-            self.assertEqual("user edit\n", stale.read_text(encoding="utf-8"))
+            self.assertEqual("user notes\n", (stale / "notes.md").read_text(encoding="utf-8"))
 
     def test_stale_cleanup_refuses_symlinked_surface_ancestor_without_touching_external_files(self):
         generator = load_generator()
@@ -336,19 +345,19 @@ class GeneratedAdapterTests(unittest.TestCase):
             for bad_path in cases:
                 with self.subTest(path=bad_path):
                     tampered = copy.deepcopy(original)
-                    tampered["files"].append({"path": bad_path, "sha256": hashlib.sha256(b"tampered").hexdigest()})
+                    tampered["files"].append(bad_path)
                     inventory_path.write_text(json.dumps(tampered), encoding="utf-8")
                     with self.assertRaisesRegex(ValueError, "invalid generated inventory"):
                         generator.generate(("claude", "agentskills"), output_root)
                     self.assertEqual("handwritten\n", readme.read_text(encoding="utf-8"))
             duplicate = copy.deepcopy(original)
-            duplicate["files"].append(dict(duplicate["files"][0]))
+            duplicate["files"].append(duplicate["files"][0])
             inventory_path.write_text(json.dumps(duplicate), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "invalid generated inventory"):
                 generator.generate(("claude", "agentskills"), output_root)
             malformed = copy.deepcopy(original)
             malformed["surface"] = "agentskills-package"
-            malformed["files"].append({"path": "commands/mlx-scout.md", "sha256": "not-a-hash"})
+            malformed["files"].append({"path": "commands/mlx-scout.md"})
             inventory_path.write_text(json.dumps(malformed), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "invalid generated inventory"):
                 generator.generate(("claude", "agentskills"), output_root)
@@ -403,7 +412,7 @@ class GeneratedAdapterTests(unittest.TestCase):
             )
             self.assertNotIn(
                 "opencode.json",
-                {entry["path"] for entry in inventory["files"]},
+                set(inventory["files"]),
             )
             stale.write_text('{"stale": true}\n', encoding="utf-8")
             self.assertIn(
@@ -490,7 +499,7 @@ class GeneratedAdapterTests(unittest.TestCase):
             (retired / "commands" / "mlx-scout.md").write_text("stale\n", encoding="utf-8")
             self.assertEqual([Path("providers/claude")], generator._check(("claude", "agentskills"), output_root))
 
-    def test_generation_removes_hash_matched_per_skill_runtime_copies_from_earlier_releases(self):
+    def test_generation_removes_inventoried_per_skill_runtime_copies_from_earlier_releases(self):
         generator = load_generator()
         with tempfile.TemporaryDirectory() as directory:
             output_root = Path(directory)
@@ -506,24 +515,12 @@ class GeneratedAdapterTests(unittest.TestCase):
                 copy_path = package / former / "scripts" / "mlx-agent"
                 copy_path.parent.mkdir(parents=True)
                 copy_path.write_bytes(content)
-                inventory["files"].append({"path": str(former / "scripts" / "mlx-agent"), "sha256": hashlib.sha256(content).hexdigest()})
+                inventory["files"].append(str(former / "scripts" / "mlx-agent"))
                 inventory_path.write_text(json.dumps(inventory), encoding="utf-8")
                 self.assertIn(Path("providers") / surface / former / "scripts" / "mlx-agent", generator._check(("codex", "agentskills"), output_root))
                 generator.generate(("codex", "agentskills"), output_root)
                 self.assertFalse(copy_path.exists(), str(copy_path))
             self.assertEqual([], generator._check(("codex", "agentskills"), output_root))
-
-            package = output_root / "providers" / "codex"
-            inventory_path = package / ".mlx-agent-generated-files.json"
-            inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
-            copy_path = package / "skills" / "mlx-wire" / "scripts" / "mlx-agent"
-            copy_path.parent.mkdir(parents=True)
-            copy_path.write_bytes(b"edited by a user\n")
-            inventory["files"].append({"path": "skills/mlx-wire/scripts/mlx-agent", "sha256": hashlib.sha256(b"original").hexdigest()})
-            inventory_path.write_text(json.dumps(inventory), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "hash does not match"):
-                generator.generate(("codex", "agentskills"), output_root)
-            self.assertEqual(b"edited by a user\n", copy_path.read_bytes())
 
     def test_plugin_package_skills_resolve_the_single_runtime_two_levels_above_the_skill(self):
         generator = load_generator()

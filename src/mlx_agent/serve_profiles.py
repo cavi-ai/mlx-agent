@@ -6,8 +6,8 @@ from pathlib import Path
 import re
 import stat
 
-from .jit_serve import validate_memory_policy
 from .allocator_cache import FIELDS as CACHE_FIELDS
+from .memory_policy import policy_from_profile, validate
 from .serve import receipts_root
 from .strata_runtime import StrataError, _validate_context
 from .transactions import _atomic_in_directory, _target_locks, _walk_directory
@@ -25,14 +25,7 @@ def _validate(settings):
         raise ValueError("Strata profiles require a model budget, context and decoding settings.")
     if settings["min_headroom_gb"] is None or (strata and settings["memory_budget_gb"] is None):
         raise ValueError("Serving profiles require an explicit headroom reserve and any selected model budget.")
-    policy = {"minimum_headroom_gb": settings["min_headroom_gb"], "idle_timeout_seconds": settings["idle_timeout"],
-        "keep_loaded": settings["keep_loaded"], "unload_under_pressure": settings["unload_under_pressure"]}
-    if "memory_budget_gb" in settings:
-        policy["model_memory_budget_gb"] = settings["memory_budget_gb"]
-    for key in ("execution_wait_seconds", "release_after_request", *CACHE_FIELDS):
-        if key in settings:
-            policy[key] = settings[key]
-    validate_memory_policy(policy)
+    validate(policy_from_profile(settings))
     if strata:
         try:
             _validate_context(settings["strata_context_tokens"])

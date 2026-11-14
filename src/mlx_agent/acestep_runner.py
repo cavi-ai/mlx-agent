@@ -39,6 +39,20 @@ def stage(model, planner, directory):
     return checkpoints
 
 
+def adapt_quantizer(checkpoint):
+    """Adapt the trusted model code copied into the private staging folder."""
+    files = list(Path(checkpoint).glob("modeling_acestep_v15_*.py"))
+    if len(files) != 1 or files[0].is_symlink():
+        raise RuntimeError("ACE-Step staged model code is missing or ambiguous")
+    path = files[0]
+    source = path.read_text(encoding="utf-8")
+    original = "from vector_quantize_pytorch import ResidualFSQ"
+    replacement = "from acestep_fsq import ResidualFSQ"
+    if source.count(original) != 1 or replacement in source:
+        raise RuntimeError("ACE-Step staged quantizer import is unexpected")
+    path.write_text(source.replace(original, replacement), encoding="utf-8")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("model", "caption", "lyrics", "out"):
@@ -72,6 +86,10 @@ def main(argv=None):
 
         def _ensure_models_present(self, *, checkpoint_path, config_path, prefer_source, vae_variant=None):
             return None
+
+        def _sync_model_code_if_needed(self, config_path, checkpoint_path):
+            super()._sync_model_code_if_needed(config_path, checkpoint_path)
+            adapt_quantizer(Path(checkpoint_path) / config_path)
 
     instrumental = args.lyrics.strip().lower() == "[instrumental]"
     # The take is written beside the output, so linking it to the output name stays on one volume.

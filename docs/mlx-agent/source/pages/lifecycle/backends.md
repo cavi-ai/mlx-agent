@@ -10,6 +10,10 @@ surface-extraction dependencies. It does not install or execute the PyTorch
 runtime of any of these models. Install it with the same preview and confirmation steps below, using
 `mlx-3d` as the backend ID.
 
+`ace-step` runs ACE-Step 1.5 music generation from its published checkpoints with
+an MLX DiT and planner and a PyTorch VAE and text encoder. It installs ACE-Step
+from a pinned, hashed GitHub source archive and converts nothing.
+
 A manifest's `port_requires` lists the files a port's converter reads from other
 Hugging Face repositories, and `port_downloads` lists the files it reads from
 elsewhere, each as an `https` `url` with its `sha256` and `size`. `intake fetch`

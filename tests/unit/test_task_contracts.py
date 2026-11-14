@@ -31,7 +31,7 @@ class TaskContractTests(unittest.TestCase):
         for value in cases:
             with self.subTest(value=value), self.assertRaises(TaskError):
                 validate_request(value)
-        for field, value in (("duration", float("nan")), ("duration", 361), ("steps", True), ("steps", 31), ("seed", -1), ("caption", ""), ("lyrics", "")):
+        for field, value in (("duration", float("nan")), ("duration", 361), ("steps", True), ("steps", 65), ("bpm", 29), ("time_signature", 5), ("reference", "relative.wav"), ("seed", -1), ("caption", ""), ("lyrics", "")):
             request = self.request("music_generation")
             request["parameters"][field] = value
             with self.subTest(field=field, value=value), self.assertRaises(TaskError):

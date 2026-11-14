@@ -124,10 +124,12 @@ def _validate_classification(parameters):
 
 
 def _validate_music(parameters):
-    if "caption" not in parameters or set(parameters) - {"caption", "lyrics", "duration", "steps", "seed"}:
+    allowed = {"caption", "lyrics", "duration", "steps", "seed", "bpm", "time_signature", "reference"}
+    if "caption" not in parameters or set(parameters) - allowed:
         raise _invalid("Music parameters need a caption and supported generation settings.")
     return validate_music(parameters["caption"], parameters.get("lyrics", "[instrumental]"),
-                          parameters.get("duration", 15.0), parameters.get("steps", 30), parameters.get("seed", 42))
+                          parameters.get("duration", 15.0), parameters.get("steps", 30), parameters.get("seed", 42),
+                          parameters.get("bpm"), parameters.get("time_signature"), parameters.get("reference"))
 
 
 def _validate_transcribe(parameters):
@@ -219,7 +221,9 @@ def _plan_classification(model, parameters, output, media, directory):
 
 def _plan_music(model, parameters, output, media, directory):
     return plan_music(model, parameters["caption"], parameters["lyrics"], output,
-                      duration=parameters["duration"], steps=parameters["steps"], seed=parameters["seed"])
+                      duration=parameters["duration"], steps=parameters["steps"], seed=parameters["seed"],
+                      bpm=parameters.get("bpm"), time_signature=parameters.get("time_signature"),
+                      reference=parameters.get("reference"))
 
 
 def _plan_transcribe(model, parameters, output, media, directory):

@@ -173,3 +173,81 @@ class MusicTests(unittest.TestCase):
         with mock.patch("mlx_agent.music.plan_music", return_value={}) as plan, mock.patch("mlx_agent.music.run_music", return_value={"path": str(self.out)}), redirect_stdout(output):
             self.assertEqual(cli.main(["convert", "music", "--path", str(self.model), "--caption=-warm piano", "--out", str(self.out), "--json"]), 0)
         self.assertEqual(plan.call_args.args[1:3], ("-warm piano", "[instrumental]"))
+
+
+class AceStepMusicTests(unittest.TestCase):
+    """ACE-Step 1.5 checkpoints: a DiT folder beside its VAE, text encoder and planner folders."""
+
+    def setUp(self):
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.manifests = load_manifests()
+        self.registries = {key: {"registry": value["registry"], "source": "snapshot", "installed": key == "ace-step"}
+                           for key, value in self.manifests.items()}
+        checkpoints = self.root / "ACE-Step-1.5" / "checkpoints"
+        self.model = checkpoints / "acestep-v15-turbo"
+        self.model.mkdir(parents=True)
+        (self.model / "config.json").write_text(json.dumps({"model_type": "acestep", "is_turbo": True}))
+        for name in ("model.safetensors", "silence_latent.pt"):
+            (self.model / name).write_bytes(b"weights")
+        (self.model / "modeling_acestep_v15_turbo.py").write_text("# published model code\n")
+        for name in ("vae", "Qwen3-Embedding-0.6B", "acestep-5Hz-lm-1.7B"):
+            (checkpoints / name).mkdir()
+            (checkpoints / name / "config.json").write_text("{}")
+        backend = self.root / "ace-step"
+        (backend / "bin").mkdir(parents=True)
+        (backend / "bin/python").touch()
+        (backend / INSTALL_MARKER).write_text(json.dumps({"id": "ace-step", "version": self.manifests["ace-step"]["version"]}))
+        self.out = self.root / "music.wav"
+        sync = mock.patch("mlx_agent.inference_runner.sync_ports", return_value=[])
+        sync.start()
+        self.addCleanup(sync.stop)
+
+    def plan(self, **kwargs):
+        return plan_music(kwargs.pop("model_path", str(self.model)), "minimal tech house", kwargs.pop("lyrics", "[instrumental]"),
+                          str(self.out), manifests=self.manifests, registries=self.registries, root=self.root, **kwargs)
+
+    def test_turbo_checkpoint_runs_in_the_ace_step_backend_with_its_planner(self):
+        plan = self.plan(duration=120, steps=8, seed=7, bpm=120, time_signature=4)
+        self.assertEqual(plan["backend"], "ace-step")
+        self.assertEqual(Path(plan["argv"][0]), self.root / "ace-step" / "bin" / "python")
+        self.assertEqual(Path(plan["argv"][1]).name, "acestep_runner.py")
+        flags = dict(zip(plan["argv"][2::2], plan["argv"][3::2]))
+        self.assertEqual((flags["--shift"], flags["--bpm"], flags["--time-signature"], flags["--planner"]),
+                         ("3.0", "120", "4", "acestep-5Hz-lm-1.7B"))
+        def runner(argv, **kwargs):
+            self.assertEqual(kwargs["env"]["HF_HUB_OFFLINE"], "1")
+            self.out.write_bytes(b"audio")
+            return subprocess.CompletedProcess(argv, 0, json.dumps({"path": str(self.out), "sample_rate": 48000, "audio_seconds": 120}), "")
+        result = run_music(plan, manifests=self.manifests, root=self.root, runner=runner)
+        self.assertEqual((result["schema"], result["backend"], result["bpm"], result["planner"], result["audio_seconds"]),
+                         ("music/1", "ace-step", 120, "acestep-5Hz-lm-1.7B", 120))
+
+    def test_ace_step_limits_and_incomplete_checkpoints_are_refused(self):
+        with self.assertRaises(MusicError) as caught:
+            self.plan(steps=21)
+        self.assertEqual(caught.exception.code, "invalid_arguments")
+        (self.model / "config.json").write_text(json.dumps({"model_type": "acestep", "is_turbo": False}))
+        self.assertEqual(self.plan(steps=50)["argv"][-6:-2], ["--shift", "1.0", "--guidance", "7.0"])
+        with self.assertRaises(MusicError):
+            self.plan(steps=65)
+        (self.model.parent / "vae" / "config.json").unlink()
+        with self.assertRaises(MusicError) as caught:
+            self.plan(steps=8)
+        self.assertEqual(caught.exception.code, "model_unreadable")
+        self.assertIn("vae", str(caught.exception))
+
+    def test_staged_checkpoint_takes_code_writes_without_touching_the_model_folder(self):
+        from mlx_agent import acestep_runner
+        with TemporaryDirectory() as directory:
+            checkpoints = acestep_runner.stage(self.model, "acestep-5Hz-lm-1.7B", directory)
+            staged = checkpoints / self.model.name
+            self.assertEqual(sorted(path.name for path in checkpoints.iterdir()),
+                             ["Qwen3-Embedding-0.6B", "acestep-5Hz-lm-1.7B", "acestep-v15-turbo", "vae"])
+            self.assertEqual((staged / "model.safetensors").resolve(), (self.model / "model.safetensors").resolve())
+            self.assertFalse((staged / "modeling_acestep_v15_turbo.py").exists())
+            # ACE-Step copies its own model code into the folder it loads.
+            (staged / "modeling_acestep_v15_turbo.py").write_text("# synced code\n")
+        self.assertEqual((self.model / "modeling_acestep_v15_turbo.py").read_text(), "# published model code\n")
+        self.assertEqual((self.model / "model.safetensors").read_bytes(), b"weights")

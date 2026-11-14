@@ -5,10 +5,8 @@ from __future__ import annotations
 
 import argparse
 import errno
-import hashlib
 import json
 import os
-import re
 import stat
 import sys
 import uuid
@@ -20,8 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SUPPORTED_PROVIDERS = ("claude", "codex", "agy", "opencode", "agentskills")
 CAPABILITIES = ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "task")
 INVENTORY_NAME = ".mlx-agent-generated-files.json"
-INVENTORY_SCHEMA_VERSION = 2
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+INVENTORY_SCHEMA_VERSION = 3
 Content = Union[str, bytes]
 
 
@@ -691,10 +688,6 @@ return agent(
     )
 
 
-def _sha256(content: bytes) -> str:
-    return hashlib.sha256(content).hexdigest()
-
-
 def _content_bytes(content: Content) -> bytes:
     if isinstance(content, bytes):
         return content
@@ -834,13 +827,11 @@ def _surface_files(rendered: Mapping[Path, Content], surface: Optional[Path]) ->
 
 
 def _inventory_content(surface: Optional[Path], files: Mapping[Path, Content]) -> str:
+    # Paths only: a content hash would make two branches editing one mirrored file conflict here.
     payload = {
         "schema_version": INVENTORY_SCHEMA_VERSION,
         "surface": _surface_id(surface),
-        "files": [
-            {"path": str(path), "sha256": _sha256(_content_bytes(content))}
-            for path, content in sorted(files.items(), key=lambda item: str(item[0]))
-        ],
+        "files": sorted(str(path) for path in files),
     }
     return json.dumps(payload, indent=2, sort_keys=True) + "\n"
 
@@ -1101,11 +1092,11 @@ def _atomic_write_generated(root: Path, relative: Path, content: bytes, mode: in
         _close_directory_chain(descriptors)
 
 
-def _inventory_files(root: Path, relative_path: Path, surface: Optional[Path], component_hook=None) -> Dict[Path, str]:
+def _inventory_files(root: Path, relative_path: Path, surface: Optional[Path], component_hook=None) -> set:
     path = _assert_safe_generated_path(root, relative_path, relative_path.parent)
     path_stat = _path_lstat(path)
     if path_stat is None:
-        return {}
+        return set()
     if not stat.S_ISREG(path_stat.st_mode):
         raise _invalid_inventory(path, "is not a regular file")
     try:
@@ -1120,13 +1111,10 @@ def _inventory_files(root: Path, relative_path: Path, surface: Optional[Path], c
     if not isinstance(files, list):
         raise _invalid_inventory(path, "files must be a list")
     allowed = _allowed_surface_paths(surface)
-    parsed = {}
-    for entry in files:
-        if not isinstance(entry, dict) or set(entry) != {"path", "sha256"}:
-            raise _invalid_inventory(path, "files must contain path/hash entries")
-        name, digest = entry["path"], entry["sha256"]
-        if not isinstance(name, str) or not isinstance(digest, str) or not _SHA256.fullmatch(digest):
-            raise _invalid_inventory(path, "entry has invalid path or hash")
+    parsed = set()
+    for name in files:
+        if not isinstance(name, str):
+            raise _invalid_inventory(path, "files must contain paths")
         relative = Path(name)
         if relative.is_absolute() or ".." in relative.parts or not relative.parts or str(relative) != name:
             raise _invalid_inventory(path, "entry path escapes its surface")
@@ -1134,7 +1122,7 @@ def _inventory_files(root: Path, relative_path: Path, surface: Optional[Path], c
             raise _invalid_inventory(path, "entry path is not allowed for this surface")
         if relative in parsed:
             raise _invalid_inventory(path, "duplicate entry path")
-        parsed[relative] = digest
+        parsed.add(relative)
     return parsed
 
 
@@ -1145,13 +1133,13 @@ def _remove_stale_inventoried_files(root: Path, rendered: Mapping[Path, Content]
         current_surface = _surface(inventory_relative)
         previous = _inventory_files(root, inventory_relative, current_surface)
         desired = _surface_files(rendered, current_surface)
-        for relative in sorted(set(previous) - set(desired), key=str):
+        for relative in sorted(previous - set(desired), key=str):
             target = _assert_safe_generated_path(root, surface / relative, surface)
             target_stat = _path_lstat(target)
             if target_stat is None:
                 continue
-            if not stat.S_ISREG(target_stat.st_mode) or _sha256(_read_regular_no_follow(Path(root).absolute(), surface / relative)) != previous[relative]:
-                raise ValueError("refusing to delete stale generated artifact because its hash does not match: {0}".format(target))
+            if not stat.S_ISREG(target_stat.st_mode):
+                raise ValueError("refusing to delete stale generated artifact because it is not a regular file: {0}".format(target))
             _unlink_regular_no_follow(Path(root).absolute(), surface / relative, target_stat)
 
 

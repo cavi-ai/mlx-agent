@@ -21,7 +21,11 @@ CHECKPOINTS = {
     'shape_slat_flow_model_512': ('ckpts/slat_512', 'SLatFlowModel'),
     'shape_slat_flow_model_1024': ('ckpts/slat_1024', 'SLatFlowModel'),
     'shape_slat_decoder': ('ckpts/shape_dec', 'FlexiDualGridVaeDecoder'),
+    'tex_slat_flow_model_512': ('ckpts/tex_512', 'SLatFlowModel'),
+    'tex_slat_flow_model_1024': ('ckpts/tex_1024', 'SLatFlowModel'),
+    'tex_slat_decoder': ('ckpts/tex_dec', 'SparseUnetVaeDecoder'),
 }
+DECODER_ARGS = {'SparseUnetVaeDecoder': {'pred_subdiv': False}}
 
 
 def port(name):
@@ -42,10 +46,12 @@ def pipeline_json(name='Trellis2ImageTo3DPipeline', flow_args=FLOW_ARGS):
         'sparse_structure_sampler': {'params': dict(sampler, guidance_rescale=0.7, rescale_t=5.0)},
         'shape_slat_sampler': {'params': dict(sampler, steps=10, guidance_strength=6.0)},
         'shape_slat_normalization': {'mean': [0.0] * 4, 'std': [1.0] * 4},
+        'tex_slat_sampler': {'params': dict(sampler, guidance_strength=1.0, guidance_rescale=0.0)},
+        'tex_slat_normalization': {'mean': [0.5] * 4, 'std': [2.0] * 4},
     }}
 
 
-def write_source(root, flow_args=FLOW_ARGS, tensors=None):
+def write_source(root, flow_args=FLOW_ARGS, tensors=None, decoder_args=DECODER_ARGS):
     """A TRELLIS.2 repository, its structure-decoder repository and a DINOv3 snapshot under ``root``."""
     repos = {'': root / 'trellis2', STRUCTURE: root / 'structure', DINOV3: root / 'dinov3'}
     for path in repos.values():
@@ -54,7 +60,7 @@ def write_source(root, flow_args=FLOW_ARGS, tensors=None):
     for reference, kind in CHECKPOINTS.values():
         repo = STRUCTURE if reference.startswith(STRUCTURE) else ''
         stem = repos[repo] / reference[len(repo):].lstrip('/')
-        args = dict(flow_args) if kind.endswith('FlowModel') else {}
+        args = dict(flow_args) if kind.endswith('FlowModel') else dict(decoder_args.get(kind, {}))
         Path(str(stem) + '.json').write_text(json.dumps({'name': kind, 'args': args}))
         if tensors is not None:
             tensors(Path(str(stem) + '.safetensors'))
@@ -99,6 +105,14 @@ class Trellis2ConversionRefusalTests(unittest.TestCase):
                 convert(source, Path(folder) / 'out', sources)
             self.assertFalse((Path(folder) / 'out').exists())
 
+    def test_refuses_a_texture_decoder_that_predicts_its_own_subdivision(self):
+        convert = port('convert').convert
+        with TemporaryDirectory() as folder:
+            source, sources = write_source(Path(folder), decoder_args={})
+            with self.assertRaisesRegex(ValueError, 'tex_slat_decoder'):
+                convert(source, Path(folder) / 'out', sources)
+            self.assertFalse((Path(folder) / 'out').exists())
+
     def test_refuses_missing_weights(self):
         convert = port('convert').convert
         with TemporaryDirectory() as folder:
@@ -133,6 +147,8 @@ class Trellis2NativeTests(unittest.TestCase):
             quantized = models / 'TRELLIS.2-MLX-8bit'
             flow = mx.load(str(quantized / 'ss_flow.safetensors'))
             decoder = mx.load(str(quantized / 'ss_decoder.safetensors'))
+            texture_flow = mx.load(str(quantized / 'tex_flow_1024.safetensors'))
+            texture_decoder = mx.load(str(quantized / 'tex_decoder.safetensors'))
             listed = {item['name']: item for item in scan_mlx_outputs([models])}
             leftovers = [path.name for path in models.iterdir() if path.name.startswith('.')]
         self.assertEqual(full['model_type'], 'trellis2')
@@ -147,6 +163,11 @@ class Trellis2NativeTests(unittest.TestCase):
         self.assertIn('proj.scales', flow)
         self.assertEqual(flow['conv.weight'].shape, (2, 3, 3, 3, 2))
         self.assertNotIn('proj.scales', decoder)
+        self.assertIn('proj.scales', texture_flow)
+        self.assertNotIn('proj.scales', texture_decoder)
+        self.assertEqual(full['components']['tex_decoder'], {'pred_subdiv': False})
+        self.assertEqual(full['pipeline']['tex_slat_sampler']['guidance_strength'], 1.0)
+        self.assertEqual(full['pipeline']['tex_slat_normalization'], {'mean': [0.5] * 4, 'std': [2.0] * 4})
         self.assertEqual(leftovers, [])
 
     def test_sparse_convolution_matches_a_dense_convolution_at_occupied_voxels(self):
@@ -183,6 +204,85 @@ class Trellis2NativeTests(unittest.TestCase):
         coords, (split,) = sparse.subdivide(voxels, (feats,), keep)
         self.assertEqual(coords.tolist(), [[2, 4, 6], [3, 4, 7], [2, 5, 7]])
         self.assertEqual(np.array(split).tolist(), [[0, 1], [10, 11], [12, 13]])
+
+    def test_attribute_decoder_replays_the_shape_subdivision_in_voxel_order(self):
+        import mlx.core as mx
+        import numpy as np
+        sparse = port('sparse')
+        Weights = importlib.import_module(SHELL + '.triposg.weights').Weights
+        rng = np.random.default_rng(5)
+
+        def tensor(*shape):
+            return mx.array(rng.standard_normal(shape).astype(np.float32))
+
+        def trunk(out_channels, predicts):
+            values = {'from_latent.weight': tensor(16, 4), 'from_latent.bias': tensor(16),
+                      'blocks.0.0.norm1.weight': tensor(16), 'blocks.0.0.norm1.bias': tensor(16),
+                      'blocks.0.0.conv1.weight': tensor(64, 3, 3, 3, 16), 'blocks.0.0.conv1.bias': tensor(64),
+                      'blocks.0.0.conv2.weight': tensor(8, 3, 3, 3, 8), 'blocks.0.0.conv2.bias': tensor(8),
+                      'output_layer.weight': tensor(out_channels, 8), 'output_layer.bias': tensor(out_channels)}
+            if predicts:
+                values.update({'blocks.0.0.to_subdiv.weight': tensor(8, 16), 'blocks.0.0.to_subdiv.bias': tensor(8)})
+            return Weights(values)
+
+        config = {'model_channels': [16, 8], 'num_blocks': [0, 0]}
+        coords = np.array([[0, 0, 0], [1, 2, 3], [3, 3, 3]], dtype=np.int32)
+        latent = tensor(3, 4)
+        kept = []
+        voxels, _, _, _ = sparse.decode(trunk(7, True), config, latent, coords, kept)
+        texture = trunk(6, False)
+        painted, attributes = sparse.decode_attributes(texture, config, tensor(3, 4), coords, kept)
+        self.assertEqual(len(kept), 1)
+        self.assertGreater(len(voxels), 0)
+        self.assertEqual(painted.tolist(), voxels.tolist())
+        self.assertEqual(attributes.shape, (len(voxels), 6))
+        everything = [np.ones((3, 8), dtype=bool)]
+        full, _ = sparse.decode_attributes(texture, config, latent, coords, everything)
+        self.assertEqual(len(full), 24)
+
+    def test_vertex_colors_come_from_the_holding_voxel_then_the_closest_one(self):
+        import numpy as np
+        pipeline = port('pipeline')
+        coords = np.array([[0, 0, 0], [3, 3, 3]])
+        colors = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]], dtype=np.float32)
+        points = np.array([[-0.4, -0.4, -0.4], [0.4, 0.4, 0.4], [-0.4, -0.4, -0.1], [0.1, 0.4, 0.4]])
+        sampled = pipeline.voxel_colors(points, coords, colors, 4)
+        self.assertEqual(sampled.tolist(), [[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+        far = pipeline.voxel_colors(np.array([[0.0, 0.0, 0.0]]), np.array([[0, 0, 0], [15, 15, 15]]), colors, 16)
+        self.assertEqual(far.tolist(), [[0.5, 0.0, 0.5]])
+        np.testing.assert_allclose(pipeline.srgb_to_linear([0.0, 0.04045, 0.5, 1.0, 2.0]),
+                                   [0.0, 0.04045 / 12.92, 0.21404114, 1.0, 1.0], rtol=1e-6)
+
+    def test_glb_carries_vertex_colors_as_a_float_color_attribute(self):
+        import struct
+        import numpy as np
+        write_glb = importlib.import_module(SHELL + '.triposg.geometry').write_glb
+        vertices = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=np.float32)
+        faces = np.array([[0, 1, 2]], dtype=np.uint32)
+        colors = np.array([[1.0, 0.0, 0.0], [0.0, 0.5, 0.0], [0.0, 0.0, 0.25]], dtype=np.float32)
+        with TemporaryDirectory() as folder:
+            write_glb(Path(folder) / 'painted.glb', vertices, faces, colors)
+            write_glb(Path(folder) / 'plain.glb', vertices, faces)
+            painted = (Path(folder) / 'painted.glb').read_bytes()
+            plain = (Path(folder) / 'plain.glb').read_bytes()
+            with self.assertRaisesRegex(ValueError, 'Vertex colors'):
+                write_glb(Path(folder) / 'bad.glb', vertices, faces, colors[:2])
+            self.assertFalse((Path(folder) / 'bad.glb').exists())
+
+        def parts(data):
+            size = struct.unpack('<I', data[12:16])[0]
+            return json.loads(data[20:20 + size]), data[28 + size:]
+
+        document, binary = parts(painted)
+        self.assertEqual(struct.unpack('<I', painted[8:12])[0], len(painted))
+        primitive = document['meshes'][0]['primitives'][0]
+        accessor = document['accessors'][primitive['attributes']['COLOR_0']]
+        view = document['bufferViews'][accessor['bufferView']]
+        self.assertEqual((accessor['componentType'], accessor['type'], accessor['count']), (5126, 'VEC3', 3))
+        stored = np.frombuffer(binary[view['byteOffset']:view['byteOffset'] + view['byteLength']], dtype='<f4')
+        self.assertEqual(stored.reshape(3, 3).tolist(), colors.tolist())
+        self.assertEqual(document['buffers'][0]['byteLength'], 36 + 12 + 36)
+        self.assertNotIn('COLOR_0', parts(plain)[0]['meshes'][0]['primitives'][0]['attributes'])
 
     def test_pixel_shuffle_moves_channel_blocks_to_voxel_offsets(self):
         import mlx.core as mx

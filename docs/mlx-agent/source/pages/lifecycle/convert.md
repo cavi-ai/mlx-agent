@@ -65,7 +65,7 @@ TRELLIS.2 reads files from two other repositories: the sparse-structure decoder
 from `microsoft/TRELLIS-image-large` and the DINOv3 image encoder from
 `facebook/dinov3-vitl16-pretrain-lvd1689m`, a gated repository whose terms must
 be accepted on Hugging Face first. `intake fetch --model-type trellis2` downloads
-the shape checkpoints with those files, and `intake resolve` counts them in
+the shape and texture checkpoints with those files, and `intake resolve` counts them in
 `download_bytes`. `convert start` reads them from the Hugging Face cache and
 refuses with `requirement_not_cached` when one is missing. `--q-bits 8`
 quantizes the image encoder and the flow transformers; the decoders stay full
@@ -84,10 +84,19 @@ shape flow runs. At 1024 and 1536 the 512 latent is decoded to its voxels, which
 seed a second flow at the higher level; when they exceed 49152 tokens the level
 drops by 128, down to 1024, and the result's `resolution` reports the level
 used. The image is cropped to the pixels with alpha above 0.8; an opaque image
-keeps its full frame and background removal is not performed. The output is an
-untextured GLB mesh; `stage_seconds` reports `conditioning`,
-`sparse_structure`, `shape_latent_512`, `shape_latent_high`, `decode`, `mesh`,
-`decimation` and `export`.
+keeps its full frame and background removal is not performed.
+
+After the shape, the texture flow at the mesh's level (512, else 1024) samples a
+texture latent from the image and the shape latent, with the checkpoint's own
+guidance, and the texture decoder turns it into a base color for every voxel of
+the mesh. The output is a GLB mesh whose `COLOR_0` vertex attribute holds that
+color in linear RGB, each vertex taking the voxel that holds it or the closest
+occupied one within three cells. Metallic and roughness are not written. The
+result reports `vertex_colors`, and `stage_seconds` reports `conditioning`,
+`sparse_structure`, `shape_latent_512`, `shape_latent_high`, `texture_latent`,
+`decode`, `texture_decode`, `mesh`, `decimation` and `export`. A model converted
+before the texture stage holds no texture weights and writes the mesh without
+colors; convert it again to add them.
 
 ## Pixal3D image-to-3D
 

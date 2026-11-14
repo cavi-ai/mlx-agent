@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- TRELLIS.2 conversion includes the texture stage, and `convert mesh` writes each vertex's base color to the GLB as `COLOR_0`.
 - The shared memory budget charges nothing for a reservation owner that has exited, so the memory guard no longer stops loaded workers when another endpoint exits.
 - Add the optional `ace-step` backend: `convert music` runs ACE-Step 1.5 checkpoints with their planner, and takes `--bpm`, `--time-signature` and `--reference` for them.
 

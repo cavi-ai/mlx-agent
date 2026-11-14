@@ -1,4 +1,5 @@
-"""Convert a local TRELLIS.2 image-to-3D checkpoint, with its image encoder and structure decoder, to MLX weights."""
+"""Convert a local TRELLIS.2 image-to-3D checkpoint (shape and texture stages), with its image encoder and structure
+decoder, to MLX weights."""
 
 import argparse
 import json
@@ -16,10 +17,15 @@ MODELS = {
     "shape_flow_512": ("shape_slat_flow_model_512", "SLatFlowModel"),
     "shape_flow_1024": ("shape_slat_flow_model_1024", "SLatFlowModel"),
     "shape_decoder": ("shape_slat_decoder", "FlexiDualGridVaeDecoder"),
+    "tex_flow_512": ("tex_slat_flow_model_512", "SLatFlowModel"),
+    "tex_flow_1024": ("tex_slat_flow_model_1024", "SLatFlowModel"),
+    "tex_decoder": ("tex_slat_decoder", "SparseUnetVaeDecoder"),
 }
-QUANTIZED = ("image_encoder", "ss_flow", "shape_flow_512", "shape_flow_1024")
+QUANTIZED = ("image_encoder", "ss_flow", "shape_flow_512", "shape_flow_1024", "tex_flow_512", "tex_flow_1024")
 FLOW_FLAGS = {"pe_mode": "rope", "share_mod": True, "qk_rms_norm": True, "qk_rms_norm_cross": True}
 SAMPLERS = ("sparse_structure_sampler", "shape_slat_sampler")
+TEXTURE_SAMPLER = "tex_slat_sampler"
+NORMALIZATIONS = ("shape_slat_normalization", "tex_slat_normalization")
 ENCODER_TYPE = "dinov3_vit"
 RESOLUTIONS = (512, 1024, 1536)
 DEFAULT_RESOLUTION = 1024
@@ -69,6 +75,8 @@ def _plan(base, sources):
         files[component] = Path(str(stem) + ".safetensors")
         if kind.endswith("FlowModel"):
             _check_flow(key, configs[component])
+    if configs["tex_decoder"].get("pred_subdiv", True):
+        raise ValueError("tex_slat_decoder must follow the shape decoder's subdivision.")
     encoder = (args.get("image_cond_model") or {})
     if encoder.get("name") != "DinoV3FeatureExtractor":
         raise ValueError("Only the DINOv3 image condition model is supported.")
@@ -82,10 +90,12 @@ def _plan(base, sources):
     missing = [str(path) for path in files.values() if not path.is_file()]
     if missing:
         raise ValueError("The checkpoint is missing: " + ", ".join(missing))
-    settings = {name: args[name]["params"] for name in SAMPLERS if name in args}
-    if len(settings) != len(SAMPLERS) or "shape_slat_normalization" not in args:
+    samplers = SAMPLERS + (TEXTURE_SAMPLER,)
+    settings = {name: args[name]["params"] for name in samplers if name in args}
+    if len(settings) != len(samplers) or any(name not in args for name in NORMALIZATIONS):
         raise ValueError("pipeline.json lacks the sampler or normalization settings.")
-    settings["shape_slat_normalization"] = args["shape_slat_normalization"]
+    for name in NORMALIZATIONS:
+        settings[name] = args[name]
     return files, configs, settings
 
 

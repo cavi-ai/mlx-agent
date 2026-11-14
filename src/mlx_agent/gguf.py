@@ -1270,7 +1270,7 @@ def _root_usage(root, claimed, counted, occupied):
     return total, other
 
 
-def storage(entries, outputs, ollama, roots):
+def storage(entries, outputs, ollama, roots, assets=()):
     """What every model occupies on disk, each file counted once however many models or links reach it.
 
     An item is a GGUF model (all its shards, plus the projectors beside it when it
@@ -1281,7 +1281,7 @@ def storage(entries, outputs, ollama, roots):
     also reports ``total_bytes``, every file beneath it, and ``other``: where the
     bytes that belong to no recognized model sit.
     """
-    items = _storage_items(entries, outputs, ollama)
+    items = sorted(_storage_items(entries, outputs, ollama) + list(assets), key=lambda item: item["path"])
     claimed = set()
     by_root = {root: 0 for root in roots}
     by_store = {}
@@ -1349,7 +1349,7 @@ def families(items, task_types=None):
     return sorted(found, key=lambda family: (-family["bytes"], family["family_id"]))
 
 
-def inventory(gguf_roots, mlx_roots=(), receipts=(), signature=True, limit=MAX_SCAN_FILES):
+def inventory(gguf_roots, mlx_roots=(), receipts=(), signature=True, limit=MAX_SCAN_FILES, compare_assets=False, asset_exclude_roots=()):
     """One read-only pass: what exists, what is converted, what is redundant."""
     errors = []
     entries = scan_gguf(gguf_roots, signature=signature, limit=limit, errors=errors)
@@ -1358,6 +1358,10 @@ def inventory(gguf_roots, mlx_roots=(), receipts=(), signature=True, limit=MAX_S
     paired = pair_conversions(entries, outputs, receipts)
     duplicates = group_duplicates(paired + _ollama_gguf_entries(ollama)) + group_mlx_duplicates(
         outputs, signature=signature, ollama=ollama)
+    from .standalone_assets import scan as scan_assets
+    all_roots = list(dict.fromkeys([str(Path(root).expanduser()) for root in list(gguf_roots) + list(mlx_roots or gguf_roots)]))
+    assets, asset_duplicates, asset_scan = scan_assets(all_roots, _storage_items(paired, outputs, ollama), limit, compare_assets, asset_exclude_roots)
+    duplicates.extend(asset_duplicates)
     for group in duplicates:
         group["group_id"] = "{0}:{1}".format(group["kind"], group["identity"])
     pending = [item for item in paired if item["status"] == "pending"]
@@ -1365,13 +1369,14 @@ def inventory(gguf_roots, mlx_roots=(), receipts=(), signature=True, limit=MAX_S
         "gguf": [str(Path(root).expanduser()) for root in gguf_roots],
         "mlx": [str(Path(root).expanduser()) for root in (mlx_roots or gguf_roots)],
     }
-    stored = storage(paired, outputs, ollama, list(dict.fromkeys(roots["gguf"] + roots["mlx"])))
+    stored = storage(paired, outputs, ollama, list(dict.fromkeys(roots["gguf"] + roots["mlx"])), assets)
     sizes = {item["path"]: item["bytes"] for item in stored["items"]}
     for output in outputs:
         output["bytes"] = sizes.get(output["path"], 0)
     return {
         "roots": roots,
         "storage": stored,
+        "asset_scan": asset_scan,
         "models": paired,
         "root_errors": errors,
         "outputs": outputs,

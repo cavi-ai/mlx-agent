@@ -601,17 +601,18 @@ class StorageTests(unittest.TestCase):
         self.assertEqual([(output["repo"], output["bytes"]) for output in report["outputs"]],
                          [("org/Xi-Model-4bit", 1000 + (snapshot / "config.json").stat().st_size)] * 2)
 
-    def test_files_that_belong_to_no_model_are_reported_by_the_folder_holding_them(self):
+    def test_standalone_files_are_accounted_as_assets(self):
         write_shaped_model(self.root / "lmstudio" / "org" / "Pi-Model-MLX-4bit", 28, 1024, 16)
         unknown = self.root / "lmstudio" / "org" / "Unknown-bf16"
         unknown.mkdir()
         (unknown / "model.safetensors").write_bytes(b"u" * 100)
         (self.root / "comfyui" / "checkpoints").mkdir(parents=True)
         (self.root / "comfyui" / "checkpoints" / "model.ckpt").write_bytes(b"c" * 50)
+        notes = self.root / "notes.txt"
+        notes.write_bytes(b"notes")
         root = inventory([self.root])["storage"]["roots"][0]
-        self.assertEqual(root["other"], [{"path": str(unknown), "bytes": 100},
-                                         {"path": str(self.root / "comfyui"), "bytes": 50}])
-        self.assertEqual(root["total_bytes"], root["bytes"] + 150)
+        self.assertEqual(root["other"], [{"path": str(notes), "bytes": 5}])
+        self.assertEqual(root["total_bytes"], root["bytes"] + 5)
 
     def test_a_split_gguf_is_one_item_with_the_projector_beside_it(self):
         folder = self.root / "Omega-GGUF"

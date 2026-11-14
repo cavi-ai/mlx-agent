@@ -808,3 +808,82 @@ def generate(model, tokenizer, texts, max_length):
         self.server.config['jit'] = True
         self.assertEqual(self.embed({'input': 'a'})[0], 401)
         self.assertEqual(self.embed({'input': 'a'}, {'Authorization': 'Bearer ' + token})[0], 200)
+
+
+class SystemOneHTTPTests(unittest.TestCase):
+    request = TaskHTTPTests.request
+    close_server = TaskHTTPTests.close_server
+
+    def setUp(self):
+        import os
+        import threading
+        from mlx_agent.compute import ComputeLease
+        from mlx_agent.task_identity import capture_identity
+        from mlx_agent.task_serve import TaskServer
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.model = self.root / 'kev-model'
+        self.model.mkdir()
+        (self.model / 'config.json').write_text('{"model_type":"kev"}')
+        (self.model / 'model.safetensors').write_bytes(b'fixture')
+        (self.root / 'fake_kev.py').write_text('''
+def load(path, **options): return object(), object()
+def predict(model, tokenizer, state, questions):
+    return {"answers": {name: {"type": "noul", "noul": round(len(state) / 100, 2)} for name in questions},
+            "usage": {"input_tokens": len(state), "output_tokens": 3}}
+''')
+        identity = capture_identity(self.model, load_manifests()['mlx-embeddings'], Path(sys.executable))
+        config = {'local_path': str(self.model), 'model': str(self.model), 'runtime': 'tasks',
+            'fingerprint': model_fingerprint(self.model), 'jit': True,
+            'task_runtime_fingerprint': task_serving.runtime_fingerprint(identity['backend']),
+            'port': 0, 'task_identity': identity, 'task_kinds': ['classification'], 'task_state_dir': str(self.root / 'tasks'),
+            'max_tokens': 0, 'worker_argv': [sys.executable], 'control_token': 'a' * 32,
+            'memory_state_dir': str(self.root / 'memory'), 'compute_state_dir': str(self.root / 'compute'),
+            'memory_policy': {'keep_loaded': True}}
+        self.server = TaskServer(('127.0.0.1', 0), config)
+        self.server.controller.config['port'] = self.server.server_port
+        self.server.controller.resident.environment = dict(os.environ, PYTHONPATH=str(self.root))
+        self.port = self.server.server_port
+        def planner(model, request):
+            return {'backend': 'mlx-embeddings', 'model': model, 'request': request,
+                'argv': [sys.executable, str(Path(task_serving.__file__).with_name('decide_runner.py')),
+                         '--module', 'fake_kev', '--model', model, '--request', request]}
+        for context in (patch('mlx_agent.task_kinds.plan_decide', side_effect=planner),
+                        patch('mlx_agent.inference_runner.sync_ports'),
+                        patch('mlx_agent.task_serving.ComputeLease', side_effect=lambda operation, root=None, **options: ComputeLease(operation, self.root / 'compute', **options))):
+            context.start()
+            self.addCleanup(context.stop)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.addCleanup(self.close_server)
+
+    def decide(self, value, headers=None):
+        body = dict({'model': self.model.name, 'state': 'charged twice',
+                     'questions': {'refund': {'type': 'noul', 'instructions': 'refund?'}}}, **value)
+        return self.request('POST', '/v1/systemone', body, headers)
+
+    def test_systemone_answers_from_the_resident_model_with_latency(self):
+        status, value = self.decide({})
+        self.assertEqual(status, 200, value)
+        latency = value.pop('latency_ms')
+        self.assertTrue(isinstance(latency, float) and latency >= 0)
+        self.assertEqual(value, {'model': self.model.name, 'answers': {'refund': {'type': 'noul', 'noul': 0.13}},
+                                 'usage': {'input_tokens': 13, 'output_tokens': 3}})
+        status, value = self.decide({'state': 'x' * 50, 'questions': {'a': {'type': 'noul', 'instructions': 'a'},
+                                                                      'b': {'type': 'noul', 'instructions': 'b'}}})
+        self.assertEqual((status, value['answers']), (200, {'a': {'type': 'noul', 'noul': 0.5}, 'b': {'type': 'noul', 'noul': 0.5}}))
+        self.assertEqual(len(self.server.controller.store.list()), 2)
+        self.assertEqual(self.server.controller.active_requests, 0)
+
+    def test_refuses_other_models_unknown_fields_and_invalid_questions(self):
+        self.assertEqual(self.decide({'model': 'other'})[0], 404)
+        for body in ({'assets': {}}, {'questions': {}}, {'questions': {'q': {'type': 'pick', 'instructions': 'x'}}},
+                     {'state': 3}):
+            with self.subTest(body=body):
+                self.assertEqual(self.decide(body)[0], 400)
+        self.assertEqual(self.server.controller.store.list(), [])
+
+    def test_embedding_routes_do_not_serve_decisions(self):
+        self.server.config['task_kinds'] = ['embedding']
+        self.assertEqual(self.decide({})[0], 404)

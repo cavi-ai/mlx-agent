@@ -14,6 +14,9 @@ from .jit_serve import GatewayError, GatewayHandler, MAX_BODY, MAX_REQUESTS, pub
 
 CHAT_PATHS = ("/v1/chat/completions", "/v1/completions", "/v1/messages", "/v1/responses")
 EMBEDDINGS_PATH = "/v1/embeddings"
+SYSTEMONE_PATH = "/v1/systemone"
+# Typed-route endpoints and the task kind a route must serve to answer them.
+TASK_PATHS = {EMBEDDINGS_PATH: "embedding", SYSTEMONE_PATH: "classification"}
 REFRESH_SECONDS = 5
 
 
@@ -91,7 +94,7 @@ class FrontDoorHandler(GatewayHandler):
     def do_POST(self):
         try:
             self._guard()
-            if self.path not in CHAT_PATHS + (EMBEDDINGS_PATH,):
+            if self.path not in CHAT_PATHS and self.path not in TASK_PATHS:
                 raise GatewayError(404, "not_found", "Unknown inference endpoint.")
             if self.headers.get("Transfer-Encoding"):
                 raise GatewayError(400, "invalid_body", "Use a bounded Content-Length request.")
@@ -121,8 +124,8 @@ class FrontDoorHandler(GatewayHandler):
         route = table[model]
         if route is None:
             raise GatewayError(409, "ambiguous_model", "More than one route serves that model name.")
-        typed = route.get("runtime") == "tasks"
-        if (self.path == EMBEDDINGS_PATH) != typed or (typed and "embedding" not in route.get("task_kinds", ())):
+        typed, kind = route.get("runtime") == "tasks", TASK_PATHS.get(self.path)
+        if (kind is not None) != typed or (typed and kind not in route.get("task_kinds", ())):
             raise GatewayError(400, "unsupported_endpoint", "That model's route does not serve this endpoint.")
         return route
 

@@ -130,7 +130,8 @@ repository for a cached snapshot, without local paths. A name served by more
 than one route is withheld and refused with `ambiguous_model`. Requests to
 `/v1/chat/completions`, `/v1/completions`, `/v1/messages` and `/v1/responses`
 go to the JIT gateway serving `model`; `/v1/embeddings` goes to a typed
-endpoint that advertises `embedding`. The request body and the client's
+endpoint that advertises `embedding`, and `/v1/systemone` to one that
+advertises `classification`. The request body and the client's
 credential are forwarded unchanged and the route checks the key again.
 Responses, including event streams, are relayed as they arrive.
 
@@ -678,10 +679,18 @@ length of 8192 tokens, and the response returns once every job has finished.
 Embedding requests queue behind each other; a request made while a
 `/v1/tasks` job runs is refused with `model_busy`. The response has no `usage`.
 
+An endpoint that advertises `classification` also answers TypeSafe System One
+`POST /v1/systemone` with `{"model":"...","state":...,"questions":{...}}`, the
+same `model` names as embeddings. Each question has a `type` of `noul`,
+`choice` or `score`, `instructions` and, except for `noul`, `criteria`. The
+request runs as one classification job and returns `model`, `answers`,
+`usage` and `latency_ms`. Other fields are refused.
+
 Typed endpoint history lives in `.mlx-agent-receipts/tasks/PORT` under the chosen
 `--receipts-dir`. CLI inspection uses that exact path as `task --state-dir`.
 These endpoints do not implement chat completions, Messages or Responses.
-Embedding endpoints also serve `POST /v1/embeddings`.
+Embedding endpoints also serve `POST /v1/embeddings`, and classification
+endpoints `POST /v1/systemone`.
 
 
 ### Shared execution admission

@@ -8,19 +8,39 @@
   "lock": "mlx-embeddings.lock",
   "ports": {
     "classification": [
+      "kev",
       "laya"
     ]
   },
   "port_bits": {
+    "kev": [
+      8,
+      32
+    ],
     "laya": [
       6,
       8
     ]
   },
   "port_convert": {
+    "kev": "convert",
     "laya": "convert"
   },
+  "port_recipes": {
+    "jaredpalmer/kev-4b": {
+      "port": "kev",
+      "base": "Qwen/Qwen3-4B-Base",
+      "base_revision": "906bfd4b4dc7f14ee4320094d8b41684abff8539",
+      "lora": "adapter_model.safetensors",
+      "lora_scale": 1.0
+    }
+  },
   "port_signatures": {
+    "kev": [
+      "adapter_config.json",
+      "adapter_model.safetensors",
+      "head.pt"
+    ],
     "laya": [
       "rl_agent_config.json",
       "encoder/config.json",
@@ -30,6 +50,13 @@
     ]
   },
   "port_quantize": {
+    "kev": {
+      "include": [
+        "backbone.embed_tokens",
+        "backbone.layers."
+      ],
+      "group_size": 64
+    },
     "laya": {
       "include": [
         "encoder.layers.",

@@ -53,7 +53,7 @@ class FrontDoorTests(unittest.TestCase):
     def setUp(self):
         from mlx_agent.front_door import FrontDoorServer
         self.upstreams = {}
-        for name in ('chat', 'embed', 'open', 'other', 'dead', 'twin_a', 'twin_b'):
+        for name in ('chat', 'embed', 'decide', 'open', 'other', 'dead', 'twin_a', 'twin_b'):
             upstream = Upstream()
             thread = threading.Thread(target=upstream.serve_forever, daemon=True)
             thread.start()
@@ -117,6 +117,19 @@ class FrontDoorTests(unittest.TestCase):
         self.assertEqual(json.loads(raw)['served_by'], self.upstreams['chat'].server_port)
         seen = self.upstreams['chat'].seen[-1]
         self.assertEqual((seen['authorization'], seen['x-api-key'], seen['origin']), (None, TOKEN, None))
+
+    def test_routes_decisions_only_to_classification_routes(self):
+        self.services.append(dict(self.services[1], path='/models/Kev-4B-MLX-8bit', task_kinds=['classification'],
+                                  port=self.upstreams['decide'].server_port))
+        body = {'model': 'Kev-4B-MLX-8bit', 'state': 'charged twice', 'questions': {'refund': {'type': 'noul', 'instructions': 'refund?'}}}
+        status, raw = self.request('POST', '/v1/systemone', body)
+        self.assertEqual((status, json.loads(raw)), (200, {'served_by': self.upstreams['decide'].server_port, 'path': '/v1/systemone'}))
+        self.assertEqual(self.upstreams['decide'].seen[-1]['body'], json.dumps(body).encode())
+        for model, path in (('Embed-4B', '/v1/systemone'), ('Chat-9B-4bit', '/v1/systemone'),
+                            ('Kev-4B-MLX-8bit', '/v1/embeddings'), ('Kev-4B-MLX-8bit', '/v1/chat/completions')):
+            with self.subTest(model=model, path=path):
+                self.assertEqual(self.request('POST', path, {'model': model})[0], 400)
+        self.assertEqual(self.forwarded(), 1)
 
     def test_streams_route_events_through(self):
         status, raw = self.request('POST', '/v1/chat/completions', {'model': 'Chat-9B-4bit', 'stream': True, 'messages': []})

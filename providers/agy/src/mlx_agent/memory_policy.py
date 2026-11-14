@@ -1,13 +1,16 @@
-"""One memory policy: CLI and profile names in, a validated dict out.
+"""One memory policy: reviewed limits in, the residency outcome for one endpoint out.
 
 Callers use this module. They do not translate field names or restate which
-runtimes may carry a budget, a KV context, or an allocator cache.
+runtimes may carry a budget, a KV context, or an allocator cache. Splash and
+Strata sizes are read from the serving plan; those modules still compute them.
 """
+import json
 import math
+from pathlib import Path
 
 from .allocator_cache import FIELDS as CACHE_FIELDS
 from .allocator_cache import from_memory, requested
-from .contextfit import CONTEXT_MAX, CONTEXT_MIN
+from .contextfit import CONTEXT_MAX, CONTEXT_MIN, extract_architecture, kv_cache_bytes
 
 STRATA_CONTEXT = "Strata JIT admission already includes the KV cache at --strata-context-tokens."
 TASK_CONTEXT = "Task endpoints do not use text KV context settings."
@@ -199,3 +202,106 @@ def reject_cache_outside_tasks(policy, runtime):
         _reject_cache(policy, runtime)
     except PolicyRejected as error:
         raise ValueError(str(error)) from error
+
+
+def execution_wait_seconds(policy):
+    """How long one endpoint may wait for execution."""
+    return policy.get("execution_wait_seconds", 0)
+
+
+def releases_after_request(policy):
+    """Whether weights are released when the endpoint has no active request."""
+    return bool(policy.get("release_after_request", False))
+
+
+_UNMEASURED = object()
+
+
+def release_reason(policy, *, busy, idle_seconds, budget_reload, available=_UNMEASURED):
+    """Why resident weights should be released, or None to keep them.
+
+    Omit ``available`` before a headroom probe. ``probe`` means the caller
+    should measure headroom and ask again. A measured ``None`` is unknown
+    headroom and does not release weights.
+    """
+    if busy:
+        return None
+    if budget_reload:
+        return "memory_budget"
+    if policy["keep_loaded"] or idle_seconds is None:
+        return None
+    if releases_after_request(policy) or (
+            policy["idle_timeout_seconds"] and idle_seconds >= policy["idle_timeout_seconds"]):
+        return "idle"
+    if not policy.get("unload_under_pressure"):
+        return None
+    if available is _UNMEASURED:
+        return "probe"
+    reserve = policy["minimum_headroom_gb"]
+    if available is None or reserve is None or type(available) is not int or available < 0:
+        return None
+    if available < math.ceil(reserve * 1e9):
+        return "memory_pressure"
+    return None
+
+
+def _kv_cache_bytes(local_path, context_tokens):
+    """KV cache bytes at the context from the local config.json, or None when its architecture is unknown."""
+    try:
+        location = Path(local_path) / "config.json"
+        if location.stat().st_size > 1024 * 1024:
+            return None
+        config = json.loads(location.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(config, dict):
+        return None
+    architecture = extract_architecture(config) or extract_architecture(config.get("text_config"))
+    return kv_cache_bytes(architecture, context_tokens)
+
+
+def _weight_bytes(local_path):
+    return sum(item.stat().st_size for item in Path(local_path).rglob("*")
+               if item.is_file() and item.suffix in (".safetensors", ".npz", ".bin", ".gguf"))
+
+
+def reservation(policy, config):
+    """Bytes to reserve for one endpoint, from the policy and the serving plan's sizes.
+
+    Returns None when the estimate is unavailable. Splash weight bytes and Strata
+    estimate, allocation, and growth are the values already stored on the plan.
+    """
+    context = policy.get("context_tokens")
+    runtime = config.get("runtime")
+    runtime_bytes = 1_500_000_000
+    weights = 0
+    kv = 0
+    if runtime == "splash":
+        weights = config["splash_weight_bytes"]
+    elif runtime != "strata":
+        weights = _weight_bytes(config["local_path"])
+    if runtime != "strata" and weights and config.get("adapter_path") is not None:
+        weights += config["adapter_identity"]["adapters.safetensors"]["bytes"]
+    if runtime != "strata":
+        kv = 0 if context is None else _kv_cache_bytes(config["local_path"], context)
+    dynamic_bytes = runtime_bytes + (kv or 0)
+    size = math.ceil(weights * 1.10 + kv + 1.5e9) if weights and kv is not None else None
+    if runtime == "splash" and config.get("splash_max_memory_gb") is not None:
+        size = math.ceil(config["splash_max_memory_gb"] * 1e9)
+    if runtime == "strata":
+        runtime_bytes = 5_000_000_000
+        if policy.get("model_memory_budget_gb") is not None:
+            allocation = config.get("strata_memory_allocation") or {}
+            size = allocation.get("estimated_resident_bytes")
+        else:
+            size = config.get("strata_memory_estimate_bytes")
+        dynamic_bytes = config.get("strata_memory_growth_bytes")
+        if size is None or dynamic_bytes is None:
+            size = None
+    if size is None:
+        return None
+    size = math.ceil(size)
+    workspace = min(size, runtime_bytes)
+    growth = min(size - workspace, max(0, math.ceil(dynamic_bytes) - workspace))
+    return {"size": size, "workspace_bytes": workspace, "growth_bytes": growth,
+            "reserve_bytes": size - workspace - growth}

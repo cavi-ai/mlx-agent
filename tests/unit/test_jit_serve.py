@@ -234,6 +234,7 @@ class JITServingTests(unittest.TestCase):
         token = 'client-' + 'b' * 40
         self.config['api_key_sha256'] = hashlib.sha256(token.encode()).hexdigest()
         self.config['auth_runtime_sha256'] = runtime_fingerprint()
+        self.config['jit'] = True
         headers = {'Authorization': 'Bearer ' + token}
         self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []}, headers)[0], 200)
         worker_port = self.server.controller.worker_port
@@ -600,7 +601,7 @@ class JITServingTests(unittest.TestCase):
         controller=self.server.controller
         controller.configure({'minimum_headroom_gb':0,'context_tokens':2048})
         controller.memory_probe=lambda:8_000_000_000
-        with mock.patch('mlx_agent.jit_serve._kv_cache_bytes',return_value=500_000_000):
+        with mock.patch('mlx_agent.memory_policy._kv_cache_bytes',return_value=500_000_000):
             self.assertEqual(self.request('POST','/v1/chat/completions',{'messages':[]})[0],200)
         self.assertEqual(controller.memory_registry.snapshot()['reserved_bytes'],2_000_000_000)
 
@@ -609,7 +610,7 @@ class JITServingTests(unittest.TestCase):
         controller.configure({'minimum_headroom_gb':0,'context_tokens':2048})
         controller.memory_probe=lambda:20_000_000_000
         controller.memory_registry.configure_budget(9_000_000_000,0)
-        with mock.patch('mlx_agent.jit_serve._kv_cache_bytes',return_value=5_000_000_000):
+        with mock.patch('mlx_agent.memory_policy._kv_cache_bytes',return_value=5_000_000_000):
             self.assertEqual(self.request('POST','/v1/chat/completions',{'messages':[]})[0],200)
         controller.guard_agent_budget()
         self.assertEqual(controller.model_state,'loaded',controller.last_error)

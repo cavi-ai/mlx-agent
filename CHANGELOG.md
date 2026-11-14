@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A live model load refuses when Splash, task, adapter, training, kernel, vision, access, or model files no longer match the reviewed serving plan.
+- Endpoint memory reservation uses the Splash and Strata sizes stored on the serving plan.
+
 - Return OpenAI tool calls from MLX-VLM models whose chat template writes `<tool_call><function=` without a newline, such as MiMo-V2.6 and Qwen3.5, instead of raw tool-call text.
 
 - Add the `mlx-agent` OpenClaw provider plugin: it discovers front-door chat models with the gateway key and leaves embedding and task endpoints out of the chat catalog.

@@ -14,8 +14,10 @@ from .backends import backend_environment, backend_python, load_manifests, load_
 from .compute import ComputeBusy, ComputeLease, process_identity
 from . import allocator_cache
 from .inference_runner import InferenceError
+from .identity_pass import recheck_bound_identity
 from .jit_serve import GatewayError, ModelWorker, model_fingerprint
-from .memory_policy import PolicyRejected, TASK_CONTEXT, reject_task_context, validate as validate_memory_policy
+from .memory_policy import (PolicyRejected, TASK_CONTEXT, execution_wait_seconds, reject_task_context,
+                            validate as validate_memory_policy)
 from .resident_runner import ResidentRunner
 from .residency import MemoryAdmissionError
 from .task_contracts import TaskError, validate_request
@@ -124,10 +126,12 @@ class TaskModelWorker(ModelWorker):
             log_path=config.get('log_path'), port=config['port'])
         self.job_thread = None
 
-    def _check_runtime(self):
-        expected = self.config.get('task_runtime_fingerprint')
-        if expected is not None and runtime_fingerprint(self.config['task_identity']['backend']) != expected:
-            raise TaskError('runtime_changed', 'The accepted inference adapter changed; review serving again.')
+    def _recheck_identity(self):
+        from .serve import ServeError
+        try:
+            recheck_bound_identity(self.config)
+        except ServeError as error:
+            raise TaskError(error.code, str(error), error.remediation) from error
 
     def _allocator_cache_status(self):
         desired = allocator_cache.from_memory(self.memory_policy)
@@ -277,8 +281,7 @@ class TaskModelWorker(ModelWorker):
         staged = None
         record = None
         try:
-            self._check_runtime()
-            check_identity(self.config['task_identity'])
+            self._recheck_identity()
             if kind.input_media:
                 staged = self.store.stage_input(request['parameters'][kind.input_field], kind.input_media)
             with tempfile.TemporaryDirectory(prefix='mlx-task-endpoint-plan-') as directory:
@@ -325,13 +328,13 @@ class TaskModelWorker(ModelWorker):
                 budget_gb = self.memory_policy.get('model_memory_budget_gb')
             lease = ComputeLease("task:" + identifier, self.config.get('compute_state_dir'),
                 shared=budget_gb is not None and self.memory_registry.shared_execution_enabled())
-            lease.enter_wait(self.memory_policy.get('execution_wait_seconds', 0),
+            lease.enter_wait(execution_wait_seconds(self.memory_policy),
                 cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'])
             leased = True
             record = self.store.get(identifier)
             if record['cancel_requested'] or self.closed:
                 raise InterruptedError('Inference cancelled.')
-            self._check_runtime()
+            self._recheck_identity()
             check_identity(record['identity'])
             request = self.store.read_request(identifier)
             kind = task_kinds.get(request['kind'])
@@ -340,7 +343,7 @@ class TaskModelWorker(ModelWorker):
             plan = kind.plan(request, directory, media)
             if plan['backend'] != record['identity']['backend'] or plan['argv'][0] != self.resident.executable:
                 raise TaskError('identity_changed', 'The model task backend changed.')
-            self.weights.reserve_workspace() if self.resident.loaded else self.weights.admit()
+            self._reserve_workspace() if self.resident.loaded else self._check_memory()
             try:
                 capacity = self.memory_registry.reserve_execution(self.memory_token,
                     None if budget_gb is None else math.ceil(budget_gb * 1e9), self.memory_probe)
@@ -352,7 +355,7 @@ class TaskModelWorker(ModelWorker):
                     raise InterruptedError('Endpoint stopping.')
                 self.model_state = 'loading' if not self.resident.loaded else 'loaded'
             if self.resident.process is None:
-                self.weights.launching()
+                self._launching_memory()
                 self.resident._start(cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'])
             with self.condition:
                 if self.closed:
@@ -365,13 +368,13 @@ class TaskModelWorker(ModelWorker):
             if not worker_identity:
                 raise TaskError('task_identity_unavailable', 'Cannot establish the model worker identity.')
             if not self.memory_materialized:
-                self.weights.bind(self.process, worker_identity)
+                self._bind_memory(self.process, worker_identity)
             self.store.transition(identifier, ('starting',), {'state': 'running', 'execution': {'pid': self.process.pid, 'identity': worker_identity}})
             dispatched = True
             result = kind.run(plan, runner=lambda argv, **options: self.resident.run(argv,
                 cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'],
                 cache_policy=allocator_cache.from_memory(self.memory_policy), memory_limit_bytes=worker_limit, **options))
-            self._check_runtime()
+            self._recheck_identity()
             check_identity(record['identity'])
             self.store.read_request(identifier)
             if kind.input_media:

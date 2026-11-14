@@ -89,6 +89,8 @@ class StrataMemoryTests(unittest.TestCase):
         worker=self.worker()
         self.addCleanup(worker.close)
         worker.config['strata_expert_memory_gb']=1
+        worker.config['strata_memory_estimate_bytes'] = strata.memory_estimate(self.model, 1, 8192)
+        worker.config['strata_memory_growth_bytes'] = strata.memory_growth_allowance(self.model, 8192, 1)
         worker.memory_probe=lambda:1<<40
         worker._check_memory()
         worker._materialized_memory()
@@ -238,6 +240,8 @@ class StrataMemoryTests(unittest.TestCase):
         from mlx_agent.jit_serve import model_fingerprint
         config.update(fingerprint=model_fingerprint(self.root), worker_readiness_seconds=3,
                       compute_state_dir=str(self.root.resolve() / ".compute"),
+                      strata_memory_estimate_bytes=strata.memory_estimate(self.model, None, 8192),
+                      strata_memory_growth_bytes=strata.memory_growth_allowance(self.model, 8192, None),
                       worker_argv=[sys.executable,'-c',front,engine,str(ready),str(pidfile)])
         program = "\n".join([
             'import sys,json,subprocess,os',

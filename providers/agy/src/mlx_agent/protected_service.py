@@ -16,8 +16,8 @@ PROTOCOL = "protected-service-v1"
 def identity():
     root = Path(__file__).parent
     digest = hashlib.sha256()
-    for name in ("cli.py", "protected_service.py", "private_serve.py", "serving_access.py", "jit_serve.py", "serve.py",
-                 "inference_auth.py", "protected_worker.py", "worker_transport.py"):
+    for name in ("cli.py", "identity_pass.py", "protected_service.py", "private_serve.py", "serving_access.py",
+                 "jit_serve.py", "serve.py", "inference_auth.py", "protected_worker.py", "worker_transport.py"):
         digest.update(name.encode())
         digest.update((root / name).read_bytes())
     return {"protocol": PROTOCOL, "source_sha256": digest.hexdigest()}
@@ -41,7 +41,8 @@ def main(argv=None):
         parser.error("--model, --api-key-file and --port are required")
     if not Path(args.model).is_dir():
         parser.error("--model must be an existing local model directory")
-    from .serve import load_recipes, plan_start, _require_access_identity
+    from .identity_pass import recheck_bound_identity
+    from .serve import load_recipes, plan_start
     from .jit_serve import make_server
     with tempfile.TemporaryDirectory(prefix="mlx-service-", dir="/tmp") as directory:
         # The secure state writer refuses symlink components, including macOS /tmp.
@@ -52,7 +53,7 @@ def main(argv=None):
         from .worker_transport import gateway_config
         config = gateway_config(plan, control_token=secrets.token_hex(32),
                                 state_path=str(Path(directory) / "state.json"))
-        _require_access_identity(plan)
+        recheck_bound_identity(plan)
         server = make_server(config, args.port)
         previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
         try:

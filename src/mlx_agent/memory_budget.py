@@ -30,18 +30,47 @@ def _rusage_function():
     return function
 
 
-def _physical_bytes(pid):
+def _usage(pid):
     usage = _RusageInfoV0()
     if _rusage_function()(pid, 0, ctypes.byref(usage)) != 0:
         if ctypes.get_errno() == errno.ESRCH:
             raise ProcessLookupError(pid)
         return None  # An unreadable tracked process must block admission.
     if usage.exit_time:
-        raise ProcessLookupError(pid)  # The process exited after ps sampled its state.
-    return usage.phys_footprint
+        raise ProcessLookupError(pid)  # The process exited after the table was sampled.
+    return usage
 
 
-def process_snapshot():
+def _physical_bytes(pid):
+    usage = _usage(pid)
+    return None if usage is None else usage.phys_footprint
+
+
+def identified_pids(policy, entries, external_pids=()):
+    """The PIDs whose start and command ``account`` compares: external bindings and managed workers."""
+    pids = {binding['pid'] for binding in policy['external']} if policy is not None else set()
+    pids.update(external_pids or ())
+    pids.update(entry['worker']['pid'] for entry in entries.values() if entry['worker'] is not None)
+    return pids
+
+
+def process_snapshot(identities=None):
+    """Live processes and their memory; identity for the PIDs asked, or for every process when None."""
+    if identities is not None and sys.platform == 'darwin':
+        from .process_table import identities as observe, rows as table
+        rows = {}
+        for pid, (parent, group) in table().items():
+            try:
+                usage = _usage(pid)
+            except ProcessLookupError:
+                continue  # Short-lived processes can exit after the table was read.
+            rows[pid] = {'parent': parent, 'group': group,
+                         'rss': None if usage is None else usage.resident_size,
+                         'physical_bytes': None if usage is None else usage.phys_footprint}
+        for pid, identity in observe(pid for pid in identities if pid in rows).items():
+            rows[pid]['identity'] = identity
+        # A process that exits before its identity is read is no longer running.
+        return {pid: row for pid, row in rows.items() if pid not in identities or 'identity' in row}
     result = subprocess.run(['/bin/ps', '-axo', 'pid=,ppid=,pgid=,rss=,stat=,lstart=,command='],
                             capture_output=True, text=True, timeout=5, check=True)
     rows = {}

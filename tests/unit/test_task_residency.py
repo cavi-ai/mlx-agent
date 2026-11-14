@@ -104,7 +104,7 @@ def predict(model, tokenizer, state, questions):
         pid = self.worker.process.pid
         identity = ('Mon Jan 1 00:00:00 2024 /different/python'
                     + ' -c from multiprocessing.resource_tracker import main;main(6)')
-        with patch('mlx_agent.process_tree._snapshot', return_value={pid + 1: (pid, pid, identity)}):
+        with patch('mlx_agent.process_tree.group_snapshot', return_value={pid + 1: (pid, pid, identity)}):
             with self.assertRaisesRegex(ValueError, 'Unexpected child'):
                 self.worker.idle_members()
 
@@ -114,7 +114,7 @@ def predict(model, tokenizer, state, questions):
         pid = self.worker.process.pid
         identity = ('Mon Jan 1 00:00:00 2024 ' + self.worker.executable
                     + ' -Walways -c from multiprocessing.resource_tracker import main;main(6)')
-        with patch('mlx_agent.process_tree._snapshot', return_value={pid + 1: (pid, pid, identity)}):
+        with patch('mlx_agent.process_tree.group_snapshot', return_value={pid + 1: (pid, pid, identity)}):
             with self.assertRaisesRegex(ValueError, 'Unexpected child'):
                 self.worker.idle_members()
 

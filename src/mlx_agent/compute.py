@@ -43,23 +43,8 @@ def group_members(pgid):
     """Return live members, excluding zombies which no longer own compute."""
     if type(pgid) is not int or pgid <= 0:
         raise ValueError("A process group requires a positive ID.")
-    probe = subprocess.Popen(["/bin/ps", "-axo", "pid=,pgid=,stat="], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    try:
-        output, _ = probe.communicate(timeout=5)
-    except BaseException:
-        probe.kill()
-        probe.wait()
-        raise
-    if probe.returncode != 0:
-        raise OSError("The process table is unavailable.")
-    members = []
-    for line in output.splitlines():
-        fields = line.split()
-        # A probe executed inside the target group observes itself. Its own
-        # short-lived PID must not keep that group permanently non-quiescent.
-        if len(fields) >= 3 and int(fields[0]) != probe.pid and int(fields[1]) == pgid and not fields[2].startswith("Z"):
-            members.append(int(fields[0]))
-    return members
+    from .process_table import group
+    return group(pgid)
 
 
 class ComputeLease:

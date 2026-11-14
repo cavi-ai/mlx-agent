@@ -256,21 +256,22 @@ class MemoryRegistry:
             return dict(registry=self._summary(rows),allocation=dict(row))
 
     def _agent_budget(self, rows, replacement=None):
-        from .memory_budget import read_policy, process_snapshot, account
+        from .memory_budget import read_policy, process_snapshot, account, identified_pids
         policy = read_policy(self.root)
         if policy is None:
             return None
         try:
-            processes = (self.process_probe or process_snapshot)()
+            processes = self.process_probe() if self.process_probe else process_snapshot(identified_pids(policy, rows))
         except (OSError, ValueError, SubprocessError) as error:
             raise MemoryAdmissionError('memory_unknown', 'Agent process memory is unavailable.') from error
         return account(policy, rows, processes, self._owner(), replacement)
 
     def configure_budget(self, limit_bytes, reserve_bytes=0, external_pids=None):
-        from .memory_budget import SCHEMA as BUDGET_SCHEMA, validate_policy, process_snapshot, read_policy
+        from .memory_budget import SCHEMA as BUDGET_SCHEMA, validate_policy, process_snapshot, read_policy, identified_pids
         with self._locked() as rows:
-            processes = (self.process_probe or process_snapshot)()
             previous = read_policy(self.root)
+            processes = (self.process_probe() if self.process_probe
+                         else process_snapshot(identified_pids(previous, rows, external_pids)))
             external = list(previous['external']) if previous is not None and external_pids is None else []
             for pid in sorted(set(external_pids or ())):
                 if type(pid) is not int or pid <= 0 or pid not in processes:

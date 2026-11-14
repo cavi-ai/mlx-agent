@@ -230,11 +230,14 @@ def preview_workflow(definition, *, receipts_dir=None):
                               and all(row['action'] == 'start' for row in members.values())
                               and not inspection['entries'] else None,
                               'available_bytes': available, 'agent_budget': budget}}
+    budget_known = (budget is None or (isinstance(budget, dict)
+        and type(budget.get('accounted_bytes')) is int and type(budget.get('admission_bytes')) is int))
     if (all(item is not None for item in estimates) and all(row['action'] == 'start' for row in members.values())
-            and inspection['state'] == 'ok' and not inspection['entries'] and budget is not None
-            and type(available) is int):
+            and inspection['state'] in ('ok', 'uninitialized') and not inspection['entries']
+            and not inspection['errors'] and budget_known and type(available) is int and available >= 0):
         reserve = max(reserves)
-        fits = budget['accounted_bytes'] + amount <= budget['admission_bytes'] and amount + reserve <= available
+        fits_budget = budget is None or budget['accounted_bytes'] + amount <= budget['admission_bytes']
+        fits = fits_budget and amount + reserve <= available
         forecast.update(status='fits_estimate' if fits else 'does_not_fit', reason='Conservative concurrent allocation estimate.')
     definition_hash = _hash(definition)
     return {'schema': 'serving-workflow-preview/1', 'definition_hash': definition_hash,

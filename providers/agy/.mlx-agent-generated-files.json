@@ -1322,7 +1322,7 @@
     },
     {
       "path": "src/mlx_agent/workflow_sets.py",
-      "sha256": "268ceec2e5e1d494fc9fb74de5cdd2985f2141a27bba798d088291f1c32389ac"
+      "sha256": "7035c7e2923bd5768c28b8139ffc80791edba2ba16858fdd633f15b511f62175"
     }
   ],
   "schema_version": 2,

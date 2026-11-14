@@ -70,6 +70,22 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(result['state'], 'unknown')
         self.assertEqual(list(outside.iterdir()), [])
 
+    def test_empty_uncapped_registry_uses_host_headroom_conservatively(self):
+        plan = {'preview_hash': 'a' * 64, 'runtime': 'tasks'}
+        estimate = {'size': 40, 'reserve_bytes': 20, 'workspace_bytes': 15, 'growth_bytes': 5}
+        results = []
+        for state, available in [('ok', 100), ('uninitialized', 70), ('unknown', 100)]:
+            inspection = {'state': state, 'entries': {}, 'agent_budget': None,
+                          'errors': ['unavailable'] if state == 'unknown' else []}
+            with patch('mlx_agent.workflow_sets._member_plan', return_value=plan), \
+                 patch('mlx_agent.workflow_sets.reservation', return_value=estimate), \
+                 patch('mlx_agent.workflow_sets.MemoryRegistry.inspect', return_value=inspection), \
+                 patch('mlx_agent.workflow_sets.available_memory_bytes', return_value=available):
+                results.append(workflows.preview_workflow(self.definition, receipts_dir=self.root))
+        self.assertEqual([r['resource_forecast']['status'] for r in results],
+                         ['fits_estimate', 'does_not_fit', 'unknown'])
+        self.assertEqual(len({r['preview_hash'] for r in results}), 1)
+
     def test_existing_allocation_keeps_joint_forecast_unknown(self):
         plan = {'preview_hash': 'a' * 64, 'runtime': 'tasks'}
         estimate = {'size': 40, 'reserve_bytes': 20, 'workspace_bytes': 15, 'growth_bytes': 5}

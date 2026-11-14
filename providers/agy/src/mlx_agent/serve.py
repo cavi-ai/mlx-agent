@@ -28,6 +28,7 @@ from pathlib import Path
 
 from .identity_pass import recheck_bound_identity
 from .model_doctor import scan_wired_configs
+from .serving_plan import preview_hash, receipt_fields
 from .transactions import _atomic_in_directory
 from .wiring import require_secret_free_config, validate_health_endpoint
 
@@ -71,11 +72,7 @@ def _utc_now():
 
 
 def _preview_hash(plan):
-    canonical = json.dumps(
-        {key: plan[key] for key in sorted(plan) if key != "preview_hash"},
-        sort_keys=True, separators=(",", ":"),
-    )
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return preview_hash(plan)
 
 
 def receipts_root(root=None):
@@ -347,31 +344,29 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         "max_tokens": str(max_tokens),
         "runtime_adapter": str(Path(__file__).with_name("strata_runtime.py").resolve()),
     }
-    strata = splash = None
+    contribution = None
     if runtime != "strata" and (strata_expert_memory_gb is not None or strata_context_tokens is not None or strata_decoding is not None):
         raise ServeError("invalid_arguments", "Strata memory controls require the Strata runtime.",
                          "Select a prepared local Strata profile.")
     if runtime == "strata":
         from .strata_runtime import StrataError, plan_contribution
         try:
-            strata = plan_contribution(local_path, has_path, adapter_path, strata_speculation, strata_decoding,
-                                       strata_context_tokens, strata_expert_memory_gb, memory_policy, runtime_executable)
+            contribution = plan_contribution(local_path, has_path, adapter_path, strata_speculation, strata_decoding,
+                                             strata_context_tokens, strata_expert_memory_gb, memory_policy, runtime_executable)
         except StrataError as error:
             raise ServeError(error.code, str(error), error.remediation) from error
-        values.update(strata.values)
     if runtime == "splash":
         from .splash_runtime import SplashError, plan_contribution
         try:
-            splash = plan_contribution(local_path, has_repo, repo, hf_cache, adapter_path, jit, runtime_executable,
-                                       splash_draft_model, splash_max_memory_gb, splash_max_context_tokens)
+            contribution = plan_contribution(local_path, has_repo, repo, hf_cache, adapter_path, jit, runtime_executable,
+                                             splash_draft_model, splash_max_memory_gb, splash_max_context_tokens)
         except SplashError as error:
             raise ServeError(error.code, str(error), error.remediation) from error
-        values.update(splash.values)
+    if contribution is not None:
+        contribution.apply_values(values)
     argv = [part.format(**values) for part in recipe["argv"]]
-    if splash is not None:
-        argv += splash.argv
-    if strata is not None:
-        argv += strata.argv
+    if contribution is not None:
+        contribution.extend_argv(argv)
     if adapter_path is not None:
         argv.extend(
             part.format(adapter_path=str(adapter_path)) for part in recipe["adapter_argv"]
@@ -422,10 +417,8 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         "readiness": recipe["readiness"].format(port=selected_port),
         "bind": "127.0.0.1",
     }
-    if strata is not None:
-        plan.update(strata.fields)
-    elif splash is not None:
-        plan.update(splash.fields)
+    if contribution is not None:
+        contribution.apply_fields(plan)
     elif has_path:
         plan.update(_local_weight_evidence(local_path))
     if prefill_kernel is not None:
@@ -451,10 +444,7 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                              "Select an existing local model directory; serving never downloads weights.")
         local = local.resolve()
         worker = list(argv)
-        if splash is not None:
-            # Splash's --model is the served name; its --model-dir already names the local target.
-            worker[:1] = plan["splash_worker_entry"]
-        else:
+        if contribution is None or not contribution.retarget_worker(worker):
             worker[worker.index("--model") + 1] = str(local)
         worker[worker.index("--port") + 1] = "{worker_port}"
         # Both supported runtimes expose --host. The VLM default binds all
@@ -713,31 +703,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         "started_at": now(),
         "preview_hash": plan["preview_hash"],
     }
-    if plan.get("jit"):
-        receipt["jit"] = True
-    if plan.get("api_key_sha256") is not None:
-        receipt["api_key_sha256"] = plan["api_key_sha256"]
-    if "private_worker" in plan:
-        receipt["protection"] = {"access": "api_key", "worker_transport": plan["private_worker"]["protocol"],
-                                 "worker_source_sha256": plan["private_worker"]["source_sha256"]}
-    if plan.get("task_kinds"):
-        receipt["task_kinds"] = plan["task_kinds"]
-    if plan.get("adapter_path") is not None:
-        receipt.update(adapter_path=plan["adapter_path"], adapter_identity=plan["adapter_identity"])
-    if plan.get("training_binding") is not None:
-        receipt["training_binding"] = plan["training_binding"]
-    if "prefill_kernel" in plan:
-        receipt["prefill_kernel"] = plan["prefill_kernel"]
-    if "decode_profile" in plan:
-        receipt["decode_profile"] = plan["decode_profile"]
-    if "vision_profile" in plan:
-        receipt["vision_profile"] = plan["vision_profile"]
-    if "strata_decoding" in plan:
-        receipt["strata_decoding"] = plan["strata_decoding"]
-    if "strata_memory_allocation" in plan:
-        receipt["strata_memory_allocation"] = plan["strata_memory_allocation"]
-    if plan["runtime"] == "splash":
-        receipt.update(splash_served_model=plan["splash_served_model"], splash_version=plan["splash_version"])
+    receipt.update(receipt_fields(plan))
     content = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     _atomic_in_directory(root, receipt_path.name, content, 0o600)
     return {"status": "started", "receipt": receipt}

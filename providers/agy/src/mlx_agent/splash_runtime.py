@@ -11,6 +11,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from .serving_plan import Contribution
+
 MIN_VERSION = (1, 4, 0)
 _VERSION = re.compile(r"Splash (\d+)\.(\d+)\.(\d+)")
 _SPLIT = re.compile(r"(.+)-(\d{5})-of-(\d{5})\.gguf")
@@ -251,7 +253,6 @@ def serve_arguments(draft=None, max_memory_gb=None, max_context_tokens=None):
 def plan_contribution(local_path, has_repo, repo, hf_cache, adapter_path, jit, runtime_executable,
                       draft_model, max_memory_gb, max_context_tokens):
     """Splash's part of a serving plan. Raises SplashError; the caller maps it."""
-    from .runtime_plan import Contribution
     if adapter_path is not None:
         raise SplashError("invalid_arguments", "Splash serves local weights without a LoRA adapter.",
                           "Remove the adapter path.")
@@ -280,8 +281,9 @@ def plan_contribution(local_path, has_repo, repo, hf_cache, adapter_path, jit, r
               "splash_max_memory_gb": max_memory_gb, "splash_max_context_tokens": max_context_tokens,
               "weight_format": target["format"], "weight_bytes": target["weight_bytes"],
               "weights_preserved": True, "readiness_deadline": 900}
+    entry = worker_entry(runtime) if jit else None
     if jit:
-        fields.update(splash_worker_entry=worker_entry(runtime),
+        fields.update(splash_worker_entry=entry,
                       splash_weight_bytes=target["weight_bytes"] + (draft["weight_bytes"] if draft else 0))
     values = {"executable": runtime["launcher"], "served_model": target["served_model"], "splash_target": target["target"]}
-    return Contribution(serve_arguments(draft, max_memory_gb, max_context_tokens), values, fields)
+    return Contribution(serve_arguments(draft, max_memory_gb, max_context_tokens), values, fields, worker_entry=entry)

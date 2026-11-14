@@ -718,7 +718,7 @@
     },
     {
       "path": "src/mlx_agent/memory_policy.py",
-      "sha256": "6ca85186a0b3bf8a0cb17211af2bf37ddd94da8db7ecf5b97e32f1f388515860"
+      "sha256": "675f8081292c7590c782ecafa09b77dee1f27c358661160a807c9fd1f5eb4e3f"
     },
     {
       "path": "src/mlx_agent/mesh.py",
@@ -798,7 +798,7 @@
     },
     {
       "path": "src/mlx_agent/protected_service.py",
-      "sha256": "3c7b5999e9b54e3fff119c83b93ad430ab694b1d43c1be1b93d23c661c9690e0"
+      "sha256": "ff6e8ff751bc41d90db1b605d6d42ff1dfc6031c2c66f8c7f9b4290cb24706cc"
     },
     {
       "path": "src/mlx_agent/protected_worker.py",
@@ -1157,10 +1157,6 @@
       "sha256": "8797212e99c5e052dd9966648f768495b2ac35b1f769504915b27cb29bd6b913"
     },
     {
-      "path": "src/mlx_agent/runtime_plan.py",
-      "sha256": "36c610a787d42f99d0d65511891ef99384232b13975ad34d307bb97c3c7db7ba"
-    },
-    {
       "path": "src/mlx_agent/runtime_preference.py",
       "sha256": "70bda205136b4219ca8406e743a363ef39aa2d3c3a664ddd21e6e70e53158bf8"
     },
@@ -1170,7 +1166,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "79e177b842b41d5bd33dd6c19aac621df1dfd1aed5e9e930d7eb806f6acc139e"
+      "sha256": "53437f890a10982251819186d52db885713b42f6528bb90805623b6ab381d50e"
     },
     {
       "path": "src/mlx_agent/serve_profiles.py",
@@ -1183,6 +1179,10 @@
     {
       "path": "src/mlx_agent/serving_access.py",
       "sha256": "8ef86727a0bcf34d7161f497ac5ce59b67063bdb4e99cec348ac124f6aed41c5"
+    },
+    {
+      "path": "src/mlx_agent/serving_plan.py",
+      "sha256": "7e47c603abfc961a28b42c5e620bf13cd14774386e141a821be82b23da392de8"
     },
     {
       "path": "src/mlx_agent/source_evidence.py",
@@ -1198,7 +1198,7 @@
     },
     {
       "path": "src/mlx_agent/splash_runtime.py",
-      "sha256": "e2d461fe1aae69f9cd981d0a3a1f2922fb965844f893a109c8b9424da720aa24"
+      "sha256": "39e5069e504244ae45e030e9d9d1c70786385cd6e09aab0fe7f099badb5e222a"
     },
     {
       "path": "src/mlx_agent/standalone_assets.py",
@@ -1206,7 +1206,7 @@
     },
     {
       "path": "src/mlx_agent/strata_runtime.py",
-      "sha256": "a1097417961a1b9ebd1a00de5f70389bdcb0e4ef4afa7354d3f0576d174ecb0a"
+      "sha256": "271ba3897633b28aeae407d58a22cd96a98c2cbe11d3b5d5d2505fbe8a2d6562"
     },
     {
       "path": "src/mlx_agent/study_recipes.py",
@@ -1318,7 +1318,7 @@
     },
     {
       "path": "src/mlx_agent/worker_transport.py",
-      "sha256": "fdb3355c232dc0728e0d03ee3051c7aa1df432343cbaa89e3a68acd0a761fab3"
+      "sha256": "25d47a2fecc25218498a7b4e03b8d061d39dea3af86d9845c46e3236a39eaea6"
     }
   ],
   "schema_version": 2,

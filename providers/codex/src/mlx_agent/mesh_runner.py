@@ -24,6 +24,9 @@ def main(argv=None):
     port = importlib.import_module(args.module)
     started = time.monotonic()
     model = load_model(port.load, args.model)
+    prepare = getattr(port, "prepare", None)
+    if prepare is not None:
+        prepare(model, args.resolution)
     load_seconds = time.monotonic() - started
     result = port.generate(model, args.image, args.out, steps=args.steps, seed=args.seed,
                            resolution=args.resolution, guidance=args.guidance,

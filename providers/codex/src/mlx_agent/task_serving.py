@@ -38,6 +38,33 @@ def runtime_fingerprint(backend):
     return digest.hexdigest()
 
 
+def _trellis_component_budget(model_path, kind, plan, telemetry, *, warm):
+    """Return selected cold checkpoint bytes and missing warm checkpoint bytes."""
+    if kind != 'mesh_generation':
+        return None
+    path = Path(model_path)
+    config = json.loads((path / 'config.json').read_text())
+    if config.get('model_type') != 'trellis2':
+        return None
+    from importlib import import_module
+    components = import_module('mlx_agent.resources.ports.mlx-3d.trellis2.components')
+    argv = plan['argv']
+    resolution = int(argv[argv.index('--resolution') + 1])
+    names = components.required_components(config, resolution)
+    sizes = components.checkpoint_bytes(path, names)
+    if not warm:
+        return sum(sizes.values()), 0
+    resident = None if not isinstance(telemetry, dict) else telemetry.get('components')
+    if resident is None:
+        from .memory_policy import _weight_bytes
+        missing = _weight_bytes(path)
+    else:
+        from .worker_telemetry import validate
+        validate(telemetry)
+        missing = sum(size for name, size in sizes.items() if name not in resident['resident'])
+    return sum(sizes.values()), math.ceil(missing * 1.10)
+
+
 TASKS = {'speech_to_text': ['transcribe'], 'text_to_speech': ['speak'], 'embedding': ['embedding'],
          'classification': ['classification'], 'music_generation': ['music_generation'],
          'image_generation': ['image_generation'], 'video_generation': ['video_generation'],
@@ -345,7 +372,13 @@ class TaskModelWorker(ModelWorker):
             plan = kind.plan(request, directory, media)
             if plan['backend'] != record['identity']['backend'] or plan['argv'][0] != self.resident.executable:
                 raise TaskError('identity_changed', 'The model task backend changed.')
-            self._reserve_workspace() if self.resident.loaded else self._check_memory()
+            component_budget = _trellis_component_budget(self.config['local_path'], request['kind'], plan,
+                                                           self.resident.telemetry if self.resident.loaded else None,
+                                                           warm=self.resident.loaded)
+            if self.resident.loaded:
+                self._reserve_workspace(0 if component_budget is None else component_budget[1])
+            else:
+                self._check_memory(weight_bytes=None if component_budget is None else component_budget[0])
             try:
                 capacity = self.memory_registry.reserve_execution(self.memory_token,
                     None if budget_gb is None else math.ceil(budget_gb * 1e9), self.memory_probe)

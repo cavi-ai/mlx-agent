@@ -88,6 +88,16 @@ class AgentBudgetTests(unittest.TestCase):
         self.registry.settle('first', resident_bytes=70)
         self.cold('second', resident=45, workspace=10)
 
+    def test_job_cap_includes_warm_pending_component_reservation(self):
+        self.budget(limit=300, reserve=20)
+        self.cold('first')
+        self.registry.settle('first', resident_bytes=60)
+        self.registry.reserve_workspace('first', 40, lambda: 10000)
+        with self.assertRaises(MemoryAdmissionError) as caught:
+            self.registry.reserve_execution('first', 99, lambda: 10000)
+        self.assertEqual(caught.exception.code, 'job_memory_cap_exceeded')
+        self.assertEqual(self.registry.reserve_execution('first', 100, lambda: 10000), 100)
+
     def test_capped_jobs_share_admission_and_growth_consumes_the_reservation(self):
         self.budget(limit=220, reserve=20)
         self.cold('first')

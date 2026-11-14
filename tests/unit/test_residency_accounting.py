@@ -46,6 +46,15 @@ class RegistryTests(unittest.TestCase):
         self.registry.reserve_workspace('a',30,lambda:40)
         self.assertEqual(self.registry.snapshot()['reserved_bytes'],30)
 
+    def test_job_cap_includes_warm_growth_without_shared_policy(self):
+        self.reserve('a', resident=80, workspace=10, available=500)
+        self.registry.settle('a', resident_bytes=80)
+        self.registry.reserve_workspace('a', 30, lambda: 500)
+        with self.assertRaises(self.Error) as caught:
+            self.registry.reserve_execution('a', 100, lambda: 500)
+        self.assertEqual(caught.exception.code, 'job_memory_cap_exceeded')
+        self.assertEqual(self.registry.reserve_execution('a', 110, lambda: 500), 110)
+
     def test_live_headroom_changes_apply_to_other_endpoints(self):
         self.reserve('a')
         self.registry.settle('a',workspace_bytes=0)

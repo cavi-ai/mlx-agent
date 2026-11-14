@@ -41,4 +41,7 @@ def enabled():
 
 
 def statistics():
-    return {'loads':_loads,'cache_hits':_cache_hits,'load_seconds':_load_seconds}
+    result = {'loads':_loads,'cache_hits':_cache_hits,'load_seconds':_load_seconds}
+    if _entry is not None and callable(getattr(_entry[1], 'component_statistics', None)):
+        result['components'] = _entry[1].component_statistics()
+    return result

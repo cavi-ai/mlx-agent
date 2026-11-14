@@ -266,7 +266,7 @@ def _weight_bytes(local_path):
                if item.is_file() and item.suffix in (".safetensors", ".npz", ".bin", ".gguf"))
 
 
-def reservation(policy, config):
+def reservation(policy, config, *, weight_bytes=None):
     """Bytes to reserve for one endpoint, from the policy and the serving plan's sizes.
 
     Returns None when the estimate is unavailable. Splash weight bytes and Strata
@@ -280,7 +280,7 @@ def reservation(policy, config):
     if basis.kind == "splash":
         weights = basis.weights
     elif basis.kind != "strata":
-        weights = _weight_bytes(config["local_path"])
+        weights = _weight_bytes(config["local_path"]) if weight_bytes is None else weight_bytes
     if basis.kind != "strata" and weights and config.get("adapter_path") is not None:
         weights += config["adapter_identity"]["adapters.safetensors"]["bytes"]
     if basis.kind != "strata":

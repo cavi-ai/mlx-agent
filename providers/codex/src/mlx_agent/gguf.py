@@ -81,6 +81,9 @@ _SHAPE_GGUF_SUFFIXES = (".block_count", ".embedding_length", ".attention.head_co
 _SHAPE_CONFIG_KEYS = ("num_hidden_layers", "hidden_size", "num_attention_heads")
 _INTERESTING_KEYS = (
     "general.architecture",
+    "general.type",
+    "general.base_model.0.name",
+    "general.base_model.0.repo_url",
     "general.name",
     "general.basename",
     "general.size_label",
@@ -457,8 +460,18 @@ def describe_gguf(path, signature=True):
     entry["architecture"] = metadata.get("general.architecture")
     entry["companion"] = (
         any(token in stem.lower() for token in _COMPANION_NAMES)
+        or str(metadata.get("general.type") or "").lower() == "mmproj"
         or str(entry["architecture"]).lower() in _COMPANION_ARCHITECTURES
     )
+    identity = {
+        "artifact_kind": metadata.get("general.type"),
+        "declared_size": metadata.get("general.size_label"),
+        "base_model_name": metadata.get("general.base_model.0.name"),
+        "base_model_repo": metadata.get("general.base_model.0.repo_url"),
+        "projector_type": metadata.get("clip.projector_type"),
+        "projector_width": metadata.get("clip.vision.projection_dim"),
+    }
+    entry["identity"] = {key: value for key, value in identity.items() if value is not None}
     entry["quantization"] = _quantization(metadata, stem)
     entry["structure"] = _structure(metadata, header["tensor_count"])
     entry["shape"] = _gguf_shape(metadata)

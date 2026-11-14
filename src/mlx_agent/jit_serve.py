@@ -37,7 +37,7 @@ from mlx_agent.residency import MemoryRegistry, MemoryAdmissionError
 from mlx_agent import allocator_cache
 from mlx_agent.inference_telemetry import InferenceTelemetry
 from mlx_agent import inference_defaults
-from mlx_agent.compute import ComputeBusy, ComputeLease, ExecutionAdmission, group_members, process_identity
+from mlx_agent.compute import ComputeBusy, ComputeLease, ExecutionAdmission, group_members, process_identity, process_birth_identity
 from mlx_agent.identity_pass import recheck_bound_identity
 from mlx_agent.memory_policy import (PolicyRejected, enforce_configure, execution_wait_seconds, reject_cache_outside_tasks,
                                      release_reason, releases_after_request, reservation, validate as validate_memory_policy)
@@ -121,6 +121,7 @@ class ModelWorker:
             shared=lambda: self.memory_registry.shared_execution_enabled())
         self.worker_group = None
         self.worker_identity = None
+        self.worker_birth_identity = None
         self.execution_unresolved = False
         self.last_error = None
         self.memory_guard_error = None
@@ -539,6 +540,10 @@ class ModelWorker:
                         raise GatewayError(503, "model_load_failed", "Model worker startup was not acknowledged.")
                 self.execution.bind(process.pid)
                 self.worker_identity = process_identity(process.pid)
+                if splash:
+                    self.worker_birth_identity = process_birth_identity(process.pid)
+                    if not self.worker_birth_identity or os.getpgid(process.pid) != self.worker_group:
+                        raise OSError("The owned model worker identity is unavailable.")
                 os.write(gate_write, b'G')
             finally:
                 for descriptor in (ready_read, ready_write, gate_read, gate_write):
@@ -697,7 +702,16 @@ class ModelWorker:
         with self.condition:
             process, group = self.process, self.worker_group
         if process is not None and process.poll() is None:
-            if self.worker_identity is not None and process_identity(process.pid) != self.worker_identity:
+            if self.config.get("runtime") == "splash":
+                try:
+                    owned = (self.worker_birth_identity is not None
+                             and process_birth_identity(process.pid) == self.worker_birth_identity
+                             and group == process.pid and os.getpgid(process.pid) == group)
+                except ProcessLookupError:
+                    owned = False
+                if not owned:
+                    raise OSError("The model worker identity changed; shutdown is blocked.")
+            elif self.worker_identity is not None and process_identity(process.pid) != self.worker_identity:
                 raise OSError("The model worker identity changed; shutdown is blocked.")
             try:
                 process.terminate()
@@ -723,7 +737,7 @@ class ModelWorker:
                 raise OSError("The owned model process group has not stopped.")
         with self.condition:
             self.process = None
-            self.worker_group = self.worker_identity = None
+            self.worker_group = self.worker_identity = self.worker_birth_identity = None
             self.execution_unresolved = False
             self.strata_children = {}
             if self.log not in (None, subprocess.DEVNULL):

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reclaim idle task allocator cache once before retrying a refused admission when pressure reclamation is enabled.
+
 - TRELLIS.2 loads only the components needed for each mesh resolution and retains them for later resident tasks.
 
 - Add the Kev classification port (`jaredpalmer/kev-4b` over Qwen3-4B-Base, 8-bit or unquantized), and serve TypeSafe System One decisions at `POST /v1/systemone` on classification task routes and the front door.

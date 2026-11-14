@@ -188,6 +188,19 @@ class TaskModelWorker(ModelWorker):
             self._cache_operation(None)
         return self.status()
 
+    def _control_cache_in_lease(self, lease, desired, reason):
+        """Run cache control on the owned worker under an existing compute lease."""
+        try:
+            lease.bind_process_group(self.resident.process.pid)
+            success = self.resident.control_cache(desired, reclaim=reason)
+            lease.release_idle_process_group(self.resident.process.pid, self.resident.idle_members())
+        except (OSError, ValueError, subprocess.SubprocessError):
+            self._stop_worker()
+            with self.condition:
+                self.model_state = 'unloaded'
+            raise
+        return success, self._settle_task_memory()
+
     def _cache_operation(self, reason, manual=False, expected=None):
         with self.condition:
             if (self.closed or self.active_requests or self.cache_control_active
@@ -203,16 +216,7 @@ class TaskModelWorker(ModelWorker):
                 reason = 'policy'
         try:
             with ComputeLease('cache:' + self.config['local_path'], self.config.get('compute_state_dir')) as lease:
-                try:
-                    lease.bind_process_group(self.resident.process.pid)
-                    success = self.resident.control_cache(desired, reclaim=reason)
-                    lease.release_idle_process_group(self.resident.process.pid, self.resident.idle_members())
-                except (OSError, ValueError, subprocess.SubprocessError):
-                    self._stop_worker()
-                    with self.condition:
-                        self.model_state = 'unloaded'
-                    raise
-                settled = self._settle_task_memory()
+                success, settled = self._control_cache_in_lease(lease, desired, reason)
                 if success and settled:
                     self.last_error = None
             if not success:
@@ -345,6 +349,50 @@ class TaskModelWorker(ModelWorker):
                 self.release()
             raise error
 
+    def _admit_task_memory(self, request, plan, budget_gb, lease, check_cancelled):
+        """Retry complete admission once after an opted-in idle cache reclaim."""
+        for attempt in range(2):
+            try:
+                component_budget = _trellis_component_budget(self.config['local_path'], request['kind'], plan,
+                    self.resident.telemetry if self.resident.loaded else None, warm=self.resident.loaded)
+                if self.resident.loaded:
+                    self._reserve_workspace(0 if component_budget is None else component_budget[1])
+                else:
+                    self._check_memory(weight_bytes=None if component_budget is None else component_budget[0])
+                try:
+                    return self.memory_registry.reserve_execution(self.memory_token,
+                        None if budget_gb is None else math.ceil(budget_gb * 1e9), self.memory_probe)
+                except MemoryAdmissionError as error:
+                    raise GatewayError(503, error.code, str(error)) from error
+            except GatewayError as error:
+                if attempt or error.code not in ('insufficient_headroom', 'agent_memory_budget_exceeded', 'job_memory_cap_exceeded'):
+                    raise
+                with self.condition:
+                    desired = allocator_cache.from_memory(self.memory_policy)
+                    cache = self.resident.cache_state or {}
+                    memory = self.resident.telemetry or {}
+                    eligible = (not self.closed and self.active_requests == 1 and not self.cache_control_active
+                        and self.model_state == 'loaded' and self.resident.loaded and self.resident.process is not None
+                        and desired['cache_reclaim'] == 'pressure' and cache.get('available') is True
+                        and type(memory.get('cache_bytes')) is int and memory['cache_bytes'] > 0)
+                    if eligible:
+                        self.cache_control_active = True
+                if not eligible:
+                    raise
+                try:
+                    check_cancelled()
+                    success, settled = self._control_cache_in_lease(lease, desired, 'pressure')
+                    if not success:
+                        raise error
+                    if not settled:
+                        raise GatewayError(503, 'memory_registry_busy', 'Memory reservation remains pending after cache reclaim.')
+                    check_cancelled()
+                    self._recheck_identity()
+                finally:
+                    with self.condition:
+                        self.cache_control_active = False
+                        self.condition.notify_all()
+
     def _execute(self, identifier):
         lease = None
         leased = False
@@ -372,18 +420,13 @@ class TaskModelWorker(ModelWorker):
             plan = kind.plan(request, directory, media)
             if plan['backend'] != record['identity']['backend'] or plan['argv'][0] != self.resident.executable:
                 raise TaskError('identity_changed', 'The model task backend changed.')
-            component_budget = _trellis_component_budget(self.config['local_path'], request['kind'], plan,
-                                                           self.resident.telemetry if self.resident.loaded else None,
-                                                           warm=self.resident.loaded)
-            if self.resident.loaded:
-                self._reserve_workspace(0 if component_budget is None else component_budget[1])
-            else:
-                self._check_memory(weight_bytes=None if component_budget is None else component_budget[0])
-            try:
-                capacity = self.memory_registry.reserve_execution(self.memory_token,
-                    None if budget_gb is None else math.ceil(budget_gb * 1e9), self.memory_probe)
-            except MemoryAdmissionError as error:
-                raise GatewayError(503, error.code, str(error)) from error
+            def check_cancelled():
+                nonlocal cancelled_before_dispatch
+                if self.closed or self.store.get(identifier)['cancel_requested']:
+                    cancelled_before_dispatch = True
+                    raise InterruptedError('Inference cancelled.')
+            capacity = self._admit_task_memory(request, plan, budget_gb, lease, check_cancelled)
+            check_cancelled()
             worker_limit = None if capacity is None else max(1, capacity - 512_000_000)
             with self.condition:
                 if self.closed:
@@ -441,7 +484,15 @@ class TaskModelWorker(ModelWorker):
                 if self.resident.process is None:
                     self._release_memory()
                 elif self.memory_materialized:
-                    self.memory_reservation = self.memory_registry.settle(self.memory_token)
+                    try:
+                        self.memory_reservation = self.memory_registry.settle(self.memory_token)
+                    except MemoryAdmissionError as settle_error:
+                        if settle_error.code == 'memory_registry_busy':
+                            error = GatewayError(503, 'memory_registry_busy',
+                                'Memory reservation remains pending: ' + str(settle_error))
+                        else:
+                            admission_denied = False
+                            error = GatewayError(503, settle_error.code, str(settle_error))
             # No work was dispatched when admission was denied or cancelled here. Keep the
             # existing idle worker and its state available for the next request.
             if not admission_denied:

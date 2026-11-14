@@ -45,17 +45,18 @@ worker grows. Completion releases workspace while retaining any idle weights.
 
 An uncapped task keeps exclusive host execution and the existing remaining-pool
 ceiling. Without a shared budget, all execution remains exclusive; a configured
-task cap still sets its MLX allocation ceiling. Conversion, training, cache
+task cap still sets its MLX memory guideline. Conversion, training, cache
 maintenance and other non-serving operations always require exclusive ownership.
 Each shared execution persists its process identity and worker group separately;
 orphaned groups retain ownership until confirmed stopped. Legacy ownership
 records continue to block admission while their owner or group may be alive.
 
-Typed workers receive an MLX allocation ceiling before executing a job, leaving
-512 MB of the admitted capacity for process overhead. Allocation failures are
-returned as job errors; increase the route cap when its workspace needs more. The
-gateway also observes process-family memory and stops only its own model worker
-on a measured breach. This policy does not control unrelated applications or
+Typed workers receive an [MLX memory guideline](https://ml-explore.github.io/mlx/build/html/python/_autosummary/mlx.core.set_memory_limit.html)
+before executing a job, leaving 512 MB of the admitted capacity for process
+overhead. This setting is advisory during graph evaluation. Allocation failures
+are returned as job errors. When a shared agent budget is configured, the gateway
+also observes process-family memory and stops its own model worker on a measured
+breach. This policy does not control unrelated applications or
 replace system-headroom checks. Existing servers must be restarted on a supporting
 engine to participate; installing newer source does not update a running process.
 
@@ -729,12 +730,13 @@ from model, expert, KV and denoiser caches; they do not impose a process RAM lim
 | Policy field | Values | Behavior |
 | --- | --- | --- |
 | `allocator_cache_limit_mib` | `null` or integer 0–1048576 | Cap free allocator buffers in MiB; 0 disables caching; null restores the worker's original limit. |
-| `cache_reclaim` | `off`, `idle`, `pressure` | Keep the allocator cache, clear it after completed work, or clear it while idle below the headroom reserve. Default: off. |
+| `cache_reclaim` | `off`, `idle`, `pressure` | Keep the allocator cache, clear it after completed work, or clear it while idle below the headroom reserve or before retrying a refused admission. Default: off. |
 
 Both settings are optional. Pressure reclamation requires
 `minimum_headroom_gb` and works with `keep_loaded`: it clears free buffers while
-preserving active model tensors. A smaller cache can require more allocations
-on the next request. Existing behavior is preserved when these settings are absent.
+preserving active model tensors. On a qualifying admission refusal, the worker can
+reclaim once and retry the same budget and headroom checks. A smaller cache can
+require more allocations on the next request. Existing behavior is preserved when these settings are absent.
 
 ```bash
 python3 scripts/mlx-agent serve start --path /absolute/task/model --runtime tasks --keep-loaded --no-release-after-request --allocator-cache-limit-mib 1024 --cache-reclaim idle --json

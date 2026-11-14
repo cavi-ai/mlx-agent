@@ -347,22 +347,14 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
             raise ServeError("invalid_training_receipt", str(error), "Select a completed receipt whose base and adapter files are unchanged.") from error
         path, adapter_path = binding["base_path"], binding["adapter_path"]
     if memory_policy is not None:
-        from .jit_serve import validate_memory_policy
+        from .memory_policy import PolicyRejected, enforce_launch, validate
         try:
-            memory_policy = validate_memory_policy(memory_policy)
+            memory_policy = validate(memory_policy)
+            enforce_launch(memory_policy, runtime, jit)
+        except PolicyRejected as error:
+            raise ServeError(error.code, str(error), error.remediation) from error
         except ValueError as error:
             raise ServeError("invalid_arguments", str(error), "Correct the memory policy.") from error
-        from .allocator_cache import requested
-        if requested(memory_policy):
-            raise ServeError('cache_control_unavailable', 'Allocator cache controls require a resident task backend.',
-                             'Select a supported task model; inspect allocator_cache in endpoint status.')
-        if not jit:
-            raise ServeError("jit_required", "Memory policy requires a JIT endpoint.", "Use --jit.")
-        if runtime != "strata" and "model_memory_budget_gb" in memory_policy:
-            raise ServeError("invalid_arguments", "Model memory budgets currently require Strata.", "Select a prepared Strata profile.")
-        if runtime == "strata" and "context_tokens" in memory_policy:
-            from .jit_serve import STRATA_CONTEXT
-            raise ServeError("invalid_arguments", STRATA_CONTEXT, "Remove --context-tokens.")
     has_repo = isinstance(repo, str) and bool(repo.strip())
     has_path = isinstance(path, str) and bool(path.strip())
     if has_repo == has_path:
@@ -1186,7 +1178,7 @@ def reclaim_serve_cache(port, receipts_dir=None, expected_pid=None, expected_sta
 
 
 def configure_serve_memory(port, policy, receipts_dir=None, expected_pid=None, expected_start=None):
-    from .jit_serve import validate_memory_policy
+    from .memory_policy import validate as validate_memory_policy
     clear_budget = isinstance(policy, dict) and "model_memory_budget_gb" in policy and policy["model_memory_budget_gb"] is None
     try:
         policy = validate_memory_policy(policy)

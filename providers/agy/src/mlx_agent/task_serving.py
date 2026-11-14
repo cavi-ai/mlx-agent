@@ -14,7 +14,8 @@ from .backends import backend_environment, backend_python, load_manifests, load_
 from .compute import ComputeBusy, ComputeLease, process_identity
 from . import allocator_cache
 from .inference_runner import InferenceError
-from .jit_serve import GatewayError, ModelWorker, model_fingerprint, validate_memory_policy
+from .jit_serve import GatewayError, ModelWorker, model_fingerprint
+from .memory_policy import PolicyRejected, TASK_CONTEXT, reject_task_context, validate as validate_memory_policy
 from .resident_runner import ResidentRunner
 from .residency import MemoryAdmissionError
 from .task_contracts import TaskError, validate_request
@@ -98,7 +99,7 @@ def plan_start(repo, path, port, receipts_dir, hf_cache, memory_policy):
     try:
         policy = validate_memory_policy({'release_after_request': True} if memory_policy is None else memory_policy)
         if policy.get('context_tokens') is not None:
-            raise ValueError('Task endpoints do not use text KV context settings.')
+            raise ValueError(TASK_CONTEXT)
     except ValueError as error:
         raise ServeError('invalid_arguments', str(error), 'Review the memory policy.') from error
     root = receipts_root(receipts_dir).absolute()
@@ -140,8 +141,10 @@ class TaskModelWorker(ModelWorker):
                 'last_reclaim': state.get('last_reclaim'), 'error': state.get('error')}
 
     def configure(self, changes):
-        if changes.get('context_tokens') is not None:
-            raise GatewayError(400, 'invalid_policy', 'Task endpoints do not use text KV context settings.')
+        try:
+            reject_task_context(changes)
+        except PolicyRejected as error:
+            raise GatewayError(400, error.code, str(error)) from error
         try:
             desired = validate_memory_policy(dict(self.memory_policy, **changes))
         except (ValueError, TypeError) as error:

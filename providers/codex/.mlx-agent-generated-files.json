@@ -450,7 +450,7 @@
     },
     {
       "path": "src/mlx_agent/acestep_runner.py",
-      "sha256": "eba449a4f5f2b95500d186cc55d8a12f0a02afc51e626c4e1eb920f10d6b4980"
+      "sha256": "a8a7e93d837adbba839e0a059064dac864d952c8c308e26c38942584f79545e9"
     },
     {
       "path": "src/mlx_agent/adoption.py",

@@ -1,7 +1,8 @@
 """Run inside the isolated ACE-Step backend; write a new WAV and measured metrics.
 
-ACE-Step copies its model code into the checkpoint folder it loads, so it loads from a private
-folder of links to the checkpoint's weights and configs and never writes into the model folder.
+ACE-Step copies its model code into the checkpoint folder it loads and keeps a progress cache in
+its project root, so both live in a private folder of links to the checkpoint's weights and configs;
+nothing is written into the model folder or the working directory.
 The network is closed: every file comes from the folders beside the checkpoint.
 """
 
@@ -77,7 +78,8 @@ def main(argv=None):
     with tempfile.TemporaryDirectory(prefix="mlx-agent-acestep-") as directory, \
             tempfile.TemporaryDirectory(prefix=".acestep-", dir=out.parent) as scratch:
         checkpoints = stage(model, args.planner, directory)
-        os.environ["ACESTEP_CHECKPOINTS_DIR"] = str(checkpoints)
+        # ACE-Step keeps its progress cache under its project root, the working directory by default.
+        os.environ.update(ACESTEP_CHECKPOINTS_DIR=str(checkpoints), ACESTEP_PROJECT_ROOT=directory)
         started = time.perf_counter()
         handler = LocalHandler()
         status, ok = handler.initialize_service(

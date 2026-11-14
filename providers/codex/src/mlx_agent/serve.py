@@ -713,6 +713,9 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         "started_at": now(),
         "preview_hash": plan["preview_hash"],
     }
+    process_start = _pid_start(pid)
+    if process_start:
+        receipt["process_started_at"] = process_start
     if plan.get("jit"):
         receipt["jit"] = True
     if plan.get("api_key_sha256") is not None:

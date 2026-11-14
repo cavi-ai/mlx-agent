@@ -1044,6 +1044,21 @@ def _add_serve_arguments(parser):
             action.add_argument("--release-after-request", action=argparse.BooleanOptionalAction, default=None)
             _add_allocator_cache_arguments(action)
             action.add_argument("--replace", action="store_true")
+    workflow = actions.add_parser("workflow", help="manage local serving workflows")
+    workflow_actions = workflow.add_subparsers(dest="workflow_command", required=True)
+    for command in ("save", "show", "list", "delete", "preview", "start", "status", "stop", "resolve"):
+        action = workflow_actions.add_parser(command)
+        if command != "list":
+            action.add_argument("--name", required=True)
+        if command == "save":
+            action.add_argument("--file", required=True)
+        if command == "resolve":
+            action.add_argument("--role", required=True)
+        if command == "start":
+            action.add_argument("--confirm", action="store_true", required=True)
+            action.add_argument("--preview-hash", required=True)
+        action.add_argument("--receipts-dir", default=None)
+        action.add_argument("--json", action="store_true")
     discover = actions.add_parser("discover", help="find engine services across registered and live receipt locations")
     discover.add_argument("--receipts-dir", action="append", default=[])
     discover.add_argument("--json", action="store_true")
@@ -1137,6 +1152,35 @@ def _run_serve(arguments):
                 result = {"name": arguments.name, "deleted": True}
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json,
                                       human=json.dumps(result, indent=2))
+        if arguments.serve_command == "workflow":
+            from . import workflow_sets
+            command = arguments.workflow_command
+            if command in ("start", "status", "stop", "resolve"):
+                from . import workflow_activation
+                if command == "start":
+                    data = workflow_activation.start_workflow(arguments.name, arguments.preview_hash, receipts_dir=arguments.receipts_dir)
+                elif command == "status":
+                    data = workflow_activation.status_workflow(arguments.name, receipts_dir=arguments.receipts_dir)
+                elif command == "resolve":
+                    data = workflow_activation.resolve_workflow_role(arguments.name, arguments.role, receipts_dir=arguments.receipts_dir)
+                else:
+                    data = workflow_activation.stop_workflow(arguments.name, receipts_dir=arguments.receipts_dir)
+            elif command == "save":
+                with open(arguments.file, "rb") as stream:
+                    raw = stream.read(workflow_sets.MAX_BYTES + 1)
+                if len(raw) > workflow_sets.MAX_BYTES:
+                    raise ValueError("Workflow definition is too large.")
+                data = workflow_sets.save_workflow(arguments.name, json.loads(raw), arguments.receipts_dir)
+            elif command == "list":
+                data = {"workflows": workflow_sets.list_workflows(arguments.receipts_dir)}
+            elif command == "delete":
+                workflow_sets.delete_workflow(arguments.name, arguments.receipts_dir)
+                data = {"name": arguments.name, "deleted": True}
+            else:
+                definition = workflow_sets.load_workflow(arguments.name, arguments.receipts_dir)
+                data = workflow_sets.preview_workflow(definition, receipts_dir=arguments.receipts_dir) if command == "preview" else definition
+            return _emit_serve_result(ResultEnvelope.ok(operation, data), arguments.json,
+                                      human=json.dumps(data, indent=2))
         if arguments.serve_command == "discover":
             from .service_registry import discover_services
             data = discover_services(arguments.receipts_dir)

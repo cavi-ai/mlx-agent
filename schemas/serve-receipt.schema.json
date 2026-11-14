@@ -40,6 +40,7 @@
     "log_path": { "type": "string", "minLength": 1 },
     "readiness": { "type": "string", "minLength": 1 },
     "started_at": { "type": "string", "format": "date-time" },
+    "process_started_at": { "type": "string", "minLength": 1 },
     "preview_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "decode_profile": {
       "type": "object",

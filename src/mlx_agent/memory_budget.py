@@ -177,9 +177,10 @@ def account(policy, entries, rows, owner, replacement=None):
                             'observed_bytes': rss(pids), 'execution_bytes': entry.get('execution_bytes')}
     if replacement is not None and replacement[0] not in entries:
         pending += replacement[1]
+    # An owner missing from the process table has exited and holds no memory;
+    # its reservations stay charged through their workers and estimates above.
+    owners &= rows.keys()
     for pid in owners - counted:
-        if pid not in rows:
-            raise MemoryAdmissionError('memory_unknown', 'An agent owner cannot be inspected.')
         overhead += rss({pid})
     total = external_bytes + resident + pending + overhead
     admission = policy['limit_bytes'] - policy['reserve_bytes']

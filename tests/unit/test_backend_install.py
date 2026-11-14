@@ -77,6 +77,17 @@ class BackendInstallTests(unittest.TestCase):
         self.assertNotIn("--build-lock", other["argv"])
         self.assertNotIn("github.com", other["network"])
 
+    def test_ace_step_preview_covers_its_source_archive_and_build_tools(self):
+        plan = self.plan("ace-step")
+        build_lock = Path(plan["argv"][plan["argv"].index("--build-lock") + 1])
+        self.assertEqual(build_lock.name, "ace-step-build.lock")
+        self.assertEqual(plan["build_lock_sha256"], hashlib.sha256(build_lock.read_bytes()).hexdigest())
+        self.assertIn("hatchling==", build_lock.read_text())
+        self.assertIn("codeload.github.com", plan["network"])
+        archive = [line for line in Path(plan["lock"]).read_text().splitlines() if line.startswith("ace-step @ ")]
+        self.assertEqual(len(archive), 1)
+        self.assertIn("/archive/", archive[0])
+
     def test_start_requires_matching_hash_and_spawns_with_allowlisted_env(self):
         plan = self.plan()
         self.assertEqual(start_install(plan, receipts_dir=str(self.base))["status"], "preview")

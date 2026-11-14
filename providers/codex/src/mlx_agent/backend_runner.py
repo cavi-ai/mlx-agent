@@ -52,6 +52,13 @@ def main(argv=None):
                          "--require-hashes", "--no-deps", "--only-binary=:all:", "-r", build_lock])
         steps[2] += ["--no-binary=docopt", "--no-build-isolation"]
         steps.append([venv_python, str(Path(__file__).with_name("kokoro_runtime.py"))])
+    elif arguments.id == "ace-step":
+        # ACE-Step installs from its pinned, hashed source archive, built with hashed
+        # hatchling and build isolation disabled; its dependencies stay binary-only.
+        build_lock = arguments.build_lock or str(Path(arguments.lock).with_name("ace-step-build.lock"))
+        steps.insert(1, [venv_python, "-m", "pip", "install", "--disable-pip-version-check", "--no-input",
+                         "--require-hashes", "--no-deps", "--only-binary=:all:", "-r", build_lock])
+        steps[2] += ["--no-binary=ace-step", "--no-build-isolation"]
     for step in steps:
         print("$ " + " ".join(step), flush=True)
         completed = subprocess.run(step, stdin=subprocess.DEVNULL, check=False)

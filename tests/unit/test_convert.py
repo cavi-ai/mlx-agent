@@ -183,7 +183,7 @@ class BackendConvertTests(unittest.TestCase):
         plan = plan_convert("convaiinnovations/laya", q_bits=8, backend="mlx-embeddings", model_type="laya", backends_root_dir=self.root)
         self.assertEqual(plan["argv"][1:3], ["-m", "mlx_embeddings.classifiers.laya.convert"])
         self.assertEqual(plan["port_converter"], "mlx_embeddings.classifiers.laya.convert")
-        self.assertEqual(plan["ports"], ["laya"])
+        self.assertEqual(plan["ports"], ["kev", "laya"])
         default = plan_convert("convaiinnovations/laya", q_bits=8, backend="mlx-embeddings", backends_root_dir=self.root)
         self.assertEqual(default["argv"][1:3], ["-m", "mlx_embeddings.convert"])
         self.assertNotIn("port_converter", default)

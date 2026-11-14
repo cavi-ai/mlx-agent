@@ -89,10 +89,13 @@ class StrataProfileTests(unittest.TestCase):
     def test_jit_admission_uses_the_reviewed_budget_and_context(self):
         self.tensor_model()
         from mlx_agent import jit_serve
+        model = strata.read_model(self.root)
         worker = jit_serve.ModelWorker({"local_path": str(self.root), "runtime": "strata",
             "worker_argv": [sys.executable, "strata_runtime.py", "--port", "{worker_port}"],
             "memory_state_dir": str(self.root / ".memory"),
             "strata_expert_memory_gb": 2, "strata_context_tokens": 8192,
+            "strata_memory_estimate_bytes": strata.memory_estimate(model, 2, 8192),
+            "strata_memory_growth_bytes": strata.memory_growth_allowance(model, 8192, 2),
             "memory_policy": {"minimum_headroom_gb": 2}})
         self.addCleanup(worker.close)
         required = strata.memory_estimate(strata.read_model(self.root), 2, 8192) + 2_000_000_000
@@ -227,9 +230,14 @@ class StrataProfileTests(unittest.TestCase):
 import runpy, sys
 from pathlib import Path
 module = runpy.run_path(sys.argv[1])
+strata = runpy.run_path(sys.argv[3])
+model = strata['read_model'](sys.argv[2])
+estimate = strata['memory_estimate'](model, None, 131072)
+growth = strata['memory_growth_allowance'](model, 131072, None)
 worker = module['ModelWorker']({'local_path': sys.argv[2], 'runtime': 'strata',
                               'worker_argv': [sys.executable, 'strata_runtime.py', '--port', '{worker_port}'],
                               'memory_state_dir': str(Path(sys.argv[2]) / '.memory'),
+                              'strata_memory_estimate_bytes': estimate, 'strata_memory_growth_bytes': growth,
                               'memory_policy': {'minimum_headroom_gb': 2}})
 worker.memory_probe = lambda: 1 << 40
 worker._check_memory()
@@ -244,7 +252,8 @@ for available, code in ((100, 'insufficient_headroom'), (None, 'memory_unknown')
         raise AssertionError('memory admission was bypassed')
 worker.close()
 """
-        result = subprocess.run([sys.executable, "-c", program, str(Path(jit_serve.__file__).resolve()), str(self.root)],
+        result = subprocess.run([sys.executable, "-c", program, str(Path(jit_serve.__file__).resolve()), str(self.root),
+                                str(Path(strata.__file__).resolve())],
                                 capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr)
 

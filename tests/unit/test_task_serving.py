@@ -10,7 +10,8 @@ from unittest.mock import patch
 from mlx_agent import task_serving
 from mlx_agent.backends import load_manifests, with_ports
 from mlx_agent.serve import load_recipes, plan_start, resolve_serve_runtime, ServeError
-from mlx_agent.jit_serve import validate_memory_policy
+from mlx_agent.inference_auth import runtime_fingerprint
+from mlx_agent.jit_serve import model_fingerprint, validate_memory_policy
 from .backend_fixtures import synthetic_manifests, synthetic_registries
 
 
@@ -104,7 +105,9 @@ def predict(model, tokenizer, state, questions):
 ''')
         manifest = load_manifests()['mlx-embeddings']
         identity = capture_identity(self.model, manifest, Path(sys.executable))
-        config = {'local_path': str(self.model), 'model': str(self.model), 'runtime': 'tasks', 'fingerprint': 'unused',
+        config = {'local_path': str(self.model), 'model': str(self.model), 'runtime': 'tasks',
+            'fingerprint': model_fingerprint(self.model), 'jit': True,
+            'task_runtime_fingerprint': task_serving.runtime_fingerprint(identity['backend']),
             'port': 0, 'task_identity': identity, 'task_kinds': ['classification'], 'task_state_dir': str(self.root / 'tasks'),
             'max_tokens': 0, 'worker_argv': [sys.executable], 'control_token': 'a' * 32,
             'memory_state_dir': str(self.root / 'memory'),
@@ -619,7 +622,9 @@ def generate(model, tokenizer, texts, max_length):
     return Result([[float(len(text)), float(max_length), 0.5] for text in texts])
 ''')
         identity = capture_identity(self.model, load_manifests()['mlx-embeddings'], Path(sys.executable))
-        config = {'local_path': str(self.model), 'model': str(self.model), 'runtime': 'tasks', 'fingerprint': 'unused',
+        config = {'local_path': str(self.model), 'model': str(self.model), 'runtime': 'tasks',
+            'fingerprint': model_fingerprint(self.model), 'jit': True,
+            'task_runtime_fingerprint': task_serving.runtime_fingerprint(identity['backend']),
             'port': 0, 'task_identity': identity, 'task_kinds': ['embedding'], 'task_state_dir': str(self.root / 'tasks'),
             'max_tokens': 0, 'worker_argv': [sys.executable], 'control_token': 'a' * 32,
             'memory_state_dir': str(self.root / 'memory'), 'compute_state_dir': str(self.root / 'compute'),
@@ -684,5 +689,7 @@ def generate(model, tokenizer, texts, max_length):
         import hashlib
         token = 'client-' + 'b' * 40
         self.server.config['api_key_sha256'] = hashlib.sha256(token.encode()).hexdigest()
+        self.server.config['auth_runtime_sha256'] = runtime_fingerprint()
+        self.server.config['jit'] = True
         self.assertEqual(self.embed({'input': 'a'})[0], 401)
         self.assertEqual(self.embed({'input': 'a'}, {'Authorization': 'Bearer ' + token})[0], 200)

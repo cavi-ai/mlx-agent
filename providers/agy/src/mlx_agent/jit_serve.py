@@ -30,7 +30,6 @@ from pathlib import Path
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from mlx_agent import chat_completions, responses_api
-from mlx_agent.contextfit import extract_architecture, kv_cache_bytes
 from mlx_agent.messages_api import (MessagesRequestError, StreamTranslator, WorkerResponseError, error_body,
                                     from_chat_response, to_chat_request)
 from mlx_agent.transactions import _atomic_in_directory
@@ -39,28 +38,14 @@ from mlx_agent import allocator_cache
 from mlx_agent.inference_telemetry import InferenceTelemetry
 from mlx_agent import inference_defaults
 from mlx_agent.compute import ComputeBusy, ComputeLease, ExecutionAdmission, group_members, process_identity
-from mlx_agent.memory_policy import (PolicyRejected, STRATA_CONTEXT, enforce_configure, reject_cache_outside_tasks,
-                                     validate as validate_memory_policy)
+from mlx_agent.identity_pass import recheck_bound_identity
+from mlx_agent.memory_policy import (PolicyRejected, enforce_configure, execution_wait_seconds, reject_cache_outside_tasks,
+                                     release_reason, releases_after_request, reservation, validate as validate_memory_policy)
 
 MAX_BODY = 16 * 1024 * 1024
 MAX_REQUESTS = 32
 STORED_RESPONSES = 64
 DRAIN_TIMEOUT_SECONDS = 30
-
-
-def _kv_cache_bytes(local_path, context_tokens):
-    """KV cache bytes at the context from the local config.json, or None when its architecture is unknown."""
-    try:
-        location = Path(local_path) / "config.json"
-        if location.stat().st_size > 1024 * 1024:
-            return None
-        config = json.loads(location.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    if not isinstance(config, dict):
-        return None
-    architecture = extract_architecture(config) or extract_architecture(config.get("text_config"))
-    return kv_cache_bytes(architecture, context_tokens)
 
 
 def available_memory_bytes():
@@ -117,123 +102,6 @@ def model_fingerprint(path):
     return hashlib.sha256(json.dumps(rows, separators=(",", ":")).encode()).hexdigest()
 
 
-class WeightSession:
-    """Reserve, bind, settle, and release the weights for one endpoint.
-
-    Chat acquisition and task execution both use this. The worker keeps the
-    same method names so existing callers still reach it.
-    """
-
-    def __init__(self, worker):
-        self.worker = worker
-
-    def admit(self):
-        worker = self.worker
-        with worker.condition:
-            context = worker.memory_policy.get("context_tokens")
-            worker.load_blocked_reason = None
-        if worker.config.get("runtime") == "splash":
-            # Only the served target and draft load; a Strata profile also holds files Splash never reads.
-            weights = worker.config["splash_weight_bytes"]
-        else:
-            weights = sum(item.stat().st_size for item in Path(worker.config["local_path"]).rglob("*")
-                          if item.is_file() and item.suffix in (".safetensors", ".npz", ".bin", ".gguf"))
-        if weights and worker.config.get("adapter_path") is not None:
-            weights += worker.config["adapter_identity"]["adapters.safetensors"]["bytes"]
-        kv = 0 if context is None else _kv_cache_bytes(worker.config["local_path"], context)
-        runtime_bytes = 1_500_000_000
-        dynamic_bytes = runtime_bytes + (kv or 0)
-        size = math.ceil(weights * 1.10 + kv + 1.5e9) if weights and kv is not None else None
-        if worker.config.get("runtime") == "splash" and worker.config.get("splash_max_memory_gb") is not None:
-            # Splash keeps its Metal memory within the reviewed cap.
-            size = math.ceil(worker.config["splash_max_memory_gb"] * 1e9)
-        if worker.config.get("runtime") == "strata":
-            from mlx_agent.strata_runtime import memory_allocation, memory_estimate, memory_growth_allowance, read_model
-            model = read_model(worker.config["local_path"])
-            context = worker.config.get("strata_context_tokens", 131072)
-            budget = worker.memory_policy.get("model_memory_budget_gb")
-            capacity = worker.config.get("strata_expert_memory_gb")
-            if budget is not None:
-                allocation = memory_allocation(model, budget, context, worker._strata_speculation())
-                size = allocation["estimated_resident_bytes"]
-                capacity = 0 if allocation["mode"] == "resident" else allocation["expert_memory_gb"]
-            else:
-                size = memory_estimate(model, capacity, context, worker._strata_speculation())
-            runtime_bytes = 5_000_000_000
-            dynamic_bytes = memory_growth_allowance(model, context, capacity, worker._strata_speculation())
-        if size is None:
-            worker.load_blocked_reason = "Model or context memory estimate is unavailable."
-            raise GatewayError(503, "memory_unknown", worker.load_blocked_reason)
-        worker.workspace_bytes = min(math.ceil(size), runtime_bytes)
-        worker.growth_bytes = min(math.ceil(size) - worker.workspace_bytes, max(0, dynamic_bytes - worker.workspace_bytes))
-        model_key = hashlib.sha256(json.dumps([str(Path(worker.config["local_path"]).resolve()),
-            worker.config.get("fingerprint"), worker.config.get("runtime"), worker.config["worker_argv"]],
-            sort_keys=True).encode()).hexdigest()
-        try:
-            worker.memory_reservation = worker.memory_registry.reserve(worker.memory_token, model_key,
-                math.ceil(size) - worker.workspace_bytes - worker.growth_bytes, worker.workspace_bytes,
-                lambda: math.ceil((worker.memory_policy["minimum_headroom_gb"] or 0) * 1e9), worker.memory_probe,
-                growth_bytes=worker.growth_bytes)
-            worker.memory_check = worker.memory_reservation
-        except MemoryAdmissionError as error:
-            worker.memory_check = error.details
-            worker.load_blocked_reason = str(error)
-            raise GatewayError(503, error.code, str(error)) from error
-
-    def release(self):
-        worker = self.worker
-        if worker.memory_reservation is not None:
-            worker.memory_registry.release(worker.memory_token)
-            worker.memory_reservation = None
-        worker.worker_memory = None
-        worker.memory_materialized = False
-        worker.memory_transition_blocked = False
-
-    def set_headroom(self, gigabytes):
-        worker = self.worker
-        if worker.memory_reservation is not None:
-            try:
-                worker.memory_reservation = worker.memory_registry.set_headroom(worker.memory_token, math.ceil(gigabytes * 1e9))
-            except MemoryAdmissionError as error:
-                raise GatewayError(503, error.code, str(error)) from error
-
-    def launching(self):
-        worker = self.worker
-        if worker.memory_reservation is not None:
-            worker.memory_reservation = worker.memory_registry.launching(worker.memory_token)
-
-    def bind(self, process, identity):
-        worker = self.worker
-        if worker.memory_reservation is not None:
-            worker.memory_reservation = worker.memory_registry.bind_worker(
-                worker.memory_token, process.pid, identity, os.getpgid(process.pid))
-
-    def settle(self):
-        worker = self.worker
-        if worker.memory_reservation is not None and not worker.memory_materialized and not worker.memory_transition_blocked:
-            try:
-                worker.memory_reservation = worker.memory_registry.settle(worker.memory_token,
-                    workspace_bytes=worker.workspace_bytes + worker.growth_bytes)
-            except MemoryAdmissionError as error:
-                if error.code != "memory_registry_busy":
-                    raise GatewayError(503, error.code, str(error)) from error
-                worker.memory_transition_blocked = True
-                worker.last_error = "Memory reservation remains pending: " + str(error)
-                return
-            worker.memory_materialized = True
-            worker.last_error = None
-
-    def reserve_workspace(self):
-        worker = self.worker
-        try:
-            worker.memory_check = worker.memory_registry.reserve_workspace(
-                worker.memory_token, worker.workspace_bytes, worker.memory_probe)
-            worker.memory_reservation = worker.memory_check
-        except MemoryAdmissionError as error:
-            worker.memory_check = error.details
-            raise GatewayError(503, error.code, str(error)) from error
-
-
 class ModelWorker:
     def __init__(self, config):
         self.config = config
@@ -282,7 +150,6 @@ class ModelWorker:
         self.growth_bytes = 0
         self.memory_materialized = False
         self.memory_transition_blocked = False
-        self.weights = WeightSession(self)
 
     def _persist(self):
         state_path = self.config.get("state_path")
@@ -385,11 +252,21 @@ class ModelWorker:
             if budget_changed and self.config.get("runtime") == "strata":
                 if self.model_state in ("loading", "unloading"):
                     raise GatewayError(409, "model_busy", "Finish the current model transition before changing its budget.")
-                from mlx_agent.strata_runtime import StrataError, read_model, memory_allocation
+                from mlx_agent.strata_runtime import (StrataError, memory_allocation, memory_estimate,
+                                                       memory_growth_allowance, read_model)
                 budget = policy.get("model_memory_budget_gb")
                 try:
-                    allocation = None if budget is None else memory_allocation(read_model(config["local_path"]), budget,
-                        config.get("strata_context_tokens", 131072), self._strata_speculation())
+                    model = read_model(config["local_path"])
+                    context = config.get("strata_context_tokens", 131072)
+                    speculation = self._strata_speculation()
+                    allocation = None if budget is None else memory_allocation(model, budget, context, speculation)
+                    if allocation is not None:
+                        capacity = 0 if allocation["mode"] == "resident" else allocation["expert_memory_gb"]
+                        estimate = allocation["estimated_resident_bytes"]
+                    else:
+                        capacity = config.get("strata_expert_memory_gb")
+                        estimate = memory_estimate(model, capacity, context, speculation)
+                    growth = memory_growth_allowance(model, context, capacity, speculation)
                 except StrataError as error:
                     raise GatewayError(400, error.code, str(error)) from error
                 argv, old = [], iter(config["worker_argv"])
@@ -402,7 +279,8 @@ class ModelWorker:
                     argv += ["--memory-budget-gb", str(budget)]
                 elif config.get("strata_expert_memory_gb") is not None:
                     argv += ["--expert-memory-gb", str(config["strata_expert_memory_gb"])]
-                config.update(worker_argv=argv, strata_memory_allocation=allocation)
+                config.update(worker_argv=argv, strata_memory_allocation=allocation,
+                              strata_memory_estimate_bytes=estimate, strata_memory_growth_bytes=growth)
             self._set_memory_headroom(max(policy['minimum_headroom_gb'] or 0,self.memory_policy['minimum_headroom_gb'] or 0))
             if config.get("config_path"):
                 path = Path(config["config_path"])
@@ -420,28 +298,87 @@ class ModelWorker:
             self.policy_revision += 1
             return self.status()
 
+    def _match_serving_plan(self):
+        # serve imports the identity pass, so ServeError is imported when the pass runs.
+        from mlx_agent.serve import ServeError
+        try:
+            recheck_bound_identity(self.config)
+        except ServeError as error:
+            raise GatewayError(503, error.code, str(error)) from error
+
     def _check_memory(self):
-        self.weights.admit()
+        with self.condition:
+            self.load_blocked_reason = None
+            policy = dict(self.memory_policy)
+            config = dict(self.config)
+        outcome = reservation(policy, config)
+        if outcome is None:
+            self.load_blocked_reason = "Model or context memory estimate is unavailable."
+            raise GatewayError(503, "memory_unknown", self.load_blocked_reason)
+        self.workspace_bytes = outcome["workspace_bytes"]
+        self.growth_bytes = outcome["growth_bytes"]
+        model_key = hashlib.sha256(json.dumps([str(Path(self.config["local_path"]).resolve()),
+            self.config.get("fingerprint"), self.config.get("runtime"), self.config["worker_argv"]],
+            sort_keys=True).encode()).hexdigest()
+        try:
+            self.memory_reservation = self.memory_registry.reserve(self.memory_token, model_key,
+                outcome["reserve_bytes"], outcome["workspace_bytes"],
+                lambda: math.ceil((self.memory_policy["minimum_headroom_gb"] or 0) * 1e9), self.memory_probe,
+                growth_bytes=outcome["growth_bytes"])
+            self.memory_check = self.memory_reservation
+        except MemoryAdmissionError as error:
+            self.memory_check = error.details
+            self.load_blocked_reason = str(error)
+            raise GatewayError(503, error.code, str(error)) from error
 
     def _release_memory(self):
-        self.weights.release()
+        if self.memory_reservation is not None:
+            self.memory_registry.release(self.memory_token)
+            self.memory_reservation = None
+        self.worker_memory = None
+        self.memory_materialized = False
+        self.memory_transition_blocked = False
 
     def _set_memory_headroom(self, gigabytes):
-        self.weights.set_headroom(gigabytes)
+        if self.memory_reservation is not None:
+            try:
+                self.memory_reservation = self.memory_registry.set_headroom(self.memory_token, math.ceil(gigabytes * 1e9))
+            except MemoryAdmissionError as error:
+                raise GatewayError(503, error.code, str(error)) from error
 
     def _launching_memory(self):
-        self.weights.launching()
+        if self.memory_reservation is not None:
+            self.memory_reservation = self.memory_registry.launching(self.memory_token)
 
     def _bind_memory(self, process, identity):
-        self.weights.bind(process, identity)
+        if self.memory_reservation is not None:
+            self.memory_reservation = self.memory_registry.bind_worker(
+                self.memory_token, process.pid, identity, os.getpgid(process.pid))
 
     def _materialized_memory(self):
         # Readiness alone does not prove that an asynchronous model loader has
         # allocated its weights. Keep cold allocations reserved until output.
-        self.weights.settle()
+        if self.memory_reservation is not None and not self.memory_materialized and not self.memory_transition_blocked:
+            try:
+                self.memory_reservation = self.memory_registry.settle(self.memory_token,
+                    workspace_bytes=self.workspace_bytes + self.growth_bytes)
+            except MemoryAdmissionError as error:
+                if error.code != "memory_registry_busy":
+                    raise GatewayError(503, error.code, str(error)) from error
+                self.memory_transition_blocked = True
+                self.last_error = "Memory reservation remains pending: " + str(error)
+                return
+            self.memory_materialized = True
+            self.last_error = None
 
     def _reserve_workspace(self):
-        self.weights.reserve_workspace()
+        try:
+            self.memory_check = self.memory_registry.reserve_workspace(
+                self.memory_token, self.workspace_bytes, self.memory_probe)
+            self.memory_reservation = self.memory_check
+        except MemoryAdmissionError as error:
+            self.memory_check = error.details
+            raise GatewayError(503, error.code, str(error)) from error
 
     def _resident_check(self, policy, available, scope):
         known = type(available) is int and available >= 0
@@ -496,7 +433,7 @@ class ModelWorker:
             self.request_blocked_reason = None
         admitted = False
         try:
-            self.execution.acquire(policy.get("execution_wait_seconds", 0), lambda: self.closed or cancelled())
+            self.execution.acquire(execution_wait_seconds(policy), lambda: self.closed or cancelled())
             admitted = True
             with self.condition:
                 starter = self.model_state not in ("loaded", "loading")
@@ -528,32 +465,6 @@ class ModelWorker:
                 raise GatewayError(503, "execution_cancelled", str(error)) from error
             raise
 
-    def _check_adapter(self):
-        argv = self.config["worker_argv"]
-        path = self.config.get("adapter_path")
-        if path is None and "--adapter-path" not in argv:
-            return
-        from mlx_agent.lora import adapter_identity
-        if (not isinstance(path, str) or "--adapter-path" not in argv
-                or argv.index("--adapter-path") + 1 >= len(argv)
-                or argv[argv.index("--adapter-path") + 1] != path
-                or not self.config.get("adapter_identity")
-                or adapter_identity(path) != self.config["adapter_identity"]):
-            raise GatewayError(503, "adapter_changed", "Adapter files changed or have no reviewed identity. Stop and review a fresh serve plan.")
-
-    def _check_training_receipt(self):
-        binding = self.config.get("training_binding")
-        if binding is None:
-            return
-        try:
-            from mlx_agent.training_artifacts import read_trained_adapter
-            _, current = read_trained_adapter(binding["training_receipt"])
-            if current == binding:
-                return
-        except (OSError, ValueError, TypeError, KeyError):
-            pass
-        raise GatewayError(503, "training_receipt_changed", "The training receipt or its pinned artifacts changed. Stop and review a fresh serve plan.")
-
     def _start(self):
         try:
             if self.strata_children:
@@ -561,17 +472,12 @@ class ModelWorker:
                 self.strata_children = remaining(self.strata_children)
                 if self.strata_children:
                     raise GatewayError(503, "model_unload_failed", "A previous Strata engine is still releasing memory.")
-            if model_fingerprint(self.config["local_path"]) != self.config["fingerprint"]:
-                raise GatewayError(503, "model_changed", "Model files changed. Stop and review a fresh serve plan.")
-            self._check_training_receipt()
-            self._check_adapter()
+            self._match_serving_plan()
             self._check_memory()
             self._launching_memory()
             private = self.config.get("private_worker")
             if private:
-                from mlx_agent.private_serve import PrivateEndpoint, identity
-                if self.config.get("runtime") != "mlx_lm" or private != identity():
-                    raise GatewayError(503, "private_worker_changed", "Private worker inputs changed; review a fresh serve plan.")
+                from mlx_agent.private_serve import PrivateEndpoint
                 self.private_endpoint = PrivateEndpoint()
                 port = 0
             else:
@@ -592,11 +498,7 @@ class ModelWorker:
                 environment.pop("SPLASH_API_KEY", None)
                 environment["SPLASH_APP_PID"] = str(os.getpid())
             if private or self.config.get("api_key_sha256") is not None:
-                from mlx_agent.inference_auth import runtime_fingerprint
                 from mlx_agent.protected_worker import command, WORKER_DIGEST
-                if self.config.get("api_key_sha256") is not None and self.config.get("auth_runtime_sha256") != runtime_fingerprint():
-                    raise GatewayError(503, "authentication_changed", "Authentication runtime changed. Review a fresh serve plan.")
-                import secrets
                 self.worker_key = secrets.token_urlsafe(32)
                 if splash:
                     # Splash checks its own key on every route but /health, /ready and its chat page.
@@ -677,10 +579,7 @@ class ModelWorker:
                 self.worker_identity = process_identity(process.pid)
                 self.execution.bind(process.pid, refresh=True)
             self._bind_memory(process,process_identity(process.pid))
-            if model_fingerprint(self.config["local_path"]) != self.config["fingerprint"]:
-                raise GatewayError(503, "model_changed", "Model files changed while loading.")
-            self._check_training_receipt()
-            self._check_adapter()
+            self._match_serving_plan()
             if self.config.get("runtime") == "strata":
                 from mlx_agent.process_tree import descendants
                 self.strata_children.update(descendants(process.pid))
@@ -740,7 +639,7 @@ class ModelWorker:
             self.activity_revision += 1
             if self.active_requests == 0:
                 self.last_activity = self.clock()
-            release = self.active_requests == 0 and self.model_state == "loaded" and self.memory_policy.get("release_after_request", False)
+            release = self.active_requests == 0 and self.model_state == "loaded" and releases_after_request(self.memory_policy)
             if release:
                 self.model_state = "unloading"
             self.condition.notify_all()
@@ -839,31 +738,32 @@ class ModelWorker:
             self._refresh()
             policy = dict(self.memory_policy)
             budget_reload = self.memory_budget_pending
-            if (self.closed or self.model_state != "loaded" or self.active_requests or self.cache_control_active
-                    or (not budget_reload and (policy["keep_loaded"] or self.last_activity is None))):
+            busy = self.closed or self.model_state != "loaded" or self.active_requests or self.cache_control_active
+            idle_seconds = None if self.last_activity is None else self.clock() - self.last_activity
+            reason = release_reason(policy, busy=busy, idle_seconds=idle_seconds,
+                                     budget_reload=budget_reload)
+            if reason is None:
                 return False
-            idle = budget_reload or policy.get("release_after_request", False) or bool(policy["idle_timeout_seconds"] and
-                        self.clock() - self.last_activity >= policy["idle_timeout_seconds"])
-            if idle:
+            if reason != "probe":
                 self.model_state = "unloading"
-            elif not policy.get("unload_under_pressure"):
-                return False
             worker = self.process
             revisions = self.activity_revision, self.policy_revision
-        if not idle:
+        if reason == "probe":
             available = self.memory_probe()
             with self.condition:
                 if (self.closed or self.model_state != "loaded" or self.active_requests
                         or self.process is not worker or self.memory_policy != policy
                         or revisions != (self.activity_revision, self.policy_revision)):
                     return False
-                error = self._resident_check(policy, available, "idle_reclaim")
-                if error is None or error.code == "memory_unknown":
+                idle_seconds = None if self.last_activity is None else self.clock() - self.last_activity
+                reason = release_reason(policy, busy=False, idle_seconds=idle_seconds,
+                                         budget_reload=False, available=available)
+                if reason is None:
                     return False
                 self.model_state = "unloading"
         try:
             with ComputeLease("idle-unload:" + self.config.get("model", self.config["local_path"]), self.config.get("compute_state_dir")):
-                self._finish_unload("memory_budget" if budget_reload else "idle" if idle else "memory_pressure")
+                self._finish_unload(reason)
         except ComputeBusy:
             with self.condition:
                 self.model_state = "loaded"

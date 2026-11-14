@@ -429,11 +429,21 @@ def plan_contribution(local_path, has_path, adapter_path, strata_speculation, st
         argv += ["--expert-memory-gb", str(strata_expert_memory_gb)]
     if allocation is not None:
         argv += ["--memory-budget-gb", str(budget)]
+    if allocation is not None:
+        capacity = 0 if allocation["mode"] == "resident" else allocation["expert_memory_gb"]
+    else:
+        capacity = strata_expert_memory_gb
+    try:
+        growth = memory_growth_allowance(model, context, capacity, uses_draft)
+    except StrataError:
+        growth = None
     fields = {"strata_model_fingerprint": model["fingerprint"], "strata_runtime_fingerprint": runtime["fingerprint"],
               "weight_format": "gguf", "weight_quantization": model["quantization"], "weights_preserved": True,
               "strata_speculation": strata_speculation, "strata_decoding": decoding,
               "strata_expert_memory_gb": strata_expert_memory_gb, "strata_context_tokens": context,
               "strata_memory_estimate_bytes": memory_bytes, "readiness_deadline": 900}
+    if growth is not None:
+        fields["strata_memory_growth_bytes"] = growth
     if allocation is not None:
         fields["strata_memory_allocation"] = allocation
     return Contribution(argv, {"executable": runtime["python"]}, fields)

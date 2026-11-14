@@ -26,6 +26,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .identity_pass import recheck_bound_identity
 from .model_doctor import scan_wired_configs
 from .transactions import _atomic_in_directory
 from .wiring import require_secret_free_config, validate_health_endpoint
@@ -200,81 +201,6 @@ def _adapter_evidence(path):
         raise ServeError("invalid_adapter", "Adapter files are missing, invalid or linked.",
                          "Select a completed adapter with adapter_config.json and adapters.safetensors.")
     return str(local), identity
-
-
-def _require_adapter_identity(plan):
-    if plan.get("adapter_path") is None:
-        return
-    try:
-        path, identity = _adapter_evidence(plan["adapter_path"])
-        if path == plan["adapter_path"] and identity == plan.get("adapter_identity"):
-            return
-    except ServeError:
-        pass
-    raise ServeError("adapter_changed", "Adapter files changed after the serving preview.",
-                     "Review a fresh serve plan before starting this adapter.")
-
-
-def _require_training_binding(plan):
-    binding = plan.get("training_binding")
-    if binding is None:
-        return
-    try:
-        from .training_artifacts import read_trained_adapter
-        _, current = read_trained_adapter(binding["training_receipt"])
-        if current == binding:
-            return
-    except (OSError, ValueError, TypeError, KeyError):
-        pass
-    raise ServeError("training_receipt_changed", "The training receipt or its pinned artifacts changed.",
-                     "Review a fresh serving preview for the completed training receipt.")
-
-
-def _require_prefill_identity(plan):
-    if "prefill_kernel" in plan:
-        from .prefill_runtime import can_wrap_runtime, identity
-        configured = plan["prefill_kernel"]
-        facts = {k: v for k, v in configured.items() if k not in ("adapter_enabled", "runtime_executable")}
-        if (facts != identity() or (configured.get("adapter_enabled")
-                and not can_wrap_runtime(configured["runtime_executable"]))):
-            raise ServeError("prefill_kernel_changed", "Prompt kernel source or dependencies changed.",
-                             "Review a fresh serving preview.")
-
-
-def _require_decode_identity(plan):
-    if "decode_profile" in plan:
-        from .prompt_lookup_runtime import can_wrap_runtime, identity
-        configured = plan["decode_profile"]
-        facts = {k: v for k, v in configured.items() if k not in ("adapter_enabled", "runtime_executable")}
-        if (facts != identity() or (configured.get("adapter_enabled")
-                and not can_wrap_runtime(configured["runtime_executable"]))):
-            raise ServeError("decode_profile_changed", "Code-edit runtime source or dependencies changed.",
-                             "Review a fresh serving preview.")
-
-
-def _require_vision_identity(plan):
-    if "vision_profile" in plan:
-        from .vision_runtime import identity
-        configured = plan["vision_profile"]
-        facts = {key: value for key, value in configured.items() if key != "adapter_enabled"}
-        if facts != identity(configured["runtime_executable"]):
-            raise ServeError("vision_profile_changed", "Vision runtime source or dependencies changed.",
-                             "Review a fresh serving preview.")
-
-
-def _require_access_identity(plan):
-    if "private_worker" not in plan and "access_key_file" not in plan:
-        return
-    from .private_serve import identity
-    from .serving_access import read_access_key
-    try:
-        if "access_key_file" in plan:
-            read_access_key(plan["access_key_file"], plan["access_key_sha256"])
-        if "private_worker" in plan and plan["private_worker"] != identity():
-            raise ValueError("Private worker source changed.")
-    except (OSError, ValueError):
-        raise ServeError("preview_stale", "Protected serving inputs changed after preview.",
-                         "Review a fresh serve plan.") from None
 
 
 def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
@@ -557,17 +483,6 @@ def _authenticated_plan(plan, digest, access=None):
     return plan
 
 
-def _require_auth_identity(plan):
-    if plan.get('api_key_sha256') is not None:
-        from .inference_auth import runtime_fingerprint, validate_digest
-        try:
-            validate_digest(plan['api_key_sha256'])
-            if not plan.get('jit') or plan.get('auth_runtime_sha256') != runtime_fingerprint():
-                raise ValueError('Authentication configuration changed after preview.')
-        except ValueError as error:
-            raise ServeError('preview_stale', str(error), 'Review a fresh authenticated serving plan.') from error
-
-
 def _default_which(executable):
     return shutil.which(executable)
 
@@ -661,51 +576,6 @@ def _default_path_present(path):
     return Path(path).is_dir()
 
 
-def _require_splash_identity(plan):
-    if plan.get("runtime") != "splash":
-        return
-    from .splash_runtime import SplashError, installed_runtime, read_draft, read_target
-    try:
-        current = (read_target(plan["splash_model_dir"])["fingerprint"],
-                   read_draft(plan["splash_draft_model"])["fingerprint"] if plan.get("splash_draft_model") else None,
-                   installed_runtime(plan["splash_launcher"])["fingerprint"])
-    except SplashError as error:
-        raise ServeError("preview_stale", str(error), "Review a fresh Splash serve plan.") from error
-    if current != (plan["splash_model_fingerprint"], plan["splash_draft_fingerprint"], plan["splash_runtime_fingerprint"]):
-        raise ServeError("preview_stale", "The Splash target, draft or launcher changed after preview.",
-                         "Review a fresh Splash serve plan.")
-
-
-def _require_task_identity(plan):
-    if plan.get("task_identity") is None:
-        return
-    from .task_contracts import TaskError
-    from .task_identity import check_identity
-    from .task_serving import runtime_fingerprint
-    try:
-        check_identity(plan["task_identity"])
-        if runtime_fingerprint(plan["task_identity"]["backend"]) != plan["task_runtime_fingerprint"]:
-            raise TaskError("runtime_changed", "The accepted inference adapter changed.")
-    except (TaskError, OSError) as error:
-        raise ServeError("preview_stale", str(error), "Review a fresh task serving plan.") from error
-
-
-def recheck_bound_identity(plan):
-    """One pass over every identity bound into a reviewed serving plan."""
-    for check in (
-        _require_auth_identity,
-        _require_task_identity,
-        _require_training_binding,
-        _require_adapter_identity,
-        _require_prefill_identity,
-        _require_decode_identity,
-        _require_vision_identity,
-        _require_splash_identity,
-        _require_access_identity,
-    ):
-        check(plan)
-
-
 def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
                 which=None, model_present=None, path_present=None, port_free=None,
                 wired_claims=None, spawn=None, readiness=None,
@@ -755,13 +625,9 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "Install it yourself ({0}); serve never installs runtimes.".format(recipe_hint),
         )
     if plan.get("jit"):
-        from .jit_serve import model_fingerprint
         if which(plan["worker_argv"][0]) is None:
             raise ServeError("runtime_not_installed", "The model worker executable is not installed.",
                              load_recipes()[plan["runtime"]]["install_hint"])
-        if model_fingerprint(plan["local_path"]) != plan["fingerprint"]:
-            raise ServeError("preview_stale", "Local model files changed after preview.",
-                             "Review a fresh JIT serve plan.")
     if plan["repo"] is not None and model_present is not None and not model_present(plan["repo"]):
         raise ServeError(
             "model_not_local",

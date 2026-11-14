@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from mlx_agent.jit_serve import validate_memory_policy
 from mlx_agent.memory_policy import (PolicyRejected, cli_supplied, enforce_configure, enforce_launch, for_start,
-                                     from_cli, policy_from_profile, validate)
+                                     from_cli, policy_from_profile, reservation, validate)
 
 
 def _args(**overrides):
@@ -61,3 +61,16 @@ class MemoryPolicyTests(unittest.TestCase):
         with self.assertRaises(PolicyRejected) as task_context:
             enforce_configure(validate({"minimum_headroom_gb": 1}), "tasks", {"context_tokens": 2048})
         self.assertEqual(str(task_context.exception), "Task endpoints do not use text KV context settings.")
+
+    def test_splash_reservation_uses_the_reviewed_cap(self):
+        outcome = reservation(validate(None), {"runtime": "splash", "splash_weight_bytes": 10,
+                                                "splash_max_memory_gb": 4, "local_path": "/missing"})
+        self.assertEqual(outcome["size"], 4_000_000_000)
+
+    def test_strata_reservation_uses_the_stored_sizes(self):
+        policy = validate({"minimum_headroom_gb": 2, "model_memory_budget_gb": 8})
+        outcome = reservation(policy, {"runtime": "strata", "local_path": "/missing",
+                                        "strata_memory_allocation": {"estimated_resident_bytes": 1234},
+                                        "strata_memory_growth_bytes": 50})
+        self.assertEqual(outcome["size"], 1234)
+        self.assertEqual(outcome["reserve_bytes"] + outcome["workspace_bytes"] + outcome["growth_bytes"], 1234)

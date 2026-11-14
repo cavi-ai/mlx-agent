@@ -104,12 +104,18 @@ def hash_file(path, expected, root, root_identity):
             os.close(descriptor)
 
 
-def scan(roots, owned_items, limit, compare=False):
+def scan(roots, owned_items, limit, compare=False, exclude_roots=()):
     """Return storage items, full-digest groups and explicit coverage details."""
     owned = {file["id"] for item in owned_items for file in item["files"]}
     items, errors, identities = [], [], {}
     seen = set()
     limited = False
+    excluded_roots = sorted(set(os.path.realpath(os.path.expanduser(value)) for value in exclude_roots if value))
+
+    def excluded(path):
+        candidate = os.path.realpath(path)
+        return any(os.path.commonpath((candidate, root)) == root for root in excluded_roots)
+
     visited = 0
     visit_limit = max(1024, limit * 32)
 
@@ -120,6 +126,8 @@ def scan(roots, owned_items, limit, compare=False):
 
     for root in dict.fromkeys(str(Path(value).expanduser()) for value in roots):
         base = Path(root)
+        if excluded(base):
+            continue
         try:
             st_root = base.lstat()
             if not stat.S_ISDIR(st_root.st_mode) or _excluded_ancestor(Path(os.path.abspath(base))):
@@ -137,7 +145,8 @@ def scan(roots, owned_items, limit, compare=False):
                 dirs[:] = []
                 continue
             dirs[:] = sorted(name for name in dirs if name not in _SKIP and not name.startswith(".")
-                             and not name.startswith("models--") and not (here / name).is_symlink())
+                             and not name.startswith("models--") and not (here / name).is_symlink()
+                             and not excluded(here / name))
             for name in sorted(files):
                 path = here / name
                 if path.suffix.lower() not in {".safetensors", ".ckpt"} or _SHARD.search(name):
@@ -224,4 +233,5 @@ def scan(roots, owned_items, limit, compare=False):
                        "model_key": members[0]["name"], "keep": members[0]["path"],
                        "redundant": [item["path"] for item in members[1:]],
                        "reclaimable_bytes": sum(item["files"][0]["bytes"] for item in members[1:])})
-    return items, groups, {"compared": compare, "candidates": len(candidates), "checked": checked, "errors": errors}
+    return items, groups, {"compared": compare, "candidates": len(candidates), "checked": checked,
+                           "errors": errors, "excluded_roots": excluded_roots}

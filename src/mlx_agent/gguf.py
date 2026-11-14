@@ -1349,7 +1349,7 @@ def families(items, task_types=None):
     return sorted(found, key=lambda family: (-family["bytes"], family["family_id"]))
 
 
-def inventory(gguf_roots, mlx_roots=(), receipts=(), signature=True, limit=MAX_SCAN_FILES, compare_assets=False):
+def inventory(gguf_roots, mlx_roots=(), receipts=(), signature=True, limit=MAX_SCAN_FILES, compare_assets=False, asset_exclude_roots=()):
     """One read-only pass: what exists, what is converted, what is redundant."""
     errors = []
     entries = scan_gguf(gguf_roots, signature=signature, limit=limit, errors=errors)
@@ -1360,7 +1360,7 @@ def inventory(gguf_roots, mlx_roots=(), receipts=(), signature=True, limit=MAX_S
         outputs, signature=signature, ollama=ollama)
     from .standalone_assets import scan as scan_assets
     all_roots = list(dict.fromkeys([str(Path(root).expanduser()) for root in list(gguf_roots) + list(mlx_roots or gguf_roots)]))
-    assets, asset_duplicates, asset_scan = scan_assets(all_roots, _storage_items(paired, outputs, ollama), limit, compare_assets)
+    assets, asset_duplicates, asset_scan = scan_assets(all_roots, _storage_items(paired, outputs, ollama), limit, compare_assets, asset_exclude_roots)
     duplicates.extend(asset_duplicates)
     for group in duplicates:
         group["group_id"] = "{0}:{1}".format(group["kind"], group["identity"])

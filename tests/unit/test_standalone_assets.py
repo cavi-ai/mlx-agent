@@ -181,12 +181,41 @@ class StandaloneAssetsTests(unittest.TestCase):
         self.assertEqual(result['storage']['disk_bytes'], path.stat().st_size)
         self.assertEqual(sum(row['total_bytes'] for row in result['storage']['roots']), path.stat().st_size)
 
+    def test_excluded_quarantine_is_not_inventoried_or_hashed(self):
+        first = self.file('models/a.ckpt')
+        second = self.file('models/b.safetensors')
+        quarantined = self.file('models/holding-area/old.ckpt')
+        from mlx_agent import standalone_assets
+        original = standalone_assets.hash_file
+        visited = []
+        def record(path, *args):
+            visited.append(path)
+            return original(path, *args)
+        with patch.object(standalone_assets, 'hash_file', side_effect=record):
+            result = inventory([str(first.parent)], compare_assets=True,
+                               asset_exclude_roots=[str(quarantined.parent)])
+        items = [item['path'] for item in result['storage']['items'] if item['kind'] == 'asset']
+        self.assertEqual(set(items), {str(first), str(second)})
+        self.assertEqual(set(visited), {str(first), str(second)})
+        self.assertEqual(result['asset_scan']['excluded_roots'], [str(quarantined.parent.resolve())])
+        self.assertEqual(result['asset_scan']['errors'], [])
+        self.assertEqual(len([group for group in result['duplicates'] if group.get('verification') == 'full_sha256']), 1)
+
+    def test_registered_root_inside_exclusion_is_skipped(self):
+        quarantined = self.file('holding-area/nested/old.ckpt')
+        result = inventory([str(quarantined.parent)], compare_assets=True,
+                           asset_exclude_roots=[str(self.root / 'holding-area')])
+        self.assertFalse([item for item in result['storage']['items'] if item['kind'] == 'asset'])
+        self.assertEqual(result['asset_scan']['candidates'], 0)
+        self.assertEqual(result['asset_scan']['excluded_roots'], [str((self.root / 'holding-area').resolve())])
+
     def test_real_cli_reports_full_digest_and_readable_human_output(self):
         first = self.file('a.ckpt')
         self.file('b.safetensors')
+        quarantined = self.file('holding-area/old.ckpt')
         script = Path(__file__).resolve().parents[2] / 'scripts/mlx-agent'
         arguments = [sys.executable, str(script), 'convert', 'scan', '--gguf-root', str(self.root),
-                     '--receipts-dir', str(self.root / 'receipts'), '--compare-assets']
+                     '--receipts-dir', str(self.root / 'receipts'), '--compare-assets', '--asset-exclude-root', str(quarantined.parent)]
         environment = dict(os.environ, PYTHONDONTWRITEBYTECODE='1')
         json_run = subprocess.run(arguments + ['--json'], capture_output=True, text=True, env=environment, timeout=20)
         self.assertEqual(json_run.returncode, 0, json_run.stderr)
@@ -194,6 +223,8 @@ class StandaloneAssetsTests(unittest.TestCase):
         group = next(group for group in result['duplicates'] if group.get('verification') == 'full_sha256')
         self.assertEqual(group['keep'], str(first))
         self.assertEqual(group['model_key'], first.name)
+        self.assertNotIn(str(quarantined), [item['path'] for item in result['storage']['items']])
+        self.assertEqual(result['asset_scan']['excluded_roots'], [str(quarantined.parent.resolve())])
         human = subprocess.run(arguments, capture_output=True, text=True, env=environment, timeout=20)
         self.assertEqual(human.returncode, 0, human.stderr)
         self.assertIn('identical model files, keep ' + str(first), human.stdout)

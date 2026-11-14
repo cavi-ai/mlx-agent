@@ -1945,6 +1945,7 @@ def _add_convert_arguments(parser):
         help="skip content signatures (faster, weaker duplicate detection)",
     )
     scan.add_argument("--compare-assets", action="store_true", help="compare same-size standalone model files by full SHA-256")
+    scan.add_argument("--asset-exclude-root", action="append", default=[], help="exclude a directory from standalone model-file scanning (repeatable)")
     scan.add_argument("--pending-only", action="store_true", help="list only unconverted models")
     scan.add_argument("--json", action="store_true")
     transcribe = actions.add_parser(
@@ -2242,6 +2243,7 @@ def _convert_scan(arguments):
         signature=not arguments.no_signature,
         limit=arguments.limit or MAX_SCAN_FILES,
         compare_assets=arguments.compare_assets,
+        asset_exclude_roots=arguments.asset_exclude_root,
     )
     if arguments.pending_only:
         report = dict(report, models=[

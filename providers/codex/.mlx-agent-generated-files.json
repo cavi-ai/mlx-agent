@@ -494,7 +494,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "2f56ffd94564622d2adc33833333cc85bfa7732d79f7331a164f848f31ea840d"
+      "sha256": "87688dd94f6ed40b51fe485d4bb9027b92cee2283caa380a0b0faf2d87bc643a"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -618,7 +618,7 @@
     },
     {
       "path": "src/mlx_agent/gguf.py",
-      "sha256": "fbc543b0f581c807eaaeb15d6ec7a59c6ec7884b07f9da664d2e553acf730026"
+      "sha256": "f50fd1f529ae8290ca1b1c7f3b75453a15130d01d131f5bf3337dd41e616e368"
     },
     {
       "path": "src/mlx_agent/gguf_runner.py",
@@ -1202,7 +1202,7 @@
     },
     {
       "path": "src/mlx_agent/standalone_assets.py",
-      "sha256": "70c3dc6aee97c354477072d1db8d4052bb713fffb053d8f76cc369f361bc3b2d"
+      "sha256": "06acdfe21e69eeb20dc0246bd7d2349f4baa139c3b66d7ea81e54a0a257abd24"
     },
     {
       "path": "src/mlx_agent/strata_runtime.py",

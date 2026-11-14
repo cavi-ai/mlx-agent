@@ -30,7 +30,7 @@ from pathlib import Path
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from mlx_agent import chat_completions, responses_api
-from mlx_agent.contextfit import CONTEXT_MAX, CONTEXT_MIN, extract_architecture, kv_cache_bytes
+from mlx_agent.contextfit import extract_architecture, kv_cache_bytes
 from mlx_agent.messages_api import (MessagesRequestError, StreamTranslator, WorkerResponseError, error_body,
                                     from_chat_response, to_chat_request)
 from mlx_agent.transactions import _atomic_in_directory
@@ -39,64 +39,13 @@ from mlx_agent import allocator_cache
 from mlx_agent.inference_telemetry import InferenceTelemetry
 from mlx_agent import inference_defaults
 from mlx_agent.compute import ComputeBusy, ComputeLease, ExecutionAdmission, group_members, process_identity
+from mlx_agent.memory_policy import (PolicyRejected, STRATA_CONTEXT, enforce_configure, reject_cache_outside_tasks,
+                                     validate as validate_memory_policy)
 
 MAX_BODY = 16 * 1024 * 1024
 MAX_REQUESTS = 32
 STORED_RESPONSES = 64
 DRAIN_TIMEOUT_SECONDS = 30
-
-
-STRATA_CONTEXT = "Strata JIT admission already includes the KV cache at --strata-context-tokens."
-
-
-def validate_memory_policy(policy=None):
-    defaults = {"idle_timeout_seconds": 0, "keep_loaded": False, "minimum_headroom_gb": None}
-    if policy is None:
-        return defaults
-    if not isinstance(policy, dict) or set(policy) - set(defaults) - allocator_cache.FIELDS - {"context_tokens", "unload_under_pressure", "model_memory_budget_gb", "release_after_request", "execution_wait_seconds"}:
-        raise ValueError("Unknown memory policy fields.")
-    result = dict(defaults, **policy)
-    cache = allocator_cache.from_memory(result)
-    if cache['cache_reclaim'] == 'pressure' and result['minimum_headroom_gb'] is None:
-        raise ValueError('Pressure cache reclaim requires a headroom reserve.')
-    wait = result.get("execution_wait_seconds", 0)
-    if type(wait) is not int or not 0 <= wait <= 3600:
-        raise ValueError("Execution wait must be an integer between 0 and 3600 seconds.")
-    # Null and absent both mean no KV term; policies without a context keep their existing form.
-    release = result.pop("release_after_request", False)
-    if type(release) is not bool or (release and result["keep_loaded"]):
-        raise ValueError("Release after each request cannot be combined with keep loaded.")
-    if "release_after_request" in policy:
-        result["release_after_request"] = release
-    context = result.pop("context_tokens", None)
-    pressure = result.pop("unload_under_pressure", False)
-    budget = result.pop("model_memory_budget_gb", None)
-    if budget is not None:
-        if type(budget) not in (int, float) or not math.isfinite(budget) or not 1 <= budget <= 1024:
-            raise ValueError("Model memory budget must be a finite value from 1 to 1024 GB.")
-        result["model_memory_budget_gb"] = budget
-        if result["minimum_headroom_gb"] is None:
-            result["minimum_headroom_gb"] = 2
-    idle, keep, reserve = (result[key] for key in defaults)
-    if type(idle) is not int or not 0 <= idle <= 86400:
-        raise ValueError("Idle timeout must be an integer between 0 and 86400 seconds.")
-    if type(keep) is not bool:
-        raise ValueError("Keep loaded must be a boolean.")
-    if reserve is not None and (type(reserve) not in (int, float) or not math.isfinite(reserve) or not 0 <= reserve <= 1024):
-        raise ValueError("Headroom reserve must be a finite value between 0 and 1024 GB.")
-    if type(pressure) is not bool:
-        raise ValueError("Unload under pressure must be a boolean.")
-    if pressure:
-        if reserve is None or keep:
-            raise ValueError("Unload under pressure requires a headroom reserve and cannot be combined with keep loaded.")
-        result["unload_under_pressure"] = True
-    if context is not None:
-        if type(context) is not int or not CONTEXT_MIN <= context <= CONTEXT_MAX:
-            raise ValueError("Context tokens must be an integer between {} and {}.".format(CONTEXT_MIN, CONTEXT_MAX))
-        if reserve is None:
-            raise ValueError("Context tokens require a headroom reserve.")
-        result["context_tokens"] = context
-    return result
 
 
 def _kv_cache_bytes(local_path, context_tokens):
@@ -303,8 +252,7 @@ class ModelWorker:
         self.closed = False
         self.log = None
         self.memory_policy = validate_memory_policy(config.get("memory_policy"))
-        if config.get('runtime') != 'tasks' and allocator_cache.requested(self.memory_policy):
-            raise ValueError('Allocator cache controls require a resident task backend.')
+        reject_cache_outside_tasks(self.memory_policy, config.get("runtime"))
         self.memory_check = None
         self.resident_memory_check = None
         self.request_blocked_reason = None
@@ -420,14 +368,11 @@ class ModelWorker:
         with self.condition:
             try:
                 policy = validate_memory_policy(dict(self.memory_policy, **changes))
+                enforce_configure(policy, self.config.get("runtime"), changes)
+            except PolicyRejected as error:
+                raise GatewayError(400, error.code, str(error)) from error
             except (ValueError, TypeError) as error:
                 raise GatewayError(400, "invalid_policy", str(error)) from error
-            if self.config.get("runtime") == "strata" and "context_tokens" in policy:
-                raise GatewayError(400, "invalid_policy", STRATA_CONTEXT)
-            if self.config.get("runtime") not in ("strata", "tasks") and "model_memory_budget_gb" in policy:
-                raise GatewayError(400, "invalid_policy", "Model memory budgets require Strata or a task endpoint.")
-            if self.config.get('runtime') != 'tasks' and allocator_cache.requested(policy):
-                raise GatewayError(400, 'cache_control_unavailable', 'Allocator cache controls require a resident task backend.')
             config = dict(self.config, memory_policy=policy)
             budget_changed = policy.get("model_memory_budget_gb") != self.memory_policy.get("model_memory_budget_gb")
             if budget_changed and self.config.get("runtime") == "strata":

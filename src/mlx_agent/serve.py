@@ -347,22 +347,14 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
             raise ServeError("invalid_training_receipt", str(error), "Select a completed receipt whose base and adapter files are unchanged.") from error
         path, adapter_path = binding["base_path"], binding["adapter_path"]
     if memory_policy is not None:
-        from .jit_serve import validate_memory_policy
+        from .memory_policy import PolicyRejected, enforce_launch, validate
         try:
-            memory_policy = validate_memory_policy(memory_policy)
+            memory_policy = validate(memory_policy)
+            enforce_launch(memory_policy, runtime, jit)
+        except PolicyRejected as error:
+            raise ServeError(error.code, str(error), error.remediation) from error
         except ValueError as error:
             raise ServeError("invalid_arguments", str(error), "Correct the memory policy.") from error
-        from .allocator_cache import requested
-        if requested(memory_policy):
-            raise ServeError('cache_control_unavailable', 'Allocator cache controls require a resident task backend.',
-                             'Select a supported task model; inspect allocator_cache in endpoint status.')
-        if not jit:
-            raise ServeError("jit_required", "Memory policy requires a JIT endpoint.", "Use --jit.")
-        if runtime != "strata" and "model_memory_budget_gb" in memory_policy:
-            raise ServeError("invalid_arguments", "Model memory budgets currently require Strata.", "Select a prepared Strata profile.")
-        if runtime == "strata" and "context_tokens" in memory_policy:
-            from .jit_serve import STRATA_CONTEXT
-            raise ServeError("invalid_arguments", STRATA_CONTEXT, "Remove --context-tokens.")
     has_repo = isinstance(repo, str) and bool(repo.strip())
     has_path = isinstance(path, str) and bool(path.strip())
     if has_repo == has_path:
@@ -429,71 +421,31 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         "max_tokens": str(max_tokens),
         "runtime_adapter": str(Path(__file__).with_name("strata_runtime.py").resolve()),
     }
-    strata_model = strata_runtime = strata_allocation = None
+    strata = splash = None
     if runtime != "strata" and (strata_expert_memory_gb is not None or strata_context_tokens is not None or strata_decoding is not None):
         raise ServeError("invalid_arguments", "Strata memory controls require the Strata runtime.",
                          "Select a prepared local Strata profile.")
     if runtime == "strata":
-        from .strata_runtime import StrataError, installed_runtime, read_model, memory_estimate, memory_allocation, resolve_decoding
+        from .strata_runtime import StrataError, plan_contribution
         try:
-            if not has_path or adapter_path is not None or type(strata_speculation) is not bool:
-                raise StrataError("strata_model_required", "Strata requires a local GGUF profile without a LoRA adapter.")
-            strata_model = read_model(local_path)
-            strata_context_tokens = 131072 if strata_context_tokens is None else strata_context_tokens
-            strata_decoding = resolve_decoding(strata_model, strata_speculation, strata_decoding)
-            uses_draft = strata_decoding == "mtp"
-            budget = (memory_policy or {}).get("model_memory_budget_gb")
-            if budget is not None:
-                if strata_expert_memory_gb is not None:
-                    raise StrataError("invalid_arguments", "Choose a total model memory budget or an expert budget.")
-                strata_allocation = memory_allocation(strata_model, budget, strata_context_tokens, uses_draft)
-                strata_memory_bytes = strata_allocation["estimated_resident_bytes"]
-            else:
-                strata_memory_bytes = memory_estimate(strata_model, strata_expert_memory_gb, strata_context_tokens, uses_draft)
-            strata_runtime = installed_runtime()
-            if runtime_executable is not None and runtime_executable != strata_runtime["python"]:
-                raise StrataError("strata_not_installed", "The reviewed Strata executable changed.")
-            values["executable"] = strata_runtime["python"]
+            strata = plan_contribution(local_path, has_path, adapter_path, strata_speculation, strata_decoding,
+                                       strata_context_tokens, strata_expert_memory_gb, memory_policy, runtime_executable)
         except StrataError as error:
             raise ServeError(error.code, str(error), error.remediation) from error
-    splash_target = splash_runtime = splash_draft = None
+        values.update(strata.values)
     if runtime == "splash":
-        from .splash_runtime import SplashError, installed_runtime, read_draft, read_target, serve_arguments
+        from .splash_runtime import SplashError, plan_contribution
         try:
-            if adapter_path is not None or jit:
-                raise SplashError("invalid_arguments", "Splash serves local weights without a LoRA adapter or --jit.",
-                                  "Remove the adapter and --jit; Splash releases idle weights itself.")
-            splash_model_dir = local_path
-            if has_repo:
-                from .convert import cached_snapshot
-                snapshot = cached_snapshot(repo.strip(), hf_cache)
-                if snapshot is None:
-                    raise SplashError("model_not_local", "The repository is not in the Hugging Face cache: " + repo.strip(),
-                                      "Download it first; serve never downloads models.")
-                splash_model_dir = str(snapshot)
-            splash_target = read_target(splash_model_dir, served_model=repo.strip() if has_repo else None)
-            splash_draft = read_draft(splash_draft_model) if splash_draft_model is not None else None
-            splash_argv = serve_arguments(splash_draft, splash_max_memory_gb, splash_max_context_tokens)
-            splash_runtime = installed_runtime()
-            if runtime_executable is not None and runtime_executable != splash_runtime["launcher"]:
-                raise SplashError("splash_not_installed", "The reviewed Splash launcher changed.")
+            splash = plan_contribution(local_path, has_repo, repo, hf_cache, adapter_path, jit, runtime_executable,
+                                       splash_draft_model, splash_max_memory_gb, splash_max_context_tokens)
         except SplashError as error:
             raise ServeError(error.code, str(error), error.remediation) from error
-        values.update(executable=splash_runtime["launcher"], served_model=splash_target["served_model"],
-                      splash_target=splash_target["target"])
+        values.update(splash.values)
     argv = [part.format(**values) for part in recipe["argv"]]
-    if splash_target:
-        argv += splash_argv
-    if strata_model:
-        argv += ["--runtime-root", strata_runtime["root"], "--speculation", "on" if strata_speculation else "off",
-                 "--decoding", strata_decoding,
-                 "--context-tokens", str(strata_context_tokens),
-                 "--expected-model-fingerprint", strata_model["fingerprint"],
-                 "--expected-runtime-fingerprint", strata_runtime["fingerprint"]]
-        if strata_expert_memory_gb is not None:
-            argv += ["--expert-memory-gb", str(strata_expert_memory_gb)]
-        if strata_allocation is not None:
-            argv += ["--memory-budget-gb", str(budget)]
+    if splash is not None:
+        argv += splash.argv
+    if strata is not None:
+        argv += strata.argv
     if adapter_path is not None:
         argv.extend(
             part.format(adapter_path=str(adapter_path)) for part in recipe["adapter_argv"]
@@ -544,26 +496,10 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         "readiness": recipe["readiness"].format(port=selected_port),
         "bind": "127.0.0.1",
     }
-    if strata_model:
-        plan.update(strata_model_fingerprint=strata_model["fingerprint"],
-                    strata_runtime_fingerprint=strata_runtime["fingerprint"],
-                    weight_format="gguf", weight_quantization=strata_model["quantization"], weights_preserved=True,
-                    strata_speculation=strata_speculation, strata_decoding=strata_decoding,
-                    strata_expert_memory_gb=strata_expert_memory_gb,
-                    strata_context_tokens=strata_context_tokens, strata_memory_estimate_bytes=strata_memory_bytes,
-                    readiness_deadline=900)
-        if strata_allocation is not None:
-            plan["strata_memory_allocation"] = strata_allocation
-    elif splash_target:
-        plan.update(splash_version=splash_runtime["version"], splash_runtime_fingerprint=splash_runtime["fingerprint"],
-                    splash_model_fingerprint=splash_target["fingerprint"], splash_target=splash_target["target"],
-                    splash_model_dir=splash_model_dir,
-                    splash_served_model=splash_target["served_model"], splash_source=splash_target["source"],
-                    splash_draft_model=splash_draft["path"] if splash_draft else None,
-                    splash_draft_fingerprint=splash_draft["fingerprint"] if splash_draft else None,
-                    splash_max_memory_gb=splash_max_memory_gb, splash_max_context_tokens=splash_max_context_tokens,
-                    weight_format=splash_target["format"], weight_bytes=splash_target["weight_bytes"],
-                    weights_preserved=True, readiness_deadline=900)
+    if strata is not None:
+        plan.update(strata.fields)
+    elif splash is not None:
+        plan.update(splash.fields)
     elif has_path:
         plan.update(_local_weight_evidence(local_path))
     if prefill_kernel is not None:
@@ -610,10 +546,8 @@ def _authenticated_plan(plan, digest, access=None):
     if digest is not None:
         from .inference_auth import runtime_fingerprint
         plan.update(api_key_sha256=digest, auth_runtime_sha256=runtime_fingerprint(), **(access or {}))
-        if (plan['runtime'] == 'mlx_lm' and Path(plan['worker_argv'][0]).name == 'mlx_lm.server'
-                and not any(plan.get(key) for key in ('prefill_kernel', 'decode_profile', 'vision_profile'))):
-            from .private_serve import identity
-            plan['private_worker'] = identity()
+        from .worker_transport import choose
+        choose(plan).mark(plan)
         plan['readiness'] = 'http://127.0.0.1:{}/_mlx/status'.format(plan['port'])
     plan['preview_hash'] = _preview_hash({key: value for key, value in plan.items() if key != 'preview_hash'})
     return plan
@@ -752,6 +686,22 @@ def _require_task_identity(plan):
         raise ServeError("preview_stale", str(error), "Review a fresh task serving plan.") from error
 
 
+def recheck_bound_identity(plan):
+    """One pass over every identity bound into a reviewed serving plan."""
+    for check in (
+        _require_auth_identity,
+        _require_task_identity,
+        _require_training_binding,
+        _require_adapter_identity,
+        _require_prefill_identity,
+        _require_decode_identity,
+        _require_vision_identity,
+        _require_splash_identity,
+        _require_access_identity,
+    ):
+        check(plan)
+
+
 def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
                 which=None, model_present=None, path_present=None, port_free=None,
                 wired_claims=None, spawn=None, readiness=None,
@@ -780,16 +730,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "The supplied preview hash does not match this start plan.",
             "Re-run serve start without --confirm and review the fresh plan.",
         )
-    _require_auth_identity(plan)
-    _require_task_identity(plan)
-    _require_training_binding(plan)
-    _require_adapter_identity(plan)
-    _require_prefill_identity(plan)
-    _require_decode_identity(plan)
-    _require_vision_identity(plan)
-    _require_splash_identity(plan)
-
-    _require_access_identity(plan)
+    recheck_bound_identity(plan)
 
     if plan["runtime"] == "strata" and not plan.get("jit"):
         from .jit_serve import available_memory_bytes
@@ -865,32 +806,12 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         config_path = Path(plan["control_config"])
         if config_path.parent != root.absolute() or config_path.is_symlink():
             raise ServeError("invalid_arguments", "Unsafe JIT configuration path.", "Review a fresh serve plan.")
-        config = {key: plan[key] for key in ("local_path", "fingerprint", "worker_argv", "max_tokens")}
-        config["runtime"] = plan["runtime"]
-        if 'request_defaults' in plan:
-            config['request_defaults'] = plan['request_defaults']
-        config.update({key: plan[key] for key in ("private_worker", "access_key_file", "access_key_sha256", "api_key_sha256", "auth_runtime_sha256") if key in plan})
-        if plan["runtime"] == "tasks":
-            config.update(task_identity=plan["task_identity"], task_kinds=plan["task_kinds"], port=plan["port"],
-                          task_runtime_fingerprint=plan["task_runtime_fingerprint"],
-                          task_state_dir=str(root.absolute().parent / "tasks" / str(plan["port"])))
-        if plan.get("adapter_path") is not None:
-            config.update(adapter_path=plan["adapter_path"], adapter_identity=plan["adapter_identity"])
-        if plan.get("training_binding") is not None:
-            config["training_binding"] = plan["training_binding"]
-        if "readiness_deadline" in plan:
-            config["worker_readiness_seconds"] = plan["readiness_deadline"]
-        if plan["runtime"] == "strata":
-            config["strata_expert_memory_gb"] = plan.get("strata_expert_memory_gb")
-            config["strata_context_tokens"] = plan.get("strata_context_tokens", 131072)
-            config["strata_speculation"] = plan.get("strata_speculation", False)
-            config["strata_decoding"] = plan["strata_decoding"]
-            if "strata_memory_allocation" in plan:
-                config["strata_memory_allocation"] = plan["strata_memory_allocation"]
-        config.update(model=plan["repo"] or plan["path"], control_token=secrets.token_hex(32),
-                      memory_policy=plan.get("memory_policy"), config_path=str(config_path),
-                      state_path=str(root.absolute() / "{}.jit-state.json".format(plan["port"])),
-                      log_path=str(root.absolute() / "{}.worker.log".format(plan["port"])))
+        from .worker_transport import gateway_config
+        config = gateway_config(plan, control_token=secrets.token_hex(32),
+                                state_path=str(root.absolute() / "{}.jit-state.json".format(plan["port"])),
+                                log_path=root.absolute() / "{}.worker.log".format(plan["port"]),
+                                config_path=config_path,
+                                task_state_dir=str(root.absolute().parent / "tasks" / str(plan["port"])))
         _atomic_in_directory(root, config_path.name, json.dumps(config).encode(), 0o600)
         if plan.get("api_key_sha256") is not None:
             readiness_headers["Authorization"] = "Bearer " + config["control_token"]
@@ -903,15 +824,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             "Inspect the serve log at {0}.".format(log_path),
         )
     try:
-        _require_auth_identity(plan)
-        _require_task_identity(plan)
-        _require_training_binding(plan)
-        _require_adapter_identity(plan)
-        _require_prefill_identity(plan)
-        _require_decode_identity(plan)
-        _require_vision_identity(plan)
-        _require_splash_identity(plan)
-        _require_access_identity(plan)
+        recheck_bound_identity(plan)
     except ServeError:
         _terminate_pid(pid)
         raise
@@ -1187,7 +1100,7 @@ def reclaim_serve_cache(port, receipts_dir=None, expected_pid=None, expected_sta
 
 
 def configure_serve_memory(port, policy, receipts_dir=None, expected_pid=None, expected_start=None):
-    from .jit_serve import validate_memory_policy
+    from .memory_policy import validate as validate_memory_policy
     clear_budget = isinstance(policy, dict) and "model_memory_budget_gb" in policy and policy["model_memory_budget_gb"] is None
     try:
         policy = validate_memory_policy(policy)

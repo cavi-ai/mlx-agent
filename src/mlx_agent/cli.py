@@ -1944,6 +1944,8 @@ def _add_convert_arguments(parser):
         "--no-signature", action="store_true",
         help="skip content signatures (faster, weaker duplicate detection)",
     )
+    scan.add_argument("--compare-assets", action="store_true", help="compare same-size standalone model files by full SHA-256")
+    scan.add_argument("--asset-exclude-root", action="append", default=[], help="exclude a directory from standalone model-file scanning (repeatable)")
     scan.add_argument("--pending-only", action="store_true", help="list only unconverted models")
     scan.add_argument("--json", action="store_true")
     transcribe = actions.add_parser(
@@ -2244,6 +2246,8 @@ def _convert_scan(arguments):
         receipts=load_receipts(arguments.receipts_dir),
         signature=not arguments.no_signature,
         limit=arguments.limit or MAX_SCAN_FILES,
+        compare_assets=arguments.compare_assets,
+        asset_exclude_roots=arguments.asset_exclude_root,
     )
     if arguments.pending_only:
         report = dict(report, models=[
@@ -2297,7 +2301,8 @@ def _convert_scan_human(report, pending_only=False):
         ))
         for group in duplicates:
             if group["kind"] == "exact":
-                lines.append("  same model and quantization, keep {0}".format(group["keep"]))
+                description = "identical model files" if group.get("verification") == "full_sha256" else "same model and quantization"
+                lines.append("  {0}, keep {1}".format(description, group["keep"]))
                 for path in group["redundant"]:
                     lines.append("    redundant: {0}".format(path))
             else:

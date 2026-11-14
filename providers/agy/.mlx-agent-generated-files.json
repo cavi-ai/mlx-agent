@@ -1318,7 +1318,7 @@
     },
     {
       "path": "src/mlx_agent/workflow_activation.py",
-      "sha256": "7744c697f32323cacdc3201cad3f7113c3b4ca8fc04b45c8bf4911d14e70d5ec"
+      "sha256": "f7ed97068f382911f6000435a94b8a8bce7e51da08671ae9a0b915b3a9aad6c0"
     },
     {
       "path": "src/mlx_agent/workflow_sets.py",

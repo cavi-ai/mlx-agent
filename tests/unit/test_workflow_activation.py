@@ -69,6 +69,29 @@ class WorkflowActivationTests(unittest.TestCase):
         self.assertEqual(again['members']['coding']['pid'], first['members']['coding']['pid'])
         self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
 
+    def test_repeat_start_accepts_fresh_preview_without_changing_ownership(self):
+        original_preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        first = activation.start_workflow('studio', original_preview['preview_hash'], receipts_dir=self.root)
+        fresh = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        self.assertNotEqual(original_preview['preview_hash'], fresh['preview_hash'])
+        with self.assertRaises(ValueError):
+            activation.start_workflow('studio', '0' * 64, receipts_dir=self.root)
+        again = activation.start_workflow('studio', fresh['preview_hash'], receipts_dir=self.root)
+        self.assertEqual(again['activation_id'], first['activation_id'])
+        self.assertEqual(again['members']['coding']['pid'], first['members']['coding']['pid'])
+        self.assertEqual(again['members']['coding']['ownership'], 'created')
+        self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
+
+    def test_stop_owned_gateway_when_control_transport_unavailable(self):
+        preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        result = activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
+        pid = result['members']['coding']['pid']
+        with patch('mlx_agent.workflow_activation._jit_control', side_effect=RuntimeError('control unavailable')):
+            self.assertEqual(activation.status_workflow('studio', receipts_dir=self.root)['state'], 'partial')
+            stopped = activation.stop_workflow('studio', receipts_dir=self.root)
+        self.assertEqual(stopped['state'], 'stopped')
+        self.assertFalse(activation._pid_alive(pid))
+
     def test_status_and_stop_survive_deleted_definition_and_profile(self):
         preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
         result = activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)

@@ -43,7 +43,7 @@ def _write(path, value):
     _atomic_in_directory(path.parent, path.name, data, 0o600)
 
 
-def _service_status(member, root, expected_plan=None):
+def _owned_receipt(member, root):
     port, pid, start = member['port'], member['pid'], member['process_started_at']
     if type(pid) is not int or pid <= 0 or not isinstance(start, str) or not start:
         raise ValueError('Service process identity is unavailable.')
@@ -54,6 +54,11 @@ def _service_status(member, root, expected_plan=None):
             or receipt.get('preview_hash') != member['member_plan_hash']
             or not _pid_alive(pid) or _pid_start(pid) != start or not _argv_matches(receipt, _pid_command(pid))):
         raise ValueError('Service process identity changed.')
+    return receipt
+
+
+def _service_status(member, root, expected_plan=None):
+    receipt = _owned_receipt(member, root)
     state = _jit_control(receipt, receipts_root(root), 'status')
     if expected_plan is not None and (state.get('memory_policy') != expected_plan.get('memory_policy')
             or state.get('api_key_sha256') != expected_plan.get('api_key_sha256')):
@@ -69,11 +74,20 @@ def _member_identity(role, plan_hash, receipt, ownership):
 
 
 def _repeat_activation(value, name, preview_hash, root):
-    if value['state'] != 'active' or value.get('preview_hash') != preview_hash:
+    if value['state'] != 'active':
         raise ValueError('A workflow activation still owns or references services.')
     definition = workflow_sets.load_workflow(name, root)
     if workflow_sets._hash(definition) != value.get('definition_hash') or set(definition['members']) != set(value['members']):
         raise ValueError('Active workflow definition changed.')
+    if value.get('preview_hash') != preview_hash:
+        current = workflow_sets.preview_workflow(definition, receipts_dir=root)
+        if current['preview_hash'] != preview_hash or any(row['action'] != 'reuse' for row in current['members'].values()):
+            raise ValueError('Workflow preview changed; review it again.')
+        for role, row in current['members'].items():
+            candidate = row['candidate']
+            member = value['members'][role]
+            if candidate['pid'] != member.get('pid') or candidate['process_started_at'] != member.get('process_started_at'):
+                raise ValueError('Active workflow service identity changed: ' + role)
     for role, definition_member in definition['members'].items():
         member = value['members'][role]
         plan = workflow_sets._member_plan(definition_member, root)
@@ -175,7 +189,7 @@ def stop_workflow(name, *, receipts_dir=None):
             if member.get('ownership') != 'created' or member.get('state') in ('stopped', 'launch_failed'):
                 continue
             try:
-                _service_status(member, receipts_dir)
+                _owned_receipt(member, receipts_dir)
                 stop_serve(member['port'], receipts_dir, expected_pid=member['pid'],
                            expected_start=member['process_started_at'])
                 member['state'] = 'stopped'

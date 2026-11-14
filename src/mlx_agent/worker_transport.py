@@ -1,11 +1,13 @@
 """How a reviewed serving plan reaches its model worker.
 
 The interface is `choose`: one of inherited Unix, loopback key, resident task,
-or an open worker. `gateway_config` is the one config both the supervised
-start and the foreground protected endpoint build.
+or an open worker. `gateway_config` is that plan's worker config, shared by
+the supervised start and the foreground protected endpoint.
 """
 from pathlib import Path
 from typing import Protocol
+
+from .serving_plan import worker_config
 
 
 class WorkerTransport(Protocol):
@@ -59,44 +61,6 @@ def choose(plan):
 
 
 def gateway_config(plan, *, control_token, state_path, log_path=None, config_path=None, task_state_dir=None):
-    """Config for the JIT gateway. Callers supply paths; the key set lives here."""
-    config = {key: plan[key] for key in ("local_path", "fingerprint", "worker_argv", "max_tokens")}
-    config["runtime"] = plan["runtime"]
-    if "request_defaults" in plan:
-        config["request_defaults"] = plan["request_defaults"]
-    config.update({key: plan[key] for key in (
-        "private_worker", "access_key_file", "access_key_sha256", "api_key_sha256", "auth_runtime_sha256",
-    ) if key in plan})
-    if plan["runtime"] == "tasks":
-        config.update(task_identity=plan["task_identity"], task_kinds=plan["task_kinds"], port=plan["port"],
-                      task_runtime_fingerprint=plan["task_runtime_fingerprint"], task_state_dir=task_state_dir)
-    if plan.get("adapter_path") is not None:
-        config.update(adapter_path=plan["adapter_path"], adapter_identity=plan["adapter_identity"])
-    if plan.get("training_binding") is not None:
-        config["training_binding"] = plan["training_binding"]
-    if "readiness_deadline" in plan:
-        config["worker_readiness_seconds"] = plan["readiness_deadline"]
-    if plan["runtime"] == "strata":
-        config["strata_expert_memory_gb"] = plan.get("strata_expert_memory_gb")
-        config["strata_context_tokens"] = plan.get("strata_context_tokens", 131072)
-        config["strata_speculation"] = plan.get("strata_speculation", False)
-        config["strata_decoding"] = plan["strata_decoding"]
-        if "strata_memory_allocation" in plan:
-            config["strata_memory_allocation"] = plan["strata_memory_allocation"]
-    if plan["runtime"] == "splash":
-        config.update({key: plan[key] for key in ("splash_served_model", "splash_weight_bytes", "splash_max_memory_gb")})
-    for key in (
-        "jit", "prefill_kernel", "decode_profile", "vision_profile",
-        "splash_model_dir", "splash_model_fingerprint", "splash_draft_model", "splash_draft_fingerprint",
-        "splash_launcher", "splash_runtime_fingerprint",
-        "strata_memory_estimate_bytes", "strata_memory_growth_bytes",
-    ):
-        if key in plan:
-            config[key] = plan[key]
-    config.update(model=plan["repo"] or plan["path"], control_token=control_token,
-                  memory_policy=plan.get("memory_policy"), state_path=state_path)
-    if config_path is not None:
-        config["config_path"] = str(config_path)
-    if log_path is not None:
-        config["log_path"] = str(log_path)
-    return config
+    """Worker config for a reviewed plan. The key set lives on the serving plan."""
+    return worker_config(plan, control_token=control_token, state_path=state_path, log_path=log_path,
+                         config_path=config_path, task_state_dir=task_state_dir)

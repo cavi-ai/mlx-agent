@@ -333,7 +333,9 @@
     "src/mlx_agent/watch.py",
     "src/mlx_agent/wiring.py",
     "src/mlx_agent/worker_telemetry.py",
-    "src/mlx_agent/worker_transport.py"
+    "src/mlx_agent/worker_transport.py",
+    "src/mlx_agent/workflow_activation.py",
+    "src/mlx_agent/workflow_sets.py"
   ],
   "schema_version": 3,
   "surface": "agy-plugin"

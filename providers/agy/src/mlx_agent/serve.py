@@ -703,6 +703,9 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         "started_at": now(),
         "preview_hash": plan["preview_hash"],
     }
+    process_start = _pid_start(pid)
+    if process_start:
+        receipt["process_started_at"] = process_start
     receipt.update(receipt_fields(plan))
     content = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     _atomic_in_directory(root, receipt_path.name, content, 0o600)

@@ -322,6 +322,7 @@ class TaskModelWorker(ModelWorker):
         lease = None
         leased = False
         dispatched = False
+        cancelled_before_dispatch = False
         try:
             with self.condition:
                 self.memory_guard_error = None
@@ -333,6 +334,7 @@ class TaskModelWorker(ModelWorker):
             leased = True
             record = self.store.get(identifier)
             if record['cancel_requested'] or self.closed:
+                cancelled_before_dispatch = True
                 raise InterruptedError('Inference cancelled.')
             self._recheck_identity()
             check_identity(record['identity'])
@@ -399,7 +401,7 @@ class TaskModelWorker(ModelWorker):
             _finish(self.store, identifier, 'succeeded', result=reference, error=None)
         except BaseException as error:
             unresolved = False
-            admission_denied = isinstance(error, (ComputeBusy, InterruptedError)) and not leased
+            admission_denied = cancelled_before_dispatch or (isinstance(error, (ComputeBusy, InterruptedError)) and not leased)
             admission_denied |= (not dispatched and isinstance(error,GatewayError)
                 and error.code in ('insufficient_headroom','memory_unknown','memory_registry_busy', 'agent_memory_budget_exceeded', 'job_memory_cap_exceeded'))
             if admission_denied and leased and self.memory_reservation is not None:
@@ -407,7 +409,7 @@ class TaskModelWorker(ModelWorker):
                     self._release_memory()
                 elif self.memory_materialized:
                     self.memory_reservation = self.memory_registry.settle(self.memory_token)
-            # No work was dispatched if the host lease was denied. Keep the
+            # No work was dispatched when admission was denied or cancelled here. Keep the
             # existing idle worker and its state available for the next request.
             if not admission_denied:
                 try:

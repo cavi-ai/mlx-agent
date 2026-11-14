@@ -140,6 +140,13 @@ def plan_install(backend_id, manifests=None, root=None, python=None, version_inf
         plan["build_lock_sha256"] = hashlib.sha256(build_lock.read_bytes()).hexdigest()
         plan["argv"] += ["--build-lock", str(build_lock)]
         plan["network"] += ["github.com", "release-assets.githubusercontent.com"]
+    elif backend_id == "ace-step":
+        build_lock = BACKENDS_DIR / "ace-step-build.lock"
+        if not build_lock.is_file():
+            raise BackendError("lock_missing", "The ACE-Step build lock is missing.", "Reinstall mlx-agent; the lock ships with it.")
+        plan["build_lock_sha256"] = hashlib.sha256(build_lock.read_bytes()).hexdigest()
+        plan["argv"] += ["--build-lock", str(build_lock)]
+        plan["network"] += ["github.com", "codeload.github.com"]
     plan = _finalize(plan)
     plan["argv"] = plan["argv"] + ["--preview-hash", plan["preview_hash"]]
     return plan

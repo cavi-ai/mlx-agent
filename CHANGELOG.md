@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add the optional `ace-step` backend: `convert music` runs ACE-Step 1.5 checkpoints with their planner, and takes `--bpm`, `--time-signature` and `--reference` for them.
+
 - A live model load refuses when Splash, task, adapter, training, kernel, vision, access, or model files no longer match the reviewed serving plan.
 - Endpoint memory reservation uses the Splash and Strata sizes stored on the serving plan.
 

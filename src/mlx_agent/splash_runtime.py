@@ -236,3 +236,35 @@ def serve_arguments(draft=None, max_memory_gb=None, max_context_tokens=None):
                               "Pass --splash-max-context in tokens.")
         args += ["--max-context", str(max_context_tokens)]
     return args
+
+
+def plan_contribution(local_path, has_repo, repo, hf_cache, adapter_path, jit, runtime_executable,
+                      draft_model, max_memory_gb, max_context_tokens):
+    """Splash's part of a serving plan. Raises SplashError; the caller maps it."""
+    from .runtime_plan import Contribution
+    if adapter_path is not None or jit:
+        raise SplashError("invalid_arguments", "Splash serves local weights without a LoRA adapter or --jit.",
+                          "Remove the adapter and --jit; Splash releases idle weights itself.")
+    model_dir = local_path
+    if has_repo:
+        from .convert import cached_snapshot
+        snapshot = cached_snapshot(repo.strip(), hf_cache)
+        if snapshot is None:
+            raise SplashError("model_not_local", "The repository is not in the Hugging Face cache: " + repo.strip(),
+                              "Download it first; serve never downloads models.")
+        model_dir = str(snapshot)
+    target = read_target(model_dir, served_model=repo.strip() if has_repo else None)
+    draft = read_draft(draft_model) if draft_model is not None else None
+    runtime = installed_runtime()
+    if runtime_executable is not None and runtime_executable != runtime["launcher"]:
+        raise SplashError("splash_not_installed", "The reviewed Splash launcher changed.")
+    fields = {"splash_version": runtime["version"], "splash_runtime_fingerprint": runtime["fingerprint"],
+              "splash_model_fingerprint": target["fingerprint"], "splash_target": target["target"],
+              "splash_model_dir": model_dir, "splash_served_model": target["served_model"],
+              "splash_source": target["source"], "splash_draft_model": draft["path"] if draft else None,
+              "splash_draft_fingerprint": draft["fingerprint"] if draft else None,
+              "splash_max_memory_gb": max_memory_gb, "splash_max_context_tokens": max_context_tokens,
+              "weight_format": target["format"], "weight_bytes": target["weight_bytes"],
+              "weights_preserved": True, "readiness_deadline": 900}
+    values = {"executable": runtime["launcher"], "served_model": target["served_model"], "splash_target": target["target"]}
+    return Contribution(serve_arguments(draft, max_memory_gb, max_context_tokens), values, fields)

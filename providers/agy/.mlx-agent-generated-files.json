@@ -494,7 +494,7 @@
     },
     {
       "path": "src/mlx_agent/cli.py",
-      "sha256": "fb78fccda5be4b33c51215e6449afd0b760b105fbc79d73e900c4eb2b6ebfb3c"
+      "sha256": "902cf7981d98fb9af29c1ae5d4eb6c84bbbc382139678a58d17204326e6c264f"
     },
     {
       "path": "src/mlx_agent/coding_bench.py",
@@ -1315,6 +1315,10 @@
     {
       "path": "src/mlx_agent/worker_transport.py",
       "sha256": "fdb3355c232dc0728e0d03ee3051c7aa1df432343cbaa89e3a68acd0a761fab3"
+    },
+    {
+      "path": "src/mlx_agent/workflow_activation.py",
+      "sha256": "7744c697f32323cacdc3201cad3f7113c3b4ca8fc04b45c8bf4911d14e70d5ec"
     },
     {
       "path": "src/mlx_agent/workflow_sets.py",

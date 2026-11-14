@@ -1046,12 +1046,15 @@ def _add_serve_arguments(parser):
             action.add_argument("--replace", action="store_true")
     workflow = actions.add_parser("workflow", help="manage local serving workflows")
     workflow_actions = workflow.add_subparsers(dest="workflow_command", required=True)
-    for command in ("save", "show", "list", "delete", "preview"):
+    for command in ("save", "show", "list", "delete", "preview", "start", "status", "stop"):
         action = workflow_actions.add_parser(command)
         if command != "list":
             action.add_argument("--name", required=True)
         if command == "save":
             action.add_argument("--file", required=True)
+        if command == "start":
+            action.add_argument("--confirm", action="store_true", required=True)
+            action.add_argument("--preview-hash", required=True)
         action.add_argument("--receipts-dir", default=None)
         action.add_argument("--json", action="store_true")
     discover = actions.add_parser("discover", help="find engine services across registered and live receipt locations")
@@ -1150,7 +1153,15 @@ def _run_serve(arguments):
         if arguments.serve_command == "workflow":
             from . import workflow_sets
             command = arguments.workflow_command
-            if command == "save":
+            if command in ("start", "status", "stop"):
+                from . import workflow_activation
+                if command == "start":
+                    data = workflow_activation.start_workflow(arguments.name, arguments.preview_hash, receipts_dir=arguments.receipts_dir)
+                elif command == "status":
+                    data = workflow_activation.status_workflow(arguments.name, receipts_dir=arguments.receipts_dir)
+                else:
+                    data = workflow_activation.stop_workflow(arguments.name, receipts_dir=arguments.receipts_dir)
+            elif command == "save":
                 with open(arguments.file, "rb") as stream:
                     raw = stream.read(workflow_sets.MAX_BYTES + 1)
                 if len(raw) > workflow_sets.MAX_BYTES:

@@ -26,7 +26,7 @@ def inventory_paths(surface):
     inventory = json.loads(
         (surface / ".mlx-agent-generated-files.json").read_text(encoding="utf-8")
     )
-    return tuple(Path(entry["path"]) for entry in inventory["files"])
+    return tuple(Path(name) for name in inventory["files"])
 
 
 def assert_tool_use_guidance(test_case, path, canonical_guidance):

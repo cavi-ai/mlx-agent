@@ -1170,7 +1170,7 @@
     },
     {
       "path": "src/mlx_agent/serve.py",
-      "sha256": "79e177b842b41d5bd33dd6c19aac621df1dfd1aed5e9e930d7eb806f6acc139e"
+      "sha256": "0bff1c2ccc4ed30456a7ddff535846170f48d0cc4b3864c9323048c773bbd158"
     },
     {
       "path": "src/mlx_agent/serve_profiles.py",
@@ -1318,7 +1318,7 @@
     },
     {
       "path": "src/mlx_agent/workflow_sets.py",
-      "sha256": "8a92315becca8fa5bc4a6cac3d94884366f30274c840e9cc9d0ec1230d80053e"
+      "sha256": "268ceec2e5e1d494fc9fb74de5cdd2985f2141a27bba798d088291f1c32389ac"
     }
   ],
   "schema_version": 2,

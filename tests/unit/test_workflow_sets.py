@@ -108,7 +108,7 @@ class WorkflowTests(unittest.TestCase):
                 'local_path': '/model/a', 'fingerprint': 'f' * 64,
                 'worker_argv': ['worker'], 'memory_policy': {'keep_loaded': True}}
         receipt = {'kind': 'serve', 'schema_version': '1.0', 'pid': 123, 'port': 8085, 'runtime': 'tasks', 'jit': True,
-                   'preview_hash': 'a' * 64}
+                   'preview_hash': 'a' * 64, 'process_started_at': 'start'}
         config = dict(plan, control_token='private-token')
         state = {'gateway_pid': 123, 'worker_pid': 456, 'model_state': 'loaded'}
         for name, value in [('8085.json', receipt), ('8085.jit-config.json', config), ('8085.jit-state.json', state)]:
@@ -125,6 +125,40 @@ class WorkflowTests(unittest.TestCase):
             config['memory_policy'] = {'keep_loaded': False}
             (root / '8085.jit-config.json').write_text(json.dumps(config))
             with self.assertRaises(ValueError):
+                workflows._reuse_candidate(root, plan)
+
+    def test_cold_reuse_requires_recorded_start_and_checks_optional_state(self):
+        root = self.root / 'receipts'
+        root.mkdir(mode=0o700)
+        plan = {'preview_hash': 'a' * 64, 'runtime': 'tasks', 'port': 8085,
+                'local_path': '/model/a', 'fingerprint': 'f' * 64,
+                'worker_argv': ['worker'], 'memory_policy': {'keep_loaded': True}}
+        receipt = {'kind': 'serve', 'schema_version': '1.0', 'pid': 123, 'port': 8085,
+                   'runtime': 'tasks', 'jit': True, 'preview_hash': 'a' * 64,
+                   'process_started_at': 'start'}
+        for name, value in [('8085.json', receipt), ('8085.jit-config.json', plan)]:
+            path = root / name
+            path.write_text(json.dumps(value))
+            path.chmod(0o600)
+        with patch('mlx_agent.workflow_sets._pid_alive', return_value=True), \
+             patch('mlx_agent.workflow_sets._pid_start', return_value='start'), \
+             patch('mlx_agent.workflow_sets._pid_command', return_value='command'), \
+             patch('mlx_agent.workflow_sets._argv_matches', return_value=True):
+            self.assertEqual(workflows._reuse_candidate(root, plan)['pid'], 123)
+            receipt['process_started_at'] = 'different'
+            (root / '8085.json').write_text(json.dumps(receipt))
+            with self.assertRaises(ValueError):
+                workflows._reuse_candidate(root, plan)
+            receipt['process_started_at'] = 'start'
+            (root / '8085.json').write_text(json.dumps(receipt))
+            state = root / '8085.jit-state.json'
+            state.write_text(json.dumps({'gateway_pid': 999}))
+            state.chmod(0o600)
+            with self.assertRaises(ValueError):
+                workflows._reuse_candidate(root, plan)
+            state.unlink()
+            state.symlink_to(root / '8085.json')
+            with self.assertRaises(OSError):
                 workflows._reuse_candidate(root, plan)
 
     def test_cli_save_show_and_list(self):

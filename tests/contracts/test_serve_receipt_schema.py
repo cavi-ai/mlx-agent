@@ -43,6 +43,12 @@ class ServeReceiptSchemaTests(unittest.TestCase):
         schema = json.loads((ROOT / "schemas/serve-receipt.schema.json").read_text())
         return Draft202012Validator(schema, format_checker=FormatChecker())
 
+    def test_start_receipt_persists_observed_process_start(self):
+        with patch('mlx_agent.serve._pid_start', return_value='Mon Nov 14 10:00:00 2026'):
+            receipt = self.receipt()
+        self.assertEqual(receipt['process_started_at'], 'Mon Nov 14 10:00:00 2026')
+        self.assertTrue(self.validator().is_valid(receipt))
+
     def test_accelerated_start_receipt_matches_the_published_contract(self):
         receipt = self.receipt()
         validator = self.validator()

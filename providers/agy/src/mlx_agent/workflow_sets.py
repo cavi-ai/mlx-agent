@@ -170,12 +170,16 @@ def _reuse_candidate(root, plan):
     port = plan['port']
     receipt = _private_json(root / (str(port) + '.json'))
     config = _private_json(root / (str(port) + '.jit-config.json'))
-    state = _private_json(root / (str(port) + '.jit-state.json'))
+    try:
+        state = _private_json(root / (str(port) + '.jit-state.json'))
+    except FileNotFoundError:
+        state = None
     pid = receipt.get('pid')
     if type(pid) is not int or pid <= 0 or not _pid_alive(pid):
         raise ValueError('Service gateway identity is unavailable.')
     start, command = _pid_start(pid), _pid_command(pid)
-    if not start or not _argv_matches(receipt, command) or state.get('gateway_pid') != pid:
+    if (not start or receipt.get('process_started_at') != start or not _argv_matches(receipt, command)
+            or (state is not None and state.get('gateway_pid') != pid)):
         raise ValueError('Service gateway identity does not match its receipt and state.')
     if (receipt.get('kind') != SERVE_RECEIPT_KIND or receipt.get('schema_version') != SERVE_RECEIPT_SCHEMA_VERSION
             or receipt.get('preview_hash') != plan['preview_hash'] or receipt.get('port') != port

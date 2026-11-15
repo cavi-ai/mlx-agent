@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
 import unittest
 import mlx_agent
+from mlx_agent.cli import build_parser
 from datetime import date
 from pathlib import Path
 
@@ -164,15 +166,17 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn("docs/mlx-agent/source/pages/reference/evidence.md", self.readme)
 
     def test_readme_gives_native_setup_and_links_provider_guides(self):
-        commands = (
-            "git clone --depth 1 --branch main https://github.com/cavi-ai/mlx-agent.git",
-            "python3 scripts/mlx-agent inspect-host --json",
-            "python3 scripts/mlx-agent discover --limit 3 --json",
-            "python3 scripts/mlx-agent convert mesh --path /absolute/local/mesh-model --image /absolute/input/object.png --out /absolute/output/object.glb --json",
-        )
-        for command in commands:
-            with self.subTest(command=command):
-                self.assertIn(command, self.readme)
+        blocks = re.findall(r"```(?:bash|sh)\s*\n(.*?)\n```", self.readme, re.DOTALL)
+        examples = 0
+        for block in blocks:
+            for line in re.sub(r"\\\s*\n", " ", block).splitlines():
+                argv = shlex.split(line, comments=True)
+                if "scripts/mlx-agent" not in argv:
+                    continue
+                examples += 1
+                with self.subTest(command=line):
+                    build_parser().parse_args(argv[argv.index("scripts/mlx-agent") + 1:])
+        self.assertGreater(examples, 0, "README must include an mlx-agent CLI example")
         self.assertIn("docs/mlx-agent/source/pages/introduction/installation.md", self.readme)
         self.assertIn("docs/install/index.md", self.readme)
         for guide, provider in (("docs/install/index.md", "agentskills"), ("docs/install/openclaw.md", "openclaw")):

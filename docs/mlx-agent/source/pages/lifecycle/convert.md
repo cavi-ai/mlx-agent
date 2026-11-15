@@ -92,6 +92,8 @@ step `i` of every flow is conditioned on image `i` modulo the image count
 `--guide` takes a GLB whose triangles, centered with their largest extent
 spanning the unit cube, set the 32³ sparse structure in place of the sampled
 one; `stage_seconds` then reports `guide` instead of `sparse_structure`. The
+guided mesh is written in the guide's own frame (the unit cube scaled by that
+extent and moved to that center), so it overlaps the guide for baking. The
 result reports `views` and `guided`. Other models refuse both options.
 
 After the shape, the texture flow at the mesh's level (512, else 1024) samples a

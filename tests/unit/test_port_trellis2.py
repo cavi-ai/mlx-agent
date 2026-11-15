@@ -334,10 +334,17 @@ class Trellis2NativeTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             path = Path(directory) / 'box.glb'
             write_glb(path, corners, faces)
-            cells = {tuple(cell) for cell in guide.surface_coords(path, 32).tolist()}
+            coords, center, extent = guide.surface_coords(path, 32)
+            # A unit-cube mesh written as the generator does lands back on the guide's own corners.
+            generated = Path(directory) / 'generated.glb'
+            write_glb(generated, (corners - center) / extent, faces)
+            guide.place(generated, center, extent)
+            placed, _ = guide.read(generated)
         shell = {(x, y, z) for x in range(11, 21) for y in range(7, 25) for z in range(32)
                  if x in (11, 20) or y in (7, 24) or z in (0, 31)}
-        self.assertEqual(cells, shell)
+        self.assertEqual({tuple(cell) for cell in coords.tolist()}, shell)
+        self.assertEqual((center.tolist(), extent), ([0.0, 2.0, 0.0], 4.0))
+        np.testing.assert_allclose(placed, corners, atol=1e-6)
 
     def test_pixel_shuffle_moves_channel_blocks_to_voxel_offsets(self):
         import mlx.core as mx

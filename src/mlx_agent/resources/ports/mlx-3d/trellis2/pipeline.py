@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image
 
 from . import closed, components, dinov3, dual_grid, flow, sparse, structure
-from .guide import surface_coords
+from .guide import place, surface_coords
 from ..triposg.geometry import decimate, write_glb
 from ..triposg.weights import Weights
 
@@ -190,7 +190,7 @@ def generate(model, image, out, steps=12, seed=42, resolution=1024, guidance=7.5
                                   latent.reshape(1, grid, grid, grid, -1))
         coords = structure.occupied(logits, LOW_RESOLUTION // 16)
     else:
-        coords = surface_coords(guide, LOW_RESOLUTION // 16)
+        coords, guide_center, guide_extent = surface_coords(guide, LOW_RESOLUTION // 16)
     previous, cursor = cursor, time.perf_counter()
     stages["sparse_structure" if guide is None else "guide"] = cursor - previous
 
@@ -255,6 +255,9 @@ def generate(model, image, out, steps=12, seed=42, resolution=1024, guidance=7.5
         colors = srgb_to_linear(voxel_colors(upright, voxels, attributes[:, :3], level_resolution))
     write_glb(out, vertices, faces, colors)
     stages["export"] = time.perf_counter() - cursor
+    if guide is not None:
+        # The guided mesh replaces the guide in place, ready to bake onto it.
+        place(out, guide_center, guide_extent)
     return {"path": str(out), "seconds": round(time.perf_counter() - started, 3), "steps": steps,
             "views": len(pictures), "guided": guide is not None,
             "seed": seed, "resolution": level_resolution, "vertices": len(vertices), "faces": len(faces),

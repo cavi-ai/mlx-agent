@@ -1,6 +1,7 @@
 """Surface voxels of a guide mesh, used in place of the sampled sparse structure."""
 
 import json
+import os
 import struct
 from pathlib import Path
 
@@ -119,7 +120,8 @@ def _cells(corners, level, resolution):
 
 def surface_coords(path, resolution):
     """Integer (x, y, z) voxels at ``resolution`` that the guide's surface passes through, after centering the guide
-    in the unit cube with its largest extent spanning it; TRELLIS axes are z-up with the glTF front facing -y."""
+    in the unit cube with its largest extent spanning it; TRELLIS axes are z-up with the glTF front facing -y.
+    Also returns the glTF-axes center and the extent that map the unit cube back onto the guide."""
     vertices, faces = read(path)
     upright = np.stack([vertices[:, 0], -vertices[:, 2], vertices[:, 1]], axis=1)
     used = upright[np.unique(faces)]
@@ -127,11 +129,38 @@ def surface_coords(path, resolution):
     extent = float((high - low).max())
     if not extent > 0:
         raise ValueError("The guide mesh has no extent.")
-    corners = ((upright - (low + high) / 2) / extent)[faces]
+    center = (low + high) / 2
+    corners = ((upright - center) / extent)[faces]
     # Samples at most half a cell apart along each edge reach every voxel the triangle crosses.
     edges = np.linalg.norm(corners - corners[:, [1, 2, 0]], axis=2).max(axis=1)
     levels = np.maximum(np.ceil(edges * 2 * resolution), 1).astype(np.int64)
     found = []
     for level in np.unique(levels):
         found.extend(_cells(corners[levels == level], int(level), resolution))
-    return np.unique(np.concatenate(found), axis=0).astype(np.int32)
+    coords = np.unique(np.concatenate(found), axis=0).astype(np.int32)
+    return coords, np.array([center[0], center[2], -center[1]]), extent
+
+
+def place(path, center, extent):
+    """Rewrite a generated unit-cube GLB's positions as ``position * extent + center``, the guide's frame."""
+    document, binary = _chunks(path)
+    binary = bytearray(binary)
+    accessor = document["accessors"][document["meshes"][0]["primitives"][0]["attributes"]["POSITION"]]
+    view = document["bufferViews"][accessor["bufferView"]]
+    if view.get("byteStride", 12) != 12 or accessor["componentType"] != 5126:
+        raise ValueError("Generated positions must be packed float32 triples.")
+    start = view.get("byteOffset", 0) + accessor.get("byteOffset", 0)
+    positions = np.frombuffer(bytes(binary), dtype="<f4", count=accessor["count"] * 3, offset=start)
+    placed = (positions.reshape(-1, 3).astype(np.float64) * extent + center).astype("<f4")
+    binary[start:start + placed.nbytes] = placed.tobytes()
+    accessor["min"], accessor["max"] = placed.min(axis=0).tolist(), placed.max(axis=0).tolist()
+    encoded = json.dumps(document, separators=(",", ":")).encode()
+    encoded += b" " * (-len(encoded) % 4)
+    temporary = Path(str(path) + ".placing")
+    with open(temporary, "xb") as stream:
+        stream.write(struct.pack("<III", 0x46546C67, 2, 28 + len(encoded) + len(binary)))
+        stream.write(struct.pack("<II", len(encoded), 0x4E4F534A))
+        stream.write(encoded)
+        stream.write(struct.pack("<II", len(binary), 0x004E4942))
+        stream.write(binary)
+    os.replace(temporary, path)

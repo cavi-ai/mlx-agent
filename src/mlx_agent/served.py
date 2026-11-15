@@ -1,6 +1,7 @@
 """Run a convert verb on a typed endpoint that already serves the same model, so the model loads once."""
 
 import hashlib
+import http.client
 import json
 import os
 import time
@@ -24,6 +25,14 @@ VERBS = {
 REMEDIATION = {
     "model_busy": "The served model is running another job; wait for it to finish and retry.",
 }
+
+
+def execution_limit(kind):
+    """Seconds an endpoint lets one job of this kind run: its backend runner's default timeout."""
+    from . import describe, generate, music, speak, video
+    modules = {"speak": speak, "music_generation": music, "image_generation": generate,
+               "video_generation": video, "image_understanding": describe, "video_understanding": describe}
+    return modules[kind].DEFAULT_TIMEOUT_SECONDS
 
 
 def request(verb, arguments):
@@ -112,21 +121,39 @@ def _json(port, key, method, path, body=None):
 def _download(port, key, identifier, out, reference):
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     digest, size = hashlib.sha256(), 0
-    with _open(port, key, "GET", "/v1/tasks/{0}/artifacts/output".format(identifier), timeout=120) as response, \
-            os.fdopen(os.open(out, flags, 0o644), "wb") as target:
-        for chunk in iter(lambda: response.read(65536), b""):
-            digest.update(chunk)
-            size += len(chunk)
-            target.write(chunk)
-    if size != reference.get("bytes") or digest.hexdigest() != reference.get("sha256"):
-        Path(out).unlink()
-        raise InferenceError("artifact_changed", "The served output does not match its recorded digest.",
-                             "Run the job again.")
+    with _open(port, key, "GET", "/v1/tasks/{0}/artifacts/output".format(identifier), timeout=120) as response:
+        descriptor = os.open(out, flags, 0o644)
+        # out is new; every unsuccessful exit removes it.
+        try:
+            with os.fdopen(descriptor, "wb") as target:
+                for chunk in iter(lambda: response.read(65536), b""):
+                    digest.update(chunk)
+                    size += len(chunk)
+                    target.write(chunk)
+            if size != reference.get("bytes") or digest.hexdigest() != reference.get("sha256"):
+                raise InferenceError("artifact_changed", "The served output does not match its recorded digest.",
+                                     "Run the job again.")
+        except (OSError, http.client.HTTPException) as error:
+            Path(out).unlink(missing_ok=True)
+            raise InferenceError("artifact_incomplete",
+                                 "The served output stopped after {0} bytes: {1}".format(size, error),
+                                 "Run the job again.") from None
+        except BaseException:
+            Path(out).unlink(missing_ok=True)
+            raise
 
 
 def run(service, kind, parameters, out, timeout, clock=time.monotonic, sleep=time.sleep):
     """Submit one job to the endpoint, wait for it, and write its output artifact to out."""
     port = service["port"]
+    limit = execution_limit(kind)
+    if timeout > limit:
+        raise InferenceError(
+            "served_timeout_limit",
+            "The model is served on port {0}, which stops {1} jobs after {2} s; --timeout is {3} s.".format(
+                port, kind, limit, timeout),
+            "Use --timeout {0} or less, or stop that endpoint before running the model locally.".format(limit),
+        )
     key = _key(service)
     deadline = clock() + timeout
     record = _json(port, key, "POST", "/v1/tasks", {"kind": kind, "parameters": parameters})

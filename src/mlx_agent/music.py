@@ -13,6 +13,7 @@ MUSIC_RUNNER = Path(__file__).with_name("music_runner.py")
 ACESTEP_RUNNER = Path(__file__).with_name("acestep_runner.py")
 MAX_STEPS = 64
 STEP_LIMITS = {"mlx-audio": 30}
+DEFAULT_TIMEOUT_SECONDS = 3600
 # ACE-Step 1.5 loads its VAE and text encoder from folders beside the DiT checkpoint.
 ACESTEP_SIBLINGS = ("vae", "Qwen3-Embedding-0.6B")
 ACESTEP_PLANNER = "acestep-5Hz-lm-1.7B"
@@ -135,7 +136,7 @@ CONTRACT = RunnerContract(
 )
 
 
-def run_music(plan, manifests=None, root=None, timeout=3600, runner=subprocess.run):
+def run_music(plan, manifests=None, root=None, timeout=DEFAULT_TIMEOUT_SECONDS, runner=subprocess.run):
     result = invoke(plan, CONTRACT, manifests, root, timeout, runner)
     keys = ("path", "sample_rate", "audio_seconds", "seconds", "load_seconds", "real_time_factor", "peak_memory_gb")
     settings = {key: plan[key] for key in ("bpm", "time_signature", "reference", "planner", "shift", "guidance") if key in plan}

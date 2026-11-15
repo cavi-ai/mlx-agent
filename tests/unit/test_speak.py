@@ -2,6 +2,8 @@ import hashlib
 import io
 import json
 import os
+import socket
+import struct
 import subprocess
 import threading
 import unittest
@@ -225,7 +227,7 @@ class SpeakTests(unittest.TestCase):
     def test_cli_speaks_on_the_endpoint_that_already_serves_the_model(self):
         model = self.model()
         wav, key = b"RIFF" + bytes(60), "k" * 40
-        state, requests = {"busy": False}, []
+        state, requests = {"busy": False, "reset": False}, []
 
         class Endpoint(BaseHTTPRequestHandler):
             def log_message(self, *args):
@@ -252,6 +254,16 @@ class SpeakTests(unittest.TestCase):
                 elif self.path == "/v1/tasks/job-1/result":
                     reference = {"bytes": len(wav), "sha256": hashlib.sha256(wav).hexdigest()}
                     self.answer(200, {"result": dict(RESULT, path="/endpoint/output.wav", output_artifact=reference)})
+                elif self.path == "/v1/tasks/job-1/artifacts/output" and state["reset"]:
+                    # The connection drops after the first bytes of the artifact.
+                    self.send_response(200)
+                    self.send_header("Content-Length", str(len(wav)))
+                    self.end_headers()
+                    self.wfile.write(wav[:20])
+                    self.wfile.flush()
+                    self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+                    self.connection.close()
+                    self.close_connection = True
                 elif self.path == "/v1/tasks/job-1/artifacts/output":
                     self.answer(200, wav, "audio/wav")
                 else:
@@ -294,6 +306,25 @@ class SpeakTests(unittest.TestCase):
                 code = cli.main(argv[:argv.index("--out") + 1] + [busy_out] + argv[argv.index("--out") + 2:])
             self.assertEqual((code, json.loads(buffer.getvalue())["error"]["code"]), (2, "model_busy"))
             self.assertFalse(Path(busy_out).exists())
+
+            # The endpoint stops speech jobs after run_speak's 600 s; a longer --timeout is refused before submission.
+            state["busy"] = False
+            long_out = str(self.root / "long.wav")
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = cli.main(argv[:argv.index("--out") + 1] + [long_out] + argv[argv.index("--out") + 2:]
+                                + ["--timeout", "700"])
+            self.assertEqual((code, json.loads(buffer.getvalue())["error"]["code"]), (2, "served_timeout_limit"))
+            self.assertEqual(len(requests), 2)
+            self.assertFalse(Path(long_out).exists())
+
+            state["reset"] = True
+            cut_out = str(self.root / "cut.wav")
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = cli.main(argv[:argv.index("--out") + 1] + [cut_out] + argv[argv.index("--out") + 2:])
+            self.assertFalse(Path(cut_out).exists())
+            self.assertEqual((code, json.loads(buffer.getvalue())["error"]["code"]), (2, "artifact_incomplete"))
 
 
 if __name__ == "__main__":

@@ -5,9 +5,9 @@ Spawned by ``mlx_agent.convert`` with an absolute path, so it must import
 nothing from :mod:`mlx_agent`. Two bounded steps, in order:
 
 1. dequantize the GGUF back to Hugging Face weights with ``transformers``;
-2. quantize those weights into MLX with the ``mlx_lm.convert`` executable.
+2. write quantized or floating MLX weights with the ``mlx_lm.convert`` executable.
 
-The intermediate fp16 checkpoint is large and temporary; it is removed unless
+The intermediate checkpoint is large and temporary; it is removed unless
 ``--keep-intermediate`` is passed. ``--port`` instead hands the GGUF to a
 bundled port that maps its tensors straight into MLX shards, for architectures
 ``transformers`` cannot load (llama.cpp's DSpark drafters, Qwen3.5). The worker writes a
@@ -75,8 +75,8 @@ PORT_REQUIRED_MODULES = ("gguf", "mlx")
 PORTS_DIR = Path(__file__).resolve().parent / "resources" / "ports"
 # --port name to its converter under resources/ports/<backend>/<name>/convert.py.
 GGUF_PORTS = {"deepseek_v4_dspark": "mlx-lm", "qwen35": "mlx-vlm"}
-Q_BITS = (4, 5, 6, 8)
-PORT_Q_BITS = (4, 8)
+Q_BITS = (2, 3, 4, 5, 6, 8, 16, 32)
+PORT_Q_BITS = {"qwen35": Q_BITS, "deepseek_v4_dspark": (2, 3, 4, 5, 6, 8)}
 SHARD_BYTES = 5 << 30
 
 
@@ -104,14 +104,18 @@ def _missing_modules(names=REQUIRED_MODULES):
     return missing
 
 
-def dequantize(gguf_path, work_dir):
+def dequantize(gguf_path, work_dir, q_bits=4):
     """Materialize Hugging Face weights from a GGUF file."""
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     directory = str(gguf_path.parent)
     filename = gguf_path.name
     _log("dequantizing {0}".format(filename))
-    model = AutoModelForCausalLM.from_pretrained(directory, gguf_file=filename)
+    if q_bits == 32:
+        import torch
+        model = AutoModelForCausalLM.from_pretrained(directory, gguf_file=filename, torch_dtype=torch.float32)
+    else:
+        model = AutoModelForCausalLM.from_pretrained(directory, gguf_file=filename)
     model.save_pretrained(str(work_dir))
     del model
     tokenizer = AutoTokenizer.from_pretrained(directory, gguf_file=filename)
@@ -130,9 +134,9 @@ def quantize(work_dir, out_dir, q_bits):
         executable,
         "--hf-path", str(work_dir),
         "--mlx-path", str(out_dir),
-        "-q",
-        "--q-bits", str(q_bits),
     ]
+    argv += (["--dtype", "float%d" % q_bits, "--dequantize"] if q_bits in (16, 32)
+             else ["-q", "--q-bits", str(q_bits)])
     _log("running {0}".format(" ".join(argv)))
     completed = subprocess.run(argv, stdin=subprocess.DEVNULL, check=False)
     if completed.returncode != 0:
@@ -241,8 +245,8 @@ def main(argv=None):
     if projector is not None and (arguments.port is None or not projector.is_file()):
         _log("--projector needs --port and an existing file: {0}".format(projector))
         return 2
-    if arguments.port and arguments.q_bits not in PORT_Q_BITS:
-        _log("--port converts at {0} bits only".format(" or ".join(str(bits) for bits in PORT_Q_BITS)))
+    if arguments.port and arguments.q_bits not in PORT_Q_BITS[arguments.port]:
+        _log("--port converts at {0} bits only".format(" or ".join(str(bits) for bits in PORT_Q_BITS[arguments.port])))
         return 2
     if out_dir.exists():
         _log("output already exists: {0}".format(out_dir))
@@ -275,7 +279,7 @@ def main(argv=None):
         return 2
     work_dir.mkdir(parents=True)
     try:
-        dequantize(gguf_path, work_dir)
+        dequantize(gguf_path, work_dir, arguments.q_bits)
         quantize(work_dir, out_dir, arguments.q_bits)
         write_provenance(
             out_dir, gguf_path, arguments.q_bits,

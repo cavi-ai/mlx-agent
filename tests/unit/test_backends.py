@@ -420,9 +420,9 @@ class ClassificationPortTests(unittest.TestCase):
             {"port_signatures": {"other": ["config.json"]}}, {"port_signatures": {"laya": ["/abs.json"]}},
             {"port_quantize": {"laya": {"include": ["encoder."], "group_size": 48}}},
             {"port_quantize": {"laya": {"include": ["encoder."], "group_size": True}}},
-            {"port_bits": {"laya": []}}, {"port_bits": {"laya": [16]}}, {"port_bits": {"other": [8]}},
+            {"port_bits": {"laya": []}}, {"port_bits": {"laya": [7]}}, {"port_bits": {"other": [8]}},
             {"port_bits": {"laya": [True]}}, {"port_bits": {"laya": [6, 6]}},
-            {"q_bits": []}, {"q_bits": [3]}, {"q_bits": [32]}, {"q_bits": [4, True]}, {"q_bits": "4"},
+            {"q_bits": []}, {"q_bits": [7]}, {"q_bits": [32]}, {"q_bits": [4, True]}, {"q_bits": "4"},
         ]
         for fields in bad:
             with self.subTest(fields=fields):
@@ -433,7 +433,7 @@ class ClassificationPortTests(unittest.TestCase):
     def test_conversion_widths_come_from_the_port_then_the_converter_then_every_width(self):
         self.assertEqual(conversion_bits("laya", "mlx-embeddings", self.manifests), [6, 8])
         self.assertEqual(conversion_bits("wan", "mlx-video", self.manifests), [4, 8])
-        self.assertEqual(conversion_bits("qwen2", "mlx-lm", self.manifests), [4, 5, 6, 8])
+        self.assertEqual(conversion_bits("qwen2", "mlx-lm", self.manifests), [2, 3, 4, 5, 6, 8, 16, 32])
         self.assertEqual(conversion_bits("qwen2_vl", "mlx-vlm", self.manifests), [4, 5, 6, 8])
         self.assertEqual(conversion_bits("triposg", "mlx-3d", self.manifests), [8, 32])
 

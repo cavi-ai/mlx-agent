@@ -167,6 +167,15 @@ class ConvertQueueTests(unittest.TestCase):
         payload = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(payload["schema_version"], "1.2")
 
+    def test_float_precision_survives_queue_store_round_trip(self):
+        store = convert_queue.QueueStore(self.root / "float-queue.json")
+        items = [{"id": "cq-%d" % bits, "kind": "repo", "preview_hash": "a" * 64,
+            "q_bits": bits, "out": "/out-%d" % bits, "path": None, "repo": "org/model",
+            "hf_cache": None, "label": "model", "state": "queued", "failure": None,
+            "require_completion": True} for bits in (16, 32)]
+        store.save(items)
+        self.assertEqual(store.load(), items)
+
     def test_store_migrates_schema_1_0_items_in_memory(self):
         path = self.root / "legacy" / "convert-queue.json"
         path.parent.mkdir(parents=True)
@@ -279,7 +288,7 @@ class ConvertQueueTests(unittest.TestCase):
             "state": "queued",
         }
         both_sources = dict(valid_item, repo="org/model")
-        unsupported_quantization = dict(valid_item, q_bits=3)
+        unsupported_quantization = dict(valid_item, q_bits=7)
         cases = [
             ("schema", {"schema_version": "2.0", "items": [valid_item]}),
             ("sources", {"schema_version": "1.0", "items": [both_sources]}),
@@ -588,6 +597,29 @@ class ConvertQueueTests(unittest.TestCase):
             convert_queue.QueueStore(state_path).load()[0]["state"],
             "queued",
         )
+
+    def test_float_repo_queue_persists_completion_attempt_and_matches_receipt(self):
+        for bits in (16, 32):
+            with self.subTest(bits=bits):
+                path = self.root / ("queue-%d.json" % bits)
+                queue = convert_queue.ConvertQueue(path=path)
+                queued = queue.enqueue("repo", "a" * 64, bits, repo="org/model", out="/out")
+                self.assertTrue(queued["require_completion"])
+                seen = []
+                def runner(command, timeout):
+                    if "status" in command:
+                        return {"returncode": 0, "stdout": envelope(data={"jobs": []}), "stderr": ""}
+                    starting = convert_queue.QueueStore(path).load()[0]
+                    seen.append(starting)
+                    self.assertIn("--require-completion", command)
+                    self.assertIn("--attempt-id", command)
+                    receipt = {"preview_hash": starting["preview_hash"], "out": "/out", "q_bits": bits,
+                        "require_completion": True, "attempt_id": starting["attempt_id"],
+                        "source": {"kind": "hf-cache", "repo": "org/model"}}
+                    self.assertTrue(convert_queue.ConvertQueue._receipt_matches(starting, receipt))
+                    return {"returncode": 0, "stdout": envelope(data={"status": "started", "receipt": receipt}), "stderr": ""}
+                self.assertEqual(queue.try_start_next(str(self.root), runner=runner)["status"], "started")
+                self.assertEqual(len(seen), 1)
 
     def test_restored_starting_item_with_matching_receipt_is_recovered(self):
         state_path = self.root / "recover" / "convert-queue.json"

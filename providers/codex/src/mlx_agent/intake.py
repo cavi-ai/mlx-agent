@@ -9,7 +9,7 @@ import math
 import re
 
 from .backends import (
-    QUANTIZED_BITS, choose_backend, component_matches, conversion_bits, load_manifests, load_registries, lookup,
+    CONVERSION_BITS, choose_backend, component_matches, conversion_bits, load_manifests, load_registries, lookup,
     port_downloads, port_files, port_for_files, port_for_pipeline, port_requirements, quantize_rule, recipe_for,
     snapshot_files,
 )
@@ -21,7 +21,7 @@ from .taxonomy import classify
 INTAKE_SCHEMA = "intake/1"
 TRANSPORT_ERRORS = (OSError, TimeoutError, http.client.HTTPException, ValueError)
 _BLOCKING_STATUSES = (401, 403, 404, 410)
-ESTIMATE_BITS = QUANTIZED_BITS
+ESTIMATE_BITS = CONVERSION_BITS
 ESTIMATE_MAX_SHARDS = 16
 QUANT_GROUP_SIZE = 64
 _DTYPE_BYTES = {
@@ -127,8 +127,13 @@ def estimate_output_bytes(client, repo, revision, files, rule, warnings, support
                 warnings.append("output size estimate unavailable: {0} has an unreadable tensor {1}".format(shard, name))
                 return None
             count = math.prod(shape)
+            if _quantizes(name, shape, rule) and not tensor.get("dtype", "").startswith(("F", "BF")):
+                warnings.append("output size estimate unavailable: packed weight dimensions do not describe logical parameters")
+                return None
             for bits in totals:
-                if _quantizes(name, shape, rule):
+                if bits in (16, 32):
+                    totals[bits] += count * (bits // 8 if tensor.get("dtype", "").startswith(("F", "BF")) else width)
+                elif _quantizes(name, shape, rule):
                     totals[bits] += -(-count * bits // 8) + (count // _group_size(rule)) * 2 * width
                 else:
                     totals[bits] += count * width
@@ -402,10 +407,16 @@ def resolve(text, revision=None, client=None, manifests=None, registries=None):
         payload["q_bits"] = conversion_bits(payload["model_type"], backend, manifests)
     # A recipe's weights come from its base repository and a pipeline's from component folders,
     # whose quantization the header estimate does not model: no estimate rather than a wrong one.
-    if verdict in ("convertible", "convertible_after_install") and not recipe and not pipeline:
+    packed_config = bool(config.get("quantization") or config.get("quantization_config"))
+    if verdict in ("convertible", "convertible_after_install") and not recipe and not pipeline and not packed_config:
         payload["estimated_output_bytes"] = estimate_output_bytes(
             client, source["repo"], source["revision"], files,
             quantize_rule(payload["model_type"], backend, manifests), payload["warnings"],
             support_files=port_files(payload["model_type"], backend, manifests), prefix=prefix,
         )
+        estimates = payload["estimated_output_bytes"]
+        if estimates is not None:
+            can_estimate_float = backend == "mlx-lm" and not config.get("quantization")
+            payload["estimated_output_bytes"] = {key: value for key, value in estimates.items()
+                if int(key) in payload["q_bits"] and (int(key) not in (16, 32) or can_estimate_float)}
     return payload

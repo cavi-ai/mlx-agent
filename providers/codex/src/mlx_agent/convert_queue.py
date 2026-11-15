@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import queue_bridge as bridge
 from .atomicio import write_text_atomic
-from .backends import QUANTIZED_BITS
+from .backends import CONVERSION_BITS
 
 
 QUEUE_SCHEMA_VERSION = "1.2"
@@ -111,7 +111,7 @@ def _validate_item(item, legacy=False):
         raise ValueError("queue item kind is invalid")
     if not isinstance(item["preview_hash"], str) or not item["preview_hash"]:
         raise ValueError("queue item preview_hash is invalid")
-    if isinstance(item["q_bits"], bool) or item["q_bits"] not in QUANTIZED_BITS + (32,):
+    if isinstance(item["q_bits"], bool) or item["q_bits"] not in CONVERSION_BITS:
         raise ValueError("queue item q_bits is invalid")
     for field in ("out", "path", "repo", "hf_cache"):
         if not _optional_string(item[field]):
@@ -285,6 +285,8 @@ class ConvertQueue:
             "state": "queued",
             "failure": None,
         }
+        if q_bits in (2, 3, 16, 32):
+            require_completion = True
         additions = dict(backend=backend, model_type=model_type, subfolder=subfolder, source_path=source_path,
                          projector=projector, require_projector=require_projector, fetch_receipt=fetch_receipt,
                          dependency_fetch_receipts=dependency_fetch_receipts, require_completion=require_completion, downloads_dir=downloads_dir)

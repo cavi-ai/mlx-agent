@@ -1934,7 +1934,7 @@ def _run_backend(arguments):
 
 
 def _add_convert_arguments(parser):
-    from .convert import Q_BITS_CHOICES, UNQUANTIZED_BITS
+    from .convert import Q_BITS_CHOICES, FLOAT_BITS
     actions = parser.add_subparsers(dest="convert_command", required=True)
     start = actions.add_parser(
         "start",
@@ -1952,7 +1952,7 @@ def _add_convert_arguments(parser):
         help="model_type from intake resolve; selects a port's own converter when it ships one",
     )
     start.add_argument("--subfolder", default=None, help="checkpoint folder inside the repository (converts from the cache)")
-    start.add_argument("--q-bits", type=int, default=4, choices=Q_BITS_CHOICES + (UNQUANTIZED_BITS,))
+    start.add_argument("--q-bits", type=int, default=4, choices=Q_BITS_CHOICES + FLOAT_BITS)
     start.add_argument("--out", default=None, help="output directory (default <model>-MLX-<bits>bit)")
     start.add_argument("--confirm", action="store_true", help="authorize this reviewed conversion")
     start.add_argument("--preview-hash", help="hash returned by the separately reviewed convert preview")

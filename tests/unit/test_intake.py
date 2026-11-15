@@ -182,7 +182,7 @@ class ResolveTests(unittest.TestCase):
 
     def test_audio8_estimate_counts_only_the_ported_decoder_as_quantized(self):
         payload = golden_audio8()
-        self.assertEqual(payload["estimated_output_bytes"], {"4": 3748321085, "5": 4134033213, "6": 4519745341, "8": 5291169597})
+        self.assertEqual(payload["estimated_output_bytes"], {"4": 3748321085, "8": 5291169597})
         self.assertEqual(payload["q_bits"], [4, 8])
 
     def test_a_configless_repo_matching_a_port_signature_converts_through_that_port(self):
@@ -248,7 +248,7 @@ class ResolveTests(unittest.TestCase):
 
     def test_laya_estimate_uses_the_port_group_size_and_its_signature_files(self):
         _, payload = golden_laya()
-        self.assertEqual(payload["estimated_output_bytes"], {"4": 339744590, "5": 385783630, "6": 431822670, "8": 523900750})
+        self.assertEqual(payload["estimated_output_bytes"], {"6": 431822670, "8": 523900750})
 
     def test_download_bytes_count_what_a_snapshot_fetch_takes(self):
         _, laya = golden_laya()
@@ -271,7 +271,7 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual(client.header_requests, ["multilingual/model.safetensors"])
         self.assertEqual(payload["bytes"], payload["download_bytes"])
         self.assertEqual(payload["download_bytes"], 678201636)
-        self.assertEqual(payload["estimated_output_bytes"], {"4": 507061436, "5": 522618044, "6": 538174652, "8": 569287868})
+        self.assertEqual(payload["estimated_output_bytes"], {"6": 538174652, "8": 569287868})
         self.assertEqual(payload["q_bits"], [6, 8])
         self.assertEqual(payload["files"]["python"], [])
 
@@ -284,7 +284,7 @@ class ResolveTests(unittest.TestCase):
         client = FakeClient(info=info, files={"chat/config.json": json.dumps({"model_type": "qwen2"})},
                             headers={"chat/model.safetensors": {}})
         payload = self.run_resolve(client, installed=("mlx-lm",), text="org/name/chat")
-        self.assertEqual((payload["model_type"], payload["verdict"], payload["q_bits"]), ("qwen2", "convertible", [4, 5, 6, 8]))
+        self.assertEqual((payload["model_type"], payload["verdict"], payload["q_bits"]), ("qwen2", "convertible", [2, 3, 4, 5, 6, 8, 16, 32]))
         self.assertEqual(client.raw_requests, ["chat/config.json"])
         self.assertEqual((payload["bytes"], payload["download_bytes"]), (3000, 2000))
 
@@ -324,6 +324,15 @@ class ResolveTests(unittest.TestCase):
         expected = json.loads((FIXTURES / "intake-resolve-laya.json").read_text(encoding="utf-8"))
         self.assertEqual(golden_laya()[1], expected)
 
+    def test_packed_quantization_config_does_not_estimate_logical_float_or_quantized_size(self):
+        info = repo_info(pipeline_tag="text-generation", files=("config.json", "model.safetensors"))
+        config = {"model_type": "qwen2", "quantization_config": {"bits": 4, "group_size": 64}}
+        header = {"layer.weight": {"dtype": "I32", "shape": [32, 16], "data_offsets": [0, 0]}}
+        client = FakeClient(info=info, files={"config.json": json.dumps(config)}, headers={"model.safetensors": header})
+        payload = self.run_resolve(client, installed=("mlx-lm",))
+        self.assertIsNone(payload["estimated_output_bytes"])
+        self.assertEqual(client.header_requests, [])
+
     def test_estimate_quantizes_matrix_weights_and_keeps_the_rest(self):
         header = {
             "__metadata__": {"format": "pt"},
@@ -336,8 +345,10 @@ class ResolveTests(unittest.TestCase):
         client = FakeClient(info=info, files={"config.json": json.dumps({"model_type": "qwen2"})}, headers={"model.safetensors": header})
         payload = self.run_resolve(client, installed=("mlx-lm",))
         kept = 128 * 2 + 64 * 2 + 300 * 4
-        quantized = {bits: 8192 * bits // 8 + 128 * 2 * 2 for bits in (4, 5, 6, 8)}
-        self.assertEqual(payload["estimated_output_bytes"], {str(bits): quantized[bits] + kept + 2000 for bits in (4, 5, 6, 8)})
+        quantized = {bits: 8192 * bits // 8 + 128 * 2 * 2 for bits in (2, 3, 4, 5, 6, 8)}
+        expected = {str(bits): quantized[bits] + kept + 2000 for bits in quantized}
+        expected.update({"16": (8192 + 128 + 64 + 300) * 2 + 2000, "32": (8192 + 128 + 64 + 300) * 4 + 2000})
+        self.assertEqual(payload["estimated_output_bytes"], expected)
         self.assertEqual(client.header_requests, ["model.safetensors"])
 
     def test_estimate_survives_a_nested_pth_checkpoint_beside_root_safetensors_shards(self):
@@ -353,8 +364,10 @@ class ResolveTests(unittest.TestCase):
         client = FakeClient(info=info, files={"config.json": json.dumps({"model_type": "llama"})},
                             headers={shard: header for shard in shards})
         payload = self.run_resolve(client, installed=("mlx-lm",))
-        quantized = {bits: 8192 * bits // 8 + 128 * 2 * 2 for bits in (4, 5, 6, 8)}
-        self.assertEqual(payload["estimated_output_bytes"], {str(bits): quantized[bits] * 2 + 2000 for bits in (4, 5, 6, 8)})
+        quantized = {bits: 8192 * bits // 8 + 128 * 2 * 2 for bits in (2, 3, 4, 5, 6, 8)}
+        expected = {str(bits): quantized[bits] * 2 + 2000 for bits in quantized}
+        expected.update({"16": 8192 * 2 * 2 + 2000, "32": 8192 * 4 * 2 + 2000})
+        self.assertEqual(payload["estimated_output_bytes"], expected)
         self.assertEqual(client.header_requests, list(shards))
 
     def test_estimate_is_null_when_a_header_is_unreadable_or_the_verdict_is_not_a_conversion(self):

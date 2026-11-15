@@ -95,6 +95,16 @@ class ReadHeaderTests(unittest.TestCase):
         self.assertEqual(header["metadata"]["general.name"], "Test Model")
         self.assertEqual(header["metadata"]["llama.block_count"], 32)
 
+    def test_qwen35_and_dspark_advertise_their_distinct_output_widths(self):
+        from mlx_agent.gguf import conversion_bits
+        self.assertEqual(conversion_bits({"readable": True, "port": "qwen35"}), [2, 3, 4, 5, 6, 8, 16, 32])
+        self.assertEqual(conversion_bits({"readable": True, "draft": {"port": "deepseek_v4_dspark"}}), [2, 3, 4, 5, 6, 8])
+
+    def test_optional_backend_unquantized_marker_is_not_labeled_fp32(self):
+        output = write_mlx_output(self.root / "media", quantization=False,
+            provenance={"tool": "mlx-agent.convert", "q_bits": 32, "backend": "mlx-3d", "source": {"kind": "hf-cache"}})
+        self.assertEqual(scan_mlx_outputs([self.root])[0]["precision"], "Unquantized")
+
     def test_projector_identity_preserves_base_label_without_claiming_parameter_count(self):
         path = write_gguf(self.root / "sidecar.gguf", architecture="unknown", extra=(
             _kv("general.type", _STRING, "mmproj"),
@@ -199,10 +209,10 @@ class DescribeTests(unittest.TestCase):
     def test_entries_report_the_widths_they_convert_at(self):
         def bits(filename, **fields):
             return describe_gguf(write_gguf(self.root / filename, **fields))["q_bits"]
-        self.assertEqual(bits("plain.gguf", name="Plain"), [4, 5, 6, 8])
-        self.assertEqual(bits("Qwen3.5-9B-Q4_K_M.gguf", architecture="qwen35", name="Qwen3.5 9B"), [4, 8])
+        self.assertEqual(bits("plain.gguf", name="Plain"), [2, 3, 4, 5, 6, 8, 16, 32])
+        self.assertEqual(bits("Qwen3.5-9B-Q4_K_M.gguf", architecture="qwen35", name="Qwen3.5 9B"), [2, 3, 4, 5, 6, 8, 16, 32])
         self.assertEqual(bits("dspark.gguf", architecture="dflash", name="DeepSeek-V4-Flash-0731",
-                              extra=(_kv("dflash.hyper_connection.count", _UINT32, 4),)), [4, 8])
+                              extra=(_kv("dflash.hyper_connection.count", _UINT32, 4),)), [2, 3, 4, 5, 6, 8])
         self.assertEqual(bits("eagle3-Llama.gguf", architecture="eagle3", name="Llama 3.1 8B"), [])
         self.assertEqual(bits("mmproj-F32.gguf", architecture="clip", name="Base"), [])
         broken = self.root / "broken.gguf"

@@ -65,10 +65,19 @@ class GgufRunnerMainTests(unittest.TestCase):
         ported = self.root / "ported"
         log = io.StringIO()
         with redirect_stdout(log):
-            code = gguf_runner.main(["--gguf", str(self.gguf), "--out", str(ported), "--q-bits", "6", "--port", "qwen35"])
+            code = gguf_runner.main(["--gguf", str(self.gguf), "--out", str(ported), "--q-bits", "16", "--port", "deepseek_v4_dspark"])
         self.assertEqual(2, code)
-        self.assertIn("--port converts at 4 or 8 bits only", log.getvalue())
+        self.assertIn("--port converts at 2 or 3 or 4 or 5 or 6 or 8 bits only", log.getvalue())
         self.assertFalse(ported.exists())
+
+    def test_float_recipe_passes_explicit_dtype_and_dequantize(self):
+        for bits in (16, 32):
+            with self.subTest(bits=bits), patch.object(gguf_runner.shutil, "which", return_value="mlx_lm.convert"), \
+                    patch.object(gguf_runner.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+                gguf_runner.quantize(self.root, self.out, bits)
+                argv = run.call_args.args[0]
+                self.assertEqual(argv[-3:], ["--dtype", "float%d" % bits, "--dequantize"])
+                self.assertNotIn("-q", argv)
 
     def test_failures_return_one_and_intermediate_can_be_kept(self):
         code, log = self.main(quantize=RuntimeError("mlx_lm.convert exited 1"))

@@ -314,3 +314,5 @@ recovered starts.
 
 `serve discover` advertises `capabilities.model_update_preparation: true` when
 these bundle, provenance, queue and observed-completion contracts are supported.
+
+For supported MLX-LM and GGUF conversions, `--q-bits` accepts 2, 3, 4, 5, 6, 8, 16 or 32. Widths 16 and 32 select float16 and float32 storage without quantization. A converter can report fewer choices; DSpark keeps its MXFP4 experts and does not offer full-precision output. Other optional backends may use 32 to mean unquantized source precision. Floating storage cannot restore information lost from quantized source weights.

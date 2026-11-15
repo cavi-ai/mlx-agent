@@ -23,7 +23,10 @@ CATEGORIES = ("text_llm", "vision_language", "speech_to_text", "text_to_speech",
               "video_generation", "music_generation", "mesh_generation", "embedding")
 MAX_PROBE_FILES = 4000
 MAX_PROBE_FILE_BYTES = 1024 * 1024
-QUANTIZED_BITS = (4, 5, 6, 8)
+QUANTIZED_BITS = (2, 3, 4, 5, 6, 8)
+FLOAT_BITS = (16, 32)
+CONVERSION_BITS = QUANTIZED_BITS + FLOAT_BITS
+OPTIONAL_DEFAULT_BITS = (4, 5, 6, 8)
 UNQUANTIZED_BITS = 32  # full-precision weights; only ports that declare it in port_bits accept it
 TYPE_PREFERENCE = {
     "embedding": ("mlx-embeddings",),
@@ -127,11 +130,11 @@ def _validate_manifest(value, path):
             raise _invalid(path, "port_quantize group_size must be 32, 64, or 128")
     bits = value.get("port_bits", {})
     if not isinstance(bits, dict) or not set(bits) <= ported or not all(
-        _valid_widths(widths, QUANTIZED_BITS + (UNQUANTIZED_BITS,)) for widths in bits.values()
+        _valid_widths(widths, CONVERSION_BITS) for widths in bits.values()
     ):
-        raise _invalid(path, "port_bits map declared ports to the bit widths (4, 5, 6, 8, or 32 for unquantized) their conversions keep accurate")
+        raise _invalid(path, "port_bits map declared ports to supported conversion widths")
     if "q_bits" in value and not _valid_widths(value["q_bits"], QUANTIZED_BITS):
-        raise _invalid(path, "q_bits lists the bit widths (4, 5, 6 or 8) the backend's converter accepts")
+        raise _invalid(path, "q_bits lists the supported quantized widths the backend's converter accepts")
     converters = value.get("port_convert", {})
     if not isinstance(converters, dict) or not set(converters) <= ported or not all(
         isinstance(module, str) and _PORT.fullmatch(module) for module in converters.values()
@@ -266,7 +269,7 @@ def conversion_bits(model_type, backend_id, manifests):
     if widths:
         return widths
     declared = (manifests.get(backend_id) or {}).get("q_bits")
-    return sorted(declared) if declared else list(QUANTIZED_BITS)
+    return sorted(declared) if declared else list(CONVERSION_BITS if backend_id in (None, "mlx-lm") else OPTIONAL_DEFAULT_BITS)
 
 
 def port_files(model_type, backend_id, manifests):

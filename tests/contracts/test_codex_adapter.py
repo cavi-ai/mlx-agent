@@ -179,7 +179,10 @@ esac
             self.assertIn("$mlx-agent:mlx-scout", normalized)
             self.assertIn("$mlx-agent:mlx-adopt", normalized)
             self.assertIn("$mlx-agent:mlx-wire", normalized)
-            self.assertRegex(normalized, r"(?:does not support|not) custom slash commands")
+        self.assertRegex(" ".join(install_guide.split()), r"(?:does not support|not) custom slash commands")
+        codex_section = readme.split("## Start with Codex", 1)[1].split("<details>", 1)[0]
+        self.assertIn("$mlx-agent:mlx-task", codex_section)
+        self.assertNotRegex(codex_section, r"`/mlx-[^`]+`")
 
     def test_manifest_declares_codex_skills_not_unsupported_slash_commands(self):
         manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))

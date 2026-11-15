@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- TRELLIS.2 `convert mesh` writes roughness and metallic as `COLOR_1` (occlusion, roughness, metallic) and reports `pbr`.
 - Task endpoints read process groups and agent memory in-process instead of listing every host process with `ps`, so a warm job's lease and memory checks take milliseconds.
 - TRELLIS.2 loads only the components needed for each mesh resolution and retains them for later resident tasks.
 - TRELLIS.2 `convert mesh` writes a closed, outward-facing solid instead of the open decoded surface.

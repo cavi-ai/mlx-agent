@@ -463,7 +463,7 @@ cache_state = {'bytes': 12 * 1024**2, 'limit': 128 * 1024**2}
 def set_limit(value):
     old = cache_state['limit']; cache_state['limit'] = value; return old
 sys.modules['mlx.core'] = types.SimpleNamespace(
-    set_cache_limit=set_limit, get_cache_memory=lambda: cache_state['bytes'],
+    set_cache_limit=set_limit, set_memory_limit=lambda value: value, get_cache_memory=lambda: cache_state['bytes'],
     get_active_memory=lambda: 2 * 1024**2, get_peak_memory=lambda: 4 * 1024**2,
     synchronize=lambda: None, clear_cache=lambda: cache_state.update(bytes=0))
 original_predict = predict
@@ -494,6 +494,339 @@ def predict(*args):
         self.assertEqual(value['worker_memory']['cache_hits'], 1)
         self.assertIs(controller.resident.process, process)
         self.assertEqual(value['allocator_cache']['last_reclaim']['reason'], 'idle')
+
+    def test_admission_pressure_reclaims_once_and_rechecks_before_dispatch(self):
+        self.fake_allocator()
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        controller.configure({'cache_reclaim': 'pressure', 'minimum_headroom_gb': 1})
+        process = controller.resident.process
+        original = controller._reserve_workspace
+        calls = []
+        def admission(extra_bytes=0):
+            calls.append(controller.resident.telemetry['cache_bytes'])
+            if len(calls) == 1:
+                raise task_serving.GatewayError(503, 'insufficient_headroom', 'first admission')
+            return original(extra_bytes)
+        with patch.object(controller, 'unload_if_idle', return_value=False), \
+             patch.object(controller, '_reserve_workspace', side_effect=admission):
+            result = self.wait(self.start())
+        self.assertEqual(result['state'], 'succeeded', result)
+        self.assertEqual(calls, [12 * 1024**2, 0])
+        self.assertIs(controller.resident.process, process)
+        self.assertEqual(controller.worker_memory['loads'], 1)
+        self.assertEqual(controller.worker_memory['cache_hits'], 1)
+        self.assertEqual(controller.resident.cache_state['last_reclaim']['reason'], 'pressure')
+
+    def test_admission_pressure_second_failure_is_final(self):
+        self.fake_allocator()
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        controller.configure({'cache_reclaim': 'pressure', 'minimum_headroom_gb': 1})
+        process = controller.resident.process
+        calls = []
+        def admission(extra_bytes=0):
+            calls.append(controller.resident.telemetry['cache_bytes'])
+            raise task_serving.GatewayError(503, 'job_memory_cap_exceeded', 'fresh admission')
+        with patch.object(controller, 'unload_if_idle', return_value=False), \
+             patch.object(controller, '_reserve_workspace', side_effect=admission):
+            result = self.wait(self.start())
+        self.assertEqual(result['error']['code'], 'job_memory_cap_exceeded')
+        self.assertEqual(calls, [12 * 1024**2, 0])
+        self.assertIs(controller.resident.process, process)
+        self.assertEqual(controller.worker_memory['loads'], 1)
+
+    def test_admission_off_does_not_reclaim_or_retry(self):
+        self.fake_allocator()
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        process = controller.resident.process
+        with patch.object(controller, '_reserve_workspace', side_effect=task_serving.GatewayError(503, 'insufficient_headroom', 'first')) as admission:
+            result = self.wait(self.start())
+        self.assertEqual(result['error']['code'], 'insufficient_headroom')
+        self.assertEqual(admission.call_count, 1)
+        self.assertIs(controller.resident.process, process)
+        self.assertEqual(controller.worker_memory['cache_bytes'], 12 * 1024**2)
+
+    def test_pressure_reclaims_to_fit_shared_budget_admission(self):
+        import os
+        from mlx_agent.memory_budget import process_snapshot
+        self.fake_allocator()
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        controller.configure({'cache_reclaim':'pressure', 'minimum_headroom_gb':1})
+        controller.memory_probe = lambda: 100_000_000_000
+        process = controller.resident.process
+        def measured_processes():
+            rows = process_snapshot()
+            for pid, size in ((os.getpid(), 100_000_000),
+                              (process.pid, 2 * 1024**2 + controller.resident.telemetry['cache_bytes'])):
+                if pid in rows:
+                    rows[pid]['rss'] = rows[pid]['physical_bytes'] = size
+            return rows
+        controller.memory_registry.process_probe = measured_processes
+        controller.memory_registry.configure_budget(100_000_000_000, 0)
+        used = controller.memory_registry.snapshot()['agent_budget']['accounted_bytes']
+        controller.memory_registry.configure_budget(used + controller.workspace_bytes - 6 * 1024**2, 0)
+        with patch.object(controller, 'unload_if_idle', return_value=False):
+            result = self.wait(self.start())
+        self.assertEqual(result['state'], 'succeeded', result)
+        self.assertIs(controller.resident.process, process)
+        self.assertEqual(controller.resident.cache_state['last_reclaim']['reason'], 'pressure')
+        self.assertTrue(controller.memory_registry.snapshot()['agent_budget']['within_budget'])
+
+    def test_admission_shared_budget_refusal_rechecks_after_reclaim(self):
+        from mlx_agent.residency import MemoryAdmissionError
+        self.fake_allocator()
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        controller.configure({'cache_reclaim':'pressure', 'minimum_headroom_gb':1})
+        process = controller.resident.process
+        original = controller.memory_registry.reserve_execution
+        calls = []
+        def admit(*args, **kwargs):
+            calls.append(controller.resident.telemetry['cache_bytes'])
+            if len(calls)==1:
+                raise MemoryAdmissionError('agent_memory_budget_exceeded', 'budget')
+            return original(*args, **kwargs)
+        with patch.object(controller, 'unload_if_idle', return_value=False), \
+             patch.object(controller.memory_registry, 'reserve_execution', side_effect=admit):
+            result = self.wait(self.start())
+        self.assertEqual(result['state'], 'succeeded', result)
+        self.assertEqual(calls, [12 * 1024**2, 0])
+        self.assertIs(controller.resident.process, process)
+
+    def test_admission_settlement_contention_finishes_and_keeps_worker(self):
+        from mlx_agent.residency import MemoryAdmissionError
+        self.fake_allocator()
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        controller.configure({'cache_reclaim':'pressure', 'minimum_headroom_gb':1})
+        process = controller.resident.process
+        before = controller.memory_registry.inspect()['entries'][controller.memory_token]
+        with patch.object(controller, 'unload_if_idle', return_value=False), \
+             patch.object(controller, '_reserve_workspace', side_effect=task_serving.GatewayError(503, 'insufficient_headroom', 'first')), \
+             patch.object(controller, '_settle_task_memory', return_value=False), \
+             patch.object(controller.memory_registry, 'settle', side_effect=MemoryAdmissionError('memory_registry_busy', 'busy')):
+            result = self.wait(self.start())
+        self.assertEqual(result['state'], 'failed')
+        self.assertEqual(result['error']['code'], 'memory_registry_busy')
+        self.assertIs(controller.resident.process, process)
+        self.assertEqual(controller.active_requests, 0)
+        self.assertIn('Memory reservation remains pending', controller.status()['last_error'])
+        after = controller.memory_registry.inspect()['entries'][controller.memory_token]
+        self.assertEqual(after, before)
+
+    def test_cancel_after_admission_reclaim_preserves_worker(self):
+        import threading
+        self.fake_allocator()
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        controller.configure({'cache_reclaim':'pressure', 'minimum_headroom_gb':1})
+        process = controller.resident.process
+        entered, resume = threading.Event(), threading.Event()
+        control = controller.resident.control_cache
+        def reclaim(*args, **kwargs):
+            result = control(*args, **kwargs)
+            entered.set()
+            if not resume.wait(5):raise TimeoutError('cancel handshake')
+            return result
+        with patch.object(controller, 'unload_if_idle', return_value=False), \
+             patch.object(controller, '_reserve_workspace', side_effect=task_serving.GatewayError(503, 'insufficient_headroom', 'first')), \
+             patch.object(controller.resident, 'control_cache', side_effect=reclaim):
+            identifier = self.start()
+            try:
+                self.assertTrue(entered.wait(5))
+                self.assertEqual(self.request('POST', '/v1/tasks/'+identifier+'/cancel', {})[0], 200)
+            finally:
+                resume.set()
+            result = self.wait(identifier)
+        self.assertEqual(result['state'], 'cancelled')
+        self.assertIs(controller.resident.process, process)
+        self.assertEqual(controller.worker_memory['loads'], 1)
+
+    def test_pressure_retries_job_cap_using_same_compute_lease(self):
+        from mlx_agent.compute import ComputeLease
+        self.fake_allocator()
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        controller.configure({'cache_reclaim':'pressure', 'minimum_headroom_gb':1, 'model_memory_budget_gb':1.51})
+        controller.memory_probe = lambda: 100_000_000_000
+        process = controller.resident.process
+        original = ComputeLease.__enter__
+        enters = []
+        def enter(lease):
+            enters.append(lease.operation)
+            return original(lease)
+        with patch.object(controller, 'unload_if_idle', return_value=False), patch.object(ComputeLease, '__enter__', enter):
+            result = self.wait(self.start())
+        self.assertEqual(result['state'], 'succeeded', result)
+        self.assertEqual(len(enters), 1)
+        self.assertIs(controller.resident.process, process)
+        self.assertEqual(controller.resident.cache_state['last_reclaim']['reason'], 'pressure')
+        self.assertEqual(controller.worker_memory['loads'], 1)
+
+    def test_pressure_does_not_retry_when_cache_evidence_is_unusable(self):
+        self.fake_allocator()
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        controller.configure({'cache_reclaim':'pressure', 'minimum_headroom_gb':1})
+        process = controller.resident.process
+        for mode in ('idle', 'unavailable', 'zero', 'unknown'):
+            with self.subTest(mode=mode):
+                policy = controller.memory_policy['cache_reclaim']
+                cache = controller.resident.cache_state['available']
+                value = controller.resident.telemetry['cache_bytes']
+                if mode == 'idle':controller.memory_policy['cache_reclaim'] = 'idle'
+                if mode == 'unavailable':controller.resident.cache_state['available'] = False
+                if mode == 'zero':controller.resident.telemetry['cache_bytes'] = 0
+                if mode == 'unknown':controller.resident.telemetry['cache_bytes'] = None
+                try:
+                    with patch.object(controller, 'unload_if_idle', return_value=False), \
+                         patch.object(controller, '_reserve_workspace', side_effect=task_serving.GatewayError(503,'insufficient_headroom','first')) as admit, \
+                         patch.object(controller.resident, 'control_cache', wraps=controller.resident.control_cache) as control:
+                        result = self.wait(self.start())
+                    self.assertEqual(result['error']['code'], 'insufficient_headroom')
+                    self.assertEqual(admit.call_count, 1)
+                    control.assert_not_called()
+                    self.assertIs(controller.resident.process, process)
+                finally:
+                    controller.memory_policy['cache_reclaim'] = policy
+                    controller.resident.cache_state['available'] = cache
+                    controller.resident.telemetry['cache_bytes'] = value
+
+    def test_cancel_before_admission_reclaim_preserves_worker(self):
+        import threading
+        self.fake_allocator()
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        controller.configure({'cache_reclaim':'pressure', 'minimum_headroom_gb':1})
+        process = controller.resident.process
+        entered, resume = threading.Event(), threading.Event()
+        def deny(*args, **kwargs):
+            entered.set()
+            if not resume.wait(5):raise TimeoutError('cancel handshake')
+            raise task_serving.GatewayError(503, 'insufficient_headroom', 'first')
+        with patch.object(controller, 'unload_if_idle', return_value=False), \
+             patch.object(controller, '_reserve_workspace', side_effect=deny), \
+             patch.object(controller.resident, 'control_cache', wraps=controller.resident.control_cache) as control:
+            identifier = self.start()
+            try:
+                self.assertTrue(entered.wait(5))
+                self.assertEqual(self.request('POST', '/v1/tasks/'+identifier+'/cancel', {})[0], 200)
+            finally:resume.set()
+            result = self.wait(identifier)
+        self.assertEqual(result['state'], 'cancelled')
+        control.assert_not_called()
+        self.assertIs(controller.resident.process, process)
+
+    def test_pressure_rechecks_fresh_os_headroom_after_reclaim(self):
+        self.fake_allocator()
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        controller.configure({'cache_reclaim':'pressure', 'minimum_headroom_gb':1})
+        probes = []
+        def probe():
+            cache = controller.resident.telemetry['cache_bytes']
+            value = 1_000_000_001 if cache else 100_000_000_000
+            probes.append(value)
+            return value
+        controller.memory_probe = probe
+        with patch.object(controller, 'unload_if_idle', return_value=False):
+            result = self.wait(self.start())
+        self.assertEqual(result['state'], 'succeeded', result)
+        self.assertEqual(probes[:2], [1_000_000_001, 100_000_000_000])
+        self.assertEqual(controller.resident.cache_state['last_reclaim']['reason'], 'pressure')
+
+    def test_unavailable_admission_reclaim_keeps_original_refusal_and_worker(self):
+        self.fake_allocator()
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        controller.configure({'cache_reclaim':'pressure', 'minimum_headroom_gb':1})
+        process = controller.resident.process
+        with patch.object(controller, 'unload_if_idle', return_value=False), \
+             patch.object(controller, '_reserve_workspace', side_effect=task_serving.GatewayError(503,'insufficient_headroom','first')) as admission, \
+             patch.object(controller.resident, 'control_cache', return_value=False) as control:
+            result = self.wait(self.start())
+        self.assertEqual(result['error']['code'], 'insufficient_headroom')
+        self.assertEqual(admission.call_count, 1)
+        self.assertEqual(control.call_count, 1)
+        self.assertIs(controller.resident.process, process)
+
+    def test_admission_reclaim_fence_failure_stops_owned_worker(self):
+        from mlx_agent.compute import ComputeBusy, ComputeLease
+        self.fake_allocator()
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        controller.configure({'cache_reclaim':'pressure', 'minimum_headroom_gb':1})
+        with patch.object(controller, 'unload_if_idle', return_value=False), \
+             patch.object(controller, '_reserve_workspace', side_effect=task_serving.GatewayError(503,'insufficient_headroom','first')), \
+             patch.object(ComputeLease, 'release_idle_process_group', side_effect=ComputeBusy('group changed')):
+            result = self.wait(self.start())
+        self.assertEqual(result['state'], 'failed')
+        self.assertEqual(result['error']['code'], 'compute_busy')
+        self.assertIsNone(controller.resident.process)
+        with ComputeLease('after-reclaim-fence', self.root / 'compute'):
+            pass
+
+    def test_cold_admission_never_reclaims(self):
+        controller = self.server.controller
+        controller.configure({'cache_reclaim':'pressure', 'minimum_headroom_gb':1})
+        with patch.object(controller, '_check_memory', side_effect=task_serving.GatewayError(503,'insufficient_headroom','first')) as admission, \
+             patch.object(controller.resident, 'control_cache', wraps=controller.resident.control_cache) as control:
+            result = self.wait(self.start())
+        self.assertEqual(result['error']['code'], 'insufficient_headroom')
+        self.assertEqual(admission.call_count, 1)
+        control.assert_not_called()
+        self.assertIsNone(controller.resident.process)
+
+    def test_pressure_does_not_retry_unknown_or_busy_admission(self):
+        self.fake_allocator()
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        controller.configure({'cache_reclaim':'pressure', 'minimum_headroom_gb':1})
+        for code in ('memory_unknown', 'memory_registry_busy'):
+            with self.subTest(code=code), patch.object(controller, 'unload_if_idle', return_value=False), \
+                 patch.object(controller, '_reserve_workspace', side_effect=task_serving.GatewayError(503,code,'unavailable')) as admission, \
+                 patch.object(controller.resident, 'control_cache', wraps=controller.resident.control_cache) as control:
+                result = self.wait(self.start())
+                self.assertEqual(result['error']['code'], code)
+                self.assertEqual(admission.call_count, 1)
+                control.assert_not_called()
+
+    def test_policy_cap_change_during_reclaim_applies_only_to_next_job(self):
+        from mlx_agent.compute import ComputeLease
+        self.fake_allocator()
+        self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        controller = self.server.controller
+        controller.configure({'cache_reclaim':'pressure', 'minimum_headroom_gb':1, 'model_memory_budget_gb':2})
+        controller.memory_probe = lambda: 100_000_000_000
+        original_admit, original_control = controller._reserve_workspace, controller.resident.control_cache
+        original_execution, original_enter = controller.memory_registry.reserve_execution, ComputeLease.__enter__
+        attempts, caps, modes = [], [], []
+        def admit(extra_bytes=0):
+            attempts.append(extra_bytes)
+            if len(attempts)==1:raise task_serving.GatewayError(503, 'insufficient_headroom', 'first')
+            return original_admit(extra_bytes)
+        def reclaim(*args, **kwargs):
+            controller.configure({'model_memory_budget_gb':None})
+            return original_control(*args, **kwargs)
+        def reserve(key, limit=None, probe=None):
+            caps.append(limit)
+            return original_execution(key, limit, probe)
+        def enter(lease):
+            modes.append(lease.shared)
+            return original_enter(lease)
+        with patch.object(controller, 'unload_if_idle', return_value=False), \
+             patch.object(controller.memory_registry, 'shared_execution_enabled', return_value=True), \
+             patch.object(controller, '_reserve_workspace', side_effect=admit), \
+             patch.object(controller.resident, 'control_cache', side_effect=reclaim), \
+             patch.object(controller.memory_registry, 'reserve_execution', side_effect=reserve), \
+             patch.object(ComputeLease, '__enter__', enter):
+            self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+            self.assertEqual(self.wait(self.start())['state'], 'succeeded')
+        self.assertEqual(caps, [2_000_000_000, None])
+        self.assertEqual(modes, [True, False])
 
     def test_pressure_reclaim_retains_pinned_worker_and_busy_host_defers(self):
         from mlx_agent.compute import ComputeLease

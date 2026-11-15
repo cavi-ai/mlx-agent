@@ -876,6 +876,25 @@ def predict(model, tokenizer, state, questions):
         self.assertEqual(len(self.server.controller.store.list()), 2)
         self.assertEqual(self.server.controller.active_requests, 0)
 
+    def test_warm_decisions_never_list_every_host_process(self):
+        self.assertEqual(self.decide({})[0], 200)
+        launched = []
+        recording = [True]
+
+        def audit(event, arguments):
+            if event == 'subprocess.Popen' and recording[0]:
+                launched.append([str(item) for item in arguments[1]])
+        sys.addaudithook(audit)
+        try:
+            for _ in range(3):
+                self.assertEqual(self.decide({})[0], 200)
+        finally:
+            recording[0] = False
+        # Listing every process reads each command line: hundreds of milliseconds on a busy host.
+        self.assertEqual([argv for argv in launched if argv[:1] == ['/bin/ps'] and any(
+            option.startswith('-') and 'a' in option for option in argv[1:])], [])
+        self.assertTrue(launched)
+
     def test_refuses_other_models_unknown_fields_and_invalid_questions(self):
         self.assertEqual(self.decide({'model': 'other'})[0], 404)
         for body in ({'assets': {}}, {'questions': {}}, {'questions': {'q': {'type': 'pick', 'instructions': 'x'}}},

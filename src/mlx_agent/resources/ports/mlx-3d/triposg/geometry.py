@@ -37,14 +37,17 @@ def extract_mesh(query, depth=9, bounds=DEFAULT_BOUNDS, seconds=None):
     return vertices, faces, counts
 
 
-def decimate(vertices, faces, max_faces):
-    """Quadric edge collapse down to `max_faces` triangles; meshes at or under the cap pass through."""
+def decimate(vertices, faces, max_faces, aggression=7):
+    """Quadric edge collapse down to `max_faces` triangles; meshes at or under the cap pass through.
+
+    A lower `aggression` raises the error threshold more slowly, which joins fewer separate sheets along an edge.
+    """
     if len(faces) <= max_faces:
         return vertices, faces
     from fast_simplification import simplify
 
     points, triangles = simplify(np.ascontiguousarray(vertices, dtype=np.float32),
-                                 np.ascontiguousarray(faces, dtype=np.int32), target_count=max_faces)
+                                 np.ascontiguousarray(faces, dtype=np.int32), target_count=max_faces, agg=aggression)
     return points.astype(np.float32), triangles
 
 

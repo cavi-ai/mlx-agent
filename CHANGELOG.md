@@ -3,7 +3,9 @@
 ## Unreleased
 
 - TRELLIS.2 `convert mesh` writes roughness and metallic as `COLOR_1` (occlusion, roughness, metallic) and reports `pbr`.
+- Task endpoints read process groups and agent memory in-process instead of listing every host process with `ps`, so a warm job's lease and memory checks take milliseconds.
 - TRELLIS.2 loads only the components needed for each mesh resolution and retains them for later resident tasks.
+- TRELLIS.2 `convert mesh` writes a closed, outward-facing solid instead of the open decoded surface.
 
 - Add the Kev classification port (`jaredpalmer/kev-4b` over Qwen3-4B-Base, 8-bit or unquantized), and serve TypeSafe System One decisions at `POST /v1/systemone` on classification task routes and the front door.
 - TRELLIS.2 conversion includes the texture stage, and `convert mesh` writes each vertex's base color to the GLB as `COLOR_0`.

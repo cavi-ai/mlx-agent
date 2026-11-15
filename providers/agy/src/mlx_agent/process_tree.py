@@ -16,6 +16,15 @@ def _snapshot():
     return result
 
 
+def group_snapshot(pgid):
+    """``_snapshot`` rows for one process group, without reading every process's command line."""
+    from .process_table import group, identities, rows
+    members = rows(group(pgid))
+    observed = identities(members)
+    return {pid: (parent, member_group, observed[pid]) for pid, (parent, member_group) in members.items()
+            if pid in observed}
+
+
 def descendants(pid):
     if type(pid) is not int or pid <= 0:
         raise ValueError("An owned process requires a positive PID.")

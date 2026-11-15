@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 from mlx_agent.backends import PORTS_DIR
 
 HAS_MLX = importlib.util.find_spec('mlx') is not None
+HAS_SURFACE = all(importlib.util.find_spec(name) for name in ('scipy', 'skimage'))
 SHELL = 'mlx3d_ports_under_test'
 DINOV3 = 'facebook/dinov3-vitl16-pretrain-lvd1689m'
 STRUCTURE = 'microsoft/TRELLIS-image-large'
@@ -436,6 +437,80 @@ class Trellis2NativeTests(unittest.TestCase):
         np.testing.assert_allclose(points[2], [-0.375, -0.125, -0.125])
         _, faces = dual_grid.to_mesh(coords[:3], vertices[:3], crossed[:3], np.ones((3, 1)), 4)
         self.assertEqual(faces.shape, (0, 3))
+
+    @unittest.skipUnless(HAS_SURFACE, 'requires scipy and scikit-image')
+    def test_closed_surface_wraps_an_open_branching_mesh_in_one_outward_shell(self):
+        import numpy as np
+        closed = port('closed')
+        grid, band = 32, 0.75
+        # Two unit-quad sheets crossing in a line: open borders, four faces on each crossing edge, mixed winding.
+        steps = np.arange(8, 25)
+        u, w = (axis.ravel() for axis in np.meshgrid(steps, steps, indexing='ij'))
+        level = np.full(len(u), 16)
+        vertices = (np.concatenate([np.stack([u, w, level], axis=1), np.stack([u, level, w], axis=1)]) / grid - 0.5)
+        cell = np.array([[i * 17 + j, (i + 1) * 17 + j, (i + 1) * 17 + j + 1, i * 17 + j + 1]
+                         for i in range(16) for j in range(16)])
+        quads = np.concatenate([cell, cell + 17 * 17])
+        faces = np.concatenate([quads[:, [0, 1, 2]], quads[::2, [0, 2, 3]], quads[1::2, [0, 3, 2]]])
+        points, triangles = closed.closed_surface(vertices.astype(np.float32), faces, grid, band)
+        directed = np.concatenate([triangles[:, [0, 1]], triangles[:, [1, 2]], triangles[:, [2, 0]]])
+        # Each directed edge occurs once and its reverse once: every edge joins two consistently wound triangles.
+        self.assertEqual(len(np.unique(directed, axis=0)), len(directed))
+        self.assertEqual(sorted(map(tuple, directed)), sorted(map(tuple, directed[:, ::-1])))
+        a, b, c = (points[triangles[:, i]].astype(np.float64) for i in range(3))
+        self.assertGreater(np.einsum('ij,ij->', a, np.cross(b, c)), 0)
+        # Every vertex sits about one band from the nearer sheet, in cells.
+        cells = (points.astype(np.float64) + 0.5) * grid
+
+        def reach(axis, first, second):
+            inside = np.stack([np.clip(cells[:, first], 8, 24), np.clip(cells[:, second], 8, 24)], axis=1)
+            flat = np.linalg.norm(cells[:, [first, second]] - inside, axis=1)
+            return np.hypot(flat, cells[:, axis] - 16)
+
+        distance = np.minimum(reach(2, 0, 1), reach(1, 0, 2))
+        self.assertLess(np.abs(distance - band).max(), 0.25)
+
+    @unittest.skipUnless(HAS_SURFACE, 'requires scipy and scikit-image')
+    def test_closed_surface_fills_a_hollow_shell_except_what_an_opening_shows(self):
+        import numpy as np
+        closed = port('closed')
+        grid, low, high = 32, 8, 24
+        steps = np.arange(low, high + 1)
+        size = len(steps)
+        u, w = (axis.ravel() for axis in np.meshgrid(steps, steps, indexing='ij'))
+        cell = np.array([[i * size + j, (i + 1) * size + j, (i + 1) * size + j + 1, i * size + j + 1]
+                         for i in range(size - 1) for j in range(size - 1)])
+        # A window four cells wide in the middle of the top sheet only.
+        window = np.array([6 <= i < 10 and 6 <= j < 10 for i in range(size - 1) for j in range(size - 1)])
+        sheets, quads = [], []
+        for axis in range(3):
+            for side in (low, high):
+                sheet = np.insert(np.stack([u, w], axis=1), axis, side, axis=1)
+                kept = cell[~window] if (axis, side) == (2, high) else cell
+                quads.append(kept + sum(len(s) for s in sheets))
+                sheets.append(sheet)
+        quads = np.concatenate(quads)
+        vertices = (np.concatenate(sheets) / grid - 0.5).astype(np.float32)
+        faces = np.concatenate([quads[:, [0, 1, 2]], quads[:, [0, 2, 3]]])
+        points, triangles = closed.closed_surface(vertices, faces, grid)
+        a, b, c = (points[triangles[:, i]].astype(np.float64) for i in range(3))
+        volume = np.einsum('ij,ij->', a, np.cross(b, c)) / 6 * grid ** 3
+        # The box holds 16^3 cells; the window shows a shaft about 2.5 cells wide down to the floor.
+        self.assertGreater(volume, 16 ** 3)
+        self.assertLess(volume, 17.5 ** 3 - 2 * 2 * 14)
+        directed = np.concatenate([triangles[:, [0, 1]], triangles[:, [1, 2]], triangles[:, [2, 0]]])
+        self.assertEqual(sorted(map(tuple, directed)), sorted(map(tuple, directed[:, ::-1])))
+
+    def test_fins_and_their_vertices_leave_the_mesh(self):
+        import numpy as np
+        closed = port('closed')
+        vertices = np.arange(18, dtype=np.float32).reshape(6, 3)
+        tetrahedron = [[0, 2, 3], [0, 3, 5], [0, 5, 2], [2, 5, 3]]
+        fin = [[0, 1, 2], [2, 1, 0], [3, 4, 5], [4, 3, 5]]
+        points, faces = closed.without_fins(vertices, np.array(tetrahedron[:2] + fin + tetrahedron[2:], dtype=np.int32))
+        self.assertEqual(points.tolist(), vertices[[0, 2, 3, 5]].tolist())
+        self.assertEqual(faces.tolist(), [[0, 1, 2], [0, 2, 3], [0, 3, 1], [1, 3, 2]])
+        self.assertEqual(faces.dtype, np.int32)
 
     def test_cascade_lowers_the_resolution_until_the_tokens_fit(self):
         import numpy as np

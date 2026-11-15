@@ -73,6 +73,19 @@ class ServiceRegistryTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 register_receipts(folder, root / 'link')
 
+    def test_missing_registered_root_does_not_hide_healthy_services_but_active_roots_fail_closed(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder); registry = root / 'registry'; old = root / 'old'; good = root / 'good'
+            old.mkdir(); good.mkdir(); register_receipts(old, registry); register_receipts(good, registry)
+            old.rmdir()
+            def inspect(path):
+                return [{'receipt': str(Path(path) / '.mlx-agent-receipts/serve/1.json'), 'alive': False, 'argv_match': False}]
+            result = discover_services(registry=registry, process_roots=[], inspect=inspect)
+            self.assertEqual(len(result['services']), 1)
+            self.assertEqual(result['errors'], [])
+            self.assertEqual(len(discover_services([str(old)], registry=registry, process_roots=[], inspect=inspect)['errors']), 1)
+            self.assertEqual(len(discover_services(registry=registry, process_roots=[str(old)], inspect=inspect)['errors']), 1)
+
     def test_duplicate_roots_are_inspected_once_and_ownership_is_preserved(self):
         with TemporaryDirectory() as folder:
             registry = Path(folder) / 'registry'

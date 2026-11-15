@@ -9,7 +9,7 @@ import mlx.core as mx
 import numpy as np
 from PIL import Image
 
-from . import components, dinov3, dual_grid, flow, sparse, structure
+from . import closed, components, dinov3, dual_grid, flow, sparse, structure
 from ..triposg.geometry import decimate, write_glb
 from ..triposg.weights import Weights
 
@@ -238,10 +238,13 @@ def generate(model, image, out, steps=12, seed=42, resolution=1024, guidance=7.5
         previous, cursor = cursor, time.perf_counter()
         stages["texture_decode"] = cursor - previous
     vertices, faces = dual_grid.to_mesh(voxels, vertices, crossed, split, level_resolution)
-    vertices = gltf_axes(vertices)
     previous, cursor = cursor, time.perf_counter()
     stages["mesh"] = cursor - previous
-    vertices, faces = decimate(vertices, faces, max_faces)
+    vertices, faces = closed.closed_surface(vertices, faces, level_resolution)
+    vertices = gltf_axes(vertices)
+    previous, cursor = cursor, time.perf_counter()
+    stages["closed_surface"] = cursor - previous
+    vertices, faces = closed.without_fins(*decimate(vertices, faces, max_faces, aggression=3))
     previous, cursor = cursor, time.perf_counter()
     stages["decimation"] = cursor - previous
     colors = materials = None

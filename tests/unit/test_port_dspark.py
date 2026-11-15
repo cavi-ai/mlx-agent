@@ -238,6 +238,18 @@ class DSparkPortTests(unittest.TestCase):
         self.assertEqual(quantization["stages.1.ffn.experts.0.w3"], {"group_size": 32, "bits": 4, "mode": "mxfp4"})
         self.assertEqual(len([key for key in quantization if ".experts." in key]), STAGES * 3 * EXPERTS)
 
+    def test_low_bit_projections_keep_experts_mxfp4(self):
+        original = self.root
+        for bits in (2, 3, 5, 6):
+            with self.subTest(bits=bits):
+                self.root = original / str(bits)
+                self.root.mkdir()
+                _, out, _ = self.convert(q_bits=bits)
+                config = json.loads((out / "config.json").read_text())
+                self.assertEqual(config["quantization"]["bits"], bits)
+                self.assertEqual(config["quantization"]["stages.1.ffn.experts.0.w3"]["mode"], "mxfp4")
+        self.root = original
+
     def test_weights_match_the_gguf(self):
         import mlx.core as mx
 

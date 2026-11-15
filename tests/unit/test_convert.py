@@ -76,17 +76,32 @@ class PlanConvertTests(unittest.TestCase):
         self.assertIn("--q-bits", plan["argv"])
         self.assertEqual(plan["argv"][-1], "8")
 
+    def test_builtin_float_recipes_are_explicit_and_require_completed_marker(self):
+        for bits in (16, 32):
+            with self.subTest(bits=bits):
+                plan = plan_convert("pub/model", q_bits=bits)
+                self.assertIn("--dequantize", plan["argv"])
+                self.assertEqual(plan["argv"][plan["argv"].index("--dtype") + 1], "float%d" % bits)
+                self.assertNotIn("--quantize", plan["argv"])
+                self.assertTrue(plan["require_completion"])
+
+    def test_builtin_low_bit_recipes_keep_requested_width(self):
+        for bits in (2, 3, 4, 5, 6, 8):
+            plan = plan_convert("pub/model", q_bits=bits)
+            self.assertEqual(plan["argv"][-1], str(bits))
+            if bits in (2, 3): self.assertTrue(plan["require_completion"])
+
     def test_invalid_repo(self):
         with self.assertRaises(ConvertError) as caught:
             plan_convert("../evil")
         self.assertEqual(caught.exception.code, "invalid_repo")
 
     def test_invalid_q_bits(self):
-        for bits in (3, 7, True):
+        for bits in (7, True):
             with self.assertRaises(ConvertError) as caught:
                 plan_convert("pub/model", q_bits=bits)
             self.assertEqual(caught.exception.code, "invalid_arguments")
-            self.assertEqual(caught.exception.remediation, "Pass --q-bits 4, 5, 6 or 8.")
+            self.assertEqual(caught.exception.remediation, "Pass --q-bits 2, 3, 4, 5, 6 or 8.")
 
     def test_five_and_six_bit_plans_quantize_at_that_width(self):
         for bits in (5, 6):
@@ -212,15 +227,12 @@ class BackendConvertTests(unittest.TestCase):
         eight = plan_convert("VAST-AI/TripoSG", q_bits=8, backend="mlx-3d", model_type="triposg", backends_root_dir=self.root)
         self.assertEqual(eight["argv"][-3:], ["--quantize", "--q-bits", "8"])
         self.assertNotEqual(full["preview_hash"], eight["preview_hash"])
-        for settings in ({"q_bits": 16}, {"q_bits": 32, "backend": "mlx-lm"}, {"q_bits": 32},
+        for settings in ({"q_bits": 16, "backend": "mlx-embeddings"},
                          {"q_bits": 32, "backend": "mlx-embeddings", "model_type": "laya"},
                          {"q_bits": 32, "backend": "mlx-embeddings"}):
             with self.subTest(settings=settings), self.assertRaises(ConvertError) as caught:
                 plan_convert("pub/model", backends_root_dir=self.root, **settings)
             self.assertEqual(caught.exception.code, "invalid_arguments")
-        with self.assertRaises(ConvertError) as caught:
-            plan_gguf_convert("model.gguf", q_bits=32)
-        self.assertEqual(caught.exception.code, "invalid_arguments")
 
     def cache(self, repo, subfolder):
         entry = self.root / "hub" / "models--{0}".format(repo.replace("/", "--"))
@@ -657,10 +669,15 @@ class PlanGGUFConvertTests(unittest.TestCase):
             plan_gguf_convert(source, runner=self.runner)
         self.assertEqual(caught.exception.code, "unsupported_draft")
 
+    def test_new_gguf_widths_require_observed_completion(self):
+        source = write_gguf(self.root / "small.gguf", name="Small")
+        for bits in (2, 3, 16, 32):
+            self.assertTrue(plan_gguf_convert(source, q_bits=bits, runner=self.runner)["require_completion"])
+
     def test_rejects_bad_q_bits(self):
         source = write_gguf(self.root / "gamma-Q4_K_M.gguf", name="Gamma")
         with self.assertRaises(ConvertError) as caught:
-            plan_gguf_convert(source, q_bits=3, runner=self.runner)
+            plan_gguf_convert(source, q_bits=7, runner=self.runner)
         self.assertEqual(caught.exception.code, "invalid_arguments")
 
     def test_gguf_requantizes_at_five_and_six_bits_but_its_ports_keep_four_and_eight(self):
@@ -668,10 +685,7 @@ class PlanGGUFConvertTests(unittest.TestCase):
         plan = plan_gguf_convert(source, q_bits=6, runner=self.runner)
         self.assertEqual(plan["argv"][plan["argv"].index("--q-bits") + 1], "6")
         self.assertEqual(plan["out"], "gamma-Q4_K_M-MLX-6bit")
-        with self.assertRaises(ConvertError) as caught:
-            plan_gguf_convert(self.write_qwen35(), q_bits=6, runner=self.runner)
-        self.assertEqual((str(caught.exception), caught.exception.remediation),
-                         ("The qwen35 port converts GGUF files at 4 or 8 bits only.", "Pass --q-bits 4 or 8."))
+        self.assertEqual(plan_gguf_convert(self.write_qwen35(), q_bits=6, runner=self.runner)["q_bits"], 6)
 
 
 class StartGGUFConvertTests(unittest.TestCase):

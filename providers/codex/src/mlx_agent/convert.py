@@ -1,4 +1,4 @@
-"""Confirmation-gated local MLX quantization jobs."""
+"""Confirmation-gated local MLX conversion jobs."""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ from pathlib import Path
 
 from .backends import (
     QUANTIZED_BITS,
+    FLOAT_BITS,
+    CONVERSION_BITS,
     UNQUANTIZED_BITS,
     BackendError,
     backend_environment,
@@ -127,7 +129,7 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
             "invalid_arguments", "model_type must be a config model_type such as qwen2 or laya.",
             "Pass --model-type exactly as intake resolve reports it.",
         )
-    _validate_q_bits(q_bits, (UNQUANTIZED_BITS,))
+    _validate_q_bits(q_bits, FLOAT_BITS)
     if subfolder is not None:
         try:
             validate_subfolder(subfolder)
@@ -155,7 +157,12 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
             )
         hf_path = str(folder)
     flags = ["--hf-path", hf_path, "--mlx-path", str(out)]
-    if q_bits != UNQUANTIZED_BITS:
+    if q_bits in (2, 3, 16, 32):
+        require_completion = True
+    if backend in (None, "mlx-lm") and q_bits in FLOAT_BITS:
+        flags += ["--dtype", "float%d" % q_bits, "--dequantize"]
+        require_completion = True
+    elif q_bits != UNQUANTIZED_BITS:
         flags += ["--quantize", "--q-bits", str(q_bits)]
     plan = {
         "repo": repo,
@@ -170,8 +177,6 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
         # and weight identities. Snapshot links may point to cache-owned blobs.
         plan["source"]["path"] = str(source)
         plan["source"]["fingerprint"] = local_source_fingerprint(source)
-    if q_bits == UNQUANTIZED_BITS and backend in (None, "mlx-lm"):
-        raise ConvertError("invalid_arguments", "This conversion has no unquantized recipe.", _bits_hint(Q_BITS_CHOICES))
     if model_type is not None:
         plan["model_type"] = model_type
     if backend in (None, "mlx-lm"):
@@ -203,6 +208,8 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
             "The {0} converts at {1} bits only.".format(owner, _joined(widths)),
             _bits_hint(widths),
         )
+    if q_bits == UNQUANTIZED_BITS:
+        require_completion = True
     if backend == "mlx-audio" and _is_quantized_music_source(hf_path) and q_bits not in MUSIC_REQUANTIZE_BITS:
         raise ConvertError(
             "invalid_arguments",
@@ -393,7 +400,9 @@ def plan_gguf_convert(gguf_path, q_bits=4, out=None, runner=None, describe=descr
                       projector=None, require_projector=False, fetch_receipt=None,
                       dependency_fetch_receipts=None, require_completion=False):
     """Render the exact GGUF to MLX conversion plan; pure and side-effect free."""
-    _validate_q_bits(q_bits)
+    _validate_q_bits(q_bits, FLOAT_BITS)
+    if q_bits in (2, 3, 16, 32):
+        require_completion = True
     location = Path(str(gguf_path)).expanduser()
     if location.suffix.lower() != ".gguf":
         raise ConvertError(
@@ -466,11 +475,11 @@ def plan_gguf_convert(gguf_path, q_bits=4, out=None, runner=None, describe=descr
     if draft is not None:
         plan["draft"] = dict(draft)
     port = draft["port"] if draft is not None else entry.get("port")
-    if port is not None and q_bits not in GGUF_PORT_BITS:
+    if port is not None and q_bits not in GGUF_PORT_BITS.get(port, ()):
         raise ConvertError(
             "invalid_arguments",
-            "The {0} port converts GGUF files at {1} bits only.".format(port, _joined(GGUF_PORT_BITS)),
-            _bits_hint(GGUF_PORT_BITS),
+            "The {0} port converts GGUF files at {1} bits only.".format(port, _joined(GGUF_PORT_BITS.get(port, ()))),
+            _bits_hint(GGUF_PORT_BITS.get(port, ())),
         )
     if port is not None:
         plan["port_converter"] = port

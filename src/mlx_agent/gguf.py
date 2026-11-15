@@ -15,7 +15,7 @@ import struct
 from pathlib import Path
 from stat import S_ISREG
 
-from .backends import QUANTIZED_BITS
+from .backends import QUANTIZED_BITS, CONVERSION_BITS
 
 
 MAX_SCAN_FILES = 4000
@@ -54,9 +54,8 @@ _DRAFT_PORTS = (("deepseek_v4_dspark", "dflash", "dflash.hyper_connection.count"
 ARCHITECTURE_PORTS = {"qwen35": "qwen35"}
 # The llama.cpp vision projector type each port attaches from the model's folder.
 PORT_PROJECTORS = {"qwen35": "qwen3vl_merger"}
-# Ports converted from GGUF quantize through their own tensor maps, checked at these widths only;
-# other GGUFs convert at every quantized width.
-GGUF_PORT_BITS = (4, 8)
+# Port-specific output widths; DSpark retains MXFP4 experts and cannot offer floating output.
+GGUF_PORT_BITS = {"qwen35": CONVERSION_BITS, "deepseek_v4_dspark": QUANTIZED_BITS}
 _MIN_NAME_MATCH = 6
 # Trailing MLX quantization labels in folder names: Foo-MLX-4bit, Foo-4.4bpw, Foo-bf16, Foo-mxfp8.
 _MLX_QUANT_SUFFIX = re.compile(
@@ -407,10 +406,10 @@ def conversion_bits(entry):
     draft = entry.get("draft")
     port = draft.get("port") if draft is not None else entry.get("port")
     if port is not None:
-        return list(GGUF_PORT_BITS)
+        return list(GGUF_PORT_BITS.get(port, ()))
     if draft is not None or entry.get("companion") or not entry.get("readable"):
         return []
-    return list(QUANTIZED_BITS)
+    return list(CONVERSION_BITS)
 
 
 def describe_gguf(path, signature=True):
@@ -709,7 +708,14 @@ def scan_mlx_outputs(roots, limit=MAX_SCAN_FILES, errors=None):
                 continue
             seen.add(resolved)
             dirnames[:] = []
+            precision = None
+            if provenance and provenance.get("q_bits") in (16, 32) and marker is None:
+                bits = provenance["q_bits"]
+                source = provenance.get("source") or {}
+                explicit_float = source.get("kind") == "gguf" or (provenance.get("tool") == "mlx-agent.convert" and provenance.get("backend") == "mlx-lm")
+                precision = "FP%d" % bits if explicit_float else "Unquantized"
             outputs.append({
+                "precision": precision,
                 "path": str(directory),
                 "name": directory.name,
                 "model_key": _normalize_stem(directory.name),
@@ -920,7 +926,7 @@ def _mlx_files(directory):
 def _mlx_quantization(output):
     marker = output.get("quantization")
     bits = marker.get("bits") if isinstance(marker, dict) else None
-    return "{0}-bit".format(bits) if isinstance(bits, int) and not isinstance(bits, bool) else "unknown"
+    return "{0}-bit".format(bits) if isinstance(bits, int) and not isinstance(bits, bool) else output.get("precision") or "unknown"
 
 
 def _ollama_stores(roots):

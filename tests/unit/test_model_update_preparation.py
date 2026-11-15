@@ -340,6 +340,34 @@ class ManagedUpdatePreparationTests(unittest.TestCase):
         self.assertEqual(states, {"a" * 32: "failed", "b" * 32: "done"})
         self.assertEqual(Path(first["receipt_path"]).read_bytes(), original)
 
+    def test_failed_new_precision_worker_with_partial_output_is_not_success(self):
+        for bits in (2, 3, 16, 32):
+            with self.subTest(bits=bits):
+                plan = self._worker_plan(exit_code=7)
+                plan["q_bits"] = bits
+                _finalize_plan(plan)
+                outcome, child = self._start_worker(plan)
+                child.wait(timeout=10)
+                status = next(item for item in status_convert(self.root) if item["out"] == plan["out"])
+                self.assertTrue(Path(plan["out"]).exists())
+                self.assertEqual((status["state"], status["exit_code"]), ("failed", 7))
+                self.assertFalse((Path(plan["out"]) / "mlx-converter.json").exists())
+
+    def test_completed_float_output_marker_makes_scan_discoverable(self):
+        from mlx_agent.gguf import scan_mlx_outputs
+        for bits in (16, 32):
+            plan = self._worker_plan()
+            plan["q_bits"] = bits
+            _finalize_plan(plan)
+            outcome, child = self._start_worker(plan)
+            self.assertEqual(child.wait(timeout=10), 0)
+            status = next(item for item in status_convert(self.root) if item["out"] == plan["out"])
+            self.assertEqual(status["state"], "done")
+            marker = json.loads((Path(plan["out"]) / "mlx-converter.json").read_text())
+            self.assertEqual(marker["q_bits"], bits)
+            output = next(entry for entry in scan_mlx_outputs([self.root]) if entry["path"] == plan["out"])
+            self.assertEqual(output["precision"], "FP%d" % bits)
+
     def test_real_worker_success_records_observed_exit_and_output_provenance(self):
         plan = self._worker_plan()
         outcome, child = self._start_worker(plan)

@@ -6,8 +6,8 @@ gated-delta value heads from grouped-by-key-head to tiled order, stores
 weights already shifted, and appends the multi-token-prediction block as the
 last ``blk``. This port restores the grouped head order and ``A_log``, keeps
 the shifted norms and a ``(channels, kernel, 1)`` kernel (the layout MLX-VLM
-loads without re-sanitizing), drops the prediction block, and affine-quantizes
-every projection and both vocabulary tables to ``q_bits``. The tokenizer is
+loads without re-sanitizing), drops the prediction block, and writes projections
+and vocabulary tables in the requested quantized or floating format. The tokenizer is
 rebuilt from the GGUF vocabulary. Given the model's Qwen3-VL projector GGUF
 (``mmproj``), the vision tower joins it as MLX-VLM's ``qwen3_5``.
 """
@@ -240,13 +240,13 @@ def text_config(metadata: dict, dims: dict, vocab_size: int, tied: bool, quantiz
         },
         "attention_bias": False,
         "tie_word_embeddings": tied,
-        "quantization": quantization,
-        "quantization_config": quantization,
     }
     for key, field in (("bos_token_id", "tokenizer.ggml.bos_token_id"), ("eos_token_id", "tokenizer.ggml.eos_token_id"),
                        ("pad_token_id", "tokenizer.ggml.padding_token_id")):
         if field in metadata:
             config[key] = int(metadata[field])
+    if quantization is not None:
+        config.update(quantization=quantization, quantization_config=quantization)
     return config
 
 
@@ -328,7 +328,7 @@ def vision_language_config(text: dict, vision: dict, tokens: list) -> dict:
     missing = sorted(token for token in special.values() if token not in tokens)
     if missing:
         raise ValueError("The vocabulary lacks the vision tokens {0}.".format(", ".join(missing)))
-    quantization = text["quantization"]
+    quantization = text.get("quantization")
     nested = {key: value for key, value in text.items() if key not in ("architectures", "quantization", "quantization_config")}
     config = {
         "architectures": ["Qwen3_5ForConditionalGeneration"],
@@ -336,12 +336,12 @@ def vision_language_config(text: dict, vision: dict, tokens: list) -> dict:
         "text_config": nested,
         "vision_config": vision,
         "tie_word_embeddings": text["tie_word_embeddings"],
-        "quantization": quantization,
-        "quantization_config": quantization,
     }
     config.update({key: tokens.index(token) for key, token in special.items()})
     if "eos_token_id" in text:
         config["eos_token_id"] = text["eos_token_id"]
+    if quantization is not None:
+        config.update(quantization=quantization, quantization_config=quantization)
     return config
 
 
@@ -454,7 +454,9 @@ def convert(gguf_path, out_dir, q_bits: int, writer, log=print, projector=None) 
         vision_metadata = read_metadata(vision_reader)
         vision_tensors = {tensor.name: tensor for tensor in vision_reader.tensors}
         vision = vision_config(vision_metadata, vision_tensors, dims, projector.name)
-    quantization = {"group_size": GROUP_SIZE, "bits": q_bits, "mode": "affine"}
+    full_precision = q_bits in (16, 32)
+    output_dtype = mx.float16 if q_bits == 16 else mx.float32 if q_bits == 32 else mx.bfloat16
+    quantization = None if full_precision else {"group_size": GROUP_SIZE, "bits": q_bits, "mode": "affine"}
     tokens = reader.fields["tokenizer.ggml.tokens"].contents()
     files = tokenizer_files(reader, metadata, tokens, source.name)
     for tensor in reader.tensors:
@@ -463,7 +465,7 @@ def convert(gguf_path, out_dir, q_bits: int, writer, log=print, projector=None) 
             continue
         suffix = tensor.name.split(".", 2)[2] if tensor.name.startswith("blk.") else tensor.name
         values = restore(suffix, quants.dequantize(tensor.data, tensor.tensor_type), dims)
-        if values.ndim == 2 and values.shape[-1] % GROUP_SIZE == 0:
+        if not full_precision and values.ndim == 2 and values.shape[-1] % GROUP_SIZE == 0:
             log("quantizing {0} -> {1} ({2}-bit)".format(tensor.name, target, q_bits))
             weight, scales, biases = mx.quantize(mx.array(values).astype(mx.bfloat16), group_size=GROUP_SIZE, bits=q_bits)
             mx.eval(weight, scales, biases)
@@ -472,20 +474,20 @@ def convert(gguf_path, out_dir, q_bits: int, writer, log=print, projector=None) 
             writer.add(base + ".scales", scales)
             writer.add(base + ".biases", biases)
             continue
-        # A_log stays float32 (MLX-VLM's cast predicate keeps it so); every other small tensor is bfloat16.
-        array = mx.array(values).astype(mx.float32 if suffix == "ssm_a" else mx.bfloat16)
+        # A_log stays float32 for stability; other tensors use the selected output dtype.
+        array = mx.array(values).astype(mx.float32 if suffix == "ssm_a" else output_dtype)
         mx.eval(array)
         writer.add(target, array)
     if vision is not None:
         log("adding the vision tower from {0}".format(projector.name))
         for source_name, target in vision_names(vision["depth"]).items():
             tensor = vision_tensors[source_name]
-            array = mx.array(quants.dequantize(tensor.data, tensor.tensor_type)).astype(mx.bfloat16)
+            array = mx.array(quants.dequantize(tensor.data, tensor.tensor_type)).astype(output_dtype)
             mx.eval(array)
             writer.add(target, array)
         # Conv2d kernels [out, channels, height, width] per temporal step -> MLX Conv3d [out, time, height, width, channels].
         kernels = [quants.dequantize(vision_tensors[name].data, vision_tensors[name].tensor_type) for name in PATCH_KERNELS]
-        kernel = mx.array(np.stack(kernels, axis=1).transpose(0, 1, 3, 4, 2)).astype(mx.bfloat16)
+        kernel = mx.array(np.stack(kernels, axis=1).transpose(0, 1, 3, 4, 2)).astype(output_dtype)
         mx.eval(kernel)
         writer.add("vision_tower.patch_embed.proj.weight", kernel)
         files.update(processor_files(vision_metadata, vision))
@@ -498,6 +500,8 @@ def convert(gguf_path, out_dir, q_bits: int, writer, log=print, projector=None) 
     config = text_config(metadata, dims, vocab_size, tied, quantization)
     if vision is not None:
         config = vision_language_config(config, vision, tokens)
+    if full_precision:
+        config["torch_dtype"] = "float%d" % q_bits
     (out_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     log("wrote {0} tensors in {1} shard(s), {2} bytes; dropped {3} prediction block(s)".format(
         len(writer.weight_map), shards, writer.total, dims["predict_layers"]))

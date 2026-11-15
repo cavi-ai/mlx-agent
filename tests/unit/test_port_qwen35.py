@@ -258,6 +258,36 @@ class Qwen35PortTests(unittest.TestCase):
         argv = ["--gguf", str(self.source), "--out", str(self.out), "--q-bits", "8", "--port", "qwen35"]
         return gguf_runner.main(argv + (["--projector", str(projector)] if projector else []))
 
+    def test_low_bit_outputs_record_requested_quantization(self):
+        for bits in (2, 3, 5, 6):
+            with self.subTest(bits=bits):
+                self.source = self.root / ("low-%d.gguf" % bits)
+                self.out = self.root / ("low-%d" % bits)
+                write_qwen35(self.source, llama_cpp_tensors(self.weights))
+                self.assertEqual(gguf_runner.main(["--gguf", str(self.source), "--out", str(self.out), "--q-bits", str(bits), "--port", "qwen35"]), 0)
+                config = json.loads((self.out / "config.json").read_text())
+                self.assertEqual(config["quantization"]["bits"], bits)
+                self.assertIn("language_model.model.embed_tokens.scales", self.load())
+
+    def test_float_outputs_keep_plain_weights_and_no_quantization_config(self):
+        import mlx.core as mx
+        for bits, dtype in ((16, mx.float16), (32, mx.float32)):
+            with self.subTest(bits=bits):
+                self.source = self.root / ("source-%d.gguf" % bits)
+                self.out = self.root / ("out-%d" % bits)
+                write_qwen35(self.source, llama_cpp_tensors(self.weights))
+                projector = self.root / ("vision-%d.gguf" % bits)
+                write_projector(projector, vision_checkpoint(self.np.random.default_rng(5)))
+                self.assertEqual(gguf_runner.main(["--gguf", str(self.source), "--out", str(self.out),
+                    "--q-bits", str(bits), "--port", "qwen35", "--projector", str(projector)]), 0)
+                weights = self.load()
+                self.assertFalse(any(name.endswith((".scales", ".biases")) for name in weights))
+                self.assertEqual(weights["vision_tower.patch_embed.proj.weight"].dtype, dtype)
+                self.assertEqual(weights["language_model.model.embed_tokens.weight"].dtype, dtype)
+                config = json.loads((self.out / "config.json").read_text())
+                self.assertNotIn("quantization", config)
+                self.assertNotIn("quantization_config", config)
+
     def test_a_projector_adds_the_vision_tower(self):
         import mlx.core as mx
 

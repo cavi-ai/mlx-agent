@@ -122,9 +122,12 @@ class ModelWorker:
         self.worker_group = None
         self.worker_identity = None
         self.worker_birth_identity = None
+        self._persisted_worker = None
+        self._persisted_worker_start = None
         self.execution_unresolved = False
         self.last_error = None
         self.memory_guard_error = None
+        self.last_memory_failure = None
         self.closed = False
         self.shutdown_requested = False
         self.log = None
@@ -160,11 +163,46 @@ class ModelWorker:
             if path.is_symlink():
                 raise OSError("Refusing a symbolic-link worker state file.")
             state = {"gateway_pid": os.getpid(), "worker_pid": self.process.pid if self.process else None,
-                     "worker_argv": self.worker_argv, "model_state": self.model_state}
+                     "worker_argv": self.worker_argv, "model_state": self.model_state,
+                     "last_memory_failure": self.last_memory_failure}
             if self.process:
                 from mlx_agent.serve import _pid_start
-                state["worker_started_at"] = _pid_start(self.process.pid)
+                if self._persisted_worker is not self.process or self._persisted_worker_start is None:
+                    self._persisted_worker = self.process
+                    self._persisted_worker_start = _pid_start(self.process.pid)
+                state["worker_started_at"] = self._persisted_worker_start
+            else:
+                self._persisted_worker = None
+                self._persisted_worker_start = None
             _atomic_in_directory(path.parent, path.name, json.dumps(state).encode(), 0o600)
+
+    def _record_memory_failure(self, source, reason, details=None):
+        from mlx_agent.memory_diagnostics import memory_decision
+        with self.condition:
+            worker = self.process
+            data = dict(details or {})
+            allocation = (self.memory_reservation or {}).get('allocation') or {}
+            for field, key in (('registry_resident_bytes', 'resident_bytes'),
+                               ('workspace_bytes', 'workspace_bytes'), ('growth_bytes', 'growth_bytes'),
+                               ('pending_bytes', 'reserved_bytes'), ('headroom_bytes', 'headroom_bytes')):
+                if field not in data:
+                    data[field] = allocation.get(key)
+            owner = allocation.get('owner')
+            if isinstance(owner, (list, tuple)) and len(owner) == 2 and isinstance(owner[1], str):
+                data['registry_owner_identity_sha256'] = hashlib.sha256(owner[1].encode()).hexdigest()
+            telemetry = self.worker_memory or {}
+            for field in ('cache_bytes', 'active_bytes'):
+                data[field] = telemetry.get(field)
+            bound = allocation.get('worker') if isinstance(allocation.get('worker'), dict) else {}
+            matches = worker is not None and bound.get('pid') == worker.pid
+            self.last_memory_failure = memory_decision(source, reason, data,
+                pid=worker.pid if worker else None,
+                pgid=self.worker_group if self.worker_group is not None else (bound.get('pgid') if matches else None),
+                identity=self.worker_identity if self.worker_identity is not None else (bound.get('identity') if matches else None))
+            try:
+                self._persist()
+            except OSError:
+                self.last_memory_failure['persistence_error'] = 'initial_state_write_failed'
 
     def _refresh(self):
         if self.process and self.process.poll() is not None and self.model_state == "loaded":
@@ -209,7 +247,7 @@ class ModelWorker:
                     "worker_port": self.worker_port if self.model_state == "loaded" else None,
                     "last_error": self.last_error, "memory_policy": dict(self.memory_policy),
                     "execution": {"active_requests": self.execution.users, "waiting_requests": self.execution.waiting},
-                    "memory_check": self.memory_check, "load_blocked_reason": self.load_blocked_reason,
+                    "memory_check": self.memory_check, "last_memory_failure": self.last_memory_failure, "load_blocked_reason": self.load_blocked_reason,
                     "memory_reservation": self.memory_reservation, "worker_memory": self.worker_memory,
                     "allocator_cache": self._allocator_cache_status(),
                     "resident_memory_check": self.resident_memory_check,
@@ -316,20 +354,22 @@ class ModelWorker:
         outcome = reservation(policy, config, weight_bytes=weight_bytes)
         if outcome is None:
             self.load_blocked_reason = "Model or context memory estimate is unavailable."
+            self._record_memory_failure('cold_admission', 'memory_unknown')
             raise GatewayError(503, "memory_unknown", self.load_blocked_reason)
         self.workspace_bytes = outcome["workspace_bytes"]
         self.growth_bytes = outcome["growth_bytes"]
-        model_key = hashlib.sha256(json.dumps([str(Path(self.config["local_path"]).resolve()),
-            self.config.get("fingerprint"), self.config.get("runtime"), self.config["worker_argv"]],
-            sort_keys=True).encode()).hexdigest()
+        from mlx_agent.memory_policy import model_key
+        registry_model_key = model_key(self.config)
         try:
-            self.memory_reservation = self.memory_registry.reserve(self.memory_token, model_key,
+            self.memory_reservation = self.memory_registry.reserve(self.memory_token, registry_model_key,
                 outcome["reserve_bytes"], outcome["workspace_bytes"],
                 lambda: math.ceil((self.memory_policy["minimum_headroom_gb"] or 0) * 1e9), self.memory_probe,
                 growth_bytes=outcome["growth_bytes"])
             self.memory_check = self.memory_reservation
         except MemoryAdmissionError as error:
             self.memory_check = error.details
+            self._record_memory_failure('cold_admission', error.code, dict(error.details,
+                workspace_bytes=outcome['workspace_bytes'], growth_bytes=outcome['growth_bytes']))
             self.load_blocked_reason = str(error)
             raise GatewayError(503, error.code, str(error)) from error
 
@@ -380,6 +420,7 @@ class ModelWorker:
             self.memory_reservation = self.memory_check
         except MemoryAdmissionError as error:
             self.memory_check = error.details
+            self._record_memory_failure('workspace_admission', error.code, error.details)
             raise GatewayError(503, error.code, str(error)) from error
 
     def _resident_check(self, policy, available, scope):
@@ -400,8 +441,11 @@ class ModelWorker:
         try:
             budget = self.memory_registry.snapshot().get('agent_budget')
         except MemoryAdmissionError as error:
+            self._record_memory_failure('resident_guard', error.code, error.details)
             raise GatewayError(503, error.code, str(error)) from error
         if budget is not None and not budget.get('within_budget'):
+            self._record_memory_failure('resident_guard', 'agent_memory_budget_exceeded',
+                dict(budget.get('allocations', {}).get(self.memory_token, {}), agent_budget=budget))
             raise GatewayError(503, 'agent_memory_budget_exceeded',
                                'The shared agent memory budget is unavailable or exhausted.')
         if not policy.get("unload_under_pressure"):
@@ -413,6 +457,8 @@ class ModelWorker:
             error = self._resident_check(policy, available, "request")
             self.request_blocked_reason = str(error) if error else None
         if error:
+            self._record_memory_failure('resident_guard', error.code,
+                {'available_bytes': available, 'headroom_bytes': math.ceil(policy['minimum_headroom_gb'] * 1e9)})
             raise error
 
     def acquire(self, cancelled=lambda: False):
@@ -815,6 +861,8 @@ class ModelWorker:
                     'job_memory_cap_exceeded' if job_breach else 'agent_memory_budget_exceeded',
                     'Job memory cap exceeded; increase --memory-budget-gb.' if job_breach
                     else 'The shared agent memory admission was exceeded or unavailable.')
+            self._record_memory_failure('agent_guard', self.memory_guard_error[0],
+                dict(allocation, limit_bytes=ceiling, agent_budget=budget))
             self._halt()
             with self.condition:
                 self.last_error = (('Job memory cap exceeded; increase --memory-budget-gb.' if job_breach

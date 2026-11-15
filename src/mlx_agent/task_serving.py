@@ -363,6 +363,7 @@ class TaskModelWorker(ModelWorker):
                     return self.memory_registry.reserve_execution(self.memory_token,
                         None if budget_gb is None else math.ceil(budget_gb * 1e9), self.memory_probe)
                 except MemoryAdmissionError as error:
+                    self._record_memory_failure('task_admission', error.code, error.details)
                     raise GatewayError(503, error.code, str(error)) from error
             except GatewayError as error:
                 if attempt or error.code not in ('insufficient_headroom', 'agent_memory_budget_exceeded', 'job_memory_cap_exceeded'):

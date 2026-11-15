@@ -73,6 +73,8 @@ mlx-agent serve workflow stop --name studio
 
 Copy `preview_hash` from the reviewed preview. The resource forecast is advisory: an unknown estimate is not a fit guarantee, and admission checks current memory when work starts. A reachable endpoint can be unloaded; JIT and task models load on their first request and follow the chosen residency policy afterward. If activation reports a partial state, inspect workflow status and use workflow stop to clean up its created endpoints. Reused endpoints are left running.
 
+The forecast includes existing reservations and identity-qualified resident members when their accounting is available. An unknown result includes a reason; estimates depend on the available workspace measurements and are not a physical memory guarantee.
+
 Resolution returns `serving-workflow-role/1` with the selected endpoint's `origin`, `base_url`, `model_id`, `runtime`, supported `operations`, `task_kinds`, optional `credential_ref`, and process identity. The origin has no `/v1` suffix; the base URL includes it once. For typed tasks, send exactly `{"kind": ..., "parameters": ...}` to that role's `/v1/tasks` endpoint. Use the same endpoint for that job's status, result, artifacts and cancellation. Select roles explicitly even when models support the same task kind.
 
 `convert video` and `convert mesh` accept `--denoiser-cache adaptive` and

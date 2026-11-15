@@ -175,8 +175,13 @@ class MemoryRegistry:
         floor = max([requested]+[r['headroom_bytes'] for r in others])
         details = {'available_bytes':available,'required_available_bytes':amount+pending+floor,
                    'other_reserved_bytes':pending,'headroom_bytes':floor,'requested_headroom_bytes':requested,
-                   'captured_at':time.time(),'estimated':True}
-        budget = self._agent_budget(rows, (key, amount))
+                   'captured_at':time.time(),'estimated':True, 'requested_bytes':amount,
+                   'other_resident_bytes':sum(r['resident_bytes'] for r in others)}
+        try:
+            budget = self._agent_budget(rows, (key, amount))
+        except MemoryAdmissionError as error:
+            error.details = dict(details, **error.details)
+            raise
         if budget is not None:
             details['agent_budget'] = budget
             if not budget['within_budget']:
@@ -292,7 +297,14 @@ class MemoryRegistry:
             raise MemoryAdmissionError('memory_unknown', 'Invalid job memory cap.')
         with self._locked() as rows:
             row = self._own(rows, key)
-            budget = self._agent_budget(rows, (key, 0))
+            try:
+                budget = self._agent_budget(rows, (key, 0))
+            except MemoryAdmissionError as error:
+                error.details = dict(error.details, route_limit_bytes=limit_bytes,
+                    registry_resident_bytes=row['resident_bytes'], pending_bytes=row['reserved_bytes'],
+                    workspace_bytes=row['workspace_bytes'], growth_bytes=row['growth_bytes'],
+                    headroom_bytes=row['headroom_bytes'])
+                raise
             resident = row['resident_bytes'] if row['phase'] == 'resident' else 0
             minimum = row['resident_bytes'] + row['workspace_bytes'] + row['growth_bytes']
             if row['phase'] == 'resident':
@@ -306,31 +318,37 @@ class MemoryRegistry:
                 capacity = resident + current['pending_bytes'] + free
             else:
                 capacity = limit_bytes
+            details = {'required_bytes': minimum, 'limit_bytes': limit_bytes,
+                       'resident_bytes': resident, 'pending_bytes': row['reserved_bytes'],
+                       'workspace_bytes': row['workspace_bytes'], 'growth_bytes': row['growth_bytes'],
+                       'agent_budget': budget}
             if limit_bytes is not None:
                 if limit_bytes < minimum:
                     raise MemoryAdmissionError('job_memory_cap_exceeded',
                         'The model and workspace exceed this route memory budget; increase --memory-budget-gb.',
-                        {'required_bytes': minimum, 'limit_bytes': limit_bytes})
+                        details)
                 if capacity is not None and limit_bytes > capacity:
                     raise MemoryAdmissionError('agent_memory_budget_exceeded',
-                        'The route memory budget does not fit the shared admission; retry after another job finishes.')
+                        'The route memory budget does not fit the shared admission; retry after another job finishes.', details)
                 capacity = limit_bytes
             if capacity is None:
                 return None
             if capacity < minimum:
                 raise MemoryAdmissionError('agent_memory_budget_exceeded',
-                    'Unload an idle model before starting this model job.')
+                    'Unload an idle model before starting this model job.', details)
             amount = capacity - resident if row['phase'] == 'resident' else capacity
             if probe is not None:
                 available = probe()
                 others = [r for k, r in rows.items() if k != key]
                 required = amount + sum(r['reserved_bytes'] for r in others) + max(
                     [row['headroom_bytes']] + [r['headroom_bytes'] for r in others])
+                details.update(available_bytes=available, required_available_bytes=required,
+                               headroom_bytes=max([row['headroom_bytes']] + [r['headroom_bytes'] for r in others]))
                 if not _bytes(available):
-                    raise MemoryAdmissionError('memory_unknown', 'OS memory headroom is unavailable.')
+                    raise MemoryAdmissionError('memory_unknown', 'OS memory headroom is unavailable.', details)
                 if available < required:
                     raise MemoryAdmissionError('insufficient_headroom',
-                        'The job memory ceiling does not fit available system headroom.')
+                        'The job memory ceiling does not fit available system headroom.', details)
             row['execution_bytes'] = capacity
             row['reserved_bytes'] = amount
             return capacity

@@ -11,6 +11,151 @@ from mlx_agent.residency import MemoryRegistry
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_forecast_accounts_existing_pending_and_reused_resident(self):
+        plan = {'preview_hash':'a'*64, 'runtime':'tasks', 'port':8085, 'local_path':'/model/a',
+                'fingerprint':'f'*64, 'worker_argv':['worker'], 'memory_policy':{}}
+        candidate = {'pid':123, 'process_started_at':'start'}
+        row = {'owner':[123,'gateway identity'], 'worker':{'pid':456,'identity':'worker identity','pgid':456},
+               'phase':'resident','model_key':workflows._model_key(plan), 'resident_bytes':40,
+               'workspace_bytes':15,'growth_bytes':5,'reserved_bytes':20,'headroom_bytes':10,'telemetry':None}
+        inspection = {'state':'ok','errors':[],'entries':{'owned':row},'agent_budget':None}
+        state = {'gateway_pid':123,'worker_pid':456,'worker_started_at':'worker-start','model_state':'loaded'}
+        with patch('mlx_agent.workflow_sets._private_json', return_value=state), \
+             patch('mlx_agent.workflow_sets.process_identity', side_effect=lambda pid: {123:'gateway identity',456:'worker identity'}[pid]), \
+             patch('mlx_agent.workflow_sets._pid_start', side_effect=lambda pid: {123:'start',456:'worker-start'}[pid]), \
+             patch('mlx_agent.workflow_sets.os.getpgid', return_value=456):
+            result = workflows._resource_forecast({'classifier':{'action':'reuse','candidate':candidate,
+                'estimate':{'size':60},'plan':plan}}, inspection, 1000, self.root)
+        self.assertEqual(result['status'], 'fits_estimate')
+        self.assertEqual(result['estimates']['incremental_bytes'], 0)
+        self.assertEqual(result['estimates']['required_available_bytes'], 30)
+        members = {'classifier':{'action':'reuse','candidate':candidate,'estimate':{'size':60},'plan':plan}}
+        with patch('mlx_agent.workflow_sets._private_json', return_value=state), \
+             patch('mlx_agent.workflow_sets.process_identity', side_effect=lambda pid: {123:'gateway identity',456:'worker identity'}[pid]), \
+             patch('mlx_agent.workflow_sets._pid_start', side_effect=lambda pid: {123:'start',456:'worker-start'}[pid]), \
+             patch('mlx_agent.workflow_sets.os.getpgid', return_value=456):
+            for field, value in [('workspace_bytes', True), ('growth_bytes', -1), ('phase', 'launching'),
+                                 ('model_key', 'changed'), ('execution_bytes', 80)]:
+                changed = copy.deepcopy(inspection)
+                changed['entries']['owned'][field] = value
+                with self.subTest(field=field):
+                    self.assertEqual(workflows._resource_forecast(members, changed, 1000, self.root)['status'], 'unknown')
+            changed = copy.deepcopy(inspection)
+            changed['entries']['second'] = copy.deepcopy(row)
+            self.assertEqual(workflows._resource_forecast(members, changed, 1000, self.root)['status'], 'unknown')
+
+    def test_strata_materialized_growth_is_not_reserved_twice(self):
+        plan = {'runtime':'strata','port':8085,'local_path':'/model/a','worker_argv':['worker'],
+                'fingerprint':'f'*64,'memory_policy':{}}
+        row = {'owner':[123,'gateway identity'],'worker':{'pid':456,'identity':'worker identity','pgid':456},
+               'phase':'resident','model_key':workflows._model_key(plan),'resident_bytes':40,
+               'workspace_bytes':15,'growth_bytes':25,'reserved_bytes':40,'headroom_bytes':0,'telemetry':None}
+        budget = {'accounted_bytes':100,'admission_bytes':100,'pending_bytes':10,'resident_bytes':90,
+                  'external_bytes':0,'overhead_bytes':0,'observed_bytes':90,'limit_bytes':100,'reserve_bytes':0,
+                  'allocations':{'owned':{'resident_bytes':90,'observed_bytes':90,'pending_bytes':10}}}
+        inspection = {'state':'ok','errors':[],'entries':{'owned':row},'agent_budget':budget}
+        state = {'gateway_pid':123,'worker_pid':456,'worker_started_at':'worker-start','model_state':'loaded'}
+        with patch('mlx_agent.workflow_sets._private_json', return_value=state), \
+             patch('mlx_agent.workflow_sets.process_identity', side_effect=lambda pid: {123:'gateway identity',456:'worker identity'}[pid]), \
+             patch('mlx_agent.workflow_sets._pid_start', side_effect=lambda pid: {123:'start',456:'worker-start'}[pid]), \
+             patch('mlx_agent.workflow_sets.os.getpgid', return_value=456):
+            result = workflows._resource_forecast({'coder':{'action':'reuse','candidate':{'pid':123,
+                'process_started_at':'start'},'estimate':{'size':100},'plan':plan}}, inspection, 1000, self.root)
+        self.assertEqual(result['status'], 'fits_estimate')
+        self.assertEqual(result['estimates']['incremental_bytes'], 0)
+
+    def test_forecast_unrelated_pending_and_budget_shortfall(self):
+        plan = {'runtime':'tasks','port':8085,'memory_policy':{}}
+        members = {'classifier':{'action':'start','plan':plan,'estimate':{'size':60}}}
+        row = {'owner':[222,'other identity'],'worker':None,'phase':'resident','model_key':'f'*64,
+               'resident_bytes':20,'workspace_bytes':20,'growth_bytes':0,'reserved_bytes':20,
+               'headroom_bytes':10,'telemetry':None}
+        inspection = {'state':'ok','errors':[],'entries':{'other':row},'agent_budget':None}
+        fit = workflows._resource_forecast(members, inspection, 100, self.root)
+        self.assertEqual(fit['status'], 'fits_estimate')
+        self.assertEqual(fit['estimates']['required_available_bytes'], 90)
+        self.assertEqual(workflows._resource_forecast(members, inspection, 89, self.root)['status'], 'does_not_fit')
+        inspection['agent_budget'] = {'accounted_bytes':50,'admission_bytes':100,'pending_bytes':20,
+            'resident_bytes':20,'external_bytes':0,'overhead_bytes':10,'observed_bytes':30,'limit_bytes':100,
+            'reserve_bytes':0,'allocations':{'other':{'resident_bytes':20,'pending_bytes':20,'observed_bytes':20}}}
+        denied = workflows._resource_forecast(members, inspection, 1000, self.root)
+        self.assertEqual(denied['status'], 'does_not_fit')
+        self.assertIn('shared budget', denied['reason'])
+        denied = workflows._resource_forecast(members, inspection, None, self.root)
+        self.assertEqual(denied['status'], 'does_not_fit')
+        self.assertIn('shared budget', denied['reason'])
+        malformed = copy.deepcopy(inspection)
+        malformed['agent_budget'] = None
+        malformed['entries']['other'] = {'reserved_bytes':20,'headroom_bytes':10}
+        self.assertEqual(workflows._resource_forecast(members, malformed, 1000, self.root)['status'], 'unknown')
+        row['reserved_bytes'] = True
+        self.assertEqual(workflows._resource_forecast(members, inspection, 1000, self.root)['status'], 'unknown')
+
+    def test_forecast_reuse_missing_state_is_unknown(self):
+        plan = {'runtime':'tasks','port':8085,'memory_policy':{}}
+        members = {'classifier':{'action':'reuse','candidate':{'pid':123},'plan':plan,'estimate':{'size':60}}}
+        inspection = {'state':'ok','errors':[],'entries':{},'agent_budget':None}
+        with patch('mlx_agent.workflow_sets._private_json', side_effect=FileNotFoundError('missing')):
+            result = workflows._resource_forecast(members, inspection, 1000, self.root)
+        self.assertEqual(result['status'], 'unknown')
+        self.assertIn('state is unavailable', result['reason'])
+
+    def test_forecast_unloaded_reuse_and_resident_task_cap(self):
+        plan = {'runtime':'tasks','port':8085,'local_path':'/model/a','worker_argv':['worker'],
+                'fingerprint':'f'*64,'memory_policy':{'model_memory_budget_gb':0.00000005}}
+        candidate = {'pid':123,'process_started_at':'start'}
+        member = {'classifier':{'action':'reuse','candidate':candidate,'plan':plan,'estimate':{'size':40}}}
+        inspection = {'state':'ok','errors':[],'entries':{},'agent_budget':None}
+        with patch('mlx_agent.workflow_sets._private_json', return_value={'gateway_pid':123,'worker_pid':None,'model_state':'unloaded'}), \
+             patch('mlx_agent.workflow_sets.process_identity', return_value='gateway identity'), \
+             patch('mlx_agent.workflow_sets._pid_start', return_value='start'):
+            result = workflows._resource_forecast(member, inspection, 1000, self.root)
+        self.assertEqual(result['estimates']['incremental_bytes'], 50)
+        row = {'owner':[123,'gateway identity'],'worker':{'pid':456,'identity':'worker identity','pgid':456},
+               'phase':'resident','model_key':workflows._model_key(plan),'resident_bytes':40,
+               'workspace_bytes':15,'growth_bytes':5,'reserved_bytes':20,'headroom_bytes':0,'telemetry':None}
+        inspection['entries']={'owned':row}
+        state={'gateway_pid':123,'worker_pid':456,'worker_started_at':'worker-start','model_state':'loaded'}
+        with patch('mlx_agent.workflow_sets._private_json', return_value=state), \
+             patch('mlx_agent.workflow_sets.process_identity', side_effect=lambda pid: {123:'gateway identity',456:'worker identity'}[pid]), \
+             patch('mlx_agent.workflow_sets._pid_start', side_effect=lambda pid: {123:'start',456:'worker-start'}[pid]), \
+             patch('mlx_agent.workflow_sets.os.getpgid', return_value=456):
+            result = workflows._resource_forecast(member, inspection, 1000, self.root)
+        self.assertEqual(result['status'], 'does_not_fit')
+        self.assertIn('route cap', result['reason'])
+        self.assertEqual(result['members']['classifier']['configured_limit_bytes'], 50)
+        self.assertEqual(result['members']['classifier']['required_limit_bytes'], 60)
+        self.assertIsNotNone(result['estimates']['incremental_bytes'])
+
+    def test_preview_hash_excludes_reused_allocation_changes(self):
+        plan = {'preview_hash':'a'*64,'runtime':'tasks','port':8085,'local_path':'/model/a',
+                'worker_argv':['worker'],'fingerprint':'f'*64,'memory_policy':{}}
+        definition = copy.deepcopy(self.definition)
+        definition['members'] = {'classifier':definition['members']['classifier']}
+        candidate = {'pid':123,'process_started_at':'start'}
+        row = {'owner':[123,'gateway identity'],'worker':{'pid':456,'identity':'worker identity','pgid':456},
+               'phase':'resident','model_key':workflows._model_key(plan),'resident_bytes':40,
+               'workspace_bytes':15,'growth_bytes':5,'reserved_bytes':20,'headroom_bytes':10,'telemetry':None}
+        first = {'state':'ok','errors':[],'entries':{'owned':row},'agent_budget':None}
+        second = copy.deepcopy(first)
+        second['entries']['owned']['reserved_bytes'] = 40
+        state={'gateway_pid':123,'worker_pid':456,'worker_started_at':'worker-start','model_state':'loaded'}
+        with patch('mlx_agent.workflow_sets._member_plan', return_value=plan), \
+             patch('mlx_agent.workflow_sets.reservation', return_value={'size':60}), \
+             patch('mlx_agent.workflow_sets.os.path.lexists', return_value=True), \
+             patch('mlx_agent.workflow_sets._reuse_candidate', return_value=candidate), \
+             patch('mlx_agent.workflow_sets.MemoryRegistry.inspect', side_effect=[first,second]), \
+             patch('mlx_agent.workflow_sets.available_memory_bytes', side_effect=[1000,80]), \
+             patch('mlx_agent.workflow_sets._private_json', return_value=state), \
+             patch('mlx_agent.workflow_sets.process_identity', side_effect=lambda pid: {123:'gateway identity',456:'worker identity'}[pid]), \
+             patch('mlx_agent.workflow_sets._pid_start', side_effect=lambda pid: {123:'start',456:'worker-start'}[pid]), \
+             patch('mlx_agent.workflow_sets.os.getpgid', return_value=456):
+            left = workflows.preview_workflow(definition, receipts_dir=self.root)
+            right = workflows.preview_workflow(definition, receipts_dir=self.root)
+        self.assertEqual(left['preview_hash'], right['preview_hash'])
+        self.assertNotEqual(left['resource_forecast']['estimates']['required_available_bytes'],
+                            right['resource_forecast']['estimates']['required_available_bytes'])
+
     def setUp(self):
         self.temp = TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

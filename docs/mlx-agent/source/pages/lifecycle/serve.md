@@ -60,6 +60,10 @@ breach. This policy does not control unrelated applications or
 replace system-headroom checks. Existing servers must be restarted on a supporting
 engine to participate; installing newer source does not update a running process.
 
+Gateway status includes `last_memory_failure`, the most recent admission refusal or
+guard failure with available numeric measurements. Missing measurements are `null`;
+the record remains available after the worker unloads.
+
 Serve launches local MLX servers from a reviewed plan. Use `mlx_lm` for text,
 `mlx-vlm` for vision/language models, or `strata` for prepared compatible GGUF
 profiles. `auto` selects typed job serving for

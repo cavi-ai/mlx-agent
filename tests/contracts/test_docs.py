@@ -21,7 +21,7 @@ RENDERER_PATH = ROOT / "scripts" / "render_compatibility.py"
 APPLE_SILICON_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "apple-silicon.yml"
 TEST_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "test.yml"
 TOOL_USE_DOC_PATHS = (
-    ROOT / "README.md",
+    ROOT / "docs" / "mlx-agent" / "source" / "pages" / "reference" / "evidence.md",
     ROOT / "docs" / "guides" / "scout.md",
     ROOT / "docs" / "guides" / "adopt.md",
     ROOT / "docs" / "security.md",
@@ -122,17 +122,11 @@ class DocumentationContractTests(unittest.TestCase):
 
     def test_each_canonical_tool_use_doc_states_its_required_contract(self):
         required_by_document = {
-            "README.md": (
+            "evidence.md": (
                 r"\btool-use\b",
                 r"primary role",
                 r"metadata.+not verification",
                 r"schema-valid synthetic (?:runtime )?tool call",
-                r"Ollama",
-                r"LM Studio",
-                r"mlx_lm",
-                r"LiteLLM",
-                r"live smoke.+only direct local.+Ollama.+LM Studio.+mlx_lm",
-                r"LiteLLM.+excluded from automatic live selection.+remote or paid",
             ),
             "scout.md": (
                 r"\btool-use\b",
@@ -167,21 +161,24 @@ class DocumentationContractTests(unittest.TestCase):
             for pattern in patterns:
                 with self.subTest(document=str(path.relative_to(ROOT)), pattern=pattern):
                     self.assertRegex(text, re.compile(pattern, re.IGNORECASE | re.DOTALL))
+        self.assertIn("docs/mlx-agent/source/pages/reference/evidence.md", self.readme)
 
     def test_readme_gives_canonical_install_commands_for_every_provider(self):
         commands = (
             "claude plugin marketplace add cavi-ai/mlx-agent",
             "claude plugin install mlx-agent@mlx-agent",
-            "codex plugin marketplace add cavi-ai/mlx-agent --ref v{0}".format(mlx_agent.__version__),
+            "codex plugin marketplace add cavi-ai/mlx-agent --ref main",
             "codex plugin add mlx-agent@mlx-agent",
             "agy plugin install ./mlx-agent/providers/agy",
             "python3 scripts/mlx-agent install opencode --scope user --dry-run --json",
-            "python3 scripts/mlx-agent install agentskills --scope user --dry-run --json",
-            "python3 scripts/mlx-agent install openclaw --scope user --dry-run --json",
         )
         for command in commands:
             with self.subTest(command=command):
                 self.assertIn(command, self.readme)
+        for guide, provider in (("docs/install/index.md", "agentskills"), ("docs/install/openclaw.md", "openclaw")):
+            with self.subTest(provider=provider):
+                self.assertIn(guide, self.readme)
+                self.assertIn("python3 scripts/mlx-agent install {0} --scope user --dry-run --json".format(provider), (ROOT / guide).read_text(encoding="utf-8"))
 
     def test_public_tree_excludes_internal_agent_work_artifacts(self):
         artifact_root = ROOT / "docs" / "superpowers"

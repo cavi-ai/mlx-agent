@@ -38,10 +38,13 @@ def _darwin_pids(group=None):
     capacity = 4096
     while True:
         buffer = (ctypes.c_int * capacity)()
-        found = (_libproc().proc_listallpids(buffer, ctypes.sizeof(buffer)) if group is None
-                 else _libproc().proc_listpgrppids(group, buffer, ctypes.sizeof(buffer)))
-        if found < 0:
-            raise OSError(ctypes.get_errno(), 'The process table is unavailable.')
+        library = _libproc()
+        ctypes.set_errno(0)
+        found = (library.proc_listallpids(buffer, ctypes.sizeof(buffer)) if group is None
+                 else library.proc_listpgrppids(group, buffer, ctypes.sizeof(buffer)))
+        code = ctypes.get_errno()
+        if found < 0 or found == 0 and code:
+            raise OSError(code, 'The process table is unavailable.')
         if found < capacity:  # A full buffer may have dropped PIDs.
             return [pid for pid in buffer[:found] if pid > 0]
         capacity *= 2

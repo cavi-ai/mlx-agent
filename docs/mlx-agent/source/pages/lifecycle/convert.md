@@ -91,8 +91,9 @@ texture latent from the image and the shape latent, with the checkpoint's own
 guidance, and the texture decoder turns it into base color, metallic and
 roughness for every voxel of the mesh. The output is a GLB mesh whose `COLOR_0`
 vertex attribute holds the base color in linear RGB and whose `COLOR_1` holds
-occlusion (1), roughness and metallic in glTF's channel order, each vertex taking
-the voxel that holds it or the closest occupied one within three cells. The
+occlusion (1), roughness and metallic in glTF's channel order. These channels
+are also baked into an embedded texture bound to the glTF material. Each vertex
+takes the voxel that holds it or the closest occupied one within three cells. The
 result reports `vertex_colors` and `pbr`, and `stage_seconds` reports `conditioning`,
 `sparse_structure`, `shape_latent_512`, `shape_latent_high`, `texture_latent`,
 `decode`, `texture_decode`, `mesh`, `decimation` and `export`. A model converted

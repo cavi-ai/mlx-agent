@@ -325,7 +325,52 @@ class Trellis2NativeTests(unittest.TestCase):
             self.assertEqual((accessor['componentType'], accessor['type'], accessor['count']), (5126, 'VEC3', 3))
             stored = np.frombuffer(binary[view['byteOffset']:view['byteOffset'] + view['byteLength']], dtype='<f4')
             self.assertEqual(stored.reshape(3, 3).tolist(), expected.tolist())
-        self.assertEqual(document['buffers'][0]['byteLength'], 36 + 12 + 36 + 36)
+        import io
+        from PIL import Image
+        primitive = document['meshes'][0]['primitives'][0]
+        material = document['materials'][primitive['material']]
+        self.assertEqual(material['pbrMetallicRoughness']['metallicRoughnessTexture']['index'], 0)
+        self.assertEqual(material['occlusionTexture']['index'], 0)
+        texture = document['textures'][0]
+        self.assertEqual(document['samplers'][texture['sampler']],
+                         {'magFilter': 9729, 'minFilter': 9729, 'wrapS': 33071, 'wrapT': 33071})
+        image = document['images'][texture['source']]
+        self.assertEqual(image['mimeType'], 'image/png')
+        view = document['bufferViews'][image['bufferView']]
+        pixels = np.asarray(Image.open(io.BytesIO(binary[view['byteOffset']:view['byteOffset'] + view['byteLength']])))
+        accessor = document['accessors'][attributes['TEXCOORD_0']]
+        self.assertEqual((accessor['componentType'], accessor['type'], accessor['count']), (5126, 'VEC2', 3))
+        view = document['bufferViews'][accessor['bufferView']]
+        uv = np.frombuffer(binary[view['byteOffset']:view['byteOffset'] + view['byteLength']], dtype='<f4').reshape(-1, 2)
+        for coordinate, expected in zip(uv, materials):
+            x, y = (coordinate * [pixels.shape[1], pixels.shape[0]]).astype(int)
+            np.testing.assert_allclose(pixels[y, x] / 255, expected, atol=1/255)
+
+    def test_pbr_islands_duplicate_shared_vertices_without_changing_inputs(self):
+        import struct
+        import numpy as np
+        write_glb = importlib.import_module(SHELL + '.triposg.geometry').write_glb
+        vertices = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]], dtype=np.float32)
+        faces = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.uint32)
+        colors = np.arange(12, dtype=np.float32).reshape(4, 3) / 12
+        material = np.ones((4, 3), dtype=np.float32) * 0.5
+        before = [v.copy() for v in (vertices, faces, colors, material)]
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / 'two.glb'
+            write_glb(path, vertices, faces, colors, material)
+            data = path.read_bytes()
+        size = struct.unpack('<I', data[12:16])[0]
+        doc, binary = json.loads(data[20:20 + size]), data[28 + size:]
+        attrs = doc['meshes'][0]['primitives'][0]['attributes']
+        def read(accessor_id, width):
+            a = doc['accessors'][accessor_id]; v = doc['bufferViews'][a['bufferView']]
+            return np.frombuffer(binary[v['byteOffset']:v['byteOffset'] + v['byteLength']], dtype='<f4').reshape(-1, width)
+        np.testing.assert_array_equal(read(attrs['POSITION'], 3), vertices[faces.ravel()])
+        np.testing.assert_array_equal(read(attrs['COLOR_0'], 3), colors[faces.ravel()])
+        uv = read(attrs['TEXCOORD_0'], 2)
+        self.assertFalse(np.array_equal(uv[1], uv[3]))
+        for current, original in zip((vertices, faces, colors, material), before):
+            np.testing.assert_array_equal(current, original)
 
     def test_glb_carries_vertex_colors_as_a_float_color_attribute(self):
         import struct

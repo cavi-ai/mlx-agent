@@ -1,6 +1,8 @@
 """Iso-surface extraction, triangle-cap decimation and a self-contained binary glTF mesh writer."""
 
+import io
 import json
+import math
 import struct
 import time
 
@@ -46,9 +48,39 @@ def decimate(vertices, faces, max_faces):
     return points.astype(np.float32), triangles
 
 
+def _material_atlas(materials, faces):
+    """Bake independent triangle islands into a linear occlusion/roughness/metallic PNG."""
+    from PIL import Image
+
+    count = len(faces)
+    columns = math.isqrt(count - 1) + 1
+    rows = (count + columns - 1) // columns
+    width, height = columns * 8, rows * 8
+    if width > 8192 or height > 8192:
+        raise ValueError("Material atlas exceeds the 8192-pixel export bound; lower the face cap.")
+    atlas = np.zeros((height, width, 3), dtype=np.uint8)
+    tiles = atlas.reshape(rows, 8, columns, 8, 3).transpose(0, 2, 1, 3, 4)
+    yy, xx = np.mgrid[0:8, 0:8]
+    u, v = (xx - 1) / 5, (yy - 1) / 5
+    weights = np.stack((1 - u - v, u, v), axis=-1).clip(0)
+    weights /= weights.sum(axis=-1, keepdims=True)
+    for start in range(0, count, 4096):
+        end = min(start + 4096, count)
+        ids = np.arange(start, end)
+        baked = np.einsum("hwv,fvc->fhwc", weights, materials[faces[start:end]])
+        tiles[ids // columns, ids % columns] = np.rint(baked * 255).astype(np.uint8)
+    ids = np.arange(count)
+    origins = np.stack(((ids % columns) * 8, (ids // columns) * 8), axis=1)
+    corners = np.array([[1.5, 1.5], [6.5, 1.5], [1.5, 6.5]])
+    uv = ((origins[:, None, :] + corners) / [width, height]).astype("<f4").reshape(-1, 2)
+    stream = io.BytesIO()
+    Image.fromarray(atlas, "RGB").save(stream, format="PNG")
+    return uv, stream.getvalue()
+
+
 def write_glb(path, vertices, faces, colors=None, materials=None):
     """A binary glTF mesh; ``colors`` (V, 3), linear RGB in [0, 1], become the COLOR_0 vertex attribute and
-    ``materials`` (V, 3), linear occlusion, roughness and metallic in [0, 1], become COLOR_1."""
+    ``materials`` (V, 3), linear occlusion, roughness and metallic in [0, 1], become COLOR_1 and a PBR texture."""
     vertices = np.ascontiguousarray(vertices, dtype="<f4")
     faces = np.ascontiguousarray(faces, dtype="<u4")
     if vertices.ndim != 2 or vertices.shape[1] != 3 or not len(vertices) or not np.isfinite(vertices).all():
@@ -68,6 +100,12 @@ def write_glb(path, vertices, faces, colors=None, materials=None):
                 or materials.min() < 0 or materials.max() > 1):
             raise ValueError("Vertex materials must be one occlusion, roughness and metallic value in [0, 1] "
                              "per vertex.")
+    image = None
+    if materials is not None:
+        uv, image = _material_atlas(materials, faces)
+        references = faces.ravel()
+        vertices, colors, materials = vertices[references], colors[references], materials[references]
+        faces = np.arange(len(references), dtype="<u4").reshape(-1, 3)
     positions, indices = vertices.tobytes(), faces.tobytes()
     binary = positions + indices
     document = _document(vertices, faces, len(positions), len(indices))
@@ -80,6 +118,24 @@ def write_glb(path, vertices, faces, colors=None, materials=None):
         document["bufferViews"].append({"buffer": 0, "byteOffset": len(binary), "byteLength": values.nbytes,
                                         "target": 34962})
         binary += values.tobytes()
+    if image is not None:
+        primitive = document["meshes"][0]["primitives"][0]
+        primitive["attributes"]["TEXCOORD_0"] = len(document["accessors"])
+        document["accessors"].append({"bufferView": len(document["bufferViews"]), "componentType": 5126,
+                                      "count": len(uv), "type": "VEC2"})
+        document["bufferViews"].append({"buffer": 0, "byteOffset": len(binary), "byteLength": uv.nbytes,
+                                        "target": 34962})
+        binary += uv.tobytes()
+        image_view = len(document["bufferViews"])
+        document["bufferViews"].append({"buffer": 0, "byteOffset": len(binary), "byteLength": len(image)})
+        binary += image
+        primitive["material"] = 0
+        document["images"] = [{"bufferView": image_view, "mimeType": "image/png"}]
+        document["samplers"] = [{"magFilter": 9729, "minFilter": 9729, "wrapS": 33071, "wrapT": 33071}]
+        document["textures"] = [{"sampler": 0, "source": 0}]
+        document["materials"] = [{"pbrMetallicRoughness": {"metallicFactor": 1, "roughnessFactor": 1,
+            "metallicRoughnessTexture": {"index": 0, "texCoord": 0}},
+            "occlusionTexture": {"index": 0, "texCoord": 0, "strength": 1}}]
     document["buffers"][0]["byteLength"] = len(binary)
     encoded = json.dumps(document, separators=(",", ":")).encode()
     encoded += b" " * (-len(encoded) % 4)

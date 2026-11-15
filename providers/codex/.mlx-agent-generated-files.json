@@ -198,6 +198,7 @@
     "src/mlx_agent/prefill_runtime.py",
     "src/mlx_agent/private_serve.py",
     "src/mlx_agent/probe_assets.py",
+    "src/mlx_agent/process_table.py",
     "src/mlx_agent/process_tree.py",
     "src/mlx_agent/project_blueprint.py",
     "src/mlx_agent/prompt_lookup_runtime.py",

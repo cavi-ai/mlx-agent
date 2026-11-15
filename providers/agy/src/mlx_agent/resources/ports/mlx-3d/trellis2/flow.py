@@ -112,10 +112,13 @@ def _guided(x_t, t, positive, negative, strength, rescale):
 def sample(w, config, noise, cond, neg_cond, rope, steps, guidance_strength, guidance_rescale,
            guidance_interval, rescale_t, extra=None, proj=None):
     """Euler integration from t=1 to 0; classifier-free guidance only inside ``guidance_interval``.
+    A list ``cond`` conditions step ``i`` on view ``i % len(cond)``, TRELLIS's stochastic multi-image mode.
     The unconditional branch of a projection-conditioned model sees zero projected features."""
+    views = list(cond) if isinstance(cond, (list, tuple)) else [cond]
     x = noise
     both_proj = None if proj is None else mx.concatenate([proj, mx.zeros_like(proj)], axis=0)
-    for t, t_prev in schedule(steps, rescale_t):
+    for index, (t, t_prev) in enumerate(schedule(steps, rescale_t)):
+        cond = views[index % len(views)]
         guided = guidance_strength != 1 and guidance_interval[0] <= t <= guidance_interval[1]
         inputs = x if extra is None else mx.concatenate([x, extra], axis=-1)
         if guided:

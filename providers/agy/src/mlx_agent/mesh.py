@@ -41,9 +41,13 @@ def _choices(values):
 
 
 def plan_mesh(model_path, image, out, steps=None, seed=42, resolution=None, guidance=None, max_faces=500_000,
-              manifests=None, registries=None, root=None, denoiser_cache='off', cache_memory_mib=256):
-    """The backend run for one image; unset steps, resolution and guidance take the model's own defaults."""
+              manifests=None, registries=None, root=None, denoiser_cache='off', cache_memory_mib=256, views=(),
+              guide=None):
+    """The backend run for one image, plus TRELLIS.2's extra ``views`` and ``guide`` mesh; unset steps, resolution
+    and guidance take the model's own defaults."""
     model, image, target = (Path(value).expanduser().absolute() for value in (model_path, image, out))
+    views = [Path(value).expanduser().absolute() for value in views]
+    guide = None if guide is None else Path(guide).expanduser().absolute()
     try:
         config = json.loads((model / "config.json").read_text())
     except (OSError, ValueError) as error:
@@ -56,10 +60,19 @@ def plan_mesh(model_path, image, out, steps=None, seed=42, resolution=None, guid
     guidance = defaults["guidance"] if guidance is None else guidance
     if not image.is_file() or image.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
         raise MeshError("invalid_arguments", "--image must be an existing PNG, JPEG or WebP file.", "Select an input image.")
+    if (views or guide is not None) and config.get("model_type") != "trellis2":
+        raise MeshError("invalid_arguments", "--view and --guide require a TRELLIS.2 model.", "Drop them for this model.")
+    if any(not view.is_file() or view.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp") for view in views):
+        raise MeshError("invalid_arguments", "--view must be an existing PNG, JPEG or WebP file.", "Select the view images.")
+    if guide is not None and (not guide.is_file() or guide.suffix.lower() != ".glb"):
+        raise MeshError("invalid_arguments", "--guide must be an existing .glb file.", "Export the guide mesh as GLB.")
     if target.suffix.lower() != ".glb" or target.exists() or target.is_symlink() or not target.parent.is_dir():
         raise MeshError("invalid_arguments", "--out must be a new .glb path in an existing directory.", "Choose a new output path.")
     if type(steps) is not int or not 1 <= steps <= 100 or type(seed) is not int or not 0 <= seed < 2**32:
         raise MeshError("invalid_arguments", "Steps must be 1..100 and seed 0..4294967295.", "Use --steps 50 --seed 42.")
+    if len(views) >= steps:
+        raise MeshError("invalid_arguments", "Each image conditions one sampler step in turn; use fewer views than steps.",
+                        "Raise --steps or drop views.")
     if type(resolution) is not int or resolution not in resolutions:
         raise MeshError("invalid_arguments", "Resolution must be {0}.".format(_choices(resolutions)),
                         "Use --resolution {0}.".format(defaults["resolution"]))
@@ -87,6 +100,10 @@ def plan_mesh(model_path, image, out, steps=None, seed=42, resolution=None, guid
             "--max-faces", str(max_faces)]
     if denoiser_cache == 'adaptive':
         argv += ['--denoiser-cache',denoiser_cache,'--cache-memory-mib',str(cache_memory_mib)]
+    for view in views:
+        argv += ["--view", str(view)]
+    if guide is not None:
+        argv += ["--guide", str(guide)]
     return {"backend": manifest["id"], "model": str(model), "out": str(target), "argv": argv}
 
 

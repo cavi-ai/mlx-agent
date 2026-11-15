@@ -103,7 +103,7 @@ rebuilt around it on the same grid: its surface lies three quarters of a cell
 outside the decoded one, faces outward, and joins two triangles at each edge
 before decimation. Space that no straight line along an axis reaches from
 outside is filled, so a hollow shell becomes solid except where an opening
-shows its inside.
+shows its inside. Reconstruction uses bounded tiles at the requested grid resolution.
 
 ## Pixal3D image-to-3D
 

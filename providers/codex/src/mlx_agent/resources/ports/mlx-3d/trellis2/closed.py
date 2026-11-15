@@ -6,42 +6,118 @@ PAD = 3
 
 
 def closed_surface(vertices, faces, grid, band=0.75):
-    """Vertices (V, 3) float32 and triangles (F, 3) of the solid's surface, ``band`` cells outside the mesh.
+    """Fill cells hidden along every axis, using bounded tiles and 2D axis projections.
 
-    The mesh lies in the unit cube centered on the origin, sampled on ``grid`` cells per axis. Cells within ``band`` of
-    the mesh are solid, and so is every cell that no straight line along an axis reaches from outside: the inside of
-    a hollow shell fills, except the part seen straight through an opening. Each edge joins two triangles.
+    The mesh is sampled at the requested grid resolution; axis-visible openings remain open.
     """
     from scipy import ndimage
     from scipy.spatial import cKDTree
     from skimage.measure import marching_cubes
+    from itertools import product
 
+    triangles = np.asarray(faces, dtype=np.int64)
+    if triangles.ndim != 2 or triangles.shape[1] != 3 or not len(triangles):
+        raise ValueError("A closed surface requires at least one triangle.")
     points = (np.asarray(vertices, dtype=np.float64) + 0.5) * grid
-    corners = points[np.asarray(faces, dtype=np.int64)]
-    # Dual-grid edges span about one cell, so corners, edge midpoints and centers lie within half a cell of any point.
-    samples = np.concatenate([points, corners.mean(axis=1), (corners[:, 0] + corners[:, 1]) / 2,
-                              (corners[:, 1] + corners[:, 2]) / 2, (corners[:, 2] + corners[:, 0]) / 2])
-    cells = np.floor(samples).astype(np.int64)
+    corners = points[triangles]
+    samples = np.concatenate([points[np.unique(triangles)], corners.mean(axis=1),
+                              (corners[:, 0] + corners[:, 1]) / 2,
+                              (corners[:, 1] + corners[:, 2]) / 2,
+                              (corners[:, 2] + corners[:, 0]) / 2])
+    cells = np.unique(np.floor(samples).astype(np.int64), axis=0)
     origin = cells.min(axis=0) - PAD
-    shape = tuple(cells.max(axis=0) - origin + PAD + 1)
-    occupied = np.zeros(shape, dtype=bool)
-    occupied[tuple((cells - origin).T)] = True
-    near = ndimage.binary_dilation(occupied, structure=np.ones((3, 3, 3), dtype=bool), iterations=2)
-    index = np.argwhere(near)
+    cells -= origin
+    shape = cells.max(axis=0) + PAD + 1
+    plane_sizes = [int(shape[1] * shape[2]), int(shape[0] * shape[2]), int(shape[0] * shape[1])]
+    if sum(plane_sizes) * 2 * np.dtype(np.int32).itemsize > 64 * 1024 * 1024:
+        raise ValueError("Axis projections exceed the 64 MiB reconstruction bound.")
+    projection_shapes = [(shape[1], shape[2]), (shape[0], shape[2]), (shape[0], shape[1])]
+    first = [np.full(s, shape[axis], dtype=np.int32) for axis, s in enumerate(projection_shapes)]
+    last = [np.full(s, -1, dtype=np.int32) for s in projection_shapes]
+    tile = 64
+    group_keys, inverse = np.unique(cells // tile, axis=0, return_inverse=True)
+    order = np.argsort(inverse, kind="stable")
+    offsets = np.searchsorted(inverse[order], np.arange(len(group_keys) + 1))
+    groups = {tuple(key): cells[order[offsets[i]:offsets[i + 1]]] for i, key in enumerate(group_keys)}
+    candidates = set()
+    limits = (shape - 1) // tile
+    for key in groups:
+        for delta in product((-1, 0, 1), repeat=3):
+            neighbor = tuple(key[i] + delta[i] for i in range(3))
+            if all(0 <= neighbor[i] <= limits[i] for i in range(3)):
+                candidates.add(neighbor)
+    tree = cKDTree(samples)
     far = band + 1.0
-    distance, _ = cKDTree(samples).query(index + origin + 0.5, distance_upper_bound=far, workers=-1)
-    field = np.full(shape, far, dtype=np.float32)
-    field[tuple(index.T)] = np.minimum(distance, far)
-    empty = field > band
-    outside = np.zeros(shape, dtype=bool)
-    for axis in range(3):
-        outside |= np.logical_and.accumulate(empty, axis=axis)
-        outside |= np.flip(np.logical_and.accumulate(np.flip(empty, axis), axis=axis), axis)
-    level = field - band
-    # An empty cell hidden along every axis is solid, so only the seen side of the band crosses zero.
-    level[empty & ~outside] = -band
-    surface, triangles, _, _ = marching_cubes(level, 0, method="lewiner")
-    surface = ((surface + origin + 0.5) / grid - 0.5).astype(np.float32)
+
+    def field(start, end):
+        low = np.maximum(start - 2, 0)
+        high = np.minimum(end + 2, shape)
+        occupied = np.zeros(tuple(high - low), dtype=bool)
+        for key in product(*(range(int(low[i] // tile), int((high[i] - 1) // tile) + 1) for i in range(3))):
+            group = groups.get(key)
+            if group is None:
+                continue
+            selected = group[np.all((group >= low) & (group < high), axis=1)]
+            if len(selected):
+                occupied[tuple((selected - low).T)] = True
+        near = ndimage.binary_dilation(occupied, structure=np.ones((3, 3, 3), dtype=bool), iterations=2)
+        near = near[tuple(slice(int(start[i] - low[i]), int(end[i] - low[i])) for i in range(3))]
+        index = np.argwhere(near)
+        values = np.full(tuple(end - start), far, dtype=np.float32)
+        if len(index):
+            distance, _ = tree.query(index + start + origin + 0.5, distance_upper_bound=far, workers=-1)
+            values[tuple(index.T)] = np.minimum(distance, far)
+        return values
+
+    for key in sorted(candidates):
+        start = np.asarray(key) * tile
+        end = np.minimum(start + tile, shape)
+        index = np.argwhere(field(start, end) <= band) + start
+        if not len(index):
+            continue
+        for axis, other in enumerate(((1, 2), (0, 2), (0, 1))):
+            coords = (index[:, other[0]], index[:, other[1]])
+            np.minimum.at(first[axis], coords, index[:, axis])
+            np.maximum.at(last[axis], coords, index[:, axis])
+
+    surfaces, faces_out = [], []
+    vertex_offset = 0
+    for key in product(*(range(int((shape[i] - 2) // tile) + 1) for i in range(3))):
+        start = np.asarray(key) * tile
+        end = np.minimum(start + tile + 1, shape)
+        region = tuple(slice(int(start[i]), int(end[i])) for i in range(3))
+        possible = True
+        for axis, other in enumerate(((1, 2), (0, 2), (0, 1))):
+            section = (region[other[0]], region[other[1]])
+            if not np.any((first[axis][section] < end[axis]) & (last[axis][section] >= start[axis])):
+                possible = False
+                break
+        nearby = any(tuple(key[i] + delta[i] for i in range(3)) in candidates
+                     for delta in product((0, 1), repeat=3))
+        if not possible and not nearby:
+            continue
+        values = field(start, end)
+        inside = np.ones(tuple(end - start), dtype=bool)
+        x, y, z = (np.arange(start[i], end[i]) for i in range(3))
+        inside &= (x[:, None, None] >= first[0][region[1], region[2]][None, :, :]) & (x[:, None, None] <= last[0][region[1], region[2]][None, :, :])
+        inside &= (y[None, :, None] >= first[1][region[0], region[2]][:, None, :]) & (y[None, :, None] <= last[1][region[0], region[2]][:, None, :])
+        inside &= (z[None, None, :] >= first[2][region[0], region[1]][:, :, None]) & (z[None, None, :] <= last[2][region[0], region[1]][:, :, None])
+        empty = values > band
+        level = values - band
+        level[empty & inside] = -band
+        if not (level.min() <= 0 < level.max()):
+            continue
+        surface, triangles, _, _ = marching_cubes(level, 0, method="lewiner")
+        surface = ((surface + start + origin + 0.5) / grid - 0.5).astype(np.float32)
+        surfaces.append(surface)
+        faces_out.append(triangles + vertex_offset)
+        vertex_offset += len(surface)
+    if not surfaces:
+        raise ValueError("The mesh has no reconstructable closed surface.")
+    surface, inverse = np.unique(np.concatenate(surfaces), axis=0, return_inverse=True)
+    triangles = inverse[np.concatenate(faces_out)].astype(np.int32)
+    valid = (triangles[:, 0] != triangles[:, 1]) & (triangles[:, 1] != triangles[:, 2]) & (triangles[:, 2] != triangles[:, 0])
+    triangles = triangles[valid]
     a, b, c = (surface[triangles[:, i]].astype(np.float64) for i in range(3))
     if np.einsum("ij,ij->", a, np.cross(b, c)) < 0:
         triangles = triangles[:, ::-1]

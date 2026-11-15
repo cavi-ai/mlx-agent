@@ -2118,6 +2118,18 @@ def _run_convert(arguments):
     from .video import plan_video, run_video
     from .mesh import plan_mesh, run_mesh
     operation = "convert-{0}".format(arguments.convert_command)
+
+    def served_or_local(verb, runner, plan, out):
+        # A typed endpoint that already holds this model runs the job; the model never loads twice.
+        from . import served
+        kind, parameters = served.request(verb, arguments)
+        service = served.endpoint(arguments.path, kind)
+        if service is not None:
+            return served.run(service, kind, parameters, None if out is None else str(Path(out).expanduser()),
+                              arguments.timeout)
+        from .compute import guarded_start
+        return guarded_start(verb, runner, plan, timeout=arguments.timeout)
+
     try:
         if arguments.convert_command == "status":
             entries = status_convert(arguments.receipts_dir)
@@ -2147,8 +2159,7 @@ def _run_convert(arguments):
                 raise ValueError("--timeout must be 1..7200 seconds")
             plan = plan_generate(arguments.path, arguments.prompt, arguments.out, width=arguments.width,
                                  height=arguments.height, steps=arguments.steps, seed=arguments.seed)
-            from .compute import guarded_start
-            result = guarded_start("generate", run_generate, plan, timeout=arguments.timeout)
+            result = served_or_local("generate", run_generate, plan, arguments.out)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
         if arguments.convert_command == "music":
             if not 1 <= arguments.timeout <= 14400:
@@ -2156,16 +2167,14 @@ def _run_convert(arguments):
             plan = plan_music(arguments.path, arguments.caption, arguments.lyrics, arguments.out,
                               duration=arguments.duration, steps=arguments.steps, seed=arguments.seed,
                               bpm=arguments.bpm, time_signature=arguments.time_signature, reference=arguments.reference)
-            from .compute import guarded_start
-            result = guarded_start("music", run_music, plan, timeout=arguments.timeout)
+            result = served_or_local("music", run_music, plan, arguments.out)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
         if arguments.convert_command == "speak":
             if not 1 <= arguments.timeout <= 7200:
                 raise ValueError("--timeout must be 1..7200 seconds")
             plan = plan_speak(arguments.path, arguments.text, arguments.out, voice=arguments.voice,
                               speed=arguments.speed, lang_code=arguments.lang_code)
-            from .compute import guarded_start
-            result = guarded_start("speak", run_speak, plan, timeout=arguments.timeout)
+            result = served_or_local("speak", run_speak, plan, arguments.out)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
         if arguments.convert_command == "describe":
             if not 1 <= arguments.timeout <= 7200:
@@ -2173,8 +2182,7 @@ def _run_convert(arguments):
             plan = plan_describe(arguments.path, arguments.prompt, image=arguments.image, video=arguments.video,
                                  max_tokens=arguments.max_tokens, temperature=arguments.temperature,
                                  fps=arguments.fps, max_pixels=arguments.max_pixels)
-            from .compute import guarded_start
-            result = guarded_start("describe", run_describe, plan, timeout=arguments.timeout)
+            result = served_or_local("describe", run_describe, plan, None)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["text"])
         if arguments.convert_command == "mesh":
             if not 1 <= arguments.timeout <= 14400:
@@ -2194,8 +2202,7 @@ def _run_convert(arguments):
                               height=arguments.height, frames=arguments.frames, fps=arguments.fps,
                               steps=arguments.steps, seed=arguments.seed,
                               denoiser_cache=arguments.denoiser_cache, cache_memory_mib=arguments.cache_memory_mib)
-            from .compute import guarded_start
-            result = guarded_start("video", run_video, plan, timeout=arguments.timeout)
+            result = served_or_local("video", run_video, plan, arguments.out)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
         if arguments.convert_command == "scan":
             report = _convert_scan(arguments)

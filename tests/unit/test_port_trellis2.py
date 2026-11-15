@@ -419,6 +419,77 @@ class Trellis2NativeTests(unittest.TestCase):
         directed = np.concatenate([triangles[:, [0, 1]], triangles[:, [1, 2]], triangles[:, [2, 0]]])
         self.assertEqual(sorted(map(tuple, directed)), sorted(map(tuple, directed[:, ::-1])))
 
+    @unittest.skipUnless(HAS_SURFACE, 'requires scipy and scikit-image')
+    def test_closed_surface_ignores_unreferenced_vertices_and_refuses_no_faces(self):
+        import numpy as np
+        closed = port('closed')
+        vertices = np.array([[0, 0, 0], [.03, 0, 0], [0, .03, 0]], dtype=np.float32)
+        faces = np.array([[0, 1, 2]])
+        a = closed.closed_surface(vertices, faces, 128)
+        b = closed.closed_surface(np.vstack([vertices, [100, 100, 100]]), faces, 128)
+        np.testing.assert_array_equal(a[0], b[0]); np.testing.assert_array_equal(a[1], b[1])
+        with self.assertRaisesRegex(ValueError, 'at least one triangle'):
+            closed.closed_surface(vertices, np.empty((0, 3), dtype=np.int32), 128)
+
+    @unittest.skipUnless(HAS_SURFACE, 'requires scipy and scikit-image')
+    def test_closed_surface_welds_production_tile_seams(self):
+        import numpy as np
+        closed = port('closed')
+        grid, count = 256, 81
+        u, v = np.meshgrid(np.arange(count), np.arange(count), indexing='ij')
+        vertices = np.stack([u.ravel() + 70, v.ravel() + 70, np.full(count * count, 128)], axis=1) / grid - .5
+        quads = np.array([[i * count + j, (i + 1) * count + j, (i + 1) * count + j + 1, i * count + j + 1]
+                          for i in range(count - 1) for j in range(count - 1)])
+        faces = np.concatenate([quads[:, [0, 1, 2]], quads[:, [0, 2, 3]]])
+        points, triangles = closed.closed_surface(vertices.astype(np.float32), faces, grid)
+        edges = np.sort(np.concatenate([triangles[:, [0, 1]], triangles[:, [1, 2]], triangles[:, [2, 0]]]), axis=1)
+        _, counts = np.unique(edges, axis=0, return_counts=True)
+        self.assertTrue(np.all(counts == 2))
+        a, b, c = (points[triangles[:, i]].astype(np.float64) for i in range(3))
+        self.assertGreater(np.einsum('ij,ij->', a, np.cross(b, c)), 0)
+
+    @unittest.skipUnless(HAS_SURFACE, 'requires scipy and scikit-image')
+    def test_closed_surface_keeps_zero_crossing_on_tile_plane(self):
+        import numpy as np
+        closed = port('closed')
+        grid = 256
+        y, z = np.meshgrid(.5 + np.arange(81), .5 + np.arange(81), indexing='ij')
+        plane = np.stack([np.full(y.size, 124.75), y.ravel(), z.ravel()], axis=1)
+        extra = np.array([[.75, .5, .5], [.75, 1.5, .5], [.75, .5, 1.5]])
+        vertices = np.concatenate([plane, extra]) / grid - .5
+        quads = np.array([[i * 81 + j, (i + 1) * 81 + j, (i + 1) * 81 + j + 1, i * 81 + j + 1]
+                          for i in range(80) for j in range(80)])
+        faces = np.concatenate([quads[:, [0, 1, 2]], quads[:, [0, 2, 3]], [[6561, 6562, 6563]]])
+        points, triangles = closed.closed_surface(vertices, faces, grid)
+        edges = np.sort(np.concatenate([triangles[:, [0, 1]], triangles[:, [1, 2]], triangles[:, [2, 0]]]), axis=1)
+        _, counts = np.unique(edges, axis=0, return_counts=True)
+        self.assertTrue(np.all(counts == 2))
+        a, b, c = (points[triangles[:, i]].astype(np.float64) for i in range(3))
+        self.assertGreater(np.einsum('ij,ij->', a, np.cross(b, c)), 0)
+
+    @unittest.skipUnless(HAS_SURFACE, 'requires scipy and scikit-image')
+    def test_closed_surface_1536_grid_avoids_large_dense_arrays(self):
+        import numpy as np
+        from unittest.mock import patch
+        from scipy import ndimage  # Load before guarding NumPy allocations.
+        from scipy.spatial import cKDTree
+        from skimage.measure import marching_cubes
+        closed = port('closed')
+        vertices = np.array([[-.49, -.49, -.49], [-.488, -.49, -.49], [-.49, -.488, -.49],
+                             [.49, .49, .49], [.488, .49, .49], [.49, .488, .49]], dtype=np.float32)
+        faces = np.array([[0, 1, 2], [3, 4, 5]])
+        originals = {name: getattr(np, name) for name in ('zeros', 'full', 'empty')}
+        def guard(name):
+            def allocate(shape, *args, **kwargs):
+                if isinstance(shape, tuple) and len(shape) == 3 and np.prod(shape) > 1_000_000:
+                    raise AssertionError('large dense 3D allocation')
+                return originals[name](shape, *args, **kwargs)
+            return allocate
+        with patch.object(np, 'zeros', side_effect=guard('zeros')), patch.object(np, 'full', side_effect=guard('full')), \
+             patch.object(np, 'empty', side_effect=guard('empty')):
+            points, triangles = closed.closed_surface(vertices, faces, 1536)
+        self.assertGreater(len(points), 0); self.assertGreater(len(triangles), 0)
+
     def test_fins_and_their_vertices_leave_the_mesh(self):
         import numpy as np
         closed = port('closed')

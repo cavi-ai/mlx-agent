@@ -163,18 +163,18 @@ class DocumentationContractTests(unittest.TestCase):
                     self.assertRegex(text, re.compile(pattern, re.IGNORECASE | re.DOTALL))
         self.assertIn("docs/mlx-agent/source/pages/reference/evidence.md", self.readme)
 
-    def test_readme_gives_canonical_install_commands_for_every_provider(self):
+    def test_readme_gives_native_setup_and_links_provider_guides(self):
         commands = (
-            "claude plugin marketplace add cavi-ai/mlx-agent",
-            "claude plugin install mlx-agent@mlx-agent",
-            "codex plugin marketplace add cavi-ai/mlx-agent --ref main",
-            "codex plugin add mlx-agent@mlx-agent",
-            "agy plugin install ./mlx-agent/providers/agy",
-            "python3 scripts/mlx-agent install opencode --scope user --dry-run --json",
+            "git clone --depth 1 --branch main https://github.com/cavi-ai/mlx-agent.git",
+            "python3 scripts/mlx-agent inspect-host --json",
+            "python3 scripts/mlx-agent discover --limit 3 --json",
+            "python3 scripts/mlx-agent convert mesh --path /absolute/local/mesh-model --image /absolute/input/object.png --out /absolute/output/object.glb --json",
         )
         for command in commands:
             with self.subTest(command=command):
                 self.assertIn(command, self.readme)
+        self.assertIn("docs/mlx-agent/source/pages/introduction/installation.md", self.readme)
+        self.assertIn("docs/install/index.md", self.readme)
         for guide, provider in (("docs/install/index.md", "agentskills"), ("docs/install/openclaw.md", "openclaw")):
             with self.subTest(provider=provider):
                 self.assertIn(guide, self.readme)

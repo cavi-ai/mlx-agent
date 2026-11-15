@@ -4,69 +4,40 @@
 
 ![Your coding agent can make the props too. Local 3D generation on Apple Silicon. A duck knight holding a croissant lance.](.github/assets/mlx-agent-hero.png)
 
-Turn an image into a mesh saved as a GLB on your Apple Silicon Mac. With mlx-agent, your coding agent can run the same task workflow across native MLX TripoSG, TRELLIS.2 and Pixal3D models, without a separate agent integration for each.
+Discover, run and manage local AI models on Apple Silicon.
 
-## Start with Codex
+Generate images, video, music, speech and 3D assets with local models. Manage model discovery, conversion and serving, then keep task inputs and results together through the CLI or MCP.
 
-Install the Codex CLI, then add mlx-agent from the current main branch:
+## Get started
 
-```bash
-codex plugin marketplace add cavi-ai/mlx-agent --ref main
-codex plugin add mlx-agent@mlx-agent
-```
-
-Restart Codex. Before generating, choose an image and a compatible local model, and check that its backend is installed. The [backend guide](docs/mlx-agent/source/pages/lifecycle/backends.md) explains how to inspect and install `mlx-3d`; [Intake](docs/mlx-agent/source/pages/lifecycle/intake.md) and [Convert](docs/mlx-agent/source/pages/lifecycle/convert.md) cover obtaining and preparing weights. Review the previews and confirm any setup you choose. Optional backends have separate dependencies; `mlx-3d` uses Python 3.12.
-
-Then ask Codex:
-
-> Use mlx-agent and my chosen compatible local model to turn this image into a GLB. Show me the settings for approval, then check the task and show me the resulting file.
-
-Codex can use `$mlx-agent:mlx-task` to run, track and collect the task. The job retains its input and output, so you can return to the result and inspect the GLB in your preferred 3D tool. See [durable tasks](docs/mlx-agent/source/pages/lifecycle/tasks.md) and [local inference](docs/mlx-agent/source/pages/lifecycle/local-inference.md).
-
-<details>
-<summary>Install for other hosts</summary>
-
-Install your coding-agent host first and restart it after adding mlx-agent. See [Installation](docs/mlx-agent/source/pages/introduction/installation.md) and [provider lifecycle](docs/install/index.md) for scope, updates, removal and recovery.
-
-For checkout-based routes, clone current main:
+The core requires Python 3.11 or later and uses the standard library. Model execution needs a separately installed runtime; optional backends have their own dependencies.
 
 ```bash
 git clone --depth 1 --branch main https://github.com/cavi-ai/mlx-agent.git
-```
-
-### Claude Code
-
-```bash
-claude plugin marketplace add cavi-ai/mlx-agent
-claude plugin install mlx-agent@mlx-agent
-```
-
-### Agy
-
-From a checkout of current main:
-
-```bash
-agy plugin validate ./mlx-agent/providers/agy
-agy plugin install ./mlx-agent/providers/agy
-```
-
-### OpenCode, OpenClaw, Hermes Agent and AgentSkills-compatible hosts
-
-From the checkout, select `opencode`, `openclaw`, `hermes` or `agentskills` as the provider. For example, for OpenCode:
-
-```bash
 cd mlx-agent
-python3 scripts/mlx-agent install opencode --scope user --dry-run --json
-# Review the plan and copy data.preview.preview_hash.
-python3 scripts/mlx-agent install opencode --scope user --confirm --preview-hash <preview-hash> --json
-python3 scripts/mlx-agent doctor opencode --scope user --json
+python3 scripts/mlx-agent inspect-host --json
+python3 scripts/mlx-agent discover --limit 3 --json
 ```
 
-For portable AgentSkills, the installer copies a runtime into each installed skill. Move unowned older `mlx-*` skill folders aside before the first managed install. OpenClaw and Hermes use their respective state directories. See the [provider guides](docs/install/index.md) for host-specific details.
+Review the candidates and follow [Your first local model](docs/mlx-agent/source/pages/introduction/quickstart.md). To prepare compatible local weights and a runtime, see [Intake](docs/mlx-agent/source/pages/lifecycle/intake.md) and [optional backends](docs/mlx-agent/source/pages/lifecycle/backends.md). Discovery does not download weights.
 
-### Other MCP hosts
+## Generate a 3D mesh
 
-From a checkout of current main, register the stdio server with your MCP host:
+Turn a PNG, JPEG or WebP image into a GLB with native MLX TripoSG, TRELLIS.2 or Pixal3D. Use compatible converted local weights and the installed `mlx-3d` backend. Optional backend installation uses Python 3.12. Choose a new `.glb` path in an existing output directory:
+
+```bash
+python3 scripts/mlx-agent convert mesh --path /absolute/local/mesh-model --image /absolute/input/object.png --out /absolute/output/object.glb --json
+```
+
+For example, ask a connected agent:
+
+> Turn this image into a GLB using my chosen local model. Show me the settings before starting, then show me the result.
+
+For jobs that outlive the client, use [durable tasks](docs/mlx-agent/source/pages/lifecycle/tasks.md). They retain task inputs, status and output. See [local inference](docs/mlx-agent/source/pages/lifecycle/local-inference.md) for model-specific operations.
+
+## Connect your tools
+
+Use the CLI directly, or register the current checkout's stdio server with an MCP client:
 
 ```json
 {
@@ -76,9 +47,7 @@ From a checkout of current main, register the stdio server with your MCP host:
 }
 ```
 
-Provider installation copies plugin files and runs from a checkout.
-
-</details>
+See [Installation](docs/mlx-agent/source/pages/introduction/installation.md) and [provider lifecycle](docs/install/index.md) for host-specific setup, updates and removal.
 
 ## More with local models
 
@@ -88,7 +57,7 @@ Provider installation copies plugin files and runs from a checkout.
 - **Connect and operate:** [Wire](docs/mlx-agent/source/pages/capabilities/wire.md) previews and applies client configuration; [Intake](docs/mlx-agent/source/pages/lifecycle/intake.md), [Convert](docs/mlx-agent/source/pages/lifecycle/convert.md), [Serve](docs/mlx-agent/source/pages/lifecycle/serve.md) and [optional backends](docs/mlx-agent/source/pages/lifecycle/backends.md) manage model and runtime lifecycle.
 - **Explore and train:** use [Research](docs/mlx-agent/source/pages/capabilities/research.md), [Blueprint](docs/mlx-agent/source/pages/capabilities/blueprint.md), [Laboratory](docs/mlx-agent/source/pages/lifecycle/laboratory.md), or [LoRA and fuse](docs/mlx-agent/source/pages/lifecycle/lora-and-fuse.md).
 
-The Python core uses the standard library. Model execution needs a separately installed runtime; optional backends have their own dependencies. See [Evidence and sizing](docs/mlx-agent/source/pages/reference/evidence.md) for model checks and [the security model](docs/mlx-agent/source/pages/security/model.md) for confirmation, network and recovery boundaries.
+See [Evidence and sizing](docs/mlx-agent/source/pages/reference/evidence.md) for model checks and [the security model](docs/mlx-agent/source/pages/security/model.md) for confirmation, network and recovery boundaries.
 
 <details>
 <summary>Full host and skill reference</summary>

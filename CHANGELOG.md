@@ -4,6 +4,7 @@
 
 - TRELLIS.2 loads only the components needed for each mesh resolution and retains them for later resident tasks.
 - TRELLIS.2 `convert mesh` writes a closed, outward-facing solid instead of the open decoded surface.
+- TRELLIS.2 `convert mesh` takes repeatable `--view` images, conditioning sampler steps in turn, and a `--guide` GLB whose surface voxels replace the sampled sparse structure.
 
 - Add the Kev classification port (`jaredpalmer/kev-4b` over Qwen3-4B-Base, 8-bit or unquantized), and serve TypeSafe System One decisions at `POST /v1/systemone` on classification task routes and the front door.
 - TRELLIS.2 conversion includes the texture stage, and `convert mesh` writes each vertex's base color to the GLB as `COLOR_0`.

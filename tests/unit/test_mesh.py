@@ -150,6 +150,28 @@ class MeshPlanningTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(json.loads(output)['error']['code'], 'invalid_arguments')
 
+    def test_trellis2_runs_with_extra_views_and_a_guide_mesh(self):
+        view, guide = self.root / 'side.png', self.root / 'guide.glb'
+        view.touch()
+        guide.touch()
+        with self.assertRaisesRegex(MeshError, 'TRELLIS.2'):
+            self.plan(views=[str(view)])
+        with self.assertRaisesRegex(MeshError, 'TRELLIS.2'):
+            self.plan(guide=str(guide))
+        code, output = self.cli('--view', str(view), '--guide', str(guide))
+        self.assertEqual(code, 2)
+        self.assertIn('TRELLIS.2', json.loads(output)['error']['message'])
+        self.use_trellis2()
+        args = self.plan(views=[str(view), str(view)], guide=str(guide))['argv']
+        self.assertEqual(args[args.index('--guide') + 1], str(guide))
+        self.assertEqual([args[i + 1] for i, flag in enumerate(args) if flag == '--view'], [str(view), str(view)])
+        self.assertNotIn('--view', self.plan()['argv'])
+        for options in ({'views': [str(self.root / 'missing.png')]}, {'views': [str(guide)]},
+                        {'guide': str(view)}, {'views': [str(view)] * 3, 'steps': 3}):
+            with self.subTest(options=options), self.assertRaises(MeshError) as caught:
+                self.plan(**options)
+            self.assertEqual(caught.exception.code, 'invalid_arguments')
+
     def test_a_model_with_unreadable_mesh_resolutions_is_refused(self):
         for resolutions in ([], [8], 'all', [512.0], [True]):
             self.use_trellis2(resolutions=resolutions)

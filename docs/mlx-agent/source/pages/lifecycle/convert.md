@@ -86,6 +86,14 @@ drops by 128, down to 1024, and the result's `resolution` reports the level
 used. The image is cropped to the pixels with alpha above 0.8; an opaque image
 keeps its full frame and background removal is not performed.
 
+`--view` adds another image of the same object and can be repeated. Sampler
+step `i` of every flow is conditioned on image `i` modulo the image count
+(TRELLIS's stochastic multi-image mode), so give fewer views than steps.
+`--guide` takes a GLB whose triangles, centered with their largest extent
+spanning the unit cube, set the 32³ sparse structure in place of the sampled
+one; `stage_seconds` then reports `guide` instead of `sparse_structure`. The
+result reports `views` and `guided`. Other models refuse both options.
+
 After the shape, the texture flow at the mesh's level (512, else 1024) samples a
 texture latent from the image and the shape latent, with the checkpoint's own
 guidance, and the texture decoder turns it into a base color for every voxel of

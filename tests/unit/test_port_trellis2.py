@@ -322,6 +322,23 @@ class Trellis2NativeTests(unittest.TestCase):
         self.assertEqual(document['buffers'][0]['byteLength'], 36 + 12 + 36)
         self.assertNotIn('COLOR_0', parts(plain)[0]['meshes'][0]['primitives'][0]['attributes'])
 
+    def test_guide_voxels_are_the_surface_shell_with_the_largest_extent_spanning_the_cube(self):
+        import itertools
+        import numpy as np
+        guide = port('guide')
+        write_glb = importlib.import_module(SHELL + '.triposg.geometry').write_glb
+        # glTF y-up box, 4 tall; TRELLIS z-up maps glTF y to z and glTF -z to y.
+        corners = np.array(list(itertools.product((-0.5625, 0.5625), (0.0, 4.0), (-1.0625, 1.0625))), dtype=np.float32)
+        faces = np.array([[0, 1, 3], [0, 3, 2], [4, 6, 7], [4, 7, 5], [0, 4, 5], [0, 5, 1],
+                          [2, 3, 7], [2, 7, 6], [0, 2, 6], [0, 6, 4], [1, 5, 7], [1, 7, 3]], dtype=np.uint32)
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'box.glb'
+            write_glb(path, corners, faces)
+            cells = {tuple(cell) for cell in guide.surface_coords(path, 32).tolist()}
+        shell = {(x, y, z) for x in range(11, 21) for y in range(7, 25) for z in range(32)
+                 if x in (11, 20) or y in (7, 24) or z in (0, 31)}
+        self.assertEqual(cells, shell)
+
     def test_pixel_shuffle_moves_channel_blocks_to_voxel_offsets(self):
         import mlx.core as mx
         import numpy as np

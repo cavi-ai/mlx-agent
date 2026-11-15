@@ -2076,6 +2076,10 @@ def _add_convert_arguments(parser):
                       help='adaptive residual forecasting for TripoSG; may change geometry')
     mesh.add_argument('--cache-memory-mib', type=int, default=256,
                       help='adaptive feature-memory cap in MiB, 8..4096 (default: 256)')
+    mesh.add_argument("--view", action="append", default=[],
+                      help="TRELLIS.2: another image of the object, conditioning sampler steps in turn; repeatable")
+    mesh.add_argument("--guide", default=None,
+                      help="TRELLIS.2: a GLB whose surface voxels replace the sampled sparse structure")
     mesh.add_argument("--timeout", type=int, default=3600)
     mesh.add_argument("--json", action="store_true")
     video = actions.add_parser(
@@ -2178,7 +2182,8 @@ def _run_convert(arguments):
             plan = plan_mesh(arguments.path, arguments.image, arguments.out, steps=arguments.steps,
                              seed=arguments.seed, resolution=arguments.resolution, guidance=arguments.guidance,
                              max_faces=arguments.max_faces, denoiser_cache=arguments.denoiser_cache,
-                             cache_memory_mib=arguments.cache_memory_mib)
+                             cache_memory_mib=arguments.cache_memory_mib, views=arguments.view,
+                             guide=arguments.guide)
             from .compute import guarded_start
             result = guarded_start("mesh", run_mesh, plan, timeout=arguments.timeout)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])

@@ -20,6 +20,8 @@ def main(argv=None):
     parser.add_argument("--guidance", type=float, required=True)
     parser.add_argument('--denoiser-cache', choices=('off','adaptive'), default='off')
     parser.add_argument('--cache-memory-mib', type=int, default=256)
+    parser.add_argument("--view", action="append", default=[])
+    parser.add_argument("--guide")
     args = parser.parse_args(argv)
     port = importlib.import_module(args.module)
     started = time.monotonic()
@@ -31,6 +33,8 @@ def main(argv=None):
     result = port.generate(model, args.image, args.out, steps=args.steps, seed=args.seed,
                            resolution=args.resolution, guidance=args.guidance,
                            max_faces=args.max_faces,
+                           **({"views": args.view} if args.view else {}),
+                           **({"guide": args.guide} if args.guide else {}),
                            **({'denoiser_cache':args.denoiser_cache,'cache_memory_mib':args.cache_memory_mib}
                               if args.denoiser_cache != 'off' else {}))
     result["load_seconds"] = round(load_seconds, 3)

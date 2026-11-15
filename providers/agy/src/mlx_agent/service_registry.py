@@ -59,7 +59,14 @@ def _read_roots(registry, errors):
                 record = json.loads(raw)
             if not isinstance(record, dict) or record.get('schema_version') != 1 or not isinstance(record.get('receipts_dir'), str):
                 raise ValueError('Unsupported service location record')
-            roots.append(str(_safe_root(record['receipts_dir'])))
+            try:
+                roots.append(str(_safe_root(record['receipts_dir'])))
+            except ValueError as error:
+                if not str(error).startswith('path component does not exist:'):
+                    raise
+                # A historical registration can outlive its directory. Explicit
+                # and live roots are still checked independently by discovery.
+
         except (OSError, ValueError, TypeError) as error:
             errors.append({'source': str(location), 'message': str(error)})
     return roots

@@ -145,6 +145,7 @@ python3 scripts/mlx-agent convert start --gguf ~/models/model-Q4_K_M.gguf --q-bi
 | `converted` | An MLX output exists; `evidence` says whether it matched by `provenance`, `receipt`, or `name`. |
 | `shard` | A non-first shard of a split model; convert the `-00001-of-` file. |
 | `companion` | A projector (`mmproj`) or similar sidecar, not convertible alone. |
+| `identity` | Header-declared artifact kind, size label, base model and projector details when available; a declared base size is not a measured projector parameter count. |
 
 A directory counts as an MLX output only when its `config.json` carries a `quantization` block or this tool left an `mlx-converter.json` marker, so ordinary PyTorch checkpoints in the cache are never mistaken for conversions. Cached snapshots of `mlx-community` repositories also count, including unquantized (bf16) ones.
 

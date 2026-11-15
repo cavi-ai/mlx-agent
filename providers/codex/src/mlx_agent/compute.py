@@ -29,6 +29,13 @@ def process_identity(pid):
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+def process_birth_identity(pid):
+    result = subprocess.run(["/bin/ps", "-p", str(pid), "-o", "lstart="],
+                            capture_output=True, text=True, timeout=5)
+    value = result.stdout.strip() if result.returncode == 0 else ""
+    return value or None
+
+
 def process_alive(pid):
     try:
         os.kill(pid, 0)

@@ -15,7 +15,7 @@ from .modality import detect_facets, detect_modalities
 
 TASK_TYPES = (
     "text_llm", "vision_language", "speech_to_text", "text_to_speech",
-    "embedding", "classification", "image_generation", "video_generation", "mesh_generation", "music_generation", "speculative_draft", "other",
+    "embedding", "classification", "image_generation", "video_generation", "mesh_generation", "music_generation", "speculative_draft", "vision_projector", "other",
 )
 # Ordered specific-first; the last entry is the type's default use case.
 USE_CASES = {
@@ -30,6 +30,7 @@ USE_CASES = {
     "mesh_generation": ("mesh_generation",),
     "music_generation": ("music_generation",),
     "speculative_draft": ("speculative_decoding",),
+    "vision_projector": (),
     "other": (),
 }
 PIPELINE_TYPES = {
@@ -149,6 +150,8 @@ def _type_from_name(haystack):
 
 def _task_type(haystack, pipeline_tag, model_type, config_keys, gguf_architecture, manifests, registries, local,
                draft=False):
+    if gguf_architecture and squash_type(gguf_architecture) in _GGUF_PROJECTOR_ARCHITECTURES:
+        return "vision_projector", "gguf_metadata", "confirmed"
     # A drafter is tagged like its target (text-generation) but cannot run alone.
     if draft or gguf_architecture and squash_type(gguf_architecture) in DRAFT_ARCHITECTURES:
         return "speculative_draft", "gguf_architecture", "confirmed"
@@ -224,10 +227,15 @@ def annotate_inventory(report, manifests=None, registries=None):
     if registries is None:
         registries = load_registries(manifests)
     for item in report.get("models", []):
-        item["task"] = classify(
+        if (item.get("identity") or {}).get("artifact_kind") == "mmproj":
+            item["task"] = {"type": "vision_projector", "use_cases": [], "source": "gguf_metadata", "confidence": "confirmed"}
+            continue
+        item["task"] = ({"type": "vision_projector", "use_cases": [], "source": "name", "confidence": "likely"}
+                        if item.get("companion") and str(item.get("architecture") or "").lower() not in _GGUF_PROJECTOR_ARCHITECTURES
+                        and (item.get("identity") or {}).get("artifact_kind") != "mmproj" else classify(
             item.get("name"), gguf_architecture=item.get("architecture"),
             manifests=manifests, registries=registries, local=True, draft=item.get("draft") is not None,
-        )
+        ))
     for output in report.get("outputs", []):
         model_type, keys = read_config_type(output.get("path", ""))
         name = _output_name(output)

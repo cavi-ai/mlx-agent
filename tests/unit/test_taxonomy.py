@@ -62,9 +62,14 @@ class ClassifyTests(unittest.TestCase):
                                   model_type="deepseek_v41_dspark", config_keys=("dspark_target_layer_ids", "model_type"))
         self.assertEqual((converted["type"], converted["source"]), ("speculative_draft", "config"))
 
+    def test_projector_task_is_in_intake_schema(self):
+        schema = json.loads((Path(__file__).resolve().parents[2] / "schemas/intake.schema.json").read_text())
+        self.assertIn("vision_projector", schema["$defs"]["task"]["properties"]["type"]["enum"])
+        self.assertIn("gguf_metadata", schema["$defs"]["task"]["properties"]["source"]["enum"])
+
     def test_gguf_vision_projectors_are_not_models(self):
         task = self.classify("mmproj-Qwen3.8-27B-BF16.gguf", gguf_architecture="clip", local=True)
-        self.assertEqual((task["type"], task["source"], task["use_cases"]), ("other", "gguf_architecture", []))
+        self.assertEqual((task["type"], task["source"], task["use_cases"]), ("vision_projector", "gguf_metadata", []))
 
     def test_gguf_architecture_is_likely(self):
         task = self.classify("Qwen3-30B-A3B-Q4_K_M.gguf", gguf_architecture="qwen3moe", local=True)

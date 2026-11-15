@@ -95,6 +95,23 @@ class ReadHeaderTests(unittest.TestCase):
         self.assertEqual(header["metadata"]["general.name"], "Test Model")
         self.assertEqual(header["metadata"]["llama.block_count"], 32)
 
+    def test_projector_identity_preserves_base_label_without_claiming_parameter_count(self):
+        path = write_gguf(self.root / "sidecar.gguf", architecture="unknown", extra=(
+            _kv("general.type", _STRING, "mmproj"),
+            _kv("general.size_label", _STRING, "27B"),
+            _kv("general.base_model.0.name", _STRING, "Qwen3.8-27B"),
+            _kv("general.base_model.0.repo_url", _STRING, "https://example.com/base"),
+            _kv("clip.projector_type", _STRING, "qwen3vl_merger"),
+            _kv("clip.vision.projection_dim", _UINT32, 5120),
+        ))
+        entry = describe_gguf(path)
+        self.assertIsNone(entry["parameters"])
+        self.assertTrue(entry["companion"])
+        self.assertEqual(entry["q_bits"], [])
+        self.assertEqual(entry["identity"], {"artifact_kind": "mmproj", "declared_size": "27B",
+            "base_model_name": "Qwen3.8-27B", "base_model_repo": "https://example.com/base",
+            "projector_type": "qwen3vl_merger", "projector_width": 5120})
+
     def test_skips_uninteresting_keys(self):
         extra = (_kv("tokenizer.ggml.model", _STRING, "gpt2"),)
         path = write_gguf(self.root / "b.gguf", extra=extra)

@@ -1,21 +1,38 @@
 # mlx-agent
 
-Discover, verify, and operate local MLX models on Apple Silicon for your coding
-agent. mlx-agent ranks candidates for your memory budget, records local role
-checks, measures served models, and writes reviewed connection configurations.
+[![PyPI version](https://img.shields.io/pypi/v/mlx-agent)](https://pypi.org/project/mlx-agent/) [![PyPI downloads](https://img.shields.io/pypi/dm/mlx-agent?label=PyPI%20downloads)](https://pypi.org/project/mlx-agent/) [![Tests](https://img.shields.io/github/actions/workflow/status/cavi-ai/mlx-agent/test.yml?branch=main)](https://github.com/cavi-ai/mlx-agent/actions/workflows/test.yml?query=branch%3Amain)
 
-The Python core uses the standard library. Model execution needs a separately
-installed runtime; optional backends have their own dependencies.
+![Your coding agent can make the props too. Local 3D generation on Apple Silicon. A duck knight holding a croissant lance.](.github/assets/mlx-agent-hero.png)
 
-Current package version: **0.12.0**. These docs describe the current checkout;
-published releases may contain earlier behavior.
+Turn an image into a mesh saved as a GLB on your Apple Silicon Mac. With mlx-agent, your coding agent can run the same task workflow across native MLX TripoSG, TRELLIS.2 and Pixal3D models, without a separate agent integration for each.
 
-## Install
+## Start with Codex
 
-Choose your coding-agent host. Install its CLI first, then restart it after
-adding mlx-agent. See [Installation](docs/mlx-agent/source/pages/introduction/installation.md)
-for requirements and [provider lifecycle](docs/install/index.md) for project
-scope, updates, removal, and recovery.
+Install the Codex CLI, then add mlx-agent from the current main branch:
+
+```bash
+codex plugin marketplace add cavi-ai/mlx-agent --ref main
+codex plugin add mlx-agent@mlx-agent
+```
+
+Restart Codex. Before generating, choose an image and a compatible local model, and check that its backend is installed. The [backend guide](docs/mlx-agent/source/pages/lifecycle/backends.md) explains how to inspect and install `mlx-3d`; [Intake](docs/mlx-agent/source/pages/lifecycle/intake.md) and [Convert](docs/mlx-agent/source/pages/lifecycle/convert.md) cover obtaining and preparing weights. Review the previews and confirm any setup you choose. Optional backends have separate dependencies; `mlx-3d` uses Python 3.12.
+
+Then ask Codex:
+
+> Use mlx-agent and my chosen compatible local model to turn this image into a GLB. Show me the settings for approval, then check the task and show me the resulting file.
+
+Codex can use `$mlx-agent:mlx-task` to run, track and collect the task. The job retains its input and output, so you can return to the result and inspect the GLB in your preferred 3D tool. See [durable tasks](docs/mlx-agent/source/pages/lifecycle/tasks.md) and [local inference](docs/mlx-agent/source/pages/lifecycle/local-inference.md).
+
+<details>
+<summary>Install for other hosts</summary>
+
+Install your coding-agent host first and restart it after adding mlx-agent. See [Installation](docs/mlx-agent/source/pages/introduction/installation.md) and [provider lifecycle](docs/install/index.md) for scope, updates, removal and recovery.
+
+For checkout-based routes, clone current main:
+
+```bash
+git clone --depth 1 --branch main https://github.com/cavi-ai/mlx-agent.git
+```
 
 ### Claude Code
 
@@ -24,136 +41,57 @@ claude plugin marketplace add cavi-ai/mlx-agent
 claude plugin install mlx-agent@mlx-agent
 ```
 
-Run `/mlx-scout` after restarting.
-
-### Codex CLI
-
-```bash
-codex plugin marketplace add cavi-ai/mlx-agent --ref v0.12.0
-codex plugin add mlx-agent@mlx-agent
-```
-
-Invoke `$mlx-agent:mlx-scout` after restarting. Codex does not support custom
-slash commands.
-
 ### Agy
 
+From a checkout of current main:
+
 ```bash
-git clone --depth 1 --branch v0.12.0 https://github.com/cavi-ai/mlx-agent.git
 agy plugin validate ./mlx-agent/providers/agy
 agy plugin install ./mlx-agent/providers/agy
 ```
 
-Restart Agy, check `/skills`, and ask it to use `mlx-scout`.
+### OpenCode, OpenClaw, Hermes Agent and AgentSkills-compatible hosts
 
-### OpenCode and portable skills
-
-From a release checkout:
+From the checkout, select `opencode`, `openclaw`, `hermes` or `agentskills` as the provider. For example, for OpenCode:
 
 ```bash
-git clone --depth 1 --branch v0.12.0 https://github.com/cavi-ai/mlx-agent.git
 cd mlx-agent
 python3 scripts/mlx-agent install opencode --scope user --dry-run --json
-# Review the plan; copy data.preview.preview_hash.
+# Review the plan and copy data.preview.preview_hash.
 python3 scripts/mlx-agent install opencode --scope user --confirm --preview-hash <preview-hash> --json
 python3 scripts/mlx-agent doctor opencode --scope user --json
 ```
 
-Restart OpenCode and use `/mlx-scout`. For AgentSkills-compatible hosts, use
-the same preview/confirm sequence with `agentskills`:
-
-```bash
-python3 scripts/mlx-agent install agentskills --scope user --dry-run --json
-python3 scripts/mlx-agent install agentskills --scope user --confirm --preview-hash <preview-hash> --json
-```
-
-The installer copies a runtime into each installed portable skill. Move unowned
-older `mlx-*` skill folders aside before the first managed install.
-
-### OpenClaw and Hermes Agent
-
-From the same checkout, use the preview/confirm sequence with `openclaw` or
-`hermes`:
-
-```bash
-python3 scripts/mlx-agent install openclaw --scope user --dry-run --json
-python3 scripts/mlx-agent install openclaw --scope user --confirm --preview-hash <preview-hash> --json
-```
-
-Skills go to `$OPENCLAW_STATE_DIR/skills` (default `~/.openclaw/skills`) or
-`$HERMES_HOME/skills` (default `~/.hermes/skills`). Start a new session and use
-`/mlx-scout`.
+For portable AgentSkills, the installer copies a runtime into each installed skill. Move unowned older `mlx-*` skill folders aside before the first managed install. OpenClaw and Hermes use their respective state directories. See the [provider guides](docs/install/index.md) for host-specific details.
 
 ### Other MCP hosts
 
-The `mlx-agent` package on PyPI carries the CLI and the MCP server. Add the
-server to any MCP host's configuration:
+From a checkout of current main, register the stdio server with your MCP host:
 
 ```json
 {
   "mcpServers": {
-    "mlx-agent": {"command": "uvx", "args": ["--from", "mlx-agent", "mlx-agent-mcp"]}
+    "mlx-agent": {"command": "python3", "args": ["/absolute/path/to/mlx-agent/scripts/mlx-agent-mcp"]}
   }
 }
 ```
 
-Install the CLI with `uv tool install mlx-agent` or `pipx install mlx-agent`.
-Provider installation copies the plugin files, so `mlx-agent install` runs from
-a checkout.
+Provider installation copies plugin files and runs from a checkout.
 
-## First local model
+</details>
 
-From a checkout, inspect the host and find candidates:
+## More with local models
 
-```bash
-python3 scripts/mlx-agent inspect-host --json
-python3 scripts/mlx-agent discover --role coding --limit 3 --json
-```
+- **Generate and understand media:** run [image, video, speech, music and 3D tasks](docs/mlx-agent/source/pages/lifecycle/local-inference.md), or use [durable tasks](docs/mlx-agent/source/pages/lifecycle/tasks.md) to retain inputs and results.
+- **Classify and embed:** use local models for structured classification and text embeddings through [durable tasks](docs/mlx-agent/source/pages/lifecycle/tasks.md).
+- **Find and evaluate models:** [Scout](docs/mlx-agent/source/pages/capabilities/scout.md) finds candidates; [Adopt](docs/mlx-agent/source/pages/capabilities/adopt.md) records role checks; [Bench](docs/mlx-agent/source/pages/capabilities/bench.md) measures an already-served model.
+- **Connect and operate:** [Wire](docs/mlx-agent/source/pages/capabilities/wire.md) previews and applies client configuration; [Intake](docs/mlx-agent/source/pages/lifecycle/intake.md), [Convert](docs/mlx-agent/source/pages/lifecycle/convert.md), [Serve](docs/mlx-agent/source/pages/lifecycle/serve.md) and [optional backends](docs/mlx-agent/source/pages/lifecycle/backends.md) manage model and runtime lifecycle.
+- **Explore and train:** use [Research](docs/mlx-agent/source/pages/capabilities/research.md), [Blueprint](docs/mlx-agent/source/pages/capabilities/blueprint.md), [Laboratory](docs/mlx-agent/source/pages/lifecycle/laboratory.md), or [LoRA and fuse](docs/mlx-agent/source/pages/lifecycle/lora-and-fuse.md).
 
-Review size, license, gating, runtime compatibility, and evidence. Discovery
-does not download weights. Make the chosen model available with your runtime
-or an explicitly confirmed [Intake](docs/mlx-agent/source/pages/lifecycle/intake.md)
-download, then start its local server.
+The Python core uses the standard library. Model execution needs a separately installed runtime; optional backends have their own dependencies. See [Evidence and sizing](docs/mlx-agent/source/pages/reference/evidence.md) for model checks and [the security model](docs/mlx-agent/source/pages/security/model.md) for confirmation, network and recovery boundaries.
 
-Intake can also list existing MLX conversions of a source model on the Hub.
-Review these candidates before downloading or converting weights.
-
-Follow [Your first local model](docs/mlx-agent/source/pages/introduction/quickstart.md)
-to load weights, verify the shortlist, measure performance, and preview a
-configuration. Keep the returned receipts for inspection and rollback.
-
-## What you can do
-
-| Goal | Guide |
-| --- | --- |
-| Find models that fit a role and context budget | [Scout](docs/mlx-agent/source/pages/capabilities/scout.md) |
-| Test candidates and retain evidence | [Adopt](docs/mlx-agent/source/pages/capabilities/adopt.md) |
-| Apply or recover a connection configuration | [Wire](docs/mlx-agent/source/pages/capabilities/wire.md) |
-| Measure an already-served model | [Bench](docs/mlx-agent/source/pages/capabilities/bench.md) |
-| Research a domain or design a project | [Research](docs/mlx-agent/source/pages/capabilities/research.md) · [Blueprint](docs/mlx-agent/source/pages/capabilities/blueprint.md) |
-| Download or convert model weights | [Intake](docs/mlx-agent/source/pages/lifecycle/intake.md) · [Convert](docs/mlx-agent/source/pages/lifecycle/convert.md) |
-| Run music, vision, video, and 3D tasks | [Local inference](docs/mlx-agent/source/pages/lifecycle/local-inference.md) · [Durable tasks](docs/mlx-agent/source/pages/lifecycle/tasks.md) |
-| Serve models with JIT loading and memory policy | [Serve](docs/mlx-agent/source/pages/lifecycle/serve.md) |
-| Run controlled experiments and retain training evaluations | [Laboratory](docs/mlx-agent/source/pages/lifecycle/laboratory.md) |
-| Train or fuse an adapter | [LoRA and fuse](docs/mlx-agent/source/pages/lifecycle/lora-and-fuse.md) |
-| Route roles and inspect model health or changes | [Fleet](docs/mlx-agent/source/pages/lifecycle/fleet.md) · [Doctor](docs/mlx-agent/source/pages/lifecycle/doctor.md) · [Watch](docs/mlx-agent/source/pages/lifecycle/watch.md) |
-
-## Understand the evidence
-
-Models retain a primary role and may also have `tool-use` membership. For
-tool-use, metadata is not verification: recommendation requires a
-schema-valid synthetic runtime tool call. The bounded probe supports Ollama and local
-OpenAI-compatible LM Studio, `mlx_lm`, and LiteLLM servers.
-
-Fit estimates and synthetic role probes help choose what to evaluate; they do
-not establish production quality or reserve memory. See
-[Evidence and sizing](docs/mlx-agent/source/pages/reference/evidence.md).
-
-Configuration transactions and model job starts use reviewed preview hashes.
-Explicit `intake fetch` downloads weights, and `backend install` installs
-optional dependencies. Direct inference has a different execution contract.
-Read the [security model](docs/mlx-agent/source/pages/security/model.md)
-for confirmation, network, ownership, and recovery boundaries.
+<details>
+<summary>Full host and skill reference</summary>
 
 <!-- compatibility:begin -->
 ## Provider support
@@ -171,22 +109,10 @@ First-class adapters are included for each provider below. The universal install
 | [AgentSkills-compatible hosts](docs/install/index.md) | Portable skills | `mlx-scout skill`<br>`mlx-adopt skill`<br>`mlx-wire skill`<br>`mlx-bench skill`<br>`mlx-doctor skill`<br>`mlx-watch skill`<br>`mlx-fleet skill`<br>`mlx-task skill` |
 <!-- compatibility:end -->
 
+</details>
+
 ## Documentation and contributing
 
-The [documentation index](docs/README.md) links onboarding, workflows,
-troubleshooting, references, and examples. Start with
-[CLI](docs/mlx-agent/source/pages/reference/cli.md),
-[Runtimes](docs/mlx-agent/source/pages/reference/runtimes.md), or
-[Troubleshooting](docs/mlx-agent/source/pages/guides/troubleshooting.md).
+Start with the [documentation index](docs/README.md), [CLI reference](docs/mlx-agent/source/pages/reference/cli.md), [runtimes](docs/mlx-agent/source/pages/reference/runtimes.md), or [troubleshooting](docs/mlx-agent/source/pages/guides/troubleshooting.md). See [Contributing](CONTRIBUTING.md) for local checks and [Development](docs/mlx-agent/source/pages/guides/development.md) for adapters and documentation builds.
 
-See [Contributing](CONTRIBUTING.md) for local checks and
-[Development](docs/mlx-agent/source/pages/guides/development.md) for adapters and
-documentation builds. The opt-in release live smoke selects only direct local
-Ollama, LM Studio, or `mlx_lm` backends.
-LiteLLM is excluded from automatic live selection because it can route to remote or paid backends.
-
-Versioned documentation comes from `docs/mlx-agent/source`. The
-[consumer contract](docs/mlx-agent/CONSUMER.md) describes release artifacts;
-editing source pages does not refresh an already published release.
-
-Distributed under the [MIT License](LICENSE).
+Versioned documentation comes from `docs/mlx-agent/source`; the [consumer contract](docs/mlx-agent/CONSUMER.md) describes release artifacts. Distributed under the [MIT License](LICENSE).

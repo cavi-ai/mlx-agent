@@ -15,8 +15,10 @@ from unittest.mock import patch
 from mlx_agent import fetch_runner, queue_bridge, queue_cli
 from mlx_agent.convert import ConvertError, _finalize_plan, plan_convert, plan_gguf_convert, start_convert, status_convert
 from mlx_agent.convert_queue import ConvertQueue, QueueStore
+from mlx_agent.conversion_monitor import receipt_lock
 from mlx_agent.intake_fetch import FetchError, plan_fetch, start_fetch, status_fetch
 from mlx_agent.source_evidence import completed_fetch, identities
+from mlx_agent.transactions import _atomic_in_directory
 from .test_gguf import write_gguf, _kv, _UINT32, _STRING
 
 COMMIT = "a" * 40
@@ -447,9 +449,11 @@ class ManagedUpdatePreparationTests(unittest.TestCase):
             time.sleep(0.01)
         self.assertTrue(entered.exists())
         receipt = Path(outcome["receipt_path"])
-        replacement = json.loads(receipt.read_text())
-        replacement["launch_id"] = "b" * 32
-        receipt.write_text(json.dumps(replacement))
+        with receipt_lock(receipt):
+            replacement = json.loads(receipt.read_text())
+            self.assertIsInstance(replacement["worker_pid"], int)
+            replacement["launch_id"] = "b" * 32
+            _atomic_in_directory(receipt.parent, receipt.name, json.dumps(replacement).encode(), 0o600)
         barrier.write_text("release")
         self.assertEqual(child.wait(timeout=10), 2)
         self.assertEqual(json.loads(receipt.read_text()), replacement)

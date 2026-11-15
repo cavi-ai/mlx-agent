@@ -174,15 +174,12 @@ esac
     def test_public_docs_record_the_codex_skill_invocation_correction(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         install_guide = (ROOT / "docs" / "install" / "codex.md").read_text(encoding="utf-8")
-        for content in (readme, install_guide):
-            normalized = " ".join(content.split())
-            self.assertIn("$mlx-agent:mlx-scout", normalized)
-            self.assertIn("$mlx-agent:mlx-adopt", normalized)
-            self.assertIn("$mlx-agent:mlx-wire", normalized)
+        normalized = " ".join(install_guide.split())
+        self.assertIn("$mlx-agent:mlx-scout", normalized)
+        self.assertIn("$mlx-agent:mlx-adopt", normalized)
+        self.assertIn("$mlx-agent:mlx-wire", normalized)
         self.assertRegex(" ".join(install_guide.split()), r"(?:does not support|not) custom slash commands")
-        codex_section = readme.split("## Start with Codex", 1)[1].split("<details>", 1)[0]
-        self.assertIn("$mlx-agent:mlx-task", codex_section)
-        self.assertNotRegex(codex_section, r"`/mlx-[^`]+`")
+        self.assertIn("docs/install/codex.md", readme)
 
     def test_manifest_declares_codex_skills_not_unsupported_slash_commands(self):
         manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))

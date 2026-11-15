@@ -94,9 +94,16 @@ color in linear RGB, each vertex taking the voxel that holds it or the closest
 occupied one within three cells. Metallic and roughness are not written. The
 result reports `vertex_colors`, and `stage_seconds` reports `conditioning`,
 `sparse_structure`, `shape_latent_512`, `shape_latent_high`, `texture_latent`,
-`decode`, `texture_decode`, `mesh`, `decimation` and `export`. A model converted
-before the texture stage holds no texture weights and writes the mesh without
-colors; convert it again to add them.
+`decode`, `texture_decode`, `mesh`, `closed_surface`, `decimation` and `export`.
+A model converted before the texture stage holds no texture weights and writes
+the mesh without colors; convert it again to add them.
+
+The decoded surface is open and unoriented, so the written mesh is a closed solid
+rebuilt around it on the same grid: its surface lies three quarters of a cell
+outside the decoded one, faces outward, and joins two triangles at each edge
+before decimation. Space that no straight line along an axis reaches from
+outside is filled, so a hollow shell becomes solid except where an opening
+shows its inside.
 
 ## Pixal3D image-to-3D
 
@@ -145,6 +152,7 @@ python3 scripts/mlx-agent convert start --gguf ~/models/model-Q4_K_M.gguf --q-bi
 | `converted` | An MLX output exists; `evidence` says whether it matched by `provenance`, `receipt`, or `name`. |
 | `shard` | A non-first shard of a split model; convert the `-00001-of-` file. |
 | `companion` | A projector (`mmproj`) or similar sidecar, not convertible alone. |
+| `identity` | Header-declared artifact kind, size label, base model and projector details when available; a declared base size is not a measured projector parameter count. |
 
 A directory counts as an MLX output only when its `config.json` carries a `quantization` block or this tool left an `mlx-converter.json` marker, so ordinary PyTorch checkpoints in the cache are never mistaken for conversions. Cached snapshots of `mlx-community` repositories also count, including unquantized (bf16) ones.
 

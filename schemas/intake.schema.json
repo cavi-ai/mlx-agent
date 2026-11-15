@@ -94,9 +94,9 @@
       "type": "object", "additionalProperties": false,
       "required": ["type", "use_cases", "source", "confidence"],
       "properties": {
-        "type": {"enum": ["text_llm", "vision_language", "speech_to_text", "text_to_speech", "embedding", "classification", "image_generation", "video_generation", "mesh_generation", "music_generation", "speculative_draft", "other"]},
+        "type": {"enum": ["text_llm", "vision_language", "speech_to_text", "text_to_speech", "embedding", "classification", "image_generation", "video_generation", "mesh_generation", "music_generation", "speculative_draft", "vision_projector", "other"]},
         "use_cases": {"type": "array", "items": {"type": "string"}},
-        "source": {"enum": ["pipeline_tag", "registry", "gguf_architecture", "config", "name", "default"]},
+        "source": {"enum": ["pipeline_tag", "registry", "gguf_architecture", "gguf_metadata", "config", "name", "default"]},
         "confidence": {"enum": ["confirmed", "likely"]}
       }
     }

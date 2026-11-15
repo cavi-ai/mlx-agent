@@ -993,6 +993,44 @@ class JITServingTests(unittest.TestCase):
         self.assertEqual(self.configure({'context_tokens': None})[0], 200)
         self.assertNotIn('context_tokens', self.server.controller.status()['memory_policy'])
 
+    def test_splash_cleanup_refuses_changed_or_missing_birth_without_signaling(self):
+        from mlx_agent.jit_serve import ModelWorker
+        controller = ModelWorker(dict(self.config, runtime='splash'))
+        process = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'],
+                                   start_new_session=True)
+        try:
+            controller.process = process
+            controller.worker_group = process.pid
+            for birth in (None, 'different process birth'):
+                with self.subTest(birth=birth):
+                    controller.worker_birth_identity = birth
+                    with self.assertRaisesRegex(OSError, 'identity changed'):
+                        controller._stop_group()
+                    self.assertIsNone(process.poll())
+        finally:
+            process.terminate()
+            process.wait(timeout=5)
+            controller.process = None
+            controller.worker_group = None
+            controller.worker_birth_identity = None
+            controller.close()
+
+    def test_splash_exec_timeout_stops_owned_worker_and_releases_compute(self):
+        self.config.update(runtime='splash', splash_served_model='test', worker_readiness_seconds=1,
+            worker_argv=[sys.executable, '-c',
+                'import os,sys; os.execv("/bin/sleep", ["sleep", "30"])'])
+        with mock.patch.object(self.server.controller, '_match_serving_plan'), \
+             mock.patch.object(self.server.controller, '_check_memory'), \
+             mock.patch.object(self.server.controller, '_launching_memory'):
+            status, body = self.request('POST', '/v1/chat/completions', {'messages': []})
+        self.assertEqual(status, 503)
+        self.assertEqual(body['error'], {'code': 'model_load_failed', 'message': 'Model worker did not become ready in 1 seconds.'})
+        self.assertIsNone(self.server.controller.process)
+        from mlx_agent.compute import ExecutionAdmission
+        admission = ExecutionAdmission('next', root=self.root / 'compute')
+        admission.acquire()
+        admission.release(lambda lease: None)
+
     def test_readiness_timeout_names_the_configured_deadline(self):
         self.config['worker_readiness_seconds'] = 2
         self.config['worker_argv'] = [sys.executable, '-c', 'import time; time.sleep(30)']

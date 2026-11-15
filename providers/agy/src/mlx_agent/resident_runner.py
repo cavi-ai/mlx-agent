@@ -127,7 +127,7 @@ class ResidentRunner:
 
     def idle_members(self):
         """Inspect the completed worker and its standard Python resource tracker."""
-        from .process_tree import _snapshot
+        from .process_tree import group_snapshot
         if not self.loaded or self.process is None or self.process.poll() is not None:
             raise ValueError('Idle inspection requires a loaded worker.')
         pid = self.process.pid
@@ -143,7 +143,7 @@ class ResidentRunner:
         # Match that exact suffix, rather than accepting arbitrary Python flags.
         warnings = dict.fromkeys(environment.get('PYTHONWARNINGS', '').split(','))
         warning_flags = ''.join(' -W' + option for option in warnings if option)
-        for member, (parent, group, identity) in _snapshot().items():
+        for member, (parent, group, identity) in group_snapshot(pid).items():
             if group != pid or member == pid:
                 continue
             command = identity.split(None, 5)[-1]

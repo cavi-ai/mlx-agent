@@ -109,7 +109,7 @@ gateway can remain available to clients.
 Use the result's `receipts_dir` for controls. `--expected-pid` and
 `--expected-start` bind stop, unload and policy changes to the selected process;
 a changed process is refused. Errors from an unavailable location are reported
-separately from services found elsewhere.
+separately from services found elsewhere. A registered location that no longer exists is skipped; an explicitly requested or live gateway location that is unavailable remains an error.
 
 ## Front door
 
@@ -289,7 +289,7 @@ The preview binds the launcher, its reported version, and the content of the
 target and draft files; a change requires a fresh preview. Splash rejects
 adapters and releases idle weights itself. Stop signals
 the receipt's process group and waits 20 seconds before a forced kill, since
-Splash gives its engine 15 seconds to exit.
+Splash gives its engine 15 seconds to exit. When startup fails after the launcher replaces itself, the gateway checks the owned process birth and group before stopping it and releasing its execution lease.
 
 `--jit` serves a Splash model directory or Strata profile through the
 load-on-request gateway, so `--api-key-sha256` and the front door work as

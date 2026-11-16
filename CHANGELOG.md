@@ -2,57 +2,23 @@
 
 ## Unreleased
 
-- `convert speak`, `music`, `generate`, `video` and `describe` run on a live typed endpoint that already serves the same model instead of loading it a second time.
-- Reclaim idle task allocator cache once before retrying a refused admission when pressure reclamation is enabled.
-- TRELLIS.2 `convert mesh` writes roughness and metallic as `COLOR_1` (occlusion, roughness, metallic) and reports `pbr`.
-- Task endpoints read process groups and agent memory in-process instead of listing every host process with `ps`, so a warm job's lease and memory checks take milliseconds.
-- TRELLIS.2 loads only the components needed for each mesh resolution and retains them for later resident tasks.
-- TRELLIS.2 `convert mesh` writes a closed, outward-facing solid instead of the open decoded surface.
-- TRELLIS.2 `convert mesh` takes repeatable `--view` images, conditioning sampler steps in turn, and a `--guide` GLB whose surface voxels replace the sampled sparse structure, writing the mesh in the guide's frame.
+## 0.13.0 - 2026-11-16
 
-- Add the Kev classification port (`jaredpalmer/kev-4b` over Qwen3-4B-Base, 8-bit or unquantized), and serve TypeSafe System One decisions at `POST /v1/systemone` on classification task routes and the front door.
-- TRELLIS.2 conversion includes the texture stage, and `convert mesh` writes each vertex's base color to the GLB as `COLOR_0`.
-- The shared memory budget charges nothing for a reservation owner that has exited, so the memory guard no longer stops loaded workers when another endpoint exits.
-- Add the optional `ace-step` backend: `convert music` runs ACE-Step 1.5 checkpoints with their planner, and takes `--bpm`, `--time-signature` and `--reference` for them.
-
-- A memory-guard stop releases only the model worker; the endpoint keeps admitting requests instead of refusing them until restarted.
-
-- A live model load refuses when Splash, task, adapter, training, kernel, vision, access, or model files no longer match the reviewed serving plan.
-- Endpoint memory reservation uses the Splash and Strata sizes stored on the serving plan.
-
-- Return OpenAI tool calls from MLX-VLM models whose chat template writes `<tool_call><function=` without a newline, such as MiMo-V2.6 and Qwen3.5, instead of raw tool-call text.
-
-- Add the `mlx-agent` OpenClaw provider plugin: it discovers front-door chat models with the gateway key and leaves embedding and task endpoints out of the chat catalog.
-
-- Add `serve front-door`: one authenticated loopback port that lists discovered routes sharing its API key by path-free model name and routes chat, Messages, Responses and embeddings to them.
-
-- Serve OpenAI `POST /v1/embeddings` from typed embedding endpoints, with float or base64 output and batched inputs.
-
-- Add the `mlx-task` command and skill to every provider for durable local inference tasks, widen `mlx-advisor` to the whole model lifecycle, and document agent integration and the MCP server.
-
+- Add `serve front-door`: one authenticated loopback port that lists discovered routes sharing its API key by path-free model name and routes chat, Messages, Responses and embeddings to them. The `mlx-agent` OpenClaw provider plugin discovers its chat models with the gateway key.
 - Add Splash as a serving runtime for local GGUF, MLX and Strata profile weights and cached repositories, with authenticated `--jit` serving behind the front door, `strata` and `splash` bench labels and the Splash family of each quantized MLX output in `convert scan`.
-
-- Coordinate estimated memory admission across resident model endpoints and report worker allocations, model loads and cache reuse.
-
-- Keep task models resident during compute contention and reliably reap stopped worker processes.
-
-- Bound TripoSG point-query batches and compile decoder execution with per-generation conditioning.
-
-- Add opt-in adaptive denoiser caching for Wan2.1 T2V and TripoSG, with feature-memory budgets, refresh limits and reuse statistics.
-- Reuse fixed-conditioning attention projections in TripoSG sampling and point decoding.
-- Reuse causal depth prefixes and repeated prompt encodings during MiniMax Music3 generation.
-
-- Add a foreground authenticated MLX service for existing service managers, with private workers and worker cleanup on shutdown.
-
-- Add protected MLX-LM JIT serving with API-key authentication, separate control credentials, reviewed key and source identities, and a private Unix worker.
-- Add `serve private-worker` for supervised local inference without a model TCP listener or model downloads.
-- Reap exited serving children and close the parent's log handle so stop can recognize completed processes.
-
-- Size paged Strata MTP expert caches using the validated packed draft-head storage, with the existing startup allowance and resident-loading threshold.
-
-- Update opentelemetry-api to 1.45.2 in backend locks.
-
-- Report in `convert scan` the disk each model occupies with every file counted once, the bytes under each root that belong to no model, and families of copies of one model across MLX, GGUF and Ollama.
+- Serve classifiers, text embeddings, speech, music, image, video and 3D models through typed local endpoints that keep weights loaded between jobs or release them after each request, including OpenAI `POST /v1/embeddings` with float or base64 output. `convert speak`, `music`, `generate`, `video` and `describe` run on a live endpoint that already serves the same model, and `task capabilities --model-path` reports model-bound media settings.
+- Add the Kev classification port (`jaredpalmer/kev-4b` over Qwen3-4B-Base, 8-bit or unquantized), and serve TypeSafe System One decisions at `POST /v1/systemone` on classification task routes and the front door.
+- Protect MLX-LM, vision, Strata, accelerated chat and typed endpoints with API keys, separate control credentials and private Unix or HTTP workers. Add `serve private-worker` and a foreground authenticated MLX service for existing service managers. A live model load refuses when its files or settings no longer match the reviewed serving plan.
+- Share memory admission across resident endpoints and tracked agent processes under one budget that includes Metal physical memory; `--memory-budget-gb` caps task jobs. A guard stop releases only the model worker and the endpoint keeps admitting requests, exited owners are not charged, idle task allocator cache is reclaimed before a refused admission is retried, and serving status keeps numeric reasons for memory refusals.
+- Add named serving workflows with per-role models and resource profiles, read-only previews, owned activation and memory forecasts that include resident models and pending allocations.
+- Managed chat gateways apply serving defaults without overriding explicit client settings and report token usage and response throughput through protected status.
+- Convert to FP16 or FP32 and 2, 3, 4, 5, 6 or 8-bit where the converter supports them. Model update preparation fetches pinned sources with companion and support files, requires observed completion and fresh output evidence, and reuses completed downloads instead of starting overlapping ones.
+- `convert scan` reports the disk each model occupies with every file counted once, bytes under each root that belong to no model, families of copies of one model across MLX, GGUF and Ollama, vision projector GGUFs with their declared base model, and standalone `.safetensors` and `.ckpt` files; `--compare-assets` compares same-size files by full SHA-256.
+- Add the `mlx-task` command and skill to every provider for durable local inference tasks, widen `mlx-advisor` to the whole model lifecycle, and document agent integration and the MCP server.
+- TRELLIS.2 `convert mesh` includes the texture stage and writes a closed, outward-facing solid with base color as `COLOR_0` and occlusion, roughness and metallic as `COLOR_1`, takes repeatable `--view` images and a `--guide` GLB, and loads only the components each resolution needs.
+- Add the optional `ace-step` backend: `convert music` runs ACE-Step 1.5 checkpoints with their planner, and takes `--bpm`, `--time-signature` and `--reference` for them.
+- Add opt-in adaptive denoiser caching for Wan2.1 T2V and TripoSG with feature-memory budgets, refresh limits and reuse statistics, and speed up TripoSG and MiniMax Music3 by reusing conditioning projections, depth prefixes and prompt encodings.
+- Fix MLX-VLM tool calls from templates that write `<tool_call><function=` without a newline, such as MiMo-V2.6 and Qwen3.5, size paged Strata MTP expert caches from packed draft-head storage, reap exited serving and worker processes, and update opentelemetry-api to 1.45.2 and the ACE-Step runtime locks.
 
 ## 0.12.0 - 2026-11-07
 

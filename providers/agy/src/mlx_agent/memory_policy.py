@@ -5,6 +5,7 @@ runtimes may carry a budget, a KV context, or an allocator cache. Splash and
 Strata sizes are read from the serving plan; those modules still compute them.
 """
 import json
+import hashlib
 import math
 from pathlib import Path
 
@@ -17,6 +18,14 @@ STRATA_CONTEXT = "Strata JIT admission already includes the KV cache at --strata
 TASK_CONTEXT = "Task endpoints do not use text KV context settings."
 
 _DEFAULTS = {"idle_timeout_seconds": 0, "keep_loaded": False, "minimum_headroom_gb": None}
+
+def model_key(config):
+    """Stable registry key for the planned model and worker identity."""
+    return hashlib.sha256(json.dumps([str(Path(config['local_path']).resolve()),
+        config.get('fingerprint'), config.get('runtime'), config['worker_argv']],
+        sort_keys=True).encode()).hexdigest()
+
+
 _EXTRA = CACHE_FIELDS | {
     "context_tokens", "unload_under_pressure", "model_memory_budget_gb",
     "release_after_request", "execution_wait_seconds",

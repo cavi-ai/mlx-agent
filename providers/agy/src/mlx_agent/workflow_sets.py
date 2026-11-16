@@ -6,11 +6,15 @@ import os
 from pathlib import Path
 import re
 import stat
+from subprocess import SubprocessError
+import time
 
 from .convert import cached_snapshot
 from .jit_serve import available_memory_bytes
-from .memory_policy import policy_from_profile, reservation, validate as validate_policy, enforce_launch
-from .residency import MemoryRegistry
+from .memory_policy import policy_from_profile, reservation, validate as validate_policy, enforce_launch, model_key as _model_key
+from .residency import MemoryRegistry, SCHEMA as REGISTRY_SCHEMA
+from .compute import process_identity
+from .memory_budget import same_identity
 from .serve import (SERVE_RECEIPT_KIND, SERVE_RECEIPT_SCHEMA_VERSION, load_recipes, plan_start, receipts_root, resolve_serve_runtime,
                     _argv_matches, _pid_alive, _pid_command, _pid_start)
 from .serve_profiles import load_profile
@@ -194,9 +198,132 @@ def _reuse_candidate(root, plan):
             'receipt_preview_hash': receipt['preview_hash'], 'memory_policy': config['memory_policy']}
 
 
+
+def _resource_forecast(members, inspection, available, root):
+    """Project only identity-qualified reservations; unknowns stay unknown."""
+    def valid(value):
+        return type(value) is int and 0 <= value <= 2**60
+    result = {'status':'unknown', 'reason':'Insufficient reliable accounting for a joint estimate.',
+              'captured_at':time.time(), 'members':{}, 'estimates':{'incremental_bytes':None,
+              'available_bytes':available if valid(available) else None, 'agent_budget':inspection.get('agent_budget')}}
+    try:
+        if inspection.get('state') not in ('ok','uninitialized') or inspection.get('errors'):
+            raise ValueError('Memory registry inspection is uncertain.')
+        entries = inspection.get('entries')
+        if not isinstance(entries, dict): raise ValueError('Memory registry entries are unavailable.')
+        MemoryRegistry._validate({'schema': REGISTRY_SCHEMA, 'entries': entries})
+        budget = inspection.get('agent_budget')
+        if budget is not None:
+            if not isinstance(budget,dict) or any(not valid(budget.get(k)) for k in ('accounted_bytes','admission_bytes')):
+                raise ValueError('Shared budget accounting is unavailable.')
+            if entries and (any(not valid(budget.get(k)) for k in ('pending_bytes','resident_bytes','external_bytes','overhead_bytes','observed_bytes','limit_bytes','reserve_bytes'))
+                    or not isinstance(budget.get('allocations'),dict)):
+                raise ValueError('Shared budget allocations are unavailable.')
+            if entries and any(not isinstance(budget['allocations'].get(key),dict) or any(
+                    not valid(budget['allocations'][key].get(field)) for field in ('resident_bytes','pending_bytes','observed_bytes'))
+                    for key in entries):
+                raise ValueError('Shared budget allocation is invalid.')
+            baseline = budget.get('pending_bytes', 0)
+            if not valid(baseline): raise ValueError('Shared pending allocation is invalid.')
+        else:
+            baseline = sum(row['reserved_bytes'] for row in entries.values())
+        floors = [row['headroom_bytes'] for row in entries.values()]
+        total = 0
+        cap_failure = None
+        for role, member in members.items():
+            plan, estimate, action = member.get('plan'), member.get('estimate'), member['action']
+            if action == 'blocked' or not isinstance(plan,dict) or not isinstance(estimate,dict) or not valid(estimate.get('size')):
+                raise ValueError(role + ': member estimate unavailable.')
+            policy = plan.get('memory_policy') or {}
+            floor = policy.get('minimum_headroom_gb') or 0
+            cap = policy.get('model_memory_budget_gb')
+            if isinstance(floor,bool) or not isinstance(floor,(int,float)) or not math.isfinite(floor) or floor < 0:
+                raise ValueError(role + ': headroom is invalid.')
+            floors.append(math.ceil(floor * 1e9))
+            if cap is not None and (isinstance(cap,bool) or not isinstance(cap,(int,float)) or not math.isfinite(cap) or cap <= 0):
+                raise ValueError(role + ': route cap is invalid.')
+            cap_bytes = math.ceil(cap * 1e9) if cap is not None else None
+            envelope = max(estimate['size'], cap_bytes or 0)
+            delta, source = envelope, 'configured_reservation' if cap_bytes is None else 'route_cap'
+            required_cap = estimate['size']
+            if action == 'reuse':
+                candidate = member['candidate']; pid = candidate['pid']
+                try:
+                    state = _private_json(root / (str(plan['port']) + '.jit-state.json'))
+                except (OSError, ValueError):
+                    raise ValueError(role + ': service state is unavailable or unsafe.') from None
+                if state.get('gateway_pid') != pid or _pid_start(pid) != candidate['process_started_at']:
+                    raise ValueError(role + ': gateway state identity is uncertain.')
+                identity = process_identity(pid)
+                owned = [(key,row) for key,row in entries.items() if isinstance(row.get('owner'),(list,tuple)) and len(row['owner']) == 2 and row['owner'][0] == pid]
+                if not identity or any(not same_identity(row['owner'][1],identity) for _,row in owned):
+                    raise ValueError(role + ': gateway ownership is uncertain.')
+                if state.get('model_state') == 'unloaded' and state.get('worker_pid') is None and not owned:
+                    source = 'unloaded_reservation'
+                else:
+                    if len(owned) != 1: raise ValueError(role + ': allocation is missing or ambiguous.')
+                    key,row = owned[0]; worker = row.get('worker')
+                    if row.get('phase') != 'resident' or 'execution_bytes' in row or row.get('model_key') != _model_key(plan):
+                        raise ValueError(role + ': allocation is active or mismatched.')
+                    if any(not valid(row.get(k)) for k in ('resident_bytes','workspace_bytes','growth_bytes','reserved_bytes')):
+                        raise ValueError(role + ': workspace or residency is invalid.')
+                    if not isinstance(worker,dict) or type(worker.get('pid')) is not int or worker['pid'] <= 0:
+                        raise ValueError(role + ': worker identity is unavailable.')
+                    wp = worker['pid']; current = process_identity(wp)
+                    if (state.get('model_state') != 'loaded' or state.get('worker_pid') != wp or not current
+                            or not same_identity(worker.get('identity'),current) or _pid_start(wp) != state.get('worker_started_at')
+                            or not state.get('worker_started_at') or os.getpgid(wp) != worker.get('pgid')):
+                        raise ValueError(role + ': worker identity is uncertain.')
+                    workspace = row['workspace_bytes']; telemetry = row.get('telemetry')
+                    if isinstance(telemetry,dict) and valid(telemetry.get('peak_bytes')) and valid(telemetry.get('active_bytes')):
+                        workspace = max(workspace, max(0,telemetry['peak_bytes']-telemetry['active_bytes']))
+                        workspace_source = 'allocator_peak_delta'
+                    else: workspace_source = 'registry_workspace'
+                    # Resident process memory is already charged; only project extra pending work.
+                    if budget is not None:
+                        allocation = budget['allocations'].get(key)
+                        if not isinstance(allocation,dict) or any(not valid(allocation.get(k)) for k in ('observed_bytes','pending_bytes','resident_bytes')):
+                            raise ValueError(role + ': shared allocation is unavailable.')
+                        credit, pending, source = allocation['observed_bytes'], allocation['pending_bytes'], 'observed_allocation'
+                    else: credit, pending, source = row['resident_bytes'], row['reserved_bytes'], 'registry_resident'
+                    growth = row['growth_bytes']
+                    # Task jobs reserve fresh workspace; JIT growth may already be materialized.
+                    if plan.get('runtime') == 'tasks':
+                        charged = allocation['resident_bytes'] if budget is not None else row['resident_bytes']
+                        required_cap = max(estimate['size'], row['resident_bytes']+workspace+growth,
+                                           credit+workspace+growth, charged+workspace+growth)
+                        if cap_bytes is not None and cap_bytes < required_cap:
+                            cap_failure = role + ': route cap is below the working estimate.'
+                        future = max(workspace+growth, max(0,envelope-credit))
+                    else:
+                        future = max(pending, max(0,envelope-credit))
+                    delta = max(0,future-pending)
+                    result['members'][role] = {'credit_bytes':credit,'current_pending_bytes':pending,'workspace_bytes':workspace,
+                        'growth_bytes':growth,'workspace_source':workspace_source,'credit_source':source}
+            if plan.get('runtime') == 'tasks' and cap_bytes is not None and cap_bytes < estimate['size']: cap_failure = role + ': route cap is below the working estimate.'
+            result['members'].setdefault(role, {'credit_bytes':0,'current_pending_bytes':0,'credit_source':source})
+            result['members'][role].update(envelope_bytes=envelope, incremental_bytes=delta,
+                configured_limit_bytes=cap_bytes, required_limit_bytes=required_cap if plan.get('runtime') == 'tasks' else None,
+                allowance_source='route_cap' if plan.get('runtime') == 'tasks' else 'model_allowance')
+            total += delta
+        floor = max(floors,default=0); required = baseline+total+floor
+        projected = None if budget is None else budget['accounted_bytes']+total
+        if not all(valid(v) for v in (baseline, total, floor, required)) or (projected is not None and not valid(projected)):
+            raise ValueError('Joint allocation total is invalid.')
+        result['estimates'].update(incremental_bytes=total, baseline_pending_bytes=baseline,
+            headroom_bytes=floor, required_available_bytes=required, projected_accounted_bytes=projected)
+        if cap_failure: result.update(status='does_not_fit',reason=cap_failure)
+        elif budget is not None and projected > budget['admission_bytes']: result.update(status='does_not_fit',reason='Estimated shared budget is insufficient.')
+        elif not valid(available): raise ValueError('OS available memory is unavailable.')
+        elif available < required: result.update(status='does_not_fit',reason='Estimated OS headroom is insufficient.')
+        else: result.update(status='fits_estimate',reason='Conservative concurrent allocation estimate.')
+    except (OSError,ValueError,TypeError,KeyError,OverflowError,SubprocessError) as error:
+        result['reason'] = str(error)
+    return result
+
 def preview_workflow(definition, *, receipts_dir=None):
     definition = validate_workflow(definition)
-    members, binding, estimates, reserves = {}, {}, [], []
+    members, binding, forecasts = {}, {}, {}
     root = receipts_root(receipts_dir)
     for role, member in sorted(definition['members'].items()):
         try:
@@ -214,31 +341,14 @@ def preview_workflow(definition, *, receipts_dir=None):
                              'model_state': 'unknown' if candidate else 'unloaded',
                              'reason': None, 'candidate': candidate, 'estimate': estimate}
             binding[role] = {'member_plan_hash': member_hash, 'action': action, 'candidate': candidate}
-            estimates.append(estimate)
-            reserves.append(math.ceil((plan.get('memory_policy', {}).get('minimum_headroom_gb') or 0) * 1e9))
+            forecasts[role] = {'plan':plan, 'estimate':estimate, 'action':action, 'candidate':candidate}
         except (OSError, ValueError, TypeError, KeyError, RuntimeError) as error:
             members[role] = {'member_plan_hash': None, 'action': 'blocked', 'endpoint_state': 'unknown',
                              'model_state': 'unknown', 'reason': str(error), 'estimate': None}
             binding[role] = {'member_plan_hash': None, 'action': 'blocked', 'reason': str(error)}
-            estimates.append(None)
+            forecasts[role] = {'plan':None,'estimate':None,'action':'blocked'}
     inspection = MemoryRegistry().inspect()
-    available = available_memory_bytes()
-    budget = inspection.get('agent_budget')
-    amount = sum(item['size'] for item in estimates if item is not None)
-    forecast = {'status': 'unknown', 'reason': 'Insufficient reliable accounting for a joint estimate.',
-                'estimates': {'incremental_bytes': amount if all(item is not None for item in estimates)
-                              and all(row['action'] == 'start' for row in members.values())
-                              and not inspection['entries'] else None,
-                              'available_bytes': available, 'agent_budget': budget}}
-    budget_known = (budget is None or (isinstance(budget, dict)
-        and type(budget.get('accounted_bytes')) is int and type(budget.get('admission_bytes')) is int))
-    if (all(item is not None for item in estimates) and all(row['action'] == 'start' for row in members.values())
-            and inspection['state'] in ('ok', 'uninitialized') and not inspection['entries']
-            and not inspection['errors'] and budget_known and type(available) is int and available >= 0):
-        reserve = max(reserves)
-        fits_budget = budget is None or budget['accounted_bytes'] + amount <= budget['admission_bytes']
-        fits = fits_budget and amount + reserve <= available
-        forecast.update(status='fits_estimate' if fits else 'does_not_fit', reason='Conservative concurrent allocation estimate.')
+    forecast = _resource_forecast(forecasts, inspection, available_memory_bytes(), root)
     definition_hash = _hash(definition)
     return {'schema': 'serving-workflow-preview/1', 'definition_hash': definition_hash,
             'preview_hash': _hash({'definition_hash': definition_hash, 'members': binding}),

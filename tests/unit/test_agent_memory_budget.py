@@ -7,6 +7,42 @@ from mlx_agent.residency import MemoryAdmissionError, MemoryRegistry
 
 
 class AgentBudgetTests(unittest.TestCase):
+    def test_unknown_process_accounting_retains_observed_headroom(self):
+        self.budget()
+        def unavailable():
+            raise OSError('process table unavailable')
+        self.registry.process_probe = unavailable
+        with self.assertRaises(MemoryAdmissionError) as failure:
+            self.cold('first')
+        self.assertEqual(failure.exception.code, 'memory_unknown')
+        self.assertEqual(failure.exception.details['available_bytes'], 10000)
+        self.assertEqual(failure.exception.details['required_available_bytes'], 70)
+
+    def test_execution_unknown_process_retains_own_reservation(self):
+        self.budget()
+        self.cold('first')
+        def unavailable():
+            raise OSError('process table unavailable')
+        self.registry.process_probe = unavailable
+        with self.assertRaises(MemoryAdmissionError) as failure:
+            self.registry.reserve_execution('first', limit_bytes=100)
+        self.assertEqual(failure.exception.code, 'memory_unknown')
+        self.assertEqual(failure.exception.details['workspace_bytes'], 10)
+        self.assertEqual(failure.exception.details['route_limit_bytes'], 100)
+
+    def test_execution_refusals_retain_numeric_accounting(self):
+        self.budget(limit=150, reserve=20)
+        self.cold('first')
+        with self.assertRaises(MemoryAdmissionError) as failure:
+            self.registry.reserve_execution('first', limit_bytes=69, probe=lambda: 10000)
+        self.assertEqual(failure.exception.code, 'job_memory_cap_exceeded')
+        self.assertEqual(failure.exception.details['required_bytes'], 70)
+        self.assertEqual(failure.exception.details['agent_budget']['admission_bytes'], 130)
+        with self.assertRaises(MemoryAdmissionError) as failure:
+            self.registry.reserve_execution('first', limit_bytes=140, probe=lambda: 10000)
+        self.assertEqual(failure.exception.code, 'agent_memory_budget_exceeded')
+        self.assertEqual(failure.exception.details['agent_budget']['limit_bytes'], 150)
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

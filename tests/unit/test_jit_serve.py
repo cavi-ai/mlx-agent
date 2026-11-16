@@ -76,6 +76,96 @@ Server(('127.0.0.1', a.port), Handler).serve_forever()
 
 
 class JITServingTests(unittest.TestCase):
+    def test_direct_script_namespace_records_memory_refusal(self):
+        import runpy
+        namespace = runpy.run_path(str(Path(__file__).resolve().parents[2] / 'src/mlx_agent/jit_serve.py'),
+                                   run_name='direct_script_check')
+        controller = namespace['ModelWorker'](self.config)
+        controller.memory_probe = lambda: 0
+        with self.assertRaises(namespace['GatewayError']) as failure:
+            controller._check_memory()
+        self.assertEqual(failure.exception.code, 'insufficient_headroom')
+        self.assertEqual(controller.last_memory_failure['available_bytes'], 0)
+
+    def test_state_persist_reuses_birth_only_for_same_process_object(self):
+        controller = self.server.controller
+        controller.config['state_path'] = str(self.root / 'birth.json')
+        first = mock.Mock(pid=111)
+        second = mock.Mock(pid=111)
+        with mock.patch('mlx_agent.serve._pid_start', side_effect=['first', 'second']) as probe:
+            controller.process = first
+            controller._persist()
+            controller._record_memory_failure('agent_guard', 'memory_unknown')
+            controller.process = second
+            controller._persist()
+            self.assertEqual(probe.call_count, 2)
+            self.assertEqual(json.loads((self.root / 'birth.json').read_text())['worker_started_at'], 'second')
+        controller.process = None
+
+    def test_memory_failure_is_bounded_private_and_persisted(self):
+        controller = self.server.controller
+        state = self.root / 'state.json'
+        controller.config['state_path'] = str(state)
+        controller.configure({'minimum_headroom_gb': 2})
+        controller.memory_probe = lambda: 1
+        with self.assertRaises(Exception):
+            controller._check_memory()
+        failure = controller.status()['last_memory_failure']
+        self.assertEqual(failure['reason'], 'insufficient_headroom')
+        self.assertEqual(failure['available_bytes'], 1)
+        self.assertEqual(json.loads(state.read_text())['last_memory_failure'], failure)
+        self.assertLess(len(json.dumps(failure)), 4096)
+        self.assertNotIn(str(self.model), json.dumps(failure))
+
+    def test_memory_failure_sanitizes_unknown_and_sensitive_values(self):
+        from mlx_agent.memory_diagnostics import memory_decision
+        value = memory_decision('task_admission', 'job_memory_cap_exceeded',
+            {'available_bytes': True, 'required_bytes': 7, 'secret': 'private', 'agent_budget': {'allocations': {'secret': 'private'}}})
+        self.assertIsNone(value['available_bytes'])
+        self.assertEqual(value['required_bytes'], 7)
+        self.assertNotIn('private', json.dumps(value))
+        value = memory_decision('cold_admission', 'memory_unknown',
+            {'other_resident_bytes': 8, 'registry_resident_bytes': 4,
+             'agent_budget': {'resident_bytes': 100, 'pending_bytes': 25}})
+        self.assertEqual((value['other_resident_bytes'], value['registry_resident_bytes'],
+                          value['shared_resident_bytes'], value['shared_pending_bytes']), (8, 4, 100, 25))
+        self.assertIsNone(value['charged_resident_bytes'])
+
+    def test_guard_retains_numeric_failure_after_worker_halt(self):
+        controller = self.server.controller
+        controller.config['state_path'] = str(self.root / 'guard-state.json')
+        controller.memory_probe = lambda: 100_000_000_000
+        self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
+        worker = controller.process
+        allocation = {'resident_bytes': 30, 'pending_bytes': 4, 'observed_bytes': 40, 'execution_bytes': 20}
+        budget = {'within_budget': False, 'limit_bytes': 100, 'admission_bytes': 80,
+                  'accounted_bytes': 90, 'external_bytes': 3, 'overhead_bytes': 2,
+                  'allocations': {controller.memory_token: allocation}}
+        with mock.patch.object(controller.memory_registry, 'snapshot', return_value={'agent_budget': budget}):
+            controller.guard_agent_budget()
+        self.assertIsNotNone(worker.poll())
+        failure = controller.status()['last_memory_failure']
+        self.assertEqual((failure['reason'], failure['observed_bytes'], failure['accounted_bytes']),
+                         ('job_memory_cap_exceeded', 40, 90))
+        self.assertEqual(failure['charged_resident_bytes'], 30)
+        self.assertEqual(failure['shared_limit_bytes'], 100)
+        self.assertEqual(failure['gateway_pid'], __import__('os').getpid())
+        self.assertEqual(json.loads((self.root / 'guard-state.json').read_text())['last_memory_failure'], failure)
+
+    def test_guard_halts_if_failure_snapshot_cannot_be_persisted(self):
+        controller = self.server.controller
+        controller.memory_probe = lambda: 100_000_000_000
+        self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []})[0], 200)
+        worker = controller.process
+        budget = {'within_budget': False, 'allocations': {}}
+        with mock.patch.object(controller.memory_registry, 'snapshot', return_value={'agent_budget': budget}), \
+             mock.patch.object(controller, '_persist', side_effect=OSError('write failed')):
+            with self.assertRaises(OSError):
+                controller.guard_agent_budget()
+        self.assertIsNotNone(worker.poll())
+        self.assertEqual(controller.status()['last_memory_failure']['reason'], 'agent_memory_budget_exceeded')
+        self.assertEqual(controller.status()['last_memory_failure']['persistence_error'], 'initial_state_write_failed')
+
     def setUp(self):
         self.temp = TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

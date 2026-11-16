@@ -107,6 +107,15 @@ class TaskHTTPTests(unittest.TestCase):
             denied = self.wait(self.start())
             self.assertEqual(denied['error']['code'], 'job_memory_cap_exceeded')
             self.assertEqual(controller.resident.process.pid, pid)
+            failure = controller.status()['last_memory_failure']
+            self.assertEqual(failure['reason'], 'job_memory_cap_exceeded')
+            self.assertEqual(failure['route_limit_bytes'], 1_500_000_000)
+            self.assertGreater(failure['required_bytes'], failure['route_limit_bytes'])
+            import hashlib
+            bound = controller.memory_reservation['allocation']['worker']
+            self.assertEqual(failure['worker_pid'], pid)
+            self.assertEqual(failure['worker_pgid'], bound['pgid'])
+            self.assertEqual(failure['worker_identity_sha256'], hashlib.sha256(bound['identity'].encode()).hexdigest())
         self.assertEqual(observed, [('cold', 32), ('warm', 15), ('warm', 15)])
 
     def test_resident_component_statistics_reach_worker_status(self):

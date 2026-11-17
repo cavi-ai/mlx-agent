@@ -597,67 +597,6 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         )
     recheck_bound_identity(plan)
 
-    if plan["runtime"] == "strata" and not plan.get("jit"):
-        from .jit_serve import available_memory_bytes
-        available = available_memory_bytes()
-        required = plan["strata_memory_estimate_bytes"] + 2_000_000_000
-        if type(available) is not int or available < 0:
-            raise ServeError("memory_unknown", "Available memory could not be measured.",
-                             "Retry after memory reporting is available.")
-        if available < required:
-            raise ServeError("insufficient_headroom", "Insufficient memory for the reviewed Strata settings and 2 GB reserve.",
-                             "Reduce the expert budget or context capacity, or free memory.")
-
-    if which(plan["argv"][0]) is None:
-        recipe_hint = load_recipes()[plan["runtime"]]["install_hint"]
-        raise ServeError(
-            "runtime_not_installed",
-            "The {0} executable is not installed.".format(plan["argv"][0]),
-            "Install it yourself ({0}); serve never installs runtimes.".format(recipe_hint),
-        )
-    if plan.get("jit"):
-        if which(plan["worker_argv"][0]) is None:
-            raise ServeError("runtime_not_installed", "The model worker executable is not installed.",
-                             load_recipes()[plan["runtime"]]["install_hint"])
-    if plan["repo"] is not None and model_present is not None and not model_present(plan["repo"]):
-        raise ServeError(
-            "model_not_local",
-            "The model is not present in a local inventory.",
-            "Download it with the runtime's own pull command first; serve never downloads models.",
-        )
-    # A Splash target may be a GGUF file; its identity check above proved it present.
-    if plan["path"] is not None and plan["runtime"] != "splash":
-        present = path_present or _default_path_present
-        if not present(plan["path"]):
-            raise ServeError(
-                "model_not_local",
-                "The model directory is not present: {0}".format(plan["path"]),
-                "Point --path at an existing local model directory; serve never downloads models.",
-            )
-    if not port_free(plan["port"]):
-        raise ServeError(
-            "port_in_use",
-            "Port {0} is already bound on 127.0.0.1.".format(plan["port"]),
-            "Pick a free --port, or stop the process that owns this one.",
-        )
-    if wired_claims is not None:
-        claimed = wired_claims(plan["port"], plan["runtime"])
-        if claimed:
-            raise ServeError(
-                "port_in_use",
-                "A wired config already claims port {0}.".format(plan["port"]),
-                "Move this server to its own --port.",
-            )
-    receipt_path = root / "{0}.json".format(plan["port"])
-    if receipt_path.exists():
-        existing = _read_receipt(receipt_path)
-        if existing is not None and (pid_alive(existing.get("pid", -1)) or _owned_jit_worker(existing, root)):
-            raise ServeError(
-                "port_in_use",
-                "A serve receipt for port {0} is still live.".format(plan["port"]),
-                "Run serve stop --port {0} first.".format(plan["port"]),
-            )
-
     from .model_serving import acquire, resolve_model, ModelServingError
     try:
         selector = plan.get("local_path") or plan.get("path") or plan.get("repo")
@@ -671,6 +610,67 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
         raise ServeError("model_serving_state_unknown", "The local model identity is unavailable.",
                          "Inspect the model and retry with its existing local path.") from None
     try:
+        if plan["runtime"] == "strata" and not plan.get("jit"):
+            from .jit_serve import available_memory_bytes
+            available = available_memory_bytes()
+            required = plan["strata_memory_estimate_bytes"] + 2_000_000_000
+            if type(available) is not int or available < 0:
+                raise ServeError("memory_unknown", "Available memory could not be measured.",
+                                 "Retry after memory reporting is available.")
+            if available < required:
+                raise ServeError("insufficient_headroom", "Insufficient memory for the reviewed Strata settings and 2 GB reserve.",
+                                 "Reduce the expert budget or context capacity, or free memory.")
+
+        if which(plan["argv"][0]) is None:
+            recipe_hint = load_recipes()[plan["runtime"]]["install_hint"]
+            raise ServeError(
+                "runtime_not_installed",
+                "The {0} executable is not installed.".format(plan["argv"][0]),
+                "Install it yourself ({0}); serve never installs runtimes.".format(recipe_hint),
+            )
+        if plan.get("jit"):
+            if which(plan["worker_argv"][0]) is None:
+                raise ServeError("runtime_not_installed", "The model worker executable is not installed.",
+                                 load_recipes()[plan["runtime"]]["install_hint"])
+        if plan["repo"] is not None and model_present is not None and not model_present(plan["repo"]):
+            raise ServeError(
+                "model_not_local",
+                "The model is not present in a local inventory.",
+                "Download it with the runtime's own pull command first; serve never downloads models.",
+            )
+        # A Splash target may be a GGUF file; its identity check above proved it present.
+        if plan["path"] is not None and plan["runtime"] != "splash":
+            present = path_present or _default_path_present
+            if not present(plan["path"]):
+                raise ServeError(
+                    "model_not_local",
+                    "The model directory is not present: {0}".format(plan["path"]),
+                    "Point --path at an existing local model directory; serve never downloads models.",
+                )
+        if not port_free(plan["port"]):
+            raise ServeError(
+                "port_in_use",
+                "Port {0} is already bound on 127.0.0.1.".format(plan["port"]),
+                "Pick a free --port, or stop the process that owns this one.",
+            )
+        if wired_claims is not None:
+            claimed = wired_claims(plan["port"], plan["runtime"])
+            if claimed:
+                raise ServeError(
+                    "port_in_use",
+                    "A wired config already claims port {0}.".format(plan["port"]),
+                    "Move this server to its own --port.",
+                )
+        receipt_path = root / "{0}.json".format(plan["port"])
+        if receipt_path.exists():
+            existing = _read_receipt(receipt_path)
+            if existing is not None and (pid_alive(existing.get("pid", -1)) or _owned_jit_worker(existing, root)):
+                raise ServeError(
+                    "port_in_use",
+                    "A serve receipt for port {0} is still live.".format(plan["port"]),
+                    "Run serve stop --port {0} first.".format(plan["port"]),
+                )
+
         root.mkdir(parents=True, exist_ok=True)
         if spawn is _default_spawn:
             from .service_registry import register_receipts

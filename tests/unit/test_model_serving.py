@@ -403,3 +403,45 @@ class ModelServingTests(unittest.TestCase):
             with patch('mlx_agent.model_serving.state_root', return_value=state):
                 model_serving.release_stopped_service(receipt)
             self.assertEqual(model_serving._read_claims(state, claim.key), [])
+
+    def test_duplicate_same_port_returns_existing_service(self):
+        import sys
+        from unittest.mock import patch
+        from mlx_agent.serve import ServeError, load_recipes, plan_start, start_serve
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve(); model = root / 'model'; model.mkdir()
+            state = root / 'state'
+            service = {'port': 18018, 'runtime': 'mlx_lm', 'auth_required': True}
+            claim = model_serving.acquire(str(model), root=state, kind='service', service=service,
+                                          discover=lambda: {'services': [], 'errors': []})
+            plan = plan_start(None, 'mlx_lm', load_recipes(), path=str(model), port=18018,
+                              runtime_executable=sys.executable)
+            try:
+                with patch('mlx_agent.model_serving.state_root', return_value=state), \
+                     patch('mlx_agent.service_registry.discover_services', return_value={'services': [], 'errors': []}), \
+                     self.assertRaises(ServeError) as rejected:
+                    start_serve(plan, receipts_dir=root, confirm=True, preview_hash=plan['preview_hash'],
+                                which=lambda _: sys.executable, port_free=lambda _: False)
+                self.assertEqual(rejected.exception.code, 'model_already_served')
+                self.assertEqual(rejected.exception.data['existing_services'][0]['origin'], 'http://127.0.0.1:18018')
+            finally:
+                claim.release()
+
+    def test_different_model_busy_port_cancels_reservation(self):
+        import hashlib
+        import sys
+        from unittest.mock import patch
+        from mlx_agent.serve import ServeError, load_recipes, plan_start, start_serve
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve(); model = root / 'model'; model.mkdir()
+            state = root / 'state'
+            plan = plan_start(None, 'mlx_lm', load_recipes(), path=str(model), port=18019,
+                              runtime_executable=sys.executable)
+            with patch('mlx_agent.model_serving.state_root', return_value=state), \
+                 patch('mlx_agent.service_registry.discover_services', return_value={'services': [], 'errors': []}), \
+                 self.assertRaises(ServeError) as rejected:
+                start_serve(plan, receipts_dir=root, confirm=True, preview_hash=plan['preview_hash'],
+                            which=lambda _: sys.executable, port_free=lambda _: False)
+            self.assertEqual(rejected.exception.code, 'port_in_use')
+            key = hashlib.sha256(str(model).encode()).hexdigest()
+            self.assertEqual(model_serving._read_claims(state, key), [])

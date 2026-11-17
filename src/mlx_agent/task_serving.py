@@ -372,7 +372,7 @@ class TaskModelWorker(ModelWorker):
                 self.release()
             raise error
 
-    def _admit_task_memory(self, request, plan, budget_gb, lease, check_cancelled):
+    def _admit_task_memory(self, request, plan, budget_gb, lease, check_cancelled, diagnostics=None):
         """Retry complete admission once after an opted-in idle cache reclaim."""
         for attempt in range(2):
             try:
@@ -384,7 +384,7 @@ class TaskModelWorker(ModelWorker):
                     self._check_memory(weight_bytes=None if component_budget is None else component_budget[0])
                 try:
                     return self.memory_registry.reserve_execution(self.memory_token,
-                        None if budget_gb is None else math.ceil(budget_gb * 1e9), self.memory_probe)
+                        None if budget_gb is None else math.ceil(budget_gb * 1e9), self.memory_probe, diagnostics)
                 except MemoryAdmissionError as error:
                     self._record_memory_failure('task_admission', error.code, error.details)
                     raise GatewayError(503, error.code, str(error)) from error
@@ -451,7 +451,8 @@ class TaskModelWorker(ModelWorker):
                 if self._task_cancelled(identifier):
                     cancelled_before_dispatch = True
                     raise InterruptedError('Inference cancelled.')
-            capacity = self._admit_task_memory(request, plan, budget_gb, lease, check_cancelled)
+            memory_admission = {}
+            capacity = self._admit_task_memory(request, plan, budget_gb, lease, check_cancelled, memory_admission)
             check_cancelled()
             worker_limit = None if capacity is None else max(1, capacity - 512_000_000)
             with self.condition:
@@ -487,6 +488,7 @@ class TaskModelWorker(ModelWorker):
             if kind.name == 'video_generation' and releases_after_request(policy):
                 plan['argv'].append('--no-retain-weights')
             result = kind.run(plan, runner=runner)
+            result['memory_admission'] = memory_admission
             self._confirm_identity(record)
             self.store.read_request(identifier)
             if record['schema'] == 'task-run/3':

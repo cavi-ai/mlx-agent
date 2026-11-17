@@ -55,6 +55,38 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 'job_memory_cap_exceeded')
         self.assertEqual(self.registry.reserve_execution('a', 110, lambda: 500), 110)
 
+    def test_auto_execution_uses_available_headroom_for_cold_and_warm(self):
+        from unittest.mock import patch
+        self.reserve('a', resident=80, workspace=10, available=500)
+        budget = {'allocations': {'a': {'resident_bytes': 0, 'pending_bytes': 90}},
+                  'admission_bytes': 1000, 'accounted_bytes': 90}
+        with patch.object(self.registry, '_agent_budget', return_value=budget):
+            diagnostics = {}
+            self.assertEqual(self.registry.reserve_execution('a', None, lambda: 160, diagnostics), 150)
+            self.assertEqual(diagnostics['agent_capacity_bytes'], 1000)
+            self.assertEqual(diagnostics['physical_ceiling_bytes'], 150)
+            self.assertEqual(diagnostics['effective_grant_bytes'], 150)
+        self.registry.settle('a', resident_bytes=80, workspace_bytes=0)
+        self.registry.reserve_workspace('a', 10, lambda: 500)
+        budget['allocations']['a'] = {'resident_bytes': 80, 'pending_bytes': 10}
+        with patch.object(self.registry, '_agent_budget', return_value=budget):
+            self.assertEqual(self.registry.reserve_execution('a', None, lambda: 70), 140)
+
+    def test_execution_refusals_preserve_reservation(self):
+        from unittest.mock import patch
+        self.reserve('a', resident=80, workspace=10, available=500)
+        budget = {'allocations': {'a': {'resident_bytes': 0, 'pending_bytes': 90}},
+                  'admission_bytes': 1000, 'accounted_bytes': 90}
+        with patch.object(self.registry, '_agent_budget', return_value=budget):
+            before = self.registry.snapshot()
+            for limit, probe, expected in ((None, lambda: 80, 'insufficient_headroom'),
+                                           (200, lambda: 150, 'insufficient_headroom'),
+                                           (None, lambda: None, 'memory_unknown')):
+                with self.subTest(expected=expected), self.assertRaises(self.Error) as caught:
+                    self.registry.reserve_execution('a', limit, probe)
+                self.assertEqual(caught.exception.code, expected)
+                self.assertEqual(self.registry.snapshot(), before)
+
     def test_live_headroom_changes_apply_to_other_endpoints(self):
         self.reserve('a')
         self.registry.settle('a',workspace_bytes=0)

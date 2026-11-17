@@ -445,3 +445,34 @@ class ModelServingTests(unittest.TestCase):
             self.assertEqual(rejected.exception.code, 'port_in_use')
             key = hashlib.sha256(str(model).encode()).hexdigest()
             self.assertEqual(model_serving._read_claims(state, key), [])
+
+    def test_dead_legacy_eager_with_missing_model_is_skipped_only_when_absent(self):
+        import json
+        from unittest.mock import patch
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve(); model = root / 'other'; model.mkdir()
+            receipt_root = root / '.mlx-agent-receipts' / 'serve'; receipt_root.mkdir(parents=True)
+            receipt_path = receipt_root / '8018.json'
+            receipt_path.write_text(json.dumps({'kind': 'serve', 'pid': 97123, 'argv': ['server'],
+                                                'port': 8018, 'runtime': 'mlx_lm', 'repo': None,
+                                                'path': str(root / 'missing')}))
+            entry = {'receipt': str(receipt_path), 'receipts_dir': str(root), 'alive': False}
+            with patch('mlx_agent.compute.process_alive', return_value=False), \
+                 patch('mlx_agent.compute.process_birth_identity', return_value=None), \
+                 patch('mlx_agent.compute.group_members', return_value=[]):
+                self.assertEqual(model_serving._legacy_matches(str(model), [entry]), [])
+            for target, value in [('process_alive', True), ('process_birth_identity', 'birth'), ('group_members', [97124])]:
+                with self.subTest(target=target), \
+                     patch('mlx_agent.compute.process_alive', return_value=False), \
+                     patch('mlx_agent.compute.process_birth_identity', return_value=None), \
+                     patch('mlx_agent.compute.group_members', return_value=[]), \
+                     patch('mlx_agent.compute.' + target, return_value=value), \
+                     self.assertRaises(model_serving.ModelServingError):
+                    model_serving._legacy_matches(str(model), [entry])
+            with patch('mlx_agent.compute.process_alive', side_effect=OSError('unavailable')), \
+                 self.assertRaises(model_serving.ModelServingError):
+                model_serving._legacy_matches(str(model), [entry])
+            jit_receipt = json.loads(receipt_path.read_text()); jit_receipt['jit'] = True
+            receipt_path.write_text(json.dumps(jit_receipt))
+            with self.assertRaises(model_serving.ModelServingError):
+                model_serving._legacy_matches(str(model), [entry])

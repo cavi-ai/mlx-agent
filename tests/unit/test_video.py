@@ -229,5 +229,146 @@ class VideoTests(unittest.TestCase):
             self.assertEqual((code, json.loads(buffer.getvalue())["error"]["code"]), (2, "convert_failed"))
 
 
+LTX_CONFIG = {"model_type": "ltx2", "model_version": "2.3", "vae_stride": [8, 32, 32], "patch_size": [1, 2, 2],
+              "sample_fps": 24, "sample_steps": 8, "spatial_upscaler": "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"}
+
+
+class ConditionedVideoTests(unittest.TestCase):
+    """A first-frame image and a driving audio file reach the LTX-2.3 port; text-only models refuse them."""
+
+    def setUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        bundled = load_manifests()
+        self.manifests = dict(synthetic_manifests(), **{name: bundled[name] for name in ("mlx-video", "ltx-video")})
+        self.registries = synthetic_registries(self.manifests, installed=("mlx-video", "ltx-video"))
+        for backend_id, entry in self.registries.items():
+            entry["registry"] = with_ports(entry["registry"], self.manifests[backend_id])
+        for backend_id in ("mlx-video", "ltx-video"):
+            venv = self.root / "backends" / backend_id
+            (venv / "bin").mkdir(parents=True)
+            (venv / "bin" / "python").write_text("", encoding="utf-8")
+            (venv / INSTALL_MARKER).write_text(
+                json.dumps({"id": backend_id, "version": self.manifests[backend_id]["version"]}), encoding="utf-8")
+        self.image, self.audio = self.root / "first.png", self.root / "speech.wav"
+        self.image.write_bytes(b"png")
+        self.audio.write_bytes(b"wav")
+
+    def model(self, config):
+        directory = self.root / "model-{0}".format(len(list(self.root.glob("model-*"))))
+        directory.mkdir()
+        (directory / "config.json").write_text(json.dumps(config), encoding="utf-8")
+        return directory
+
+    def plan(self, config, **kwargs):
+        return plan_video(self.model(config), "a person speaks to the camera", str(self.root / "clip.mp4"),
+                          manifests=self.manifests, registries=self.registries, root=self.root / "backends", **kwargs)
+
+    def test_image_and_audio_reach_the_ltx_port(self):
+        plan = self.plan(LTX_CONFIG, width=576, height=1024, frames=97, image=str(self.image), audio=str(self.audio),
+                         audio_start=1.5)
+        argv = plan["argv"]
+        self.assertEqual((plan["backend"], argv[argv.index("--module") + 1]), ("ltx-video", "mlx_video.mlx_agent_ports.ltx2"))
+        self.assertEqual([argv[argv.index(flag) + 1] for flag in ("--image", "--audio", "--audio-start", "--fps", "--steps")],
+                         [str(self.image), str(self.audio), "1.5", "24", "8"])
+        self.assertEqual((plan["image"], plan["audio"], plan["audio_start"]), (str(self.image), str(self.audio), 1.5))
+
+    def test_ltx_sizes_align_to_the_half_size_stage(self):
+        with self.assertRaises(VideoError) as caught:
+            self.plan(LTX_CONFIG, width=600, height=1024, frames=97)
+        self.assertIn("multiple of 64", str(caught.exception))
+
+    def test_text_only_models_refuse_an_image_or_audio(self):
+        with self.assertRaises(VideoError) as caught:
+            self.plan(WAN_CONFIG, width=128, height=96, frames=9, image=str(self.image))
+        self.assertEqual(caught.exception.code, "invalid_arguments")
+        with self.assertRaises(VideoError):
+            self.plan(LTX_CONFIG, width=576, height=1024, frames=97, audio_start=2.0)
+
+    def test_runner_hands_the_conditioning_to_the_port(self):
+        port = mock.Mock()
+        port.generate.return_value = {"path": "/clip.mp4"}
+        args = ["--module", "test_port", "--model", "/model", "--prompt", "A speech.", "--out", "/clip.mp4",
+                "--width", "576", "--height", "1024", "--frames", "97", "--fps", "24", "--steps", "8", "--seed", "7",
+                "--image", "/first.png", "--audio", "/speech.wav", "--audio-start", "1.5"]
+        with mock.patch.object(video_runner.importlib, "import_module", return_value=port), \
+                mock.patch.object(video_runner, "load_model", return_value=mock.Mock()), redirect_stdout(io.StringIO()):
+            self.assertEqual(video_runner.main(args), 0)
+        keywords = port.generate.call_args.kwargs
+        self.assertEqual((keywords["image"], keywords["audio"], keywords["audio_start"]), ("/first.png", "/speech.wav", 1.5))
+
+
+def _ltx_converter():
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[2] / "src/mlx_agent/resources/ports/ltx-video/ltx2/convert.py"
+    spec = importlib.util.spec_from_file_location("ltx2_convert", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# LTX-2.3 snapshots declare 6 residual layers at block 4 and a doubling at block 7; the weights hold
+# 4 layers and a 1024 -> 1024 compression (a 128-channel convolution over a 2x2x2 space-to-depth).
+PUBLISHED_BLOCKS = [["res_x", {"num_layers": 4}], ["compress_space_res", {"multiplier": 2}],
+                    ["res_x", {"num_layers": 6}], ["compress_time_res", {"multiplier": 2}],
+                    ["res_x", {"num_layers": 6}], ["compress_all_res", {"multiplier": 2}],
+                    ["res_x", {"num_layers": 2}], ["compress_all_res", {"multiplier": 2}],
+                    ["res_x", {"num_layers": 2}]]
+
+
+def _encoder_shapes():
+    shapes = {"conv_in.conv.weight": (128, 3, 3, 3, 48)}
+    for block, count in {0: 4, 2: 6, 4: 4, 6: 2, 8: 2}.items():
+        for layer in range(count):
+            shapes["down_blocks.{0}.res_blocks.{1}.conv1.conv.weight".format(block, layer)] = (1, 3, 3, 3, 1)
+    for block, out in {1: 64, 3: 256, 5: 128, 7: 128}.items():
+        shapes["down_blocks.{0}.conv.conv.weight".format(block)] = (out, 3, 3, 3, 1)
+    return shapes
+
+
+class LtxEncoderBlocksTests(unittest.TestCase):
+    def test_published_encoder_blocks_are_replaced_by_the_ones_the_weights_hold(self):
+        blocks = _ltx_converter().encoder_blocks(PUBLISHED_BLOCKS, _encoder_shapes())
+        self.assertEqual(blocks[4], ["res_x", {"num_layers": 4}])
+        self.assertEqual(blocks[7], ["compress_all_res", {"multiplier": 1}])
+        self.assertEqual(blocks[:4], PUBLISHED_BLOCKS[:4])
+
+
+class LtxConvertTests(unittest.TestCase):
+    def test_conversion_leaves_the_fetched_sources_unchanged(self):
+        from mlx_agent.source_evidence import identities
+
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name).resolve()
+        base, encoder, out = root / "ltx", root / "gemma", root / "out"
+        files = {"transformer/config.json": "{}", "transformer/model.safetensors": "transformer",
+                 "text_projections/model.safetensors": "projections", "vae/decoder/config.json": "{}",
+                 "vae/encoder/model.safetensors": "encoder", "audio_vae/encoder/config.json": "{}",
+                 "vocoder/config.json": "{}", "ltx-2.3-spatial-upscaler-x2-1.1.safetensors": "upscaler",
+                 "vae/encoder/config.json": json.dumps({"encoder_blocks": PUBLISHED_BLOCKS})}
+        text = {"config.json": json.dumps({"text_config": {"hidden_size": 3840, "num_hidden_layers": 48}}),
+                "model.safetensors": "gemma", "tokenizer.json": "{}", "tokenizer_config.json": "{}", "tokenizer.model": "spm"}
+        for folder, contents in ((base, files), (encoder, text)):
+            for name, data in contents.items():
+                (folder / name).parent.mkdir(parents=True, exist_ok=True)
+                (folder / name).write_text(data, encoding="utf-8")
+        before = identities(base), identities(encoder)
+        module = _ltx_converter()
+        with mock.patch.object(module, "_shapes", return_value=_encoder_shapes()), redirect_stdout(io.StringIO()):
+            module.convert(str(base), str(out), {module.TEXT_ENCODER: str(encoder)})
+        self.assertEqual((identities(base), identities(encoder)), before)
+        self.assertEqual((out / "transformer/model.safetensors").read_text(encoding="utf-8"), "transformer")
+        self.assertEqual((out / "text_encoder/model.safetensors").read_text(encoding="utf-8"), "gemma")
+        self.assertEqual((out / "tokenizer/tokenizer.model").read_text(encoding="utf-8"), "spm")
+        fixed = json.loads((out / "vae/encoder/config.json").read_text(encoding="utf-8"))["encoder_blocks"]
+        self.assertEqual(fixed[7], ["compress_all_res", {"multiplier": 1}])
+        config = json.loads((out / "config.json").read_text(encoding="utf-8"))
+        self.assertEqual((config["model_type"], config["spatial_upscaler"]),
+                         ("ltx2", "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"))
+
+
 if __name__ == "__main__":
     unittest.main()

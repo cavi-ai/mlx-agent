@@ -85,3 +85,5 @@ First-class adapters are included for each provider below. The universal install
 Start with the [documentation index](docs/README.md), [CLI reference](docs/mlx-agent/source/pages/reference/cli.md), [runtimes](docs/mlx-agent/source/pages/reference/runtimes.md), or [troubleshooting](docs/mlx-agent/source/pages/guides/troubleshooting.md). See [Contributing](CONTRIBUTING.md) for local checks and [Development](docs/mlx-agent/source/pages/guides/development.md) for adapters and documentation builds.
 
 Versioned documentation comes from `docs/mlx-agent/source`; the [consumer contract](docs/mlx-agent/CONSUMER.md) describes release artifacts. Distributed under the [MIT License](LICENSE).
+
+Local models run on [MLX](https://github.com/ml-explore/mlx) and [mlx-lm](https://github.com/ml-explore/mlx-lm) from Apple's ml-explore team.

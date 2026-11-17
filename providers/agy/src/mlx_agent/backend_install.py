@@ -28,6 +28,8 @@ BACKEND_RECEIPT_SCHEMA_VERSION = "1.0"
 BACKEND_RUNNER = Path(__file__).resolve().with_name("backend_runner.py")
 REQUIRED_PYTHON = (3, 12)
 INSTALL_HOSTS = ("pypi.org", "files.pythonhosted.org")
+# Backends built from a pinned, hashed GitHub source archive with a hashed build lock.
+SOURCE_BUILDS = {"ace-step": "ACE-Step", "ltx-video": "mlx-video"}
 
 
 def _utc_now():
@@ -140,10 +142,11 @@ def plan_install(backend_id, manifests=None, root=None, python=None, version_inf
         plan["build_lock_sha256"] = hashlib.sha256(build_lock.read_bytes()).hexdigest()
         plan["argv"] += ["--build-lock", str(build_lock)]
         plan["network"] += ["github.com", "release-assets.githubusercontent.com"]
-    elif backend_id == "ace-step":
-        build_lock = BACKENDS_DIR / "ace-step-build.lock"
+    elif backend_id in SOURCE_BUILDS:
+        build_lock = BACKENDS_DIR / "{0}-build.lock".format(backend_id)
         if not build_lock.is_file():
-            raise BackendError("lock_missing", "The ACE-Step build lock is missing.", "Reinstall mlx-agent; the lock ships with it.")
+            raise BackendError("lock_missing", "The {0} build lock is missing.".format(SOURCE_BUILDS[backend_id]),
+                               "Reinstall mlx-agent; the lock ships with it.")
         plan["build_lock_sha256"] = hashlib.sha256(build_lock.read_bytes()).hexdigest()
         plan["argv"] += ["--build-lock", str(build_lock)]
         plan["network"] += ["github.com", "codeload.github.com"]

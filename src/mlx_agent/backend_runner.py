@@ -66,6 +66,14 @@ def main(argv=None):
             "from acestep.inference import GenerationConfig, GenerationParams, generate_music; "
             "from acestep.llm_inference import LLMHandler"
         )]
+    elif arguments.id == "ltx-video":
+        # mlx-video installs from its pinned, hashed source archive, built with hashed
+        # setuptools and build isolation disabled; its dependencies stay binary-only.
+        build_lock = arguments.build_lock or str(Path(arguments.lock).with_name("ltx-video-build.lock"))
+        steps.insert(1, [venv_python, "-m", "pip", "install", "--disable-pip-version-check", "--no-input",
+                         "--require-hashes", "--no-deps", "--only-binary=:all:", "-r", build_lock])
+        steps[2] += ["--no-binary=mlx-video", "--no-build-isolation"]
+        steps[3] = [venv_python, "-c", "from mlx_video.models.ltx_2.generate import generate_video"]
     for step in steps:
         print("$ " + " ".join(step), flush=True)
         completed = subprocess.run(step, stdin=subprocess.DEVNULL, check=False)

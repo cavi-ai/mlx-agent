@@ -26,6 +26,11 @@ MAX_FPS = 60
 DEFAULT_PATCH, DEFAULT_SPATIAL_STRIDE, DEFAULT_TEMPORAL_STRIDE = 2, 8, 4
 DEFAULT_STEPS, DEFAULT_FPS = 50, 16
 DEFAULT_WIDTH, DEFAULT_HEIGHT, DEFAULT_FRAMES = 832, 480, 81
+# Model types whose port takes a first-frame image and a driving audio file.
+CONDITIONED_TYPES = frozenset({"ltx2"})
+IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
+AUDIO_SUFFIXES = (".wav", ".flac", ".mp3", ".m4a", ".aac")
+MAX_AUDIO_START = 3600.0
 
 
 class VideoError(InferenceError):
@@ -52,13 +57,27 @@ def _config_int(config, key, default):
     return value if _is_int(value) and value > 0 else default
 
 
+def _media(path, suffixes, flag):
+    if path is None:
+        return None
+    media = Path(path).expanduser()
+    if not media.is_absolute() or media.suffix.lower() not in suffixes or not media.is_file():
+        raise _invalid(
+            "--{0} must be an existing absolute {1} file.".format(flag, ", ".join(suffixes)),
+            "Pass the full path of the {0} file.".format(flag),
+        )
+    return media
+
+
 def plan_video(model_path, prompt, out, width=DEFAULT_WIDTH, height=DEFAULT_HEIGHT, frames=DEFAULT_FRAMES,
                fps=None, steps=None, seed=42, manifests=None, registries=None, root=None,
-               denoiser_cache="off", cache_memory_mib=256):
+               denoiser_cache="off", cache_memory_mib=256, image=None, audio=None, audio_start=None):
     """Pick the video backend for a converted model directory; pure apart from reading config.json.
 
     The size alignment, the frame rule, the area cap, and the step and rate defaults come from the
     model's own config.json (its VAE and patch strides), so a model with other strides is held to its own.
+    ``image`` (first frame) and ``audio`` (driving sound, read from ``audio_start`` seconds) apply to
+    models whose port takes them.
     """
     model = Path(model_path).expanduser()
     try:
@@ -110,6 +129,15 @@ def plan_video(model_path, prompt, out, width=DEFAULT_WIDTH, height=DEFAULT_HEIG
     if denoiser_cache == "adaptive" and not supports_adaptive_reuse(config, "video_generation"):
         raise _invalid("Adaptive denoiser caching requires single-model Wan2.1 T2V.", "Use --denoiser-cache off for this model.")
     model_type = config.get("model_type")
+    image, audio = _media(image, IMAGE_SUFFIXES, "image"), _media(audio, AUDIO_SUFFIXES, "audio")
+    if (image or audio) and model_type not in CONDITIONED_TYPES:
+        raise _invalid("This model renders from text only; --image and --audio need an LTX-2.3 model.",
+                       "Drop --image and --audio, or pass a converted LTX-2.3 directory.")
+    if audio_start is not None and audio is None:
+        raise _invalid("--audio-start applies only with --audio.", "Pass --audio with the driving audio file.")
+    audio_start = 0.0 if audio_start is None else audio_start
+    if isinstance(audio_start, bool) or not isinstance(audio_start, (int, float)) or not 0 <= audio_start <= MAX_AUDIO_START:
+        raise _invalid("--audio-start must be 0..{0:g} seconds.".format(MAX_AUDIO_START), "Pass --audio-start 0, for example.")
     manifests = load_manifests() if manifests is None else manifests
     registries = load_registries(manifests, root) if registries is None else registries
     hits = sorted(
@@ -134,10 +162,17 @@ def plan_video(model_path, prompt, out, width=DEFAULT_WIDTH, height=DEFAULT_HEIG
     ]
     if denoiser_cache == "adaptive":
         argv.extend(["--denoiser-cache", denoiser_cache, "--cache-memory-mib", str(cache_memory_mib)])
-    return {
+    plan = {
         "backend": manifest["id"], "model": str(model), "out": str(target),
         "width": width, "height": height, "frames": frames, "fps": fps, "steps": steps, "seed": seed, "argv": argv,
     }
+    if image:
+        argv.extend(["--image", str(image)])
+        plan["image"] = str(image)
+    if audio:
+        argv.extend(["--audio", str(audio), "--audio-start", repr(float(audio_start))])
+        plan.update(audio=str(audio), audio_start=float(audio_start))
+    return plan
 
 
 CONTRACT = RunnerContract(
@@ -158,4 +193,5 @@ def run_video(plan, manifests=None, root=None, timeout=DEFAULT_TIMEOUT_SECONDS, 
                   **{key: result.get(key) for key in keys})
     if "denoiser_cache" in result:
         output["denoiser_cache"] = result["denoiser_cache"]
+    output.update({key: plan[key] for key in ("image", "audio", "audio_start") if key in plan})
     return output

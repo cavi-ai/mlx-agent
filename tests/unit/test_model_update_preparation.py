@@ -13,6 +13,7 @@ from contextlib import redirect_stdout
 from unittest.mock import patch
 
 from mlx_agent import fetch_runner, queue_bridge, queue_cli
+from mlx_agent.backends import load_manifests
 from mlx_agent.convert import ConvertError, _finalize_plan, plan_convert, plan_gguf_convert, start_convert, status_convert
 from mlx_agent.convert_queue import ConvertQueue, QueueStore
 from mlx_agent.conversion_monitor import receipt_lock
@@ -169,6 +170,25 @@ class ManagedUpdatePreparationTests(unittest.TestCase):
         self.assertEqual(plan["source"]["dependencies"][0]["origin"]["revision"], BASE_COMMIT)
         with patch("mlx_agent.convert.cached_snapshot", side_effect=AssertionError("shared cache used")), self.assertRaises(ConvertError):
             plan_convert(repo, backend="mflux", model_type="qwen_image_21", source_path=str(main), fetch_receipt=str(main_receipt))
+
+    def test_port_folder_converts_from_a_file_selection_holding_every_file_the_port_reads(self):
+        manifests = load_manifests()
+        files = manifests["ltx-video"]["port_signatures"]["ltx2"]
+        text_repo, text_files = next(iter(manifests["ltx-video"]["port_requires"]["ltx2"].items()))
+        text, text_receipt, _ = self.fetch(repo=text_repo, files={name: b"{}" for name in text_files})
+        folder, receipt, _ = self.fetch(repo="org/ltx", primary=files[0], additional=files[1:],
+                                        files={name: b"weights" for name in files})
+        plan = plan_convert("org/ltx", q_bits=32, backend="ltx-video", model_type="ltx2", source_path=str(folder),
+                            fetch_receipt=str(receipt), dependency_fetch_receipts=[str(text_receipt)], require_completion=True)
+        self.assertEqual(plan["argv"][plan["argv"].index("--hf-path") + 1], str(folder))
+        self.assertIn("{0}={1}".format(text_repo, text), plan["argv"])
+        self.assertEqual((plan["source"]["bundle"], plan["source"]["origin"]["file"]), (True, files[0]))
+        partial, partial_receipt, _ = self.fetch(repo="org/ltx-partial", primary=files[0], additional=files[1:-1],
+                                                 files={name: b"weights" for name in files[:-1]})
+        with self.assertRaises(ConvertError) as caught:
+            plan_convert("org/ltx-partial", q_bits=32, backend="ltx-video", model_type="ltx2", source_path=str(partial),
+                         fetch_receipt=str(partial_receipt), dependency_fetch_receipts=[str(text_receipt)])
+        self.assertEqual(caught.exception.code, "source_evidence_invalid")
 
     def test_required_projector_is_explicit_bound_and_cannot_be_lost(self):
         fixtures = self.root / "fixtures"; fixtures.mkdir()

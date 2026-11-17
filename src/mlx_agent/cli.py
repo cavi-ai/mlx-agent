@@ -2099,6 +2099,10 @@ def _add_convert_arguments(parser):
                        help="adaptive residual reuse for Wan2.1 T2V; may change generated frames")
     video.add_argument("--cache-memory-mib", type=int, default=256,
                        help="adaptive feature-memory cap in MiB, 8..4096 (default: 256)")
+    video.add_argument("--image", default=None, help="absolute first-frame image (png, jpg, webp); LTX-2.3 models")
+    video.add_argument("--audio", default=None,
+                       help="absolute audio file the video follows and carries (wav, flac, mp3, m4a, aac); LTX-2.3 models")
+    video.add_argument("--audio-start", type=float, default=None, help="seconds into --audio where the video starts (default 0)")
     video.add_argument("--timeout", type=int, default=3600, help="seconds before the backend run is stopped")
     video.add_argument("--json", action="store_true")
 
@@ -2201,7 +2205,8 @@ def _run_convert(arguments):
             plan = plan_video(arguments.path, arguments.prompt, arguments.out, width=arguments.width,
                               height=arguments.height, frames=arguments.frames, fps=arguments.fps,
                               steps=arguments.steps, seed=arguments.seed,
-                              denoiser_cache=arguments.denoiser_cache, cache_memory_mib=arguments.cache_memory_mib)
+                              denoiser_cache=arguments.denoiser_cache, cache_memory_mib=arguments.cache_memory_mib,
+                              image=arguments.image, audio=arguments.audio, audio_start=arguments.audio_start)
             result = served_or_local("video", run_video, plan, arguments.out)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
         if arguments.convert_command == "scan":

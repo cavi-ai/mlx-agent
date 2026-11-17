@@ -47,7 +47,7 @@ def _write(path, receipt):
 def _check_sources(plan):
     source = plan["source"]
     if source.get("fetch_receipt"):
-        current = completed_fetch(source["fetch_receipt"], source["path"])
+        current = completed_fetch(source["fetch_receipt"], source["path"], bundle_root=bool(source.get("bundle")))
         if current["origin"] != source["origin"] or current["fingerprint"] != source["fingerprint"]:
             raise ValueError("The reviewed source changed before conversion.")
     elif source.get("path") and source.get("fingerprint") and source.get("kind") == "hf-cache":

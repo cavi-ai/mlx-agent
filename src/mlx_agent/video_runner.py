@@ -26,7 +26,13 @@ def main(argv=None):
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--denoiser-cache", choices=("off", "adaptive"), default="off")
     parser.add_argument("--cache-memory-mib", type=int, default=256)
+    parser.add_argument("--image", default=None)
+    parser.add_argument("--audio", default=None)
+    parser.add_argument("--audio-start", type=float, default=0.0)
     arguments = parser.parse_args(argv)
+    conditioning = {"image": arguments.image} if arguments.image else {}
+    if arguments.audio:
+        conditioning.update(audio=arguments.audio, audio_start=arguments.audio_start)
 
     port = importlib.import_module(arguments.module)
     started = time.time()
@@ -38,6 +44,7 @@ def main(argv=None):
         frames=arguments.frames, fps=arguments.fps, steps=arguments.steps, seed=arguments.seed,
         **({"denoiser_cache": arguments.denoiser_cache, "cache_memory_mib": arguments.cache_memory_mib}
            if arguments.denoiser_cache != "off" else {}),
+        **conditioning,
     )
     result["load_seconds"] = round(float(result.get("load_seconds", 0.0)) + open_seconds, 3)
     print(json.dumps(result), flush=True)

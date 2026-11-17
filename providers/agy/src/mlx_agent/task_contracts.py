@@ -12,7 +12,7 @@ RUN_SCHEMA = "task-run/1"
 MEDIA_REQUEST_SCHEMA = "task-request/2"
 MEDIA_RUN_SCHEMA = "task-run/2"
 MAX_REQUEST_BYTES = 1024 * 1024
-MEDIA_SUFFIXES = {"audio": (".wav", ".flac", ".mp3"), "image": (".png", ".jpg", ".jpeg", ".webp"),
+MEDIA_SUFFIXES = {"audio": (".wav", ".flac", ".mp3"), "ltx_audio": (".wav", ".flac", ".mp3", ".m4a", ".aac"), "image": (".png", ".jpg", ".jpeg", ".webp"),
                   "video": (".mp4", ".mov", ".m4v"), "mesh": (".glb",)}
 STATES = ("starting", "running", "succeeded", "failed", "cancelled")
 TERMINAL = ("succeeded", "failed", "cancelled")
@@ -89,7 +89,7 @@ def validate_record(value):
         raise TaskError("invalid_task_record", "Unknown task kind or state.")
     if named:
         references = value["input_artifacts"]
-        allowed = {"image": "image", "audio": "audio"} if kind.name == "video_generation" else {
+        allowed = {"image": "image", "audio": "ltx_audio"} if kind.name == "video_generation" else {
             "image_path": "image", "views": "image", "guide": "mesh"}
         if (not isinstance(references, dict) or set(references) - set(allowed)
                 or kind.name == "mesh_generation" and "image_path" not in references):

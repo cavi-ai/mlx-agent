@@ -144,7 +144,7 @@ class TaskStore:
         source = Path(source).expanduser()
         suffix = source.suffix.lower()
         if media_kind not in MEDIA_SUFFIXES or not source.is_absolute() or suffix not in MEDIA_SUFFIXES[media_kind]:
-            description = {"audio": "WAV, FLAC or MP3", "image": "PNG, JPEG or WebP",
+            description = {"audio": "WAV, FLAC or MP3", "ltx_audio": "WAV, FLAC, MP3, M4A or AAC", "image": "PNG, JPEG or WebP",
                            "video": "MP4, MOV or M4V", "mesh": "GLB"}.get(media_kind, "supported media")
             raise TaskError("invalid_input", "Media input must be an absolute {0} path.".format(description))
         identifier = str(uuid4())

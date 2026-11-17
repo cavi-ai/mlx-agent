@@ -18,7 +18,7 @@ def specifications(request):
     kind = request['kind']
     if kind == 'video_generation':
         return [(name, None, parameters[name], media) for name, media in
-                (('image', 'image'), ('audio', 'audio')) if name in parameters]
+                (('image', 'image'), ('audio', 'ltx_audio')) if name in parameters]
     if kind == 'mesh_generation':
         items = [('image_path', None, parameters['image_path'], 'image')]
         items += [('views', index, path, 'image') for index, path in enumerate(parameters.get('views', []))]

@@ -224,3 +224,18 @@ class NamedInputTests(unittest.TestCase):
             with self.assertRaises(TaskError) as failure:
                 task_storage.status(store)
             self.assertEqual(failure.exception.code, 'invalid_task_id')
+
+    def test_video_audio_formats_preserve_existing_input_contract(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            for suffix in ('.m4a', '.aac'):
+                audio = root / ('audio' + suffix)
+                audio.write_bytes(b'audio')
+                request = {'schema': 'task-request/2', 'kind': 'video_generation', 'model_path': str(root / 'model'),
+                           'parameters': {'prompt': 'test', 'audio': str(audio)}}
+                store = TaskStore(root / ('store-' + suffix[1:]))
+                staged = store.stage_inputs(request)
+                record = store.create(request, identity_evidence(request['model_path']), staged_input=staged)
+                self.assertEqual(Path(store.verify_named_inputs(record['id'], request, record['input_artifacts'])['audio']).read_bytes(), b'audio')
+                with self.assertRaises(TaskError):
+                    store.stage_input(str(audio), 'audio')

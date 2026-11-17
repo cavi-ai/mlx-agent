@@ -26,6 +26,7 @@ from .backends import (
     port_bits,
     port_converter,
     port_downloads,
+    port_files,
     port_requirements,
     recipe_for,
     read_install_marker,
@@ -135,9 +136,10 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
             validate_subfolder(subfolder)
         except ValueError as error:
             raise ConvertError("invalid_arguments", str(error), "Pass --subfolder as the folder path inside the repository.") from error
-    primary, dependencies = _source_records(fetch_receipt, dependency_fetch_receipts, source_path)
+    bundle = _port_bundle(model_type, backend, manifests)
+    primary, dependencies = _source_records(fetch_receipt, dependency_fetch_receipts, source_path, bundle)
     if primary:
-        if primary["origin"]["repo"] != repo or primary["origin"].get("file") is not None or primary["origin"].get("subfolder") != subfolder:
+        if primary["origin"]["repo"] != repo or (primary["origin"].get("file") is not None and not bundle) or primary["origin"].get("subfolder") != subfolder:
             raise ConvertError("source_mismatch", "The completed fetch does not match this repo checkpoint.", "Select the exact downloaded checkpoint.")
         source_path = primary["path"]
     name = repo.split("/", 1)[1] + ("-" + subfolder.replace("/", "-") if subfolder else "")
@@ -171,6 +173,8 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
         "q_bits": q_bits,
         "out": str(out),
     }
+    if primary and primary["origin"].get("file") is not None:
+        plan["source"]["bundle"] = True
     if hf_path != repo:
         source = Path(hf_path)
         # Bind the reviewed plan to the local source, including config contents
@@ -334,9 +338,25 @@ def local_source_fingerprint(path):
     return hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest()
 
 
-def _source_records(fetch_receipt, dependency_fetch_receipts, selected_path=None):
+def _port_bundle(model_type, backend, manifests):
+    """The files a port's converter reads from its checkpoint folder, or None when it reads one checkpoint."""
+    if model_type is None or backend in (None, "mlx-lm"):
+        return None
     try:
-        primary = completed_fetch(fetch_receipt, selected_path) if fetch_receipt else None
+        manifests = load_manifests() if manifests is None else manifests
+    except BackendError as error:
+        raise ConvertError(error.code, str(error), error.remediation) from error
+    return port_files(model_type, backend, manifests)
+
+
+def _source_records(fetch_receipt, dependency_fetch_receipts, selected_path=None, bundle=None):
+    try:
+        # A port folder may come from a managed file selection; it must hold every file the port reads.
+        primary = completed_fetch(fetch_receipt, selected_path, bundle_root=bool(bundle)) if fetch_receipt else None
+        if primary and bundle and primary["origin"].get("file") is not None:
+            selected = {primary["origin"]["file"], *(primary["origin"].get("additional_files") or [])}
+            if not set(bundle) <= selected:
+                raise ValueError("The file selection lacks files this port's converter reads.")
         dependencies = [completed_fetch(value, bundle_root=True) for value in dependency_fetch_receipts or []]
         repos = [item["origin"]["repo"].casefold() for item in dependencies]
         if len(dependencies) > 32 or len(set(repos)) != len(repos):

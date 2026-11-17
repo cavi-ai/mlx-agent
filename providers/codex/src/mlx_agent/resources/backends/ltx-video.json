@@ -1,0 +1,80 @@
+{
+  "schema": "backend/1",
+  "id": "ltx-video",
+  "version": "0.0.1+87db56a",
+  "builtin": false,
+  "package": "mlx_video",
+  "convert": "mlx_video.models.ltx_2.convert",
+  "lock": "ltx-video.lock",
+  "ports": {
+    "video_generation": [
+      "ltx2"
+    ]
+  },
+  "port_convert": {
+    "ltx2": "convert"
+  },
+  "port_bits": {
+    "ltx2": [32]
+  },
+  "port_signatures": {
+    "ltx2": [
+      "audio_vae/decoder/config.json",
+      "audio_vae/decoder/model.safetensors",
+      "audio_vae/decoder/model.safetensors.index.json",
+      "audio_vae/encoder/config.json",
+      "audio_vae/encoder/model.safetensors",
+      "ltx-2.3-spatial-upscaler-x2-1.1.safetensors",
+      "text_projections/model.safetensors",
+      "transformer/config.json",
+      "transformer/model-00000-of-00018.safetensors",
+      "transformer/model-00001-of-00018.safetensors",
+      "transformer/model-00002-of-00018.safetensors",
+      "transformer/model-00003-of-00018.safetensors",
+      "transformer/model-00004-of-00018.safetensors",
+      "transformer/model-00005-of-00018.safetensors",
+      "transformer/model-00006-of-00018.safetensors",
+      "transformer/model-00007-of-00018.safetensors",
+      "transformer/model-00008-of-00018.safetensors",
+      "transformer/model-00009-of-00018.safetensors",
+      "transformer/model-00010-of-00018.safetensors",
+      "transformer/model-00011-of-00018.safetensors",
+      "transformer/model-00012-of-00018.safetensors",
+      "transformer/model-00013-of-00018.safetensors",
+      "transformer/model-00014-of-00018.safetensors",
+      "transformer/model-00015-of-00018.safetensors",
+      "transformer/model-00016-of-00018.safetensors",
+      "transformer/model-00017-of-00018.safetensors",
+      "transformer/model.safetensors.index.json",
+      "vae/decoder/config.json",
+      "vae/decoder/model.safetensors",
+      "vae/decoder/model.safetensors.index.json",
+      "vae/encoder/config.json",
+      "vae/encoder/model.safetensors",
+      "vae/encoder/model.safetensors.index.json",
+      "vocoder/config.json",
+      "vocoder/model.safetensors",
+      "vocoder/model.safetensors.index.json"
+    ]
+  },
+  "port_requires": {
+    "ltx2": {
+      "mlx-community/gemma-3-12b-it-bf16": [
+        "config.json",
+        "model.safetensors.index.json",
+        "tokenizer.json",
+        "tokenizer_config.json"
+      ]
+    }
+  },
+  "categories": {
+    "video_generation": "mlx_agent_ports"
+  },
+  "remap_files": {},
+  "registry": {
+    "video_generation": {
+      "model_types": [],
+      "remapping": {}
+    }
+  }
+}

@@ -1,0 +1,19 @@
+# mlx-video (Blaizzy/mlx-video 87db56a) runtime dependencies for Python 3.12 on macOS arm64.
+# Resolve from the repository root (keep the pinned mlx-video source entry):
+# MACOSX_DEPLOYMENT_TARGET=14.0 uv pip compile scripts/ltx-video-requirements.in --python-version 3.12 --python-platform aarch64-apple-darwin --only-binary :all: --generate-hashes --output-file .run/ltx-video-dependencies.lock
+# Replace only the versioned dependencies in ltx-video.lock with the resolved entries,
+# retain the pinned, hashed mlx-video source entry, then remove the temporary file.
+mlx>=0.22.0
+numpy
+safetensors
+huggingface_hub
+transformers[tokenizers]
+tqdm
+opencv-python>=4.12.0.88
+Pillow>=10.3.0
+mlx-vlm
+rich>=14.2.0
+librosa>=0.10.0
+imageio>=2.37.2
+imageio-ffmpeg>=0.6.0
+ftfy

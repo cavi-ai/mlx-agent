@@ -168,9 +168,14 @@ def _validate_image_understanding(parameters):
 
 
 def _validate_video_generation(parameters):
-    _require_keys(parameters, ("prompt",), ("width", "height", "frames", "steps", "seed", "fps", "denoiser_cache", "cache_memory_mib"),
+    _require_keys(parameters, ("prompt",), ("width", "height", "frames", "steps", "seed", "fps", "denoiser_cache", "cache_memory_mib",
+                                            "image", "audio", "audio_start"),
                   "Video-generation parameters need prompt and supported options.")
     _require_string(parameters, "prompt")
+    for key in ("image", "audio"):
+        if key in parameters:
+            _require_absolute(parameters, key)
+    _require_finite(parameters, "audio_start")
     _require_integer(parameters, "width", "height", "frames", "steps", "seed", "cache_memory_mib")
     if "cache_memory_mib" in parameters and not 8 <= parameters["cache_memory_mib"] <= 4096:
         raise TaskError("invalid_parameters", "cache_memory_mib must be 8..4096.")
@@ -245,7 +250,8 @@ def _plan_image_understanding(model, parameters, output, media, directory):
 
 def _plan_video_generation(model, parameters, output, media, directory):
     return plan_video(model, parameters["prompt"], output,
-                      **_options(parameters, ("width", "height", "frames", "fps", "steps", "seed", "denoiser_cache", "cache_memory_mib")))
+                      **_options(parameters, ("width", "height", "frames", "fps", "steps", "seed", "denoiser_cache", "cache_memory_mib",
+                                              "image", "audio", "audio_start")))
 
 
 def _plan_video_understanding(model, parameters, output, media, directory):

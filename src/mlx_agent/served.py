@@ -20,7 +20,7 @@ VERBS = {
                                    "reference")),
     "generate": ("image_generation", ("prompt", "width", "height", "steps", "seed")),
     "video": ("video_generation", ("prompt", "width", "height", "frames", "steps", "seed", "fps", "denoiser_cache",
-                                   "cache_memory_mib")),
+                                   "cache_memory_mib", "image", "audio", "audio_start")),
 }
 REMEDIATION = {
     "model_busy": "The served model is running another job; wait for it to finish and retry.",

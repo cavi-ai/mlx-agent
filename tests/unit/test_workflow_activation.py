@@ -36,7 +36,9 @@ class WorkflowActivationTests(unittest.TestCase):
         workflow_sets.save_workflow('studio', self.definition, self.root)
         for context in (patch('mlx_agent.workflow_sets.resolve_serve_runtime', return_value=('mlx_lm', sys.executable)),
                         patch('mlx_agent.service_registry.register_receipts'),
-                        patch.dict(os.environ, {'PYTHONPATH': str(Path(__file__).resolve().parents[2] / 'src')})):
+                        patch('mlx_agent.service_registry.discover_services', return_value={'services': [], 'errors': []}),
+                        patch.dict(os.environ, {'PYTHONPATH': str(Path(__file__).resolve().parents[2] / 'src'),
+                                                'XDG_STATE_HOME': str(self.root / 'state')})):
             context.start()
             self.addCleanup(context.stop)
         self.addCleanup(self.cleanup_gateway)
@@ -230,6 +232,8 @@ class WorkflowActivationTests(unittest.TestCase):
             owned_port, race_port = free_port(), free_port()
         self.addCleanup(self.cleanup_port, owned_port)
         original_member = self.definition['members']['coding']
+        from mlx_agent.model_serving import write_policy
+        write_policy([original_member['path']])
         plan = workflow_sets._member_plan(original_member, self.root)
         borrowed = start_serve(plan, receipts_dir=self.root, confirm=True, preview_hash=plan['preview_hash'])['receipt']
         self.definition['members'] = {'a_borrowed': original_member,

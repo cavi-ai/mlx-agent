@@ -34,8 +34,18 @@
       "properties": {
         "code": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
         "message": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
-        "remediation": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"}
-      }
+        "remediation": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+        "data": {"type": "object", "additionalProperties": false, "required": ["existing_services"],
+          "properties": {"existing_services": {"type": "array", "maxItems": 256, "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["origin", "api_base", "service_id", "runtime", "state", "auth_required"],
+            "properties": {"origin": {"type": "string", "pattern": "^http://127\\.0\\.0\\.1:[0-9]{1,5}$"},
+              "api_base": {"type": "string"}, "service_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "runtime": {"enum": ["tasks", "mlx_lm", "mlx-vlm", "strata", "splash"]},
+              "state": {"enum": ["starting", "ready", "unknown"]}, "auth_required": {"type": "boolean"}}
+          }}}}
+      },
+      "allOf": [{"if": {"required": ["data"]}, "then": {"properties": {"code": {"const": "model_already_served"}}}}]
     },
     "privateIdentity": {
       "type": "object", "additionalProperties": false,

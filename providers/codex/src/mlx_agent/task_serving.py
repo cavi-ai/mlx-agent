@@ -273,6 +273,7 @@ class TaskModelWorker(ModelWorker):
     def _stop_worker(self):
         try:
             self.resident.close()
+            self.worker_launch_pending = False
             self.execution_unresolved = False
             self._release_memory()
         finally:
@@ -435,12 +436,16 @@ class TaskModelWorker(ModelWorker):
                 self.model_state = 'loading' if not self.resident.loaded else 'loaded'
             if self.resident.process is None:
                 self._launching_memory()
+                with self.condition:
+                    self.worker_launch_pending = True
+                    self._persist()
                 self.resident._start(cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'])
             with self.condition:
                 if self.closed:
                     raise InterruptedError('Endpoint stopping.')
                 self.process = self.resident.process
                 self.worker_argv = list(self.process.args)
+                self.worker_launch_pending = False
                 self._persist()
             lease.bind_process_group(self.process.pid)
             worker_identity = process_identity(self.process.pid)
@@ -450,9 +455,11 @@ class TaskModelWorker(ModelWorker):
                 self._bind_memory(self.process, worker_identity)
             self.store.transition(identifier, ('starting',), {'state': 'running', 'execution': {'pid': self.process.pid, 'identity': worker_identity}})
             dispatched = True
-            result = kind.run(plan, runner=lambda argv, **options: self.resident.run(argv,
+            from functools import partial
+            runner = partial(self.resident.run,
                 cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'],
-                cache_policy=allocator_cache.from_memory(self.memory_policy), memory_limit_bytes=worker_limit, **options))
+                cache_policy=allocator_cache.from_memory(self.memory_policy), memory_limit_bytes=worker_limit)
+            result = kind.run(plan, runner=runner)
             self._recheck_identity()
             check_identity(record['identity'])
             self.store.read_request(identifier)

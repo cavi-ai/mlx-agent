@@ -101,6 +101,30 @@ is reported as `adapter_status: unknown`. Direct `--launchd` plists retain their
 existing deferred-launch behavior; these worker-load checks apply to supervised
 serving.
 
+## Duplicate model serving
+
+A managed model can have one serving endpoint by default, including while a JIT
+endpoint has unloaded its weights. Starting another endpoint for the same local
+artifact returns `model_already_served` with available connection details. Check
+that the endpoint supports your request and use its existing authorized key.
+Standalone managed inference reports when another model operation is in progress
+or returns the existing service details. If ownership cannot be established,
+inspect the existing service and its processes before retrying.
+
+To allow multiple instances of a specific local model, review and confirm an exact
+path or cached repository selector. The policy applies to the current user and
+leaves authentication and memory admission in effect:
+
+```sh
+mlx-agent serve duplication-policy --allow-model /absolute/model --json
+mlx-agent serve duplication-policy --allow-model /absolute/model --confirm --json
+mlx-agent serve duplication-policy --clear --confirm --json
+```
+
+Repeat `--allow-model` to replace the allowlist with multiple exact models. The
+policy starts empty; `serve duplication-policy --json` shows its current value.
+The same ownership check applies to managed deferred launches.
+
 ## Discover running services
 
 `serve discover --json` reports services across registered receipt locations and

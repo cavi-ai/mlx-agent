@@ -19,6 +19,8 @@ from mlx_agent.taxonomy import classify
 
 class MusicTests(unittest.TestCase):
     def setUp(self):
+        from tests.unit.ownership_fixtures import isolate
+        isolate(self)
         temporary = TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
@@ -179,6 +181,8 @@ class AceStepMusicTests(unittest.TestCase):
     """ACE-Step 1.5 checkpoints: a DiT folder beside its VAE, text encoder and planner folders."""
 
     def setUp(self):
+        from tests.unit.ownership_fixtures import isolate
+        isolate(self)
         temporary = TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)

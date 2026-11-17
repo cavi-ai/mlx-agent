@@ -188,6 +188,8 @@
     "src/mlx_agent/messages_api.py",
     "src/mlx_agent/modality.py",
     "src/mlx_agent/model_doctor.py",
+    "src/mlx_agent/model_serving.py",
+    "src/mlx_agent/model_serving_entry.py",
     "src/mlx_agent/models.py",
     "src/mlx_agent/music.py",
     "src/mlx_agent/music_requantize_runner.py",

@@ -37,6 +37,23 @@ def _plan(**overrides):
     return plan_start(values.pop("repo"), values.pop("runtime"), RECIPES, **values)
 
 
+def _isolate_ownership(test):
+    """Give unrelated serve lifecycle fixtures a deterministic ownership collaborator."""
+    from contextlib import nullcontext
+    claim = unittest.mock.Mock(key='a' * 64, generation='b' * 64, root=Path('/unused'))
+    for target, value in (
+        ('mlx_agent.model_serving.resolve_model', '/fixture/model'),
+        ('mlx_agent.model_serving.acquire', claim),
+        ('mlx_agent.compute.process_birth_identity', 'fixture-birth'),
+        ('mlx_agent.model_serving._lock', nullcontext()),
+        ('mlx_agent.model_serving._read_claims', []),
+        ('mlx_agent.model_serving.release_stopped_service', None),
+    ):
+        patcher = unittest.mock.patch(target, return_value=value)
+        patcher.start()
+        test.addCleanup(patcher.stop)
+
+
 class PlanStartTests(unittest.TestCase):
     def test_local_vq_evidence_is_reviewed_without_treating_default_bits_as_uniform(self):
         with TemporaryDirectory() as folder:
@@ -169,6 +186,7 @@ class PlanStartTests(unittest.TestCase):
 
 class TrainingReceiptServeTests(unittest.TestCase):
     def setUp(self):
+        _isolate_ownership(self)
         self.temp = TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -262,6 +280,7 @@ class TrainingReceiptServeTests(unittest.TestCase):
 
 class StartServeTests(unittest.TestCase):
     def setUp(self):
+        _isolate_ownership(self)
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
@@ -513,6 +532,7 @@ class StatusAndStopTests(unittest.TestCase):
 
 
     def setUp(self):
+        _isolate_ownership(self)
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)

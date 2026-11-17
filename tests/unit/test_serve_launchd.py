@@ -22,6 +22,12 @@ def _plan(**overrides):
 
 
 class LaunchdRenderTests(unittest.TestCase):
+    def setUp(self):
+        from unittest.mock import patch
+        resolver = patch('mlx_agent.model_serving.resolve_model', side_effect=lambda value, *_: value if value.startswith('/') else '/models/example')
+        resolver.start()
+        self.addCleanup(resolver.stop)
+
     def test_label_uses_port(self):
         self.assertEqual(launchd_label(8080), "com.mlx-agent.serve.8080")
 
@@ -59,3 +65,31 @@ class LaunchdRenderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class LaunchdOwnershipTests(unittest.TestCase):
+    def test_plist_routes_runtime_through_model_claim_entrypoint(self):
+        import plistlib
+        from unittest.mock import patch
+        plan = _plan()
+        with patch('mlx_agent.model_serving.resolve_model', return_value='/models/example'):
+            arguments = plistlib.loads(render_launchd_plist(plan).encode())['ProgramArguments']
+        self.assertTrue(arguments[1].endswith('/model_serving_entry.py'))
+        self.assertIn('/models/example', arguments)
+        self.assertEqual(arguments[arguments.index('--') + 1:], plan['argv'])
+
+    def test_entrypoint_claims_before_exec_and_cleans_exec_failure(self):
+        from unittest.mock import Mock, patch
+        from mlx_agent import model_serving_entry
+        claim = Mock()
+        command = ['--artifact', '/models/example', '--runtime', 'mlx_lm', '--port', '8080',
+                   '--auth-required', 'false', '--', 'mlx_lm.server', '--model', '/models/example', '--port', '8080']
+        with patch.object(model_serving_entry, 'resolve_model', side_effect=lambda value, *_: value), \
+             patch.object(model_serving_entry, 'acquire', return_value=claim), \
+             patch.object(model_serving_entry, 'process_birth_identity', return_value='birth'), \
+             patch.object(model_serving_entry.os, 'getpgrp', return_value=77), \
+             patch.object(model_serving_entry.os, 'getpid', return_value=77), \
+             patch.object(model_serving_entry.os, 'execvpe', side_effect=OSError('exec failed')):
+            with self.assertRaisesRegex(OSError, 'exec failed'):
+                model_serving_entry.main(command)
+        claim.update.assert_called_once_with(state='active', pid=77, birth='birth', pgid=77, jit=False, ready=False)
+        claim.cancel_failed_exec.assert_called_once()

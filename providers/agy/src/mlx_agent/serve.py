@@ -48,10 +48,11 @@ _RECIPES_PATH = Path(__file__).resolve().parent / "resources" / "serve-recipes.j
 class ServeError(RuntimeError):
     """Classified serve failure safe to surface in a result envelope."""
 
-    def __init__(self, code, message, remediation):
+    def __init__(self, code, message, remediation, data=None):
         super().__init__(message)
         self.code = code
         self.remediation = remediation
+        self.data = data or {}
 
 
 def load_recipes(path=None):
@@ -570,7 +571,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
                 which=None, model_present=None, path_present=None, port_free=None,
                 wired_claims=None, spawn=None, readiness=None,
                 readiness_deadline=READINESS_DEADLINE_DEFAULT, now=_utc_now,
-                pid_alive=None):
+                pid_alive=None, hf_cache=None):
     """Execute a reviewed start plan; the only mutating serve entry point."""
     which = which or _default_which
     port_free = port_free or _default_port_free
@@ -657,59 +658,93 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
                 "Run serve stop --port {0} first.".format(plan["port"]),
             )
 
-    root.mkdir(parents=True, exist_ok=True)
-    if spawn is _default_spawn:
-        from .service_registry import register_receipts
-        register_receipts(root.absolute().parent.parent)
-    log_path = root / "{0}.log".format(plan["port"])
-    if plan.get("jit"):
-        config_path = Path(plan["control_config"])
-        if config_path.parent != root.absolute() or config_path.is_symlink():
-            raise ServeError("invalid_arguments", "Unsafe JIT configuration path.", "Review a fresh serve plan.")
-        from .worker_transport import gateway_config
-        config = gateway_config(plan, control_token=secrets.token_hex(32),
-                                state_path=str(root.absolute() / "{}.jit-state.json".format(plan["port"])),
-                                log_path=root.absolute() / "{}.worker.log".format(plan["port"]),
-                                config_path=config_path,
-                                task_state_dir=str(root.absolute().parent / "tasks" / str(plan["port"])))
-        _atomic_in_directory(root, config_path.name, json.dumps(config).encode(), 0o600)
-        if plan.get("api_key_sha256") is not None:
-            readiness_headers["Authorization"] = "Bearer " + config["control_token"]
-    pid = spawn(plan["argv"], str(log_path))
-    if not readiness(plan["readiness"], plan.get("readiness_deadline", readiness_deadline)):
-        _terminate_pid(pid)
-        raise ServeError(
-            "readiness_timeout",
-            "The server did not answer its readiness endpoint in time.",
-            "Inspect the serve log at {0}.".format(log_path),
-        )
+    from .model_serving import acquire, resolve_model, ModelServingError
     try:
-        recheck_bound_identity(plan)
-    except ServeError:
-        _terminate_pid(pid)
-        raise
+        selector = plan.get("local_path") or plan.get("path") or plan.get("repo")
+        model = resolve_model(selector, hf_cache)
+        service = {"port": plan["port"], "runtime": plan["runtime"],
+                   "auth_required": bool(plan.get("api_key_sha256") or plan.get("access_key_file"))}
+        claim = acquire(model, kind="service", service=service)
+    except ModelServingError as error:
+        raise ServeError(error.code, str(error), error.remediation, error.data) from error
+    except (OSError, ValueError, TypeError, RuntimeError):
+        raise ServeError("model_serving_state_unknown", "The local model identity is unavailable.",
+                         "Inspect the model and retry with its existing local path.") from None
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        if spawn is _default_spawn:
+            from .service_registry import register_receipts
+            register_receipts(root.absolute().parent.parent)
+        log_path = root / "{0}.log".format(plan["port"])
+        if plan.get("jit"):
+            config_path = Path(plan["control_config"])
+            if config_path.parent != root.absolute() or config_path.is_symlink():
+                raise ServeError("invalid_arguments", "Unsafe JIT configuration path.", "Review a fresh serve plan.")
+            from .worker_transport import gateway_config
+            config = gateway_config(plan, control_token=secrets.token_hex(32),
+                                    state_path=str(root.absolute() / "{}.jit-state.json".format(plan["port"])),
+                                    log_path=root.absolute() / "{}.worker.log".format(plan["port"]),
+                                    config_path=config_path,
+                                    task_state_dir=str(root.absolute().parent / "tasks" / str(plan["port"])))
+            config["port"] = plan["port"]
+            config["model_serving_claim"] = {"key": claim.key, "generation": claim.generation}
+            _atomic_in_directory(root, config_path.name, json.dumps(config).encode(), 0o600)
+            if plan.get("api_key_sha256") is not None:
+                readiness_headers["Authorization"] = "Bearer " + config["control_token"]
+        claim.update(state="launching", state_path=str(root.absolute() / "{}.jit-state.json".format(plan["port"])) if plan.get("jit") else None)
+        pid = spawn(plan["argv"], str(log_path))
+        from .compute import process_birth_identity
+        birth = process_birth_identity(pid)
+        if not birth:
+            raise ServeError("model_serving_state_unknown", "The launched process identity is unavailable.",
+                             "Inspect the model service and its owned processes before retrying.")
+        claim.update(state="active", pid=pid, birth=birth, pgid=pid, jit=bool(plan.get("jit")))
+        if not readiness(plan["readiness"], plan.get("readiness_deadline", readiness_deadline)):
+            _terminate_pid(pid)
+            raise ServeError(
+                "readiness_timeout",
+                "The server did not answer its readiness endpoint in time.",
+                "Inspect the serve log at {0}.".format(log_path),
+            )
+        try:
+            recheck_bound_identity(plan)
+        except ServeError:
+            _terminate_pid(pid)
+            raise
 
-    receipt = {
-        "schema_version": SERVE_RECEIPT_SCHEMA_VERSION,
-        "kind": SERVE_RECEIPT_KIND,
-        "repo": plan["repo"],
-        "path": plan["path"],
-        "runtime": plan["runtime"],
-        "port": plan["port"],
-        "argv": list(plan["argv"]),
-        "pid": pid,
-        "log_path": str(log_path),
-        "readiness": plan["readiness"],
-        "started_at": now(),
-        "preview_hash": plan["preview_hash"],
-    }
-    process_start = _pid_start(pid)
-    if process_start:
-        receipt["process_started_at"] = process_start
-    receipt.update(receipt_fields(plan))
-    content = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
-    _atomic_in_directory(root, receipt_path.name, content, 0o600)
-    return {"status": "started", "receipt": receipt}
+        receipt = {
+            "schema_version": SERVE_RECEIPT_SCHEMA_VERSION,
+            "kind": SERVE_RECEIPT_KIND,
+            "repo": plan["repo"],
+            "path": plan["path"],
+            "runtime": plan["runtime"],
+            "port": plan["port"],
+            "argv": list(plan["argv"]),
+            "pid": pid,
+            "log_path": str(log_path),
+            "readiness": plan["readiness"],
+            "started_at": now(),
+            "preview_hash": plan["preview_hash"],
+            "model_artifact": model,
+        }
+        process_start = _pid_start(pid)
+        if process_start:
+            receipt["process_started_at"] = process_start
+        receipt.update(receipt_fields(plan))
+        content = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+        _atomic_in_directory(root, receipt_path.name, content, 0o600)
+        claim.update(ready=True, receipt_path=str(receipt_path.absolute()))
+        return {"status": "started", "receipt": receipt}
+
+    except BaseException as failure:
+        # Only an unstarted reservation can be cancelled without process proof.
+        try:
+            claim.cancel_reserved()
+        except ModelServingError as error:
+            raise ServeError(error.code, str(error), error.remediation, error.data) from error
+        if isinstance(failure, ModelServingError):
+            raise ServeError(failure.code, str(failure), failure.remediation, failure.data) from failure
+        raise
 
 
 def _read_receipt(path):
@@ -989,6 +1024,8 @@ def stop_serve(port, receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_c
     if orphan:
         pid = orphan
     if not pid_alive(pid):
+        from .model_serving import release_stopped_service
+        release_stopped_service(receipt)
         receipt_path.unlink()
         return {"status": "already_stopped", "port": port, "pid": pid}
     command = pid_command(pid)
@@ -1005,6 +1042,8 @@ def stop_serve(port, receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_c
     deadline = clock() + (SPLASH_STOP_DEADLINE_SECONDS if receipt.get("runtime") == "splash" else STOP_DEADLINE_SECONDS)
     while clock() < deadline:
         if not pid_alive(pid):
+            from .model_serving import release_stopped_service
+            release_stopped_service(receipt)
             receipt_path.unlink()
             return {"status": "stopped", "port": port, "pid": pid}
         sleep(0.2)
@@ -1015,6 +1054,8 @@ def stop_serve(port, receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_c
             "The process did not exit after SIGTERM and SIGKILL.",
             "Inspect pid {0} yourself; the receipt is retained at {1}.".format(pid, receipt_path),
         )
+    from .model_serving import release_stopped_service
+    release_stopped_service(receipt)
     receipt_path.unlink()
     return {"status": "stopped", "port": port, "pid": pid, "forced": True}
 
@@ -1064,14 +1105,26 @@ def launchd_label(port):
     return "{0}{1}".format(LAUNCHD_LABEL_PREFIX, port)
 
 
-def render_launchd_plist(plan, log_path=None):
+def render_launchd_plist(plan, log_path=None, hf_cache=None):
     """Render a deterministic launchd plist for a reviewed serve plan."""
     from xml.sax.saxutils import escape
 
     label = launchd_label(plan["port"])
     log = log_path or str(receipts_root() / "{0}.log".format(plan["port"]))
+    from .model_serving import resolve_model
+    try:
+        artifact = resolve_model(plan.get("local_path") or plan.get("path") or plan.get("repo"), hf_cache)
+    except (OSError, ValueError, RuntimeError, TypeError):
+        raise ServeError("model_serving_state_unknown", "The local model identity is unavailable.",
+                         "Select existing local model files and review the launch again.") from None
+    wrapper = [sys.executable, str(Path(__file__).with_name("model_serving_entry.py").resolve()),
+               "--artifact", artifact, "--runtime", plan["runtime"], "--port", str(plan["port"]),
+               "--auth-required", "true" if plan.get("api_key_sha256") else "false"]
+    if hf_cache is not None:
+        wrapper.extend(["--hf-cache", str(hf_cache)])
+    wrapper.extend(["--", *plan["argv"]])
     arguments = "\n".join(
-        "        <string>{0}</string>".format(escape(str(part))) for part in plan["argv"]
+        "        <string>{0}</string>".format(escape(str(part))) for part in wrapper
     )
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'

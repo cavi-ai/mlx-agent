@@ -160,6 +160,10 @@ def start_workflow(name, preview_hash, *, receipts_dir=None):
                     item['cleanup_required'] = 'Launch ownership is unresolved; inspect the service receipt.'
             # No atomic idle-stop exists. Preserve created endpoints, even apparently idle ones.
             result['error'] = str(error)
+            if getattr(error, 'code', None) == 'model_already_served':
+                from .model_serving import public_error_data
+                result['error_code'] = error.code
+                result['error_data'] = public_error_data(error.data)
             _write(path, result)
             return result
         _write(path, result)

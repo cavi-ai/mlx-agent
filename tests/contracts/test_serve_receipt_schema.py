@@ -14,6 +14,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ServeReceiptSchemaTests(unittest.TestCase):
+    def setUp(self):
+        from tests.unit.test_serve import _isolate_ownership
+        _isolate_ownership(self)
+
     def test_authentication_requires_a_supervised_receipt_and_valid_digest(self):
         receipt, validator = self.receipt(), self.validator()
         receipt['api_key_sha256'] = 'a' * 64

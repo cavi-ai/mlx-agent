@@ -67,8 +67,11 @@ class PrivateEndpoint:
 
 
 def identity():
-    return {"protocol": PRIVATE_PROTOCOL,
-            "source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
+    digest = hashlib.sha256()
+    for path in (Path(__file__), Path(__file__).with_name('model_serving.py')):
+        digest.update(path.name.encode())
+        digest.update(path.read_bytes())
+    return {"protocol": PRIVATE_PROTOCOL, "source_sha256": digest.hexdigest()}
 
 
 def private_server_class(descriptor):
@@ -294,6 +297,10 @@ def main(argv=None):
         parser.error("a model and supervisor-owned --socket-fd >= 3 are required")
     if forwarded[:1] == ["--"]:
         forwarded = forwarded[1:]
+    if not __package__:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from mlx_agent.model_serving import verify_private_worker
+    verify_private_worker(args.model, args.socket_fd)
     if not args.runtime_child:
         python = runtime_python(args.runtime_executable)
         os.set_inheritable(args.socket_fd, True)
@@ -307,7 +314,7 @@ def main(argv=None):
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except (OSError, ValueError, ImportError):
+    except (OSError, ValueError, ImportError, RuntimeError):
         # Runtime errors may include private paths or request content.
         print("Private MLX worker unavailable; verify the installed runtime and local model.", file=sys.stderr)
         raise SystemExit(1)

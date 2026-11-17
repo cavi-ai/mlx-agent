@@ -76,6 +76,7 @@ class ResultEnvelope:
         message: str,
         remediation: str,
         retryable=False,
+        data=None,
     ):
         """Create an error result with a machine-readable recovery path."""
         _require_non_empty_string(operation, "operation")
@@ -84,9 +85,12 @@ class ResultEnvelope:
         _require_non_empty_string(remediation, "remediation")
         if not isinstance(retryable, bool):
             raise TypeError("retryable must be a boolean")
+        if data is not None and not isinstance(data, dict):
+            raise TypeError("data must be an object")
         return cls(
             operation=operation,
             status="error",
+            data=dict(data or {}),
             error=ErrorDetail(code, message, remediation, retryable),
         )
 

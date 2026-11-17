@@ -122,6 +122,7 @@ class ModelWorker:
         self.worker_group = None
         self.worker_identity = None
         self.worker_birth_identity = None
+        self.worker_launch_pending = False
         self._persisted_worker = None
         self._persisted_worker_start = None
         self.execution_unresolved = False
@@ -163,6 +164,7 @@ class ModelWorker:
             if path.is_symlink():
                 raise OSError("Refusing a symbolic-link worker state file.")
             state = {"gateway_pid": os.getpid(), "worker_pid": self.process.pid if self.process else None,
+                     "worker_launch_pending": self.worker_launch_pending,
                      "worker_argv": self.worker_argv, "model_state": self.model_state,
                      "last_memory_failure": self.last_memory_failure}
             if self.process:
@@ -568,12 +570,15 @@ class ModelWorker:
                             log.close()
                         raise GatewayError(503, "endpoint_stopping", "Endpoint is stopping.")
                     self.log = log
+                    self.worker_launch_pending = True
+                    self._persist()
                     self.process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log,
                         stderr=subprocess.STDOUT, env=environment, start_new_session=True, **extra)
                     self.worker_group = self.process.pid
                     if private:
                         self.private_endpoint.listener.close()
                     self.worker_port, self.worker_argv = (None if private else port), argv
+                    self.worker_launch_pending = False
                     self._persist()
                     process = self.process
                 os.close(ready_write)
@@ -706,6 +711,7 @@ class ModelWorker:
     def _stop_worker(self):
         if self.worker_group is not None:
             self._stop_group()
+            self.worker_launch_pending = False
             return
         with self.condition:
             process = self.process
@@ -743,6 +749,7 @@ class ModelWorker:
                 self.private_endpoint.close()
                 self.private_endpoint = None
         self._release_memory()
+        self.worker_launch_pending = False
 
     def _stop_group(self):
         with self.condition:
@@ -1384,7 +1391,24 @@ def main():
     config = json.loads(path.read_text())
     if args.model != config["model"]:
         raise ValueError("JIT configuration identity changed.")
-    server = make_server(config, args.port)
+    from mlx_agent.model_serving import adopt_gateway
+    config["port"] = args.port
+    claim = adopt_gateway(config)
+    server = None
+    try:
+        server = make_server(config, args.port)
+        server.controller._persist()
+    except BaseException as failure:
+        if server is not None:
+            server.server_close()
+        try:
+            claim.cancel_unstarted_gateway()
+        except Exception as cleanup_error:
+            failure.add_note('Model ownership cleanup failed: ' + str(cleanup_error))
+        raise
+    if not config.get("model_serving_claim"):
+        from mlx_agent.model_serving import mark_foreground_ready
+        mark_foreground_ready(claim)
     if config.get("runtime") == "strata":
         if os.getpgrp() != os.getpid() or os.getsid(0) != os.getpid():
             server.server_close()
@@ -1397,6 +1421,7 @@ def main():
     finally:
         server.controller.close()
         server.server_close()
+        claim.release()
 
 
 if __name__ == "__main__":

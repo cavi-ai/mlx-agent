@@ -145,7 +145,8 @@ def _read_claims(root, key):
         raise ValueError('Invalid model ownership record.')
     for row in rows:
         if (not isinstance(row, dict) or set(row) - {'generation', 'pid', 'birth', 'state', 'kind',
-                'service', 'pgid', 'jit', 'ready', 'state_path', 'receipt_path', 'command_sha256'}
+                'service', 'pgid', 'jit', 'ready', 'state_path', 'receipt_path', 'command_sha256',
+                'workflow_refs', 'retiring'}
                 or not isinstance(row.get('generation'), str) or not re.fullmatch('[0-9a-f]{64}', row['generation'])
                 or type(row.get('pid')) is not int or row['pid'] <= 0
                 or not isinstance(row.get('birth'), str) or not row['birth'] or len(row['birth']) > 256
@@ -159,6 +160,12 @@ def _read_claims(root, key):
             raise ValueError('Invalid model ownership record.')
         if row['kind'] == 'service':
             _service_info(row, verify=False)
+            refs = row.get('workflow_refs', [])
+            if (not isinstance(refs, list) or len(refs) > 256
+                    or any(not isinstance(ref, str) or not re.fullmatch(r'[0-9a-f-]{36}:[a-z][a-z0-9_-]{0,63}', ref)
+                           for ref in refs) or len(set(refs)) != len(refs)
+                    or type(row.get('retiring', False)) is not bool):
+                raise ValueError('Invalid workflow references.')
         elif row.get('service') is not None:
             raise ValueError('Invalid model ownership record.')
     return rows
@@ -234,6 +241,54 @@ class Claim:
                 raise _unknown()
             matches[0].update(changes)
             _write_claims(self.root, self.key, rows)
+
+    def workflow_reference(self, reference, action, absent_owner=None):
+        """Attach, detach, or reserve retirement of one exact live generation."""
+        if not isinstance(reference, str) or not re.fullmatch(r'[0-9a-f-]{36}:[a-z][a-z0-9_-]{0,63}', reference):
+            raise ValueError('Invalid workflow reference.')
+        if action not in ('attach', 'detach', 'retire', 'cancel_retire', 'validate', 'confirm_absent'):
+            raise ValueError('Invalid workflow reference action.')
+        with _lock(self.root, self.key):
+            rows = _read_claims(self.root, self.key)
+            matches = [row for row in rows if row.get('generation') == self.generation and row.get('kind') == 'service']
+            if not matches and action in ('detach', 'confirm_absent') and absent_owner is not None:
+                from .compute import process_alive, process_birth_identity, group_members
+                pid, birth = absent_owner
+                if (type(pid) is int and pid > 0 and isinstance(birth, str) and birth
+                        and not process_alive(pid) and process_birth_identity(pid) is None and not group_members(pid)):
+                    return True
+            if len(matches) != 1:
+                raise _unknown()
+            if action == 'confirm_absent':
+                raise _unknown()
+            row = matches[0]
+            refs = row.setdefault('workflow_refs', [])
+            if action == 'attach':
+                if row.get('retiring') or not row.get('ready') or not _live(row):
+                    raise _unknown()
+                _verify_ready_service(row)
+                if reference not in refs:
+                    if len(refs) >= 256:
+                        raise ValueError('Too many workflow references.')
+                    refs.append(reference)
+            elif action == 'validate':
+                if reference not in refs or row.get('retiring') or not row.get('ready') or not _live(row):
+                    raise _unknown()
+                _verify_ready_service(row)
+                return _service_info(row, verify=False)
+            elif action == 'detach':
+                if reference in refs:
+                    refs.remove(reference)
+            elif action == 'retire':
+                if reference not in refs or any(value != reference for value in refs):
+                    return False
+                row['retiring'] = True
+            else:
+                if reference not in refs:
+                    raise _unknown()
+                row['retiring'] = False
+            _write_claims(self.root, self.key, rows)
+            return True
 
     def cancel_reserved(self):
         from .compute import process_birth_identity
@@ -337,6 +392,10 @@ def _legacy_matches(model, services):
         receipt = _read_receipt(Path(item['receipt']))
         if receipt is None:
             raise _unknown()
+        if (receipt.get('pid') != item.get('pid') or receipt.get('port') != item.get('port')
+                or receipt.get('runtime') != item.get('runtime')
+                or receipt.get('api_key_sha256') != item.get('api_key_sha256')):
+            raise _unknown()
         root = receipts_root(item['receipts_dir'])
         if not item.get('alive') and not receipt.get('jit'):
             from .compute import process_alive, process_birth_identity, group_members
@@ -380,6 +439,7 @@ def _verify_ready_service(row):
         receipt = _read_receipt(Path(path))
         if (not receipt or receipt.get('pid') != row['pid'] or receipt.get('port') != row['service']['port']
                 or receipt.get('runtime') != row['service']['runtime']
+                or bool(receipt.get('api_key_sha256')) != row['service']['auth_required']
                 or receipt.get('process_started_at') != row['birth']
                 or not _argv_matches(receipt, _pid_command(row['pid']))):
             raise _unknown()
@@ -400,11 +460,12 @@ def _service_info(row, verify=True):
         _verify_ready_service(row)
     from .endpoint_contract import descriptor
     return descriptor(service['port'], service['runtime'], hashlib.sha256(row['generation'].encode()).hexdigest(),
-                      'ready' if row.get('ready') else 'starting', service['auth_required'])
+                      'unknown' if row.get('retiring') else 'ready' if row.get('ready') else 'starting',
+                      service['auth_required'])
 
 
-def receipt_service_id(item):
-    """Identify a verified receipt's current claim, or its legacy process generation."""
+def resolve_receipt_endpoint(item):
+    """Describe a verified claim or legacy process generation without changing it."""
     import hashlib
     from .serve import _read_receipt, _jit_config, receipts_root
     receipt = _read_receipt(Path(item['receipt']))
@@ -414,14 +475,17 @@ def receipt_service_id(item):
             or item.get('runtime') != receipt.get('runtime')
             or receipt['process_started_at'] != item.get('process_started_at')):
         return None
-    selector = (_jit_config(receipt, receipts_root(item['receipts_dir']))['local_path']
-                if receipt.get('jit') else receipt.get('model_artifact') or receipt.get('splash_model_dir')
-                or receipt.get('path') or receipt.get('repo'))
+    selector = receipt.get('model_artifact') or (
+        _jit_config(receipt, receipts_root(item['receipts_dir']))['local_path'] if receipt.get('jit')
+        else receipt.get('splash_model_dir') or receipt.get('path') or receipt.get('repo'))
     model = resolve_model(selector)
     root = state_root()
     key = hashlib.sha256(model.encode()).hexdigest()
     if os.path.lexists(root):
         _assert_safe_directory(root)
+        info = root.stat()
+        if info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise _unknown()
     rows = _read_claims(root, key)
     matches = [row for row in rows if row.get('kind') == 'service'
                and row.get('pid') == receipt['pid'] and row.get('birth') == receipt['process_started_at']]
@@ -430,9 +494,11 @@ def receipt_service_id(item):
     if matches:
         if not matches[0].get('ready') or matches[0].get('receipt_path') != item['receipt']:
             raise _unknown()
-        return _service_info(matches[0])['service_id']
+        return _service_info(matches[0])
     identity = json.dumps([str(Path(item['receipt']).resolve()), receipt['pid'], receipt['process_started_at']], separators=(',', ':'))
-    return hashlib.sha256(identity.encode()).hexdigest()
+    from .endpoint_contract import descriptor
+    return descriptor(receipt['port'], receipt['runtime'], hashlib.sha256(identity.encode()).hexdigest(),
+                      'unknown', bool(item.get('api_key_sha256')))
 
 
 class _OwnedClaim:

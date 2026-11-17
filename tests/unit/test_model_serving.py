@@ -456,7 +456,8 @@ class ModelServingTests(unittest.TestCase):
             receipt_path.write_text(json.dumps({'kind': 'serve', 'pid': 97123, 'argv': ['server'],
                                                 'port': 8018, 'runtime': 'mlx_lm', 'repo': None,
                                                 'path': str(root / 'missing')}))
-            entry = {'receipt': str(receipt_path), 'receipts_dir': str(root), 'alive': False}
+            entry = {'receipt': str(receipt_path), 'receipts_dir': str(root), 'alive': False,
+                     'pid': 97123, 'port': 8018, 'runtime': 'mlx_lm'}
             with patch('mlx_agent.compute.process_alive', return_value=False), \
                  patch('mlx_agent.compute.process_birth_identity', return_value=None), \
                  patch('mlx_agent.compute.group_members', return_value=[]):
@@ -488,7 +489,8 @@ class ModelServingTests(unittest.TestCase):
                 'port': 8018, 'runtime': 'mlx_lm', 'repo': None, 'path': str(first), 'jit': True}))
             (receipt_root / '8018.jit-config.json').write_text(json.dumps({'local_path': str(first),
                                                                           'control_token': 'a' * 32}))
-            entry = {'receipt': str(receipt_path), 'receipts_dir': str(root), 'alive': False}
+            entry = {'receipt': str(receipt_path), 'receipts_dir': str(root), 'alive': False,
+                     'pid': 97123, 'port': 8018, 'runtime': 'mlx_lm'}
             self.assertEqual(model_serving._legacy_matches(str(other), [entry]), [])
             with self.assertRaises(model_serving.ModelServingError):
                 model_serving._legacy_matches(str(first), [entry])
@@ -503,7 +505,7 @@ class ModelServingTests(unittest.TestCase):
                 'port': 8018, 'runtime': 'splash', 'repo': 'pub/unavailable', 'path': None,
                 'splash_model_dir': str(model), 'process_started_at': 'birth'}))
             entry = {'receipt': str(receipt_path), 'receipts_dir': str(root), 'alive': True,
-                     'argv_match': True, 'process_started_at': 'birth', 'port': 8018, 'runtime': 'splash',
+                     'argv_match': True, 'process_started_at': 'birth', 'pid': 97123, 'port': 8018, 'runtime': 'splash',
                      'service_id': 'a' * 64, 'api_key_sha256': None}
             result = model_serving._legacy_matches(str(model), [entry])
             self.assertEqual(result[0]['origin'], 'http://127.0.0.1:8018')

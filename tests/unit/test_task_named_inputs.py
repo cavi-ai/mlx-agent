@@ -257,3 +257,21 @@ class NamedInputTests(unittest.TestCase):
             self.assertEqual(parameters['image'], str(link))
             self.assertTrue(Path(parameters['image']).is_symlink())
             self.assertEqual(parameters['audio'], str(Path('audio.m4a').absolute()))
+
+    def test_fifo_rejected_and_known_size_checked_before_copy(self):
+        import os
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            store = TaskStore(root / 'store')
+            fifo = root / 'input.png'
+            os.mkfifo(fifo)
+            with self.assertRaises(TaskError) as failure:
+                store.stage_input(str(fifo), 'image')
+            self.assertEqual(failure.exception.code, 'invalid_input')
+            source = root / 'input.jpg'
+            source.write_bytes(b'abc')
+            with patch('mlx_agent.task_store.os.fdopen', side_effect=AssertionError('must reject before streaming')):
+                with self.assertRaises(TaskError) as failure:
+                    store.stage_input(str(source), 'image', byte_limit=2)
+            self.assertEqual(failure.exception.code, 'input_too_large')

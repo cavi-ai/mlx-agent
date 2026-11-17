@@ -296,8 +296,8 @@ download model weights or install a backend.
 TRELLIS.2 accepts an ordered `views` array of absolute image paths and an
 optional absolute `guide` GLB path. Video generation accepts optional `image`
 and `audio` paths. The engine retains and verifies each conditioning file;
-at most 16 files and 2 GiB total are accepted per job. Requests with these
-additional conditioning files produce `task-run/3` records. Primary-image-only
+requests with additional conditioning accept at most 16 files and 2 GiB total.
+These requests produce `task-run/3` records. Primary-image-only
 mesh and text-only video requests continue to produce `task-run/2` records.
 Consumers that open conditioned jobs must support `task-run/3`.
 

@@ -139,7 +139,7 @@ class TaskStore:
         finally:
             os.close(descriptor)
 
-    def stage_input(self, source, media_kind="audio", byte_limit=2 * 1024 * 1024 * 1024):
+    def stage_input(self, source, media_kind="audio", byte_limit=None):
         """Copy a supported media input into a private, unaccepted staging directory."""
         source = Path(source).expanduser()
         suffix = source.suffix.lower()
@@ -155,13 +155,15 @@ class TaskStore:
             ensure_private(staging)
             if source.is_symlink():
                 raise TaskError("invalid_input", "Media input must be a regular file, not a symbolic link.")
-            source_descriptor = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            source_descriptor = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
             output_path = staging / ("input" + suffix)
             output_descriptor = None
             try:
                 before = os.fstat(source_descriptor)
                 if not stat.S_ISREG(before.st_mode):
                     raise TaskError("invalid_input", "Media input must be a readable regular file.")
+                if byte_limit is not None and before.st_size > byte_limit:
+                    raise TaskError("input_too_large", "Conditioning inputs exceed the per-job byte limit.")
                 output_descriptor = os.open(output_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY |
                                             getattr(os, "O_NOFOLLOW", 0), 0o600)
                 digest, size = hashlib.sha256(), 0
@@ -183,7 +185,7 @@ class TaskStore:
                 identity = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
                 if (identity(before) != identity(after) or identity(before) != identity(current)
                         or size != before.st_size):
-                    raise TaskError("input_changed", "Transcription input changed while it was being copied.")
+                    raise TaskError("input_changed", "Media input changed while it was being copied.")
                 ensure_private(output_path, directory=False)
                 self.fsync_directory(staging)
                 final = artifacts / identifier / output_path.name
@@ -379,7 +381,7 @@ class TaskStore:
                 raise TaskError("input_copy_failed", "The staged media input is unavailable.") from error
             if digest.hexdigest() != input_artifact.get("sha256") or size != input_artifact.get("bytes"):
                 self.discard_staged_input(staged_input)
-                raise TaskError("input_changed", "The staged transcription input changed before acceptance.")
+                raise TaskError("input_changed", "The staged media input changed before acceptance.")
         artifacts = self._ensure_artifact_root()
         final_directory = artifacts / identifier
         moved = False

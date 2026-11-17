@@ -26,13 +26,13 @@ from .task_runtime import _artifact_reference, _error, _finish, task_result, tas
 from .task_store import TaskStore
 
 _TASK_IDENTITY_KEYS = ("model_path", "model_fingerprint", "executable", "executable_identity", "backend_manifest_hash")
+WORKER_MARGIN_BYTES = 512_000_000
 
 
 def same_task_identity(left, right):
     """True when both records name the same checked model, executable and backend."""
     return isinstance(left, dict) and isinstance(right, dict) and all(
         left.get(key) == right.get(key) for key in _TASK_IDENTITY_KEYS)
-
 
 def runtime_fingerprint(backend):
     source = Path(__file__).parent
@@ -384,7 +384,8 @@ class TaskModelWorker(ModelWorker):
                     self._check_memory(weight_bytes=None if component_budget is None else component_budget[0])
                 try:
                     return self.memory_registry.reserve_execution(self.memory_token,
-                        None if budget_gb is None else math.ceil(budget_gb * 1e9), self.memory_probe, diagnostics)
+                        None if budget_gb is None else math.ceil(budget_gb * 1e9), self.memory_probe, diagnostics,
+                        overhead_bytes=WORKER_MARGIN_BYTES if budget_gb is None else 0)
                 except MemoryAdmissionError as error:
                     self._record_memory_failure('task_admission', error.code, error.details)
                     raise GatewayError(503, error.code, str(error)) from error
@@ -454,7 +455,8 @@ class TaskModelWorker(ModelWorker):
             memory_admission = {}
             capacity = self._admit_task_memory(request, plan, budget_gb, lease, check_cancelled, memory_admission)
             check_cancelled()
-            worker_limit = None if capacity is None else max(1, capacity - 512_000_000)
+            worker_limit = (None if capacity is None else capacity if budget_gb is None
+                            else max(1, capacity - WORKER_MARGIN_BYTES))
             with self.condition:
                 if self.closed:
                     raise InterruptedError('Endpoint stopping.')

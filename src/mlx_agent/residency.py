@@ -298,10 +298,12 @@ class MemoryRegistry:
                 _atomic_in_directory(self.root, 'budget.json', json.dumps(policy).encode(), 0o600)
             return summary
 
-    def reserve_execution(self, key, limit_bytes=None, probe=None, diagnostics=None):
+    def reserve_execution(self, key, limit_bytes=None, probe=None, diagnostics=None, overhead_bytes=0):
         """Reserve a total job ceiling atomically, including already resident memory."""
         if limit_bytes is not None and (not _bytes(limit_bytes) or limit_bytes == 0):
             raise MemoryAdmissionError('memory_unknown', 'Invalid job memory cap.')
+        if not _bytes(overhead_bytes):
+            raise MemoryAdmissionError('memory_unknown', 'Invalid controller overhead.')
         with self._locked() as rows:
             row = self._own(rows, key)
             try:
@@ -356,10 +358,11 @@ class MemoryRegistry:
                 details.update(agent_capacity_bytes=agent_capacity, physical_ceiling_bytes=physical)
                 if limit_bytes is None:
                     capacity = min(capacity, physical)
-                    if capacity < minimum:
+                    if max(0, capacity - overhead_bytes) < minimum:
                         raise MemoryAdmissionError('insufficient_headroom',
                             'The minimum job memory does not fit available system headroom.', details)
-                amount = capacity - resident if row['phase'] == 'resident' else capacity
+                checked_capacity = max(0, capacity - overhead_bytes) if limit_bytes is None else capacity
+                amount = checked_capacity - resident if row['phase'] == 'resident' else checked_capacity
                 required = amount + sum(r['reserved_bytes'] for r in others) + max(
                     [row['headroom_bytes']] + [r['headroom_bytes'] for r in others])
                 details.update(available_bytes=available, required_available_bytes=required,
@@ -367,7 +370,13 @@ class MemoryRegistry:
                 if available < required:
                     raise MemoryAdmissionError('insufficient_headroom',
                         'The job memory ceiling does not fit available system headroom.', details)
+            if limit_bytes is None:
+                capacity = max(0, capacity - overhead_bytes)
+                if capacity < minimum:
+                    raise MemoryAdmissionError('agent_memory_budget_exceeded',
+                        'Unload an idle model before starting this model job.', details)
             amount = capacity - resident if row['phase'] == 'resident' else capacity
+            details['controller_headroom_bytes'] = overhead_bytes if limit_bytes is None else 0
             details['effective_grant_bytes'] = capacity
             if diagnostics is not None:
                 diagnostics.update(details)

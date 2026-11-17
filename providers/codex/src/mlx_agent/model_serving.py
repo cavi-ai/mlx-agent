@@ -338,10 +338,7 @@ def _legacy_matches(model, services):
         if receipt is None:
             raise _unknown()
         root = receipts_root(item['receipts_dir'])
-        if not item.get('alive'):
-            # Legacy JIT state has no pre-spawn marker; absence cannot be proved.
-            if receipt.get('jit'):
-                raise _unknown()
+        if not item.get('alive') and not receipt.get('jit'):
             from .compute import process_alive, process_birth_identity, group_members
             try:
                 pid = receipt['pid']
@@ -350,9 +347,15 @@ def _legacy_matches(model, services):
             except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError):
                 raise _unknown() from None
             continue
-        selector = _jit_config(receipt, root)['local_path'] if receipt.get('jit') else receipt.get('path') or receipt.get('repo')
-        if resolve_model(selector) != model:
-            continue
+        try:
+            selector = _jit_config(receipt, root)['local_path'] if receipt.get('jit') else receipt.get('path') or receipt.get('repo')
+            if resolve_model(selector) != model:
+                continue
+        except (OSError, ValueError, TypeError, KeyError, RuntimeError, subprocess.SubprocessError):
+            raise _unknown() from None
+        if not item.get('alive'):
+            # Matching legacy JIT state has no pre-spawn marker.
+            raise _unknown()
         if not item.get('argv_match') or not receipt.get('process_started_at') or item.get('process_started_at') != receipt['process_started_at']:
             raise _unknown()
         port = item['port']

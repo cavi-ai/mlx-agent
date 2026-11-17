@@ -476,3 +476,19 @@ class ModelServingTests(unittest.TestCase):
             receipt_path.write_text(json.dumps(jit_receipt))
             with self.assertRaises(model_serving.ModelServingError):
                 model_serving._legacy_matches(str(model), [entry])
+
+    def test_dead_legacy_jit_filters_known_other_model_and_blocks_same_model(self):
+        import json
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve(); first = root / 'first'; first.mkdir()
+            other = root / 'other'; other.mkdir()
+            receipt_root = root / '.mlx-agent-receipts' / 'serve'; receipt_root.mkdir(parents=True)
+            receipt_path = receipt_root / '8018.json'
+            receipt_path.write_text(json.dumps({'kind': 'serve', 'pid': 97123, 'argv': ['server'],
+                'port': 8018, 'runtime': 'mlx_lm', 'repo': None, 'path': str(first), 'jit': True}))
+            (receipt_root / '8018.jit-config.json').write_text(json.dumps({'local_path': str(first),
+                                                                          'control_token': 'a' * 32}))
+            entry = {'receipt': str(receipt_path), 'receipts_dir': str(root), 'alive': False}
+            self.assertEqual(model_serving._legacy_matches(str(other), [entry]), [])
+            with self.assertRaises(model_serving.ModelServingError):
+                model_serving._legacy_matches(str(first), [entry])

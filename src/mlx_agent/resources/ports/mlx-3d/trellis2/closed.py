@@ -4,6 +4,31 @@ import numpy as np
 
 PAD = 3
 FIELD_CACHE_LIMIT = 64 * 1024 ** 2
+OCCUPANCY_KEY_MIN_ROWS = 65536
+
+
+def _unique_occupancy(rows):
+    """Deduplicate owned integer cells in lexicographic order without rank overflow."""
+    if not len(rows) or len(rows) < OCCUPANCY_KEY_MIN_ROWS:
+        return np.unique(rows, axis=0)
+    low = [int(value) for value in rows.min(axis=0)]
+    high = [int(value) for value in rows.max(axis=0)]
+    spans = [high[i] - low[i] + 1 for i in range(3)]
+    limit = min(np.iinfo(np.intp).max, np.iinfo(np.int64).max)
+    if spans[0] * spans[1] * spans[2] > limit:
+        return np.unique(rows, axis=0)
+    rows -= np.asarray(low, dtype=np.int64)
+    keys = np.ravel_multi_index(tuple(rows.T), tuple(spans))
+    del rows
+    keys = np.unique(keys)
+    cells = np.empty((len(keys), 3), dtype=np.int64)
+    cells[:, 2] = keys % spans[2]
+    keys //= spans[2]
+    cells[:, 1] = keys % spans[1]
+    keys //= spans[1]
+    cells[:, 0] = keys
+    cells += np.asarray(low, dtype=np.int64)
+    return cells
 
 
 def _expanded_occupancy(occupied):
@@ -34,7 +59,7 @@ def closed_surface(vertices, faces, grid, band=0.75, *, field_cache_bytes=FIELD_
                               (corners[:, 0] + corners[:, 1]) / 2,
                               (corners[:, 1] + corners[:, 2]) / 2,
                               (corners[:, 2] + corners[:, 0]) / 2])
-    cells = np.unique(np.floor(samples).astype(np.int64), axis=0)
+    cells = _unique_occupancy(np.floor(samples).astype(np.int64))
     origin = cells.min(axis=0) - PAD
     cells -= origin
     shape = cells.max(axis=0) + PAD + 1

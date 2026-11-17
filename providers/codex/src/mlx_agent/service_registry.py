@@ -180,8 +180,17 @@ def discover_services(receipts_dirs=(), registry=None, process_roots=None, inspe
                 receipt = Path(entry['receipt'])
                 if receipt.parent.resolve() != Path(root) / '.mlx-agent-receipts/serve':
                     raise ValueError('Receipt is outside its service location')
-                services.append(dict(entry, receipts_dir=root,
-                    service_id=hashlib.sha256(str(receipt).encode()).hexdigest()))
+                item = dict(entry, receipts_dir=root)
+                from .model_serving import receipt_service_id
+                try:
+                    item['service_id'] = receipt_service_id(item)
+                except (OSError, ValueError, KeyError, TypeError, RuntimeError, subprocess.SubprocessError):
+                    item['service_id'] = None
+                if item['service_id'] is not None:
+                    from .endpoint_contract import descriptor
+                    item['endpoint'] = descriptor(item['port'], item['runtime'], item['service_id'],
+                                                  'unknown', bool(item.get('api_key_sha256')))
+                services.append(item)
         except (OSError, ValueError, KeyError, TypeError) as error:
             errors.append({'source': str(value), 'message': str(error)})
     return {'schema_version': 1, 'services': services, 'errors': errors,

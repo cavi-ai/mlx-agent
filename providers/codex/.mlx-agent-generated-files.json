@@ -149,6 +149,7 @@
     "src/mlx_agent/discovery.py",
     "src/mlx_agent/embed.py",
     "src/mlx_agent/embed_runner.py",
+    "src/mlx_agent/endpoint_contract.py",
     "src/mlx_agent/fetch_runner.py",
     "src/mlx_agent/fetch_storage.py",
     "src/mlx_agent/fleet.py",

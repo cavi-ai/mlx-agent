@@ -217,21 +217,11 @@ def resolve_workflow_role(name, role, *, receipts_dir=None):
     state = _jit_control(receipt, receipts_root(receipts_dir), 'status')
     if state.get('api_key_sha256') != receipt.get('api_key_sha256'):
         raise ValueError('Workflow role credential identity changed.')
-    if runtime == 'tasks':
-        operations = [{'method': method, 'path': path} for method, path in (
-            ('POST', '/v1/tasks'), ('GET', '/v1/tasks/{id}'), ('GET', '/v1/tasks/{id}/result'),
-            ('GET', '/v1/tasks/{id}/artifacts/{name}'), ('POST', '/v1/tasks/{id}/cancel'))]
-        if 'embedding' in kinds:
-            operations.append({'method': 'POST', 'path': '/v1/embeddings'})
-    else:
-        operations = [{'method': 'POST', 'path': path} for path in (
-            '/v1/chat/completions', '/v1/messages', '/v1/responses')]
-        operations.append({'method': 'GET', 'path': '/v1/responses/{id}'})
-    operations.append({'method': 'GET', 'path': '/v1/models'})
+    from .endpoint_contract import operations
     origin = 'http://127.0.0.1:' + str(member['port'])
     return {'schema': 'serving-workflow-role/1', 'workflow': name, 'activation_id': value['activation_id'],
             'workflow_state': value['state'], 'role': role, 'runtime': runtime, 'origin': origin,
-            'base_url': origin + '/v1', 'model_id': model, 'operations': operations,
+            'base_url': origin + '/v1', 'model_id': model, 'operations': operations(runtime, kinds),
             'task_kinds': kinds, 'credential_ref': credential, 'model_state': state['model_state'],
             'endpoint_identity': {'pid': member['pid'], 'process_started_at': member['process_started_at'],
                                   'member_plan_hash': member['member_plan_hash']}}

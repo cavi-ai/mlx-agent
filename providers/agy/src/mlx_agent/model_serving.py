@@ -359,11 +359,9 @@ def _legacy_matches(model, services):
             raise _unknown()
         if not item.get('argv_match') or not receipt.get('process_started_at') or item.get('process_started_at') != receipt['process_started_at']:
             raise _unknown()
-        port = item['port']
-        origin = 'http://127.0.0.1:' + str(port)
-        matches.append({'origin': origin, 'api_base': origin + '/v1', 'service_id': item['service_id'],
-                        'runtime': item['runtime'], 'state': 'unknown',
-                        'auth_required': bool(item.get('api_key_sha256'))})
+        from .endpoint_contract import descriptor
+        matches.append(descriptor(item['port'], item['runtime'], item['service_id'], 'unknown',
+                                  bool(item.get('api_key_sha256'))))
     return sorted(matches, key=lambda item: item['service_id'])[:256]
 
 
@@ -400,11 +398,41 @@ def _service_info(row, verify=True):
         raise _unknown()
     if verify and row.get('ready'):
         _verify_ready_service(row)
-    origin = 'http://127.0.0.1:' + str(service['port'])
-    return {'origin': origin, 'api_base': origin + '/v1',
-            'service_id': hashlib.sha256(row['generation'].encode()).hexdigest(),
-            'runtime': service['runtime'], 'state': 'ready' if row.get('ready') else 'starting',
-            'auth_required': service['auth_required']}
+    from .endpoint_contract import descriptor
+    return descriptor(service['port'], service['runtime'], hashlib.sha256(row['generation'].encode()).hexdigest(),
+                      'ready' if row.get('ready') else 'starting', service['auth_required'])
+
+
+def receipt_service_id(item):
+    """Identify a verified receipt's current claim, or its legacy process generation."""
+    import hashlib
+    from .serve import _read_receipt, _jit_config, receipts_root
+    receipt = _read_receipt(Path(item['receipt']))
+    if (not receipt or not item.get('alive') or not item.get('argv_match')
+            or not receipt.get('process_started_at')
+            or item.get('pid') != receipt.get('pid') or item.get('port') != receipt.get('port')
+            or item.get('runtime') != receipt.get('runtime')
+            or receipt['process_started_at'] != item.get('process_started_at')):
+        return None
+    selector = (_jit_config(receipt, receipts_root(item['receipts_dir']))['local_path']
+                if receipt.get('jit') else receipt.get('model_artifact') or receipt.get('splash_model_dir')
+                or receipt.get('path') or receipt.get('repo'))
+    model = resolve_model(selector)
+    root = state_root()
+    key = hashlib.sha256(model.encode()).hexdigest()
+    if os.path.lexists(root):
+        _assert_safe_directory(root)
+    rows = _read_claims(root, key)
+    matches = [row for row in rows if row.get('kind') == 'service'
+               and row.get('pid') == receipt['pid'] and row.get('birth') == receipt['process_started_at']]
+    if len(matches) > 1:
+        raise _unknown()
+    if matches:
+        if not matches[0].get('ready') or matches[0].get('receipt_path') != item['receipt']:
+            raise _unknown()
+        return _service_info(matches[0])['service_id']
+    identity = json.dumps([str(Path(item['receipt']).resolve()), receipt['pid'], receipt['process_started_at']], separators=(',', ':'))
+    return hashlib.sha256(identity.encode()).hexdigest()
 
 
 class _OwnedClaim:
@@ -459,14 +487,6 @@ def acquire(selector, *, kind='execution', service=None, root=None, discover=Non
                     and owner_claim.key == key and any(row.get('generation') == owner_claim.generation
                     and _owned_ancestor(row) for row in rows)):
                 return _OwnedClaim()
-            found = (discover or discover_services)()
-            if found.get('errors'):
-                raise _unknown()
-            legacy = _legacy_matches(model, found.get('services', []))
-            if legacy and model not in policy['duplicate_model_allowlist']:
-                raise ModelServingError('model_already_served', 'This model already has a service.',
-                                        'Use the existing compatible endpoint with its authorized key.',
-                                        {'existing_services': legacy})
             if rows and model not in policy['duplicate_model_allowlist']:
                 if any(row.get('kind') == 'service' for row in rows):
                     services = [_service_info(row) for row in rows if row.get('kind') == 'service']
@@ -475,6 +495,14 @@ def acquire(selector, *, kind='execution', service=None, root=None, discover=Non
                                             {'existing_services': sorted(services, key=lambda value: value['service_id'])})
                 raise ModelServingError('model_load_in_progress', 'This model is already in use.',
                                         'Wait for the existing model operation to finish.')
+            found = (discover or discover_services)()
+            if found.get('errors'):
+                raise _unknown()
+            legacy = _legacy_matches(model, found.get('services', []))
+            if legacy and model not in policy['duplicate_model_allowlist']:
+                raise ModelServingError('model_already_served', 'This model already has a service.',
+                                        'Use the existing compatible endpoint with its authorized key.',
+                                        {'existing_services': legacy})
             generation = secrets.token_hex(32)
             rows.append({'generation': generation, 'pid': os.getpid(), 'birth': birth,
                          'state': 'reserved', 'kind': kind, 'service': service})

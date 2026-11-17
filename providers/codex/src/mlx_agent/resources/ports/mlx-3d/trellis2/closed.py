@@ -6,12 +6,19 @@ PAD = 3
 FIELD_CACHE_LIMIT = 64 * 1024 ** 2
 
 
+def _expanded_occupancy(occupied):
+    """Expand two cells in each axis, preserving the zero boundary."""
+    if not occupied.any():
+        return occupied
+    from scipy import ndimage
+    return ndimage.maximum_filter(occupied, size=5, mode="constant", cval=0)
+
+
 def closed_surface(vertices, faces, grid, band=0.75, *, field_cache_bytes=FIELD_CACHE_LIMIT):
     """Fill cells hidden along every axis, using bounded tiles and 2D axis projections.
 
     The mesh is sampled at the requested grid resolution; axis-visible openings remain open.
     """
-    from scipy import ndimage
     from scipy.spatial import cKDTree
     from skimage.measure import marching_cubes
     from itertools import product
@@ -63,7 +70,7 @@ def closed_surface(vertices, faces, grid, band=0.75, *, field_cache_bytes=FIELD_
             selected = group[np.all((group >= low) & (group < high), axis=1)]
             if len(selected):
                 occupied[tuple((selected - low).T)] = True
-        near = ndimage.binary_dilation(occupied, structure=np.ones((3, 3, 3), dtype=bool), iterations=2)
+        near = _expanded_occupancy(occupied)
         near = near[tuple(slice(int(start[i] - low[i]), int(end[i] - low[i])) for i in range(3))]
         index = np.argwhere(near)
         values = np.full(tuple(end - start), far, dtype=np.float32)

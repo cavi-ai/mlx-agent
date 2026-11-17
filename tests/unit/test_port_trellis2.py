@@ -463,6 +463,21 @@ class Trellis2NativeTests(unittest.TestCase):
         self.assertEqual(faces.shape, (0, 3))
 
     @unittest.skipUnless(HAS_SURFACE, 'requires scipy and scikit-image')
+    def test_closed_surface_expansion_matches_two_box_dilations(self):
+        import numpy as np
+        from scipy import ndimage
+        from unittest.mock import patch
+        closed = port('closed')
+        random = np.random.default_rng(42)
+        for shape in ((1, 2, 3), (7, 8, 9), (65, 5, 3)):
+            for occupancy in (0, 0.02, 0.5):
+                mask = random.random(shape) < occupancy
+                expected = ndimage.binary_dilation(mask, structure=np.ones((3, 3, 3), dtype=bool), iterations=2)
+                np.testing.assert_array_equal(closed._expanded_occupancy(mask), expected)
+        with patch.object(ndimage, 'maximum_filter', side_effect=AssertionError('empty mask expanded')):
+            self.assertFalse(closed._expanded_occupancy(np.zeros((5, 4, 3), dtype=bool)).any())
+
+    @unittest.skipUnless(HAS_SURFACE, 'requires scipy and scikit-image')
     def test_closed_surface_wraps_an_open_branching_mesh_in_one_outward_shell(self):
         import numpy as np
         closed = port('closed')

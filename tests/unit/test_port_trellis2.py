@@ -477,6 +477,8 @@ class Trellis2NativeTests(unittest.TestCase):
         quads = np.concatenate([cell, cell + 17 * 17])
         faces = np.concatenate([quads[:, [0, 1, 2]], quads[::2, [0, 2, 3]], quads[1::2, [0, 3, 2]]])
         points, triangles = closed.closed_surface(vertices.astype(np.float32), faces, grid, band)
+        uncached = closed.closed_surface(vertices.astype(np.float32), faces, grid, band, field_cache_bytes=0)
+        np.testing.assert_array_equal(points, uncached[0]); np.testing.assert_array_equal(triangles, uncached[1])
         directed = np.concatenate([triangles[:, [0, 1]], triangles[:, [1, 2]], triangles[:, [2, 0]]])
         # Each directed edge occurs once and its reverse once: every edge joins two consistently wound triangles.
         self.assertEqual(len(np.unique(directed, axis=0)), len(directed))
@@ -517,6 +519,8 @@ class Trellis2NativeTests(unittest.TestCase):
         vertices = (np.concatenate(sheets) / grid - 0.5).astype(np.float32)
         faces = np.concatenate([quads[:, [0, 1, 2]], quads[:, [0, 2, 3]]])
         points, triangles = closed.closed_surface(vertices, faces, grid)
+        uncached = closed.closed_surface(vertices, faces, grid, field_cache_bytes=0)
+        np.testing.assert_array_equal(points, uncached[0]); np.testing.assert_array_equal(triangles, uncached[1])
         a, b, c = (points[triangles[:, i]].astype(np.float64) for i in range(3))
         volume = np.einsum('ij,ij->', a, np.cross(b, c)) / 6 * grid ** 3
         # The box holds 16^3 cells; the window shows a shaft about 2.5 cells wide down to the floor.
@@ -548,6 +552,8 @@ class Trellis2NativeTests(unittest.TestCase):
                           for i in range(count - 1) for j in range(count - 1)])
         faces = np.concatenate([quads[:, [0, 1, 2]], quads[:, [0, 2, 3]]])
         points, triangles = closed.closed_surface(vertices.astype(np.float32), faces, grid)
+        uncached = closed.closed_surface(vertices.astype(np.float32), faces, grid, field_cache_bytes=0)
+        np.testing.assert_array_equal(points, uncached[0]); np.testing.assert_array_equal(triangles, uncached[1])
         edges = np.sort(np.concatenate([triangles[:, [0, 1]], triangles[:, [1, 2]], triangles[:, [2, 0]]]), axis=1)
         _, counts = np.unique(edges, axis=0, return_counts=True)
         self.assertTrue(np.all(counts == 2))
@@ -567,6 +573,8 @@ class Trellis2NativeTests(unittest.TestCase):
                           for i in range(80) for j in range(80)])
         faces = np.concatenate([quads[:, [0, 1, 2]], quads[:, [0, 2, 3]], [[6561, 6562, 6563]]])
         points, triangles = closed.closed_surface(vertices, faces, grid)
+        uncached = closed.closed_surface(vertices, faces, grid, field_cache_bytes=0)
+        np.testing.assert_array_equal(points, uncached[0]); np.testing.assert_array_equal(triangles, uncached[1])
         edges = np.sort(np.concatenate([triangles[:, [0, 1]], triangles[:, [1, 2]], triangles[:, [2, 0]]]), axis=1)
         _, counts = np.unique(edges, axis=0, return_counts=True)
         self.assertTrue(np.all(counts == 2))
@@ -594,7 +602,59 @@ class Trellis2NativeTests(unittest.TestCase):
         with patch.object(np, 'zeros', side_effect=guard('zeros')), patch.object(np, 'full', side_effect=guard('full')), \
              patch.object(np, 'empty', side_effect=guard('empty')):
             points, triangles = closed.closed_surface(vertices, faces, 1536)
+            uncached = closed.closed_surface(vertices, faces, 1536, field_cache_bytes=0)
+            np.testing.assert_array_equal(points, uncached[0]); np.testing.assert_array_equal(triangles, uncached[1])
         self.assertGreater(len(points), 0); self.assertGreater(len(triangles), 0)
+
+    @unittest.skipUnless(HAS_SURFACE, 'requires scipy and scikit-image')
+    def test_closed_surface_reuses_queries_and_small_cap_falls_back(self):
+        import numpy as np
+        from unittest.mock import patch
+        from scipy.spatial import cKDTree
+        closed = port('closed')
+        grid, count = 256, 81
+        u, v = np.meshgrid(np.arange(count), np.arange(count), indexing='ij')
+        vertices = (np.stack([u.ravel() + 70, v.ravel() + 70, np.full(count * count, 128)], axis=1) / grid - .5).astype(np.float32)
+        quads = np.array([[i * count + j, (i + 1) * count + j, (i + 1) * count + j + 1, i * count + j + 1]
+                          for i in range(count - 1) for j in range(count - 1)])
+        faces = np.concatenate([quads[:, [0, 1, 2]], quads[:, [0, 2, 3]]])
+        queries = []
+        class CountedTree:
+            def __init__(self, values): self.tree = cKDTree(values)
+            def query(self, points, **kwargs):
+                queries.append(len(points))
+                return self.tree.query(points, **kwargs)
+        def run(limit):
+            import sys
+            queries.clear()
+            retained = []
+            def trace(frame, event, arg):
+                if frame.f_code is closed.closed_surface.__code__ and 'field_cache' in frame.f_locals:
+                    retained.append(sum(array.nbytes for array in frame.f_locals['field_cache'].values()))
+                return trace
+            previous = sys.gettrace()
+            try:
+                sys.settrace(trace)
+                with patch('scipy.spatial.cKDTree', CountedTree):
+                    output = closed.closed_surface(vertices, faces, grid, field_cache_bytes=limit)
+            finally:
+                sys.settrace(previous)
+            self.assertLessEqual(max(retained, default=0), limit)
+            if limit >= 32768:
+                self.assertGreater(max(retained, default=0), 0)
+            return output, sum(queries)
+        baseline, uncached = run(0)
+        miss, miss_count = run(1)
+        partial, partial_count = run(32768)
+        cached, cached_count = run(64 * 1024 * 1024)
+        for output in (miss, partial, cached):
+            np.testing.assert_array_equal(output[0], baseline[0]); np.testing.assert_array_equal(output[1], baseline[1])
+        self.assertEqual(miss_count, uncached)
+        self.assertLess(cached_count, partial_count)
+        self.assertLess(partial_count, uncached)
+        for limit in (-1, 64 * 1024 * 1024 + 1, True):
+            with self.assertRaises(ValueError):
+                closed.closed_surface(vertices, faces, grid, field_cache_bytes=limit)
 
     def test_fins_and_their_vertices_leave_the_mesh(self):
         import numpy as np

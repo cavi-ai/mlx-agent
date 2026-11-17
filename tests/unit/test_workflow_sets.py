@@ -160,6 +160,11 @@ class WorkflowTests(unittest.TestCase):
         self.temp = TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        for context in (patch('mlx_agent.model_serving.resolve_model', side_effect=lambda value: value),
+                        patch('mlx_agent.model_serving.read_policy', return_value={'duplicate_model_allowlist': []}),
+                        patch('mlx_agent.workflow_sets._existing_claim_candidate', return_value=None)):
+            context.start()
+            self.addCleanup(context.stop)
         self.definition = {'schema': 'serving-workflow/1', 'name': 'studio', 'members': {
             'classifier': {'path': '/model/a', 'runtime': 'tasks', 'port': 8085, 'profile': 'small'},
             'coder': {'path': '/model/b', 'runtime': 'mlx_lm', 'port': 8086, 'profile': 'small'}}}

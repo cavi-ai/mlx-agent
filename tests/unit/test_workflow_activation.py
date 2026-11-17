@@ -61,6 +61,12 @@ class WorkflowActivationTests(unittest.TestCase):
         self.assertEqual(resolved['origin'], 'http://127.0.0.1:' + str(self.port))
         self.assertEqual(resolved['base_url'], resolved['origin'] + '/v1')
         self.assertEqual(resolved['runtime'], 'mlx_lm')
+        from mlx_agent.model_serving import resolve_receipt_endpoint
+        service = workflow_sets._private_json(self.root / '.mlx-agent-receipts/serve' / (str(self.port) + '.json'))
+        endpoint = resolve_receipt_endpoint({'receipt': str(self.root / '.mlx-agent-receipts/serve' / (str(self.port) + '.json')),
+            'receipts_dir': str(self.root), 'alive': True, 'argv_match': True, 'pid': service['pid'],
+            'port': self.port, 'runtime': 'mlx_lm', 'process_started_at': service['process_started_at']})
+        self.assertEqual(resolved['endpoint_identity']['service_id'], endpoint['service_id'])
         self.assertEqual(resolved['model_id'], str(self.root / 'model'))
         self.assertIn({'method': 'POST', 'path': '/v1/chat/completions'}, resolved['operations'])
         self.assertIsNone(resolved['credential_ref'])
@@ -183,6 +189,157 @@ class WorkflowActivationTests(unittest.TestCase):
         self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
         self.assertTrue(activation._pid_alive(original['pid']))
 
+    def test_owner_defers_until_reusing_workflow_stops(self):
+        first = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        owner = activation.start_workflow('studio', first['preview_hash'], receipts_dir=self.root)
+        other = {'schema': 'serving-workflow/1', 'name': 'other', 'members': self.definition['members']}
+        workflow_sets.save_workflow('other', other, self.root)
+        preview = workflow_sets.preview_workflow(other, receipts_dir=self.root)
+        self.assertEqual(preview['members']['coding']['action'], 'reuse')
+        borrower = activation.start_workflow('other', preview['preview_hash'], receipts_dir=self.root)
+        self.assertEqual(borrower['state'], 'active')
+        deferred = activation.stop_workflow('studio', receipts_dir=self.root)
+        self.assertEqual(deferred['state'], 'partial')
+        self.assertEqual(deferred['members']['coding']['error_code'], 'service_referenced')
+        self.assertTrue(activation._pid_alive(owner['members']['coding']['pid']))
+        self.assertEqual(activation.stop_workflow('other', receipts_dir=self.root)['state'], 'stopped')
+        self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
+
+    def test_cross_root_binding_requires_opt_in(self):
+        preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        owner = activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
+        other_root = self.root / 'other-root'
+        other_root.mkdir()
+        save_profile('small', {'min_headroom_gb': 2, 'idle_timeout': 0,
+                               'keep_loaded': True, 'unload_under_pressure': False}, other_root)
+        member = dict(self.definition['members']['coding'], port=free_port())
+        other = {'schema': 'serving-workflow/1', 'name': 'other', 'members': {'coding': member}}
+        blocked = workflow_sets.preview_workflow(other, receipts_dir=other_root)
+        self.assertEqual(blocked['members']['coding']['action'], 'blocked')
+        member['reuse_existing'] = True
+        workflow_sets.save_workflow('other', other, other_root)
+        reviewed = workflow_sets.preview_workflow(other, receipts_dir=other_root)
+        self.assertEqual(reviewed['members']['coding']['action'], 'reuse', reviewed)
+        borrower = activation.start_workflow('other', reviewed['preview_hash'], receipts_dir=other_root)
+        self.assertEqual(borrower['state'], 'active', borrower)
+        self.assertEqual(borrower['members']['coding']['pid'], owner['members']['coding']['pid'])
+        self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'partial')
+        self.assertEqual(activation.stop_workflow('other', receipts_dir=other_root)['state'], 'stopped')
+        self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
+
+    def test_failed_owner_stop_remains_retryable(self):
+        preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
+        with patch('mlx_agent.workflow_activation.stop_serve', side_effect=RuntimeError('stop failed')):
+            failed = activation.stop_workflow('studio', receipts_dir=self.root)
+        self.assertEqual(failed['state'], 'partial')
+        self.assertIn('stop failed', failed['members']['coding']['error'])
+        self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
+
+    def test_interrupted_stop_settles_after_process_has_exited(self):
+        preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
+        write = activation._write
+        def interrupt(path, value):
+            if value['members']['coding']['state'] == 'stopped':
+                raise OSError('interrupted after stop')
+            return write(path, value)
+        with patch('mlx_agent.workflow_activation._write', side_effect=interrupt), self.assertRaises(OSError):
+            activation.stop_workflow('studio', receipts_dir=self.root)
+        self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
+
+    def test_old_created_activation_recovers_current_claim(self):
+        from mlx_agent.model_serving import Claim, state_root, _lock, _read_claims, _write_claims
+        preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
+        path = activation._path('studio', self.root)
+        record = activation._read(path)
+        token = record['members']['coding'].pop('claim')
+        record['members']['coding'].pop('config_identity')
+        activation._write(path, record)
+        claim = Claim(state_root(), token['key'], token['generation'])
+        with _lock(claim.root, claim.key):
+            rows = _read_claims(claim.root, claim.key)
+            rows[0].pop('workflow_refs', None)
+            _write_claims(claim.root, claim.key, rows)
+        self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
+
+    def test_allowlisted_endpoint_still_honors_opt_in_reuse(self):
+        from mlx_agent.model_serving import write_policy
+        preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        owner = activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
+        write_policy([self.definition['members']['coding']['path']])
+        member = dict(self.definition['members']['coding'], port=free_port(), reuse_existing=True)
+        other = {'schema': 'serving-workflow/1', 'name': 'other', 'members': {'coding': member}}
+        workflow_sets.save_workflow('other', other, self.root)
+        reviewed = workflow_sets.preview_workflow(other, receipts_dir=self.root)
+        self.assertEqual(reviewed['members']['coding']['action'], 'reuse', reviewed)
+        borrower = activation.start_workflow('other', reviewed['preview_hash'], receipts_dir=self.root)
+        self.assertEqual(borrower['members']['coding']['pid'], owner['members']['coding']['pid'])
+        self.assertEqual(activation.stop_workflow('other', receipts_dir=self.root)['state'], 'stopped')
+        self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
+
+    def test_same_root_different_port_reuses_only_with_opt_in(self):
+        preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        owner = activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
+        member = dict(self.definition['members']['coding'], port=free_port(), reuse_existing=True)
+        other = {'schema': 'serving-workflow/1', 'name': 'other', 'members': {'coding': member}}
+        workflow_sets.save_workflow('other', other, self.root)
+        reviewed = workflow_sets.preview_workflow(other, receipts_dir=self.root)
+        self.assertEqual(reviewed['members']['coding']['action'], 'reuse', reviewed)
+        borrower = activation.start_workflow('other', reviewed['preview_hash'], receipts_dir=self.root)
+        self.assertEqual(borrower['state'], 'active', borrower)
+        self.assertEqual(borrower['members']['coding']['pid'], owner['members']['coding']['pid'])
+        again = activation.start_workflow('other', reviewed['preview_hash'], receipts_dir=self.root)
+        self.assertEqual(again['activation_id'], borrower['activation_id'])
+        self.assertEqual(activation.stop_workflow('other', receipts_dir=self.root)['state'], 'stopped')
+        self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
+
+    def test_operator_stop_allows_borrower_to_detach(self):
+        preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
+        other = {'schema': 'serving-workflow/1', 'name': 'other', 'members': self.definition['members']}
+        workflow_sets.save_workflow('other', other, self.root)
+        reviewed = workflow_sets.preview_workflow(other, receipts_dir=self.root)
+        activation.start_workflow('other', reviewed['preview_hash'], receipts_dir=self.root)
+        self.assertEqual(stop_serve(self.port, self.root)['status'], 'stopped')
+        self.assertEqual(activation.stop_workflow('other', receipts_dir=self.root)['state'], 'stopped')
+
+    def test_existing_endpoint_rejects_different_policy_and_credential(self):
+        preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
+        save_profile('other', {'min_headroom_gb': 3, 'idle_timeout': 0,
+                               'keep_loaded': True, 'unload_under_pressure': False}, self.root)
+        key = self.root / 'service.key'
+        key.write_text('x' * 48)
+        key.chmod(0o600)
+        base = dict(self.definition['members']['coding'], port=free_port(), reuse_existing=True)
+        for override in ({'profile': 'other'}, {'api_key_file': str(key)}, {'runtime': 'mlx-vlm'}):
+            member = dict(base, **override)
+            other = {'schema': 'serving-workflow/1', 'name': 'other', 'members': {'coding': member}}
+            with self.subTest(override=override), patch('mlx_agent.workflow_sets.resolve_serve_runtime',
+                    return_value=(member['runtime'], sys.executable)):
+                reviewed = workflow_sets.preview_workflow(other, receipts_dir=self.root)
+                self.assertEqual(reviewed['members']['coding']['action'], 'blocked')
+                self.assertFalse((self.root / '.mlx-agent-receipts/serve' / (str(member['port']) + '.json')).exists())
+        self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
+
+    def test_role_rejects_changed_service_configuration(self):
+        preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
+        path = self.root / '.mlx-agent-receipts/serve' / (str(self.port) + '.jit-config.json')
+        original = path.read_bytes()
+        try:
+            import json
+            config = json.loads(original)
+            config['max_tokens'] += 1
+            path.write_text(json.dumps(config))
+            with self.assertRaises(ValueError):
+                activation.resolve_workflow_role('studio', 'coding', receipts_dir=self.root)
+        finally:
+            path.write_bytes(original)
+        self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
+
     def test_changed_start_identity_never_signals_gateway(self):
         preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
         result = activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
@@ -204,15 +361,11 @@ class WorkflowActivationTests(unittest.TestCase):
         self.definition['members']['z_media'] = dict(self.definition['members']['coding'], port=second_port)
         workflow_sets._path('studio', self.root).write_text(json.dumps(self.definition))
         preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
-        result = activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
-        self.assertEqual(result['state'], 'partial')
-        self.assertEqual(result['members']['z_media']['state'], 'launch_failed')
-        self.assertEqual(result['error_code'], 'model_already_served')
-        self.assertTrue(any(item['origin'] == 'http://127.0.0.1:' + str(self.port)
-                            for item in result['error_data']['existing_services']))
+        self.assertEqual(preview['members']['z_media']['action'], 'blocked')
+        with self.assertRaises(ValueError):
+            activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
         self.assertFalse((self.root / '.mlx-agent-receipts/serve' / (str(second_port) + '.json')).exists())
-        self.assertTrue(activation._pid_alive(result['members']['coding']['pid']))
-        self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
+        self.assertFalse((self.root / '.mlx-agent-receipts/serve' / (str(self.port) + '.json')).exists())
 
     def test_racing_port_after_first_launch_retains_owned_endpoint(self):
         import json

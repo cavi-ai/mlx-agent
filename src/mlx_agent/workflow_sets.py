@@ -43,8 +43,10 @@ def validate_workflow(value):
     for role, member in members.items():
         _name(role)
         required = {'runtime', 'port', 'profile'}
-        if not isinstance(member, dict) or not required <= set(member) or set(member) - required - {'path', 'repo', 'api_key_file'}:
+        if not isinstance(member, dict) or not required <= set(member) or set(member) - required - {'path', 'repo', 'api_key_file', 'reuse_existing'}:
             raise ValueError('Invalid workflow member fields.')
+        if 'reuse_existing' in member and type(member['reuse_existing']) is not bool:
+            raise ValueError('Invalid existing endpoint preference.')
         if ('path' in member) == ('repo' in member):
             raise ValueError('Select exactly one model path or cached repo.')
         for field in ('path', 'repo', 'api_key_file'):
@@ -198,6 +200,69 @@ def _reuse_candidate(root, plan):
             'receipt_preview_hash': receipt['preview_hash'], 'memory_policy': config['memory_policy']}
 
 
+def _existing_claim_candidate(plan):
+    """Resolve a compatible claimed generation without attaching to it."""
+    from .model_serving import resolve_model, state_root, _read_claims, _live, _service_info, _legacy_matches
+    from .service_registry import discover_services
+    from .transactions import _assert_safe_directory
+    from .worker_transport import gateway_config
+    artifact = resolve_model(plan.get('local_path') or plan.get('path') or plan.get('repo'))
+    key = hashlib.sha256(artifact.encode()).hexdigest()
+    claim_root = state_root()
+    if os.path.lexists(claim_root):
+        _assert_safe_directory(claim_root)
+        info = claim_root.stat()
+        if info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise ValueError('Model ownership directory is unsafe.')
+    claims = [row for row in _read_claims(claim_root, key) if _live(row)]
+    if not claims:
+        found = discover_services()
+        if found.get('errors'):
+            raise ValueError('Existing service discovery is uncertain.')
+        if _legacy_matches(artifact, found.get('services', [])):
+            raise ValueError('An existing legacy service cannot be bound at this location.')
+        return None
+    if len(claims) != 1 or claims[0].get('kind') != 'service':
+        raise ValueError('Existing model ownership is ambiguous or in use.')
+    row = claims[0]
+    if row.get('retiring') or not row.get('ready') or not row.get('jit'):
+        raise ValueError('Existing service is not available for workflow binding.')
+    endpoint = _service_info(row)
+    receipt_path = Path(row.get('receipt_path') or '')
+    if (not receipt_path.is_absolute() or receipt_path.parent.name != 'serve'
+            or receipt_path.parent.parent.name != '.mlx-agent-receipts'):
+        raise ValueError('Existing service receipt location is invalid.')
+    root = receipt_path.parent
+    receipt = _private_json(receipt_path)
+    config = _private_json(root / (str(receipt['port']) + '.jit-config.json'))
+    if endpoint['auth_required'] != bool(config.get('api_key_sha256') or config.get('access_key_file')):
+        raise ValueError('Existing service authentication identity changed.')
+    expected = gateway_config(plan, control_token='', state_path='', log_path='', config_path='', task_state_dir='')
+    actual = dict(config)
+    if actual.get('model_serving_claim') != {'key': key, 'generation': row['generation']}:
+        raise ValueError('Existing service claim identity changed.')
+    actual.pop('model_serving_claim')
+    for field in ('control_token', 'state_path', 'log_path', 'config_path', 'task_state_dir'):
+        actual.pop(field, None)
+        expected.pop(field, None)
+    if actual.pop('port', None) != receipt['port']:
+        raise ValueError('Existing service transport identity changed.')
+    if plan['runtime'] == 'tasks':
+        if expected.pop('port', None) != plan['port']:
+            raise ValueError('Existing service transport identity changed.')
+        for config_value, port in ((actual, receipt['port']), (expected, plan['port'])):
+            argv = list(config_value.get('worker_argv') or [])
+            if argv.count('--port') != 1 or argv[argv.index('--port') + 1] != str(port):
+                raise ValueError('Existing service worker transport is invalid.')
+            argv[argv.index('--port') + 1] = '{port}'
+            config_value['worker_argv'] = argv
+    if actual != expected:
+        raise ValueError('Existing service configuration or capabilities differ.')
+    return {'pid': receipt['pid'], 'process_started_at': receipt['process_started_at'],
+            'receipt': str(receipt_path), 'receipt_preview_hash': receipt['preview_hash'],
+            'memory_policy': config['memory_policy'], 'endpoint': endpoint}
+
+
 
 def _resource_forecast(members, inspection, available, root):
     """Project only identity-qualified reservations; unknowns stay unknown."""
@@ -249,7 +314,8 @@ def _resource_forecast(members, inspection, available, root):
             if action == 'reuse':
                 candidate = member['candidate']; pid = candidate['pid']
                 try:
-                    state = _private_json(root / (str(plan['port']) + '.jit-state.json'))
+                    candidate_receipt = Path(candidate.get('receipt') or root / (str(plan['port']) + '.json'))
+                    state = _private_json(candidate_receipt.parent / (candidate_receipt.stem + '.jit-state.json'))
                 except (OSError, ValueError):
                     raise ValueError(role + ': service state is unavailable or unsafe.') from None
                 if state.get('gateway_pid') != pid or _pid_start(pid) != candidate['process_started_at']:
@@ -325,14 +391,25 @@ def preview_workflow(definition, *, receipts_dir=None):
     definition = validate_workflow(definition)
     members, binding, forecasts = {}, {}, {}
     root = receipts_root(receipts_dir)
+    planned_artifacts = set()
     for role, member in sorted(definition['members'].items()):
         try:
+            from .model_serving import resolve_model, read_policy
             plan = _member_plan(member, receipts_dir)
             estimate = reservation(plan.get('memory_policy'), plan)
+            artifact = resolve_model(plan.get('local_path') or plan.get('path') or plan.get('repo') or member.get('path') or member.get('repo'))
+            allow_duplicate = artifact in read_policy()['duplicate_model_allowlist']
+            if artifact in planned_artifacts and not allow_duplicate:
+                raise ValueError('Another workflow member selects the same model artifact.')
+            planned_artifacts.add(artifact)
             receipt = root / (str(member['port']) + '.json')
             candidate = None
             if os.path.lexists(receipt):
                 candidate = _reuse_candidate(root, plan)
+            elif not allow_duplicate or member.get('reuse_existing', False):
+                candidate = _existing_claim_candidate(plan)
+                if candidate and not member.get('reuse_existing', False):
+                    raise ValueError('An existing endpoint serves this model; enable reuse_existing to bind it.')
             action = 'reuse' if candidate else 'start'
             member_hash = plan['preview_hash']
             members[role] = {'member_plan_hash': member_hash, 'action': action,

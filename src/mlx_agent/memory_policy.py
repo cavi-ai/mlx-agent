@@ -309,7 +309,9 @@ def reservation(policy, config, *, weight_bytes=None):
             size = None
     if size is None:
         return None
-    size = math.ceil(size)
+    extra = config.get("shared_prefix_cache", {}).get("mib", 0) * (1 << 20)
+    size = math.ceil(size) + extra
+    dynamic_bytes += extra
     workspace = min(size, runtime_bytes)
     growth = min(size - workspace, max(0, math.ceil(dynamic_bytes) - workspace))
     return {"size": size, "workspace_bytes": workspace, "growth_bytes": growth,

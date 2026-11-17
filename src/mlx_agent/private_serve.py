@@ -37,10 +37,14 @@ class UnixHTTPConnection(http.client.HTTPConnection):
             raise
 
 
-def worker_command(native, model, descriptor):
+def worker_command(native, model, descriptor, shared_prefix_cache=None):
     python = runtime_python(native[0])
+    options = []
+    if shared_prefix_cache is not None:
+        options = ["--shared-prefix-mib", str(shared_prefix_cache["mib"]),
+                   "--shared-prefix-fingerprint", shared_prefix_cache["runtime"]["fingerprint"]]
     return [python, str(Path(__file__).resolve()), "--runtime-child", "--model", model,
-            "--socket-fd", str(descriptor), "--"] + native[1:]
+            "--socket-fd", str(descriptor)] + options + ["--"] + native[1:]
 
 
 class PrivateEndpoint:
@@ -232,7 +236,7 @@ def runtime_python(executable):
     raise ValueError("The MLX entrypoint does not identify its virtual environment interpreter.")
 
 
-def run_runtime(model, descriptor, forwarded):
+def run_runtime(model, descriptor, forwarded, shared_prefix_mib=None, shared_prefix_fingerprint=None):
     digest = os.environ.pop('MLX_AGENT_WORKER_KEY_SHA256', None)
     if digest is not None:
         if __package__:
@@ -243,8 +247,21 @@ def run_runtime(model, descriptor, forwarded):
     # Adopt the listener before importing a runtime that could load weights.
     server_class = private_server_class(descriptor)
     os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_DATASETS_OFFLINE="1")
+    restore = lambda: None
+    if shared_prefix_mib is not None:
+        from mlx_agent.shared_prefix_cache import identity_here, supported
+        actual = identity_here()
+        if (not 16 <= shared_prefix_mib <= 2048 or not supported(actual)
+                or actual['fingerprint'] != shared_prefix_fingerprint):
+            raise ValueError("Shared prefix runtime identity changed.")
     from mlx_lm import server
+    if shared_prefix_mib is not None:
+        from mlx_agent.shared_prefix_cache import install
+        restore = install(server, shared_prefix_mib * (1 << 20))
     original_run = server.run
+    original_http = getattr(server, "_run_http_server", None)
+    if shared_prefix_mib is not None and original_http is None:
+        raise ValueError("Unsupported private HTTP runtime.")
     parameters = inspect.signature(original_run).parameters
     if "server_class" not in parameters or "handler_class" not in parameters:
         raise ValueError("This MLX-LM version cannot serve an inherited private listener.")
@@ -268,8 +285,13 @@ def run_runtime(model, descriptor, forwarded):
             raise ValueError("Unsupported MLX-LM server initialization.")
         return original_run(*args, **dict(kwargs, server_class=server_class, handler_class=handler))
 
+    def private_http(host, port, response_generator, *args, **kwargs):
+        return original_http(host, port, response_generator, server_class=server_class, handler_class=handler)
+
     previous = sys.argv
     server.run = private_run
+    if shared_prefix_mib is not None:
+        server._run_http_server = private_http
     try:
         # Locked arguments come last: forwarded serving options cannot select a
         # different model, host, or public listener.
@@ -277,6 +299,9 @@ def run_runtime(model, descriptor, forwarded):
         server.main()
     finally:
         server.run = original_run
+        if shared_prefix_mib is not None:
+            server._run_http_server = original_http
+        restore()
         sys.argv = previous
 
 
@@ -286,6 +311,8 @@ def main(argv=None):
     parser.add_argument("--model")
     parser.add_argument("--socket-fd", type=int)
     parser.add_argument("--runtime-executable", default="mlx_lm.server")
+    parser.add_argument("--shared-prefix-mib", type=int, help=argparse.SUPPRESS)
+    parser.add_argument("--shared-prefix-fingerprint", help=argparse.SUPPRESS)
     parser.add_argument("--runtime-child", action="store_true", help=argparse.SUPPRESS)
     args, forwarded = parser.parse_known_args(argv)
     if args.describe:
@@ -307,7 +334,9 @@ def main(argv=None):
         command = [python, str(Path(__file__).resolve()), "--runtime-child", "--model", args.model,
                    "--socket-fd", str(args.socket_fd), "--"] + forwarded
         os.execv(python, command)
-    run_runtime(args.model, args.socket_fd, forwarded)
+    if (args.shared_prefix_mib is None) != (args.shared_prefix_fingerprint is None):
+        parser.error("shared prefix configuration is incomplete")
+    run_runtime(args.model, args.socket_fd, forwarded, args.shared_prefix_mib, args.shared_prefix_fingerprint)
     return 0
 
 

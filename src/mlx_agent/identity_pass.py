@@ -4,6 +4,7 @@ serve and jit_serve import this module. The checks import those modules back,
 so those imports stay inside the checks.
 """
 from pathlib import Path
+import subprocess
 
 
 def _rejected(code, message, remediation):
@@ -164,6 +165,23 @@ def _require_access_identity(plan):
                   "Review a fresh serve plan.")
 
 
+def _require_shared_prefix_identity(plan):
+    config = plan.get('shared_prefix_cache')
+    if config is None:
+        return
+    try:
+        from .private_serve import runtime_python
+        from .shared_prefix_cache import identity
+        if (not plan.get('jit') or plan.get('runtime') != 'mlx_lm' or not plan.get('access_key_file')
+                or not plan.get('api_key_sha256') or not plan.get('private_worker')
+                or type(config['mib']) is not int or not 16 <= config['mib'] <= 2048
+                or config['runtime'] != identity(runtime_python(plan['worker_argv'][0]))):
+            raise ValueError('Shared prefix configuration changed.')
+    except (OSError, ValueError, TypeError, KeyError, IndexError, subprocess.SubprocessError):
+        _rejected('preview_stale', 'Shared prefix configuration or runtime changed.',
+                  'Review a fresh serving preview.')
+
+
 def _require_model_identity(plan):
     if "fingerprint" not in plan or "local_path" not in plan:
         return
@@ -190,6 +208,7 @@ def recheck_bound_identity(plan):
         _require_vision_identity,
         _require_splash_identity,
         _require_access_identity,
+        _require_shared_prefix_identity,
         _require_model_identity,
     ):
         check(plan)

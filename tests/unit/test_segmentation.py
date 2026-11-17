@@ -79,3 +79,9 @@ class SegmentationTests(unittest.TestCase):
                      {'mismatched_keys': ['foo']}, {'error_msgs': ['error']}):
             with self.subTest(info=info), self.assertRaises(ValueError):
                 module.validate_loading(dict(empty, **info))
+        self.assertEqual(module.validate_checkpoint_keys({'image.weight'}, {'image.weight', 'memory_encoder.foo'}),
+                         ['memory_encoder.foo'])
+        for keys in ({'memory_encoder.foo'}, {'image.weight', 'unknown.weight'},
+                     {'image.weight', 'no_object_pointer_bogus'}):
+            with self.subTest(keys=keys), self.assertRaises(ValueError):
+                module.validate_checkpoint_keys({'image.weight'}, keys)

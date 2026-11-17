@@ -293,6 +293,29 @@ The engine retains a verified copy of the input image and publishes an owned
 verification use the same task commands as the other media kinds. Tasks never
 download model weights or install a backend.
 
+TRELLIS.2 accepts an ordered `views` array of absolute image paths and an
+optional absolute `guide` GLB path. Video generation accepts optional `image`
+and `audio` paths. The engine retains and verifies each conditioning file;
+at most 16 files and 2 GiB total are accepted per job. Requests with these
+additional conditioning files produce `task-run/3` records. Primary-image-only
+mesh and text-only video requests continue to produce `task-run/2` records.
+Consumers that open conditioned jobs must support `task-run/3`.
+
+## Task storage
+
+`mlx-agent task storage-budget --bytes N` enables a submission high-water mark
+for task-owned artifacts; use `--bytes 0` to disable it. `storage-status` shows
+the configured mark and a bounded inventory. A submission is refused when its
+staged inputs and request would put the inventory above the mark. Existing
+running jobs can grow after the check, so the mark is not an output reservation.
+
+`mlx-agent task expire-media --id ID` previews the owned media for a settled
+task. Repeat the command with `--confirm` and the preview's confirmation value
+to expire those files. Requests, results, hashes, and task history remain;
+source files and exports are not removed. Interrupted expiration can be retried
+with the same confirmation value. `mlx-agent task media-provenance --id ID`
+reads the preserved request, result, and media references after expiration.
+
 ## Text embeddings
 
 Use `task-request/2`, kind `embedding`, and parameters `input` (1–128 nonempty

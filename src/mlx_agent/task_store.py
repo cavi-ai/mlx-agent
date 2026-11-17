@@ -139,13 +139,13 @@ class TaskStore:
         finally:
             os.close(descriptor)
 
-    def stage_input(self, source, media_kind="audio"):
+    def stage_input(self, source, media_kind="audio", byte_limit=2 * 1024 * 1024 * 1024):
         """Copy a supported media input into a private, unaccepted staging directory."""
         source = Path(source).expanduser()
         suffix = source.suffix.lower()
         if media_kind not in MEDIA_SUFFIXES or not source.is_absolute() or suffix not in MEDIA_SUFFIXES[media_kind]:
             description = {"audio": "WAV, FLAC or MP3", "image": "PNG, JPEG or WebP",
-                           "video": "MP4, MOV or M4V"}.get(media_kind, "supported media")
+                           "video": "MP4, MOV or M4V", "mesh": "GLB"}.get(media_kind, "supported media")
             raise TaskError("invalid_input", "Media input must be an absolute {0} path.".format(description))
         identifier = str(uuid4())
         artifacts = self._ensure_artifact_root()
@@ -171,9 +171,11 @@ class TaskStore:
                         chunk = input_stream.read(1024 * 1024)
                         if not chunk:
                             break
+                        size += len(chunk)
+                        if byte_limit is not None and size > byte_limit:
+                            raise TaskError("input_too_large", "Conditioning inputs exceed the per-job byte limit.")
                         output_stream.write(chunk)
                         digest.update(chunk)
-                        size += len(chunk)
                     output_stream.flush()
                     os.fsync(output_stream.fileno())
                     after = os.fstat(input_stream.fileno())
@@ -212,6 +214,49 @@ class TaskStore:
                     raise TaskError("unsafe_task_storage", "Staged input contains unexpected filesystem entries.")
                 child.unlink()
             expected.rmdir()
+
+    def stage_inputs(self, request):
+        """Stage a named set of conditioning files in one task-owned directory."""
+        from .task_inputs import MAX_INPUT_BYTES, MAX_INPUT_FILES, specifications
+        entries = specifications(request)
+        if len(entries) > MAX_INPUT_FILES:
+            raise TaskError("too_many_inputs", "Conditioning inputs are limited to 16 files per job.")
+        staged = []
+        try:
+            remaining = MAX_INPUT_BYTES
+            for name, index, source, media in entries:
+                item = self.stage_input(source, media, byte_limit=remaining)
+                staged.append(item)
+                remaining -= item["reference"]["bytes"]
+            if staged:
+                first = staged[0]
+                identifier = first["id"]
+                directory = Path(first["staging_directory"])
+            else:
+                identifier = str(uuid4())
+                directory = self._ensure_artifact_root() / (".staging-" + identifier)
+                directory.mkdir(mode=0o700)
+                first = {"id": identifier, "staging_directory": str(directory)}
+            references = {}
+            paths = {}
+            for number, ((name, index, _, _), item) in enumerate(zip(entries, staged)):
+                target = directory / ("input-" + str(number) + Path(item["staging_path"]).suffix)
+                os.replace(item["staging_path"], target)
+                if item is not first:
+                    Path(item["staging_directory"]).rmdir()
+                reference = dict(item["reference"], path=str(self.root / "artifacts" / identifier / target.name))
+                if index is None:
+                    references[name], paths[name] = reference, str(target)
+                else:
+                    references.setdefault(name, []).append(reference)
+                    paths.setdefault(name, []).append(str(target))
+            self.fsync_directory(directory)
+            first.update(references=references, paths=paths)
+            return first
+        except BaseException:
+            for item in staged:
+                self.discard_staged_input(item)
+            raise
 
     def get(self, identifier):
         with self._connection() as connection:
@@ -304,6 +349,8 @@ class TaskStore:
 
     def create(self, request, identity, input_artifact=None, staged_input=None):
         request = validate_request(request)
+        if staged_input is not None and "references" in staged_input:
+            return self._create_named(request, identity, staged_input)
         media = request["schema"] == "task-request/2"
         if not media and (staged_input is not None or input_artifact is not None):
             raise TaskError("invalid_task", "Legacy tasks cannot carry a media input snapshot.")
@@ -338,6 +385,8 @@ class TaskStore:
         moved = False
         try:
             with self._connection(write=True) as connection:
+                from .task_storage import check_submission
+                check_submission(self, connection, input_artifact["bytes"] if input_artifact else 0, len(encoded(request)))
                 if staged_input is not None:
                     expected_stage = artifacts / (".staging-" + identifier)
                     if (Path(staged_input.get("staging_directory", "")) != expected_stage
@@ -376,6 +425,73 @@ class TaskStore:
                             self._remove_unaccepted_directory(final_directory)
             raise
 
+    def _create_named(self, request, identity, staged):
+        from .task_inputs import specifications
+        identifier = task_id(staged["id"])
+        artifacts = self._ensure_artifact_root()
+        directory = artifacts / (".staging-" + identifier)
+        final = artifacts / identifier
+        entries = specifications(request)
+        if Path(staged.get("staging_directory", "")) != directory or final.exists():
+            raise TaskError("invalid_input", "The staged inputs do not match this submission.")
+        ensure_private(directory)
+        refs, paths = staged["references"], staged["paths"]
+        expected_keys = {name for name, _, _, _ in entries}
+        if set(refs) != expected_keys or set(paths) != expected_keys:
+            raise TaskError("invalid_input", "The staged input set does not match this submission.")
+        view_count = sum(1 for name, _, _, _ in entries if name == "views")
+        if view_count and (not isinstance(refs.get("views"), list) or not isinstance(paths.get("views"), list)
+                           or len(refs["views"]) != view_count or len(paths["views"]) != view_count):
+            raise TaskError("invalid_input", "The staged views do not match this submission.")
+        expected_paths = {str(value) for item in paths.values() for value in (item if isinstance(item, list) else [item])}
+        if {str(path) for path in directory.iterdir()} != expected_paths:
+            raise TaskError("invalid_input", "The staging directory has unexpected files.")
+        for number, (name, index, _, media) in enumerate(entries):
+            try:
+                ref = refs[name] if index is None else refs[name][index]
+                path = Path(paths[name] if index is None else paths[name][index])
+                _artifact_reference(ref)
+            except (KeyError, IndexError, TypeError, TaskError) as error:
+                raise TaskError("invalid_input", "A staged input reference is invalid.") from error
+            expected_name = "input-" + str(number) + path.suffix
+            if (path.parent != directory or path.name != expected_name or path.suffix not in MEDIA_SUFFIXES[media]
+                    or ref["path"] != str(final / expected_name) or path.is_symlink()):
+                raise TaskError("invalid_input", "A staged input is outside this submission.")
+            ensure_private(path, directory=False)
+            digest, size = hashlib.sha256(), 0
+            with path.open("rb") as source:
+                for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                    digest.update(chunk)
+                    size += len(chunk)
+            if digest.hexdigest() != ref["sha256"] or size != ref["bytes"]:
+                raise TaskError("input_changed", "A staged input changed before acceptance.")
+        moved = False
+        try:
+            with self._connection(write=True) as connection:
+                from .task_storage import check_submission
+                check_submission(self, connection, sum(ref["bytes"] for value in refs.values()
+                                 for ref in (value if isinstance(value, list) else [value])), len(encoded(request)))
+                os.replace(directory, final)
+                moved = True
+                self.fsync_directory(artifacts)
+                reference = self._write_artifact(identifier, "request.json", request)
+                record = {"schema": "task-run/3", "id": identifier, "kind": request["kind"],
+                          "state": "starting", "model_path": request["model_path"], "created_at": utc_now(),
+                          "started_at": None, "completed_at": None, "cancel_requested": False,
+                          "identity": identity, "request": reference, "input_artifacts": refs, "result": None,
+                          "error": None, "supervisor": None, "execution": None, "execution_unresolved": False}
+                validate_record(record)
+                connection.execute("INSERT INTO tasks VALUES (?, ?, ?)", (identifier, record["created_at"], encoded(record).decode()))
+                return record
+        except (TaskError, OSError, sqlite3.Error, ValueError):
+            if moved:
+                try:
+                    self.get(identifier)
+                except TaskError as error:
+                    if error.code == "task_not_found":
+                        self._remove_unaccepted_directory(final)
+            raise
+
     @staticmethod
     def _remove_unaccepted_directory(directory):
         if not directory.exists() or directory.is_symlink():
@@ -393,6 +509,30 @@ class TaskStore:
         names = tuple("input" + suffix for suffix in MEDIA_SUFFIXES[media_kind])
         return self.verify_artifact(identifier, reference, allowed_names=names,
                                     code="input_artifact")
+
+    def verify_named_inputs(self, identifier, request, references):
+        from .task_inputs import specifications
+        entries = specifications(request)
+        if set(references) != {name for name, _, _, _ in entries}:
+            raise TaskError("input_artifact_changed", "The retained input set does not match the request.")
+        paths = {}
+        for number, (name, index, _, media) in enumerate(entries):
+            try:
+                reference = references[name] if index is None else references[name][index]
+                suffix = Path(reference["path"]).suffix
+                if suffix not in MEDIA_SUFFIXES[media]:
+                    raise ValueError()
+                owned = self.verify_artifact(identifier, reference, expected_name="input-" + str(number) + suffix,
+                                             code="input_artifact")
+            except (KeyError, IndexError, TypeError, ValueError) as error:
+                raise TaskError("input_artifact_changed", "The retained input reference is invalid.") from error
+            if index is None:
+                paths[name] = str(owned)
+            else:
+                paths.setdefault(name, []).append(str(owned))
+        if "views" in references and len(references["views"]) != len(paths.get("views", [])):
+            raise TaskError("input_artifact_changed", "The retained views do not match the request.")
+        return paths
 
     def verify_artifact(self, identifier, reference, expected_name=None, allowed_names=(), code="artifact"):
         task_id(identifier)

@@ -2226,8 +2226,7 @@ def _run_convert(arguments):
                              max_faces=arguments.max_faces, denoiser_cache=arguments.denoiser_cache,
                              cache_memory_mib=arguments.cache_memory_mib, views=arguments.view,
                              guide=arguments.guide)
-            from .compute import guarded_start
-            result = guarded_start("mesh", run_mesh, plan, timeout=arguments.timeout)
+            result = served_or_local("mesh", run_mesh, plan, arguments.out)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
         if arguments.convert_command == "video":
             if not 1 <= arguments.timeout <= 14400:

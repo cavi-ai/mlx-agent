@@ -11,6 +11,7 @@ from .inference_runner import InferenceError, RunnerContract, invoke
 from .media_settings import supports_adaptive_reuse
 
 MESH_SCHEMA = "mesh/1"
+DEFAULT_TIMEOUT_SECONDS = 3600
 MESH_RUNNER = Path(__file__).with_name("mesh_runner.py")
 
 
@@ -129,7 +130,7 @@ def validate_glb(path):
         raise MeshError("mesh_failed", "The backend did not write a valid GLB file.", "Retry with a new output path.") from error
 
 
-def run_mesh(plan, manifests=None, root=None, timeout=3600, runner=subprocess.run):
+def run_mesh(plan, manifests=None, root=None, timeout=DEFAULT_TIMEOUT_SECONDS, runner=subprocess.run):
     result = invoke(plan, CONTRACT, manifests, root, timeout, runner)
     validate_glb(plan["out"])
     return dict(result, schema=MESH_SCHEMA, backend=plan["backend"], model=plan["model"])

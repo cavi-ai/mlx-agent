@@ -21,6 +21,7 @@ VERBS = {
     "generate": ("image_generation", ("prompt", "width", "height", "steps", "seed")),
     "video": ("video_generation", ("prompt", "width", "height", "frames", "steps", "seed", "fps", "denoiser_cache",
                                    "cache_memory_mib", "image", "audio", "audio_start")),
+    "mesh": ("mesh_generation", ("steps", "seed", "resolution", "guidance", "max_faces", "denoiser_cache", "cache_memory_mib")),
 }
 REMEDIATION = {
     "model_busy": "The served model is running another job; wait for it to finish and retry.",
@@ -29,9 +30,10 @@ REMEDIATION = {
 
 def execution_limit(kind):
     """Seconds an endpoint lets one job of this kind run: its backend runner's default timeout."""
-    from . import describe, generate, music, speak, video
+    from . import describe, generate, mesh, music, speak, video
     modules = {"speak": speak, "music_generation": music, "image_generation": generate,
-               "video_generation": video, "image_understanding": describe, "video_understanding": describe}
+               "video_generation": video, "image_understanding": describe, "video_understanding": describe,
+               "mesh_generation": mesh}
     return modules[kind].DEFAULT_TIMEOUT_SECONDS
 
 
@@ -43,6 +45,14 @@ def request(verb, arguments):
         parameters = {name: getattr(arguments, name) for name in names}
         parameters[media + "_path"] = str(Path(getattr(arguments, media)).expanduser().resolve())
         kind = media + "_understanding"
+    elif verb == "mesh":
+        kind, names = VERBS[verb]
+        parameters = {name: getattr(arguments, name) for name in names}
+        parameters["image_path"] = str(Path(arguments.image).expanduser().absolute())
+        if arguments.view:
+            parameters["views"] = [str(Path(path).expanduser().absolute()) for path in arguments.view]
+        if arguments.guide is not None:
+            parameters["guide"] = str(Path(arguments.guide).expanduser().absolute())
     else:
         kind, names = VERBS[verb]
         parameters = {name: getattr(arguments, name) for name in names}

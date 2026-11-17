@@ -13,7 +13,7 @@ MEDIA_REQUEST_SCHEMA = "task-request/2"
 MEDIA_RUN_SCHEMA = "task-run/2"
 MAX_REQUEST_BYTES = 1024 * 1024
 MEDIA_SUFFIXES = {"audio": (".wav", ".flac", ".mp3"), "image": (".png", ".jpg", ".jpeg", ".webp"),
-                  "video": (".mp4", ".mov", ".m4v")}
+                  "video": (".mp4", ".mov", ".m4v"), "mesh": (".glb",)}
 STATES = ("starting", "running", "succeeded", "failed", "cancelled")
 TERMINAL = ("succeeded", "failed", "cancelled")
 
@@ -74,15 +74,43 @@ def validate_record(value):
         raise TaskError("invalid_task_record", "Unknown or incomplete task record.", "Preserve the store and use a compatible engine.")
     version = value.get("schema")
     media = version == MEDIA_RUN_SCHEMA
+    named = version == "task-run/3"
     if media:
         required.add("input_artifact")
-    if set(value) != required or version not in (RUN_SCHEMA, MEDIA_RUN_SCHEMA):
+    if named:
+        required.add("input_artifacts")
+    if set(value) != required or version not in (RUN_SCHEMA, MEDIA_RUN_SCHEMA, "task-run/3"):
         raise TaskError("invalid_task_record", "Unknown or incomplete task record.", "Preserve the store and use a compatible engine.")
     task_id(value["id"])
     from .task_kinds import find
     kind = find(value["kind"])
-    if kind is None or kind.run_schema != version or value["state"] not in STATES:
+    if (kind is None or (kind.run_schema != version and not (named and kind.name in ("video_generation", "mesh_generation")))
+            or value["state"] not in STATES):
         raise TaskError("invalid_task_record", "Unknown task kind or state.")
+    if named:
+        references = value["input_artifacts"]
+        allowed = {"image": "image", "audio": "audio"} if kind.name == "video_generation" else {
+            "image_path": "image", "views": "image", "guide": "mesh"}
+        if (not isinstance(references, dict) or set(references) - set(allowed)
+                or kind.name == "mesh_generation" and "image_path" not in references):
+            raise TaskError("invalid_task_record", "Named input artifacts are invalid.")
+        ordered = []
+        for key in allowed:
+            if key not in references:
+                continue
+            items = references[key] if key == "views" else [references[key]]
+            if not isinstance(items, list) or not items:
+                raise TaskError("invalid_task_record", "Named input artifact list is invalid.")
+            for reference in items:
+                _artifact_reference(reference)
+                path = Path(reference["path"])
+                if (path.parent.name != value["id"] or path.parent.parent.name != "artifacts"
+                        or path.name != "input-" + str(len(ordered)) + path.suffix.lower()
+                        or path.suffix.lower() not in MEDIA_SUFFIXES[allowed[key]]):
+                    raise TaskError("invalid_task_record", "Named input artifact path is invalid.")
+                ordered.append(reference)
+        if len(ordered) > 16 or sum(ref["bytes"] for ref in ordered) > 2 * 1024**3:
+            raise TaskError("invalid_task_record", "Named input artifacts exceed the per-job limit.")
     if media:
         reference = value["input_artifact"]
         if kind.input_media:

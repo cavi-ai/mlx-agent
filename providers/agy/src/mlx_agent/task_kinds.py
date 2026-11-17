@@ -50,7 +50,10 @@ class TaskKind:
 
     def plan(self, request, directory, input_path=None):
         """Plan one run; output lands in `directory`, media comes from `input_path` or the request."""
-        parameters = request["parameters"]
+        parameters = dict(request["parameters"])
+        if isinstance(input_path, dict):
+            parameters.update(input_path)
+            input_path = None
         media = input_path or (parameters[self.input_field] if self.input_field else None)
         output = str(Path(directory) / self.output) if self.output else None
         return self.planner(request["model_path"], parameters, output, media, Path(directory))
@@ -66,7 +69,9 @@ class TaskKind:
     def capability(self):
         entry = {"kind": self.name, "result_schema": self.result_schema}
         if not self.legacy:
-            entry.update(request_schema=MEDIA_REQUEST_SCHEMA, run_schema=MEDIA_RUN_SCHEMA)
+            entry.update(request_schema=MEDIA_REQUEST_SCHEMA, run_schema=self.run_schema)
+        if self.name in ("video_generation", "mesh_generation"):
+            entry["conditioned_run_schema"] = "task-run/3"
         entry.update(cancellation=True, requires_local_model=True, model_verification=True)
         return entry
 
@@ -198,7 +203,7 @@ def _validate_video_understanding(parameters):
 
 
 def _validate_mesh(parameters):
-    _require_keys(parameters, ("image_path",), ("steps", "seed", "resolution", "guidance", "max_faces", "denoiser_cache", "cache_memory_mib"),
+    _require_keys(parameters, ("image_path",), ("steps", "seed", "resolution", "guidance", "max_faces", "denoiser_cache", "cache_memory_mib", "views", "guide"),
                   "Mesh-generation parameters need image_path and supported generation settings.")
     _require_absolute(parameters, "image_path")
     _require_integer(parameters, "steps", "seed", "resolution", "max_faces", "cache_memory_mib")
@@ -209,6 +214,13 @@ def _validate_mesh(parameters):
         if parameters['denoiser_cache'] not in ('off','adaptive'):
             raise TaskError('invalid_parameters', 'denoiser_cache must be off or adaptive.')
     _require_finite(parameters, "guidance")
+    if "guide" in parameters:
+        _require_absolute(parameters, "guide")
+    if "views" in parameters and (not isinstance(parameters["views"], list)
+                                  or any(not absolute_path(path) for path in parameters["views"])):
+        raise _invalid("views must be an ordered list of absolute local paths.")
+    if 1 + len(parameters.get("views", [])) + ("guide" in parameters) > 16:
+        raise _invalid("Conditioning inputs are limited to 16 files per job.")
     return parameters
 
 
@@ -260,7 +272,7 @@ def _plan_video_understanding(model, parameters, output, media, directory):
 
 
 def _plan_mesh(model, parameters, output, media, directory):
-    return plan_mesh(model, media, output, **_options(parameters, ("steps", "seed", "resolution", "guidance", "max_faces", "denoiser_cache", "cache_memory_mib")))
+    return plan_mesh(model, media, output, **_options(parameters, ("steps", "seed", "resolution", "guidance", "max_faces", "denoiser_cache", "cache_memory_mib", "views", "guide")))
 
 
 def _check_mesh_output(path, plan):

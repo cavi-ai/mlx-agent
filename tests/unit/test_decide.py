@@ -23,6 +23,8 @@ class Completed:
 
 class DecideTests(unittest.TestCase):
     def setUp(self):
+        from tests.unit.ownership_fixtures import isolate
+        isolate(self)
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)

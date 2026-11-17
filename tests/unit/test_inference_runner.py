@@ -10,7 +10,7 @@ from mlx_agent.backends import BackendError
 from mlx_agent.inference_runner import InferenceError, invoke
 
 CONTRACTS = {module.CONTRACT.verb: module.CONTRACT for module in (decide, describe, generate, music, speak, transcribe, video)}
-PLAN = {"backend": "fixture", "argv": ["/backend/python", "runner.py"], "input": {"kind": "image"},
+PLAN = {"model": "/fixture/model", "backend": "fixture", "argv": ["/backend/python", "runner.py"], "input": {"kind": "image"},
         "model_type": "fixture", "out": "/missing/output.wav"}
 MANIFESTS = {"fixture": {"id": "fixture"}}
 
@@ -24,6 +24,19 @@ class InferenceRunnerTests(unittest.TestCase):
         patcher = mock.patch("mlx_agent.inference_runner.sync_ports", return_value=[])
         self.sync = patcher.start()
         self.addCleanup(patcher.stop)
+        from mlx_agent.model_serving import _OwnedClaim
+        patcher = mock.patch("mlx_agent.model_serving.acquire", return_value=_OwnedClaim())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_duplicate_refusal_precedes_backend_sync(self):
+        from mlx_agent.model_serving import ModelServingError
+        with mock.patch('mlx_agent.model_serving.acquire', side_effect=ModelServingError(
+                'model_already_served', 'Already served.', 'Connect to the existing service.')):
+            with self.assertRaises(InferenceError) as rejected:
+                invoke(PLAN, transcribe.CONTRACT, MANIFESTS)
+        self.assertEqual(rejected.exception.code, 'model_already_served')
+        self.sync.assert_not_called()
 
     def test_every_verb_error_is_an_inference_error(self):
         self.assertEqual(sorted(CONTRACTS), ["decide", "describe", "generate", "music", "speak", "transcribe", "video"])
@@ -55,7 +68,7 @@ class InferenceRunnerTests(unittest.TestCase):
             self.assertEqual(caught.exception.code, verb + "_timeout")
             self.assertIn("exceeded 7 s", str(caught.exception))
 
-    def test_every_verb_syncs_ports_first_and_maps_a_sync_failure(self):
+    def test_every_verb_maps_a_sync_failure_and_cancels_reservation(self):
         self.sync.side_effect = BackendError("port_conflict", "fixture already ships a port", "Remove it.")
         runner = mock.Mock()
         for verb, contract in CONTRACTS.items():

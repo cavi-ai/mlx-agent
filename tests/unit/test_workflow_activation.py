@@ -36,7 +36,9 @@ class WorkflowActivationTests(unittest.TestCase):
         workflow_sets.save_workflow('studio', self.definition, self.root)
         for context in (patch('mlx_agent.workflow_sets.resolve_serve_runtime', return_value=('mlx_lm', sys.executable)),
                         patch('mlx_agent.service_registry.register_receipts'),
-                        patch.dict(os.environ, {'PYTHONPATH': str(Path(__file__).resolve().parents[2] / 'src')})):
+                        patch('mlx_agent.service_registry.discover_services', return_value={'services': [], 'errors': []}),
+                        patch.dict(os.environ, {'PYTHONPATH': str(Path(__file__).resolve().parents[2] / 'src'),
+                                                'XDG_STATE_HOME': str(self.root / 'state')})):
             context.start()
             self.addCleanup(context.stop)
         self.addCleanup(self.cleanup_gateway)
@@ -194,6 +196,24 @@ class WorkflowActivationTests(unittest.TestCase):
         self.assertIn('identity changed', stopped['members']['coding']['error'])
         self.assertTrue(activation._pid_alive(pid))
 
+    def test_duplicate_member_reports_existing_endpoint_without_launching_second(self):
+        import json
+        second_port = free_port()
+        while second_port == self.port:
+            second_port = free_port()
+        self.definition['members']['z_media'] = dict(self.definition['members']['coding'], port=second_port)
+        workflow_sets._path('studio', self.root).write_text(json.dumps(self.definition))
+        preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        result = activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
+        self.assertEqual(result['state'], 'partial')
+        self.assertEqual(result['members']['z_media']['state'], 'launch_failed')
+        self.assertEqual(result['error_code'], 'model_already_served')
+        self.assertTrue(any(item['origin'] == 'http://127.0.0.1:' + str(self.port)
+                            for item in result['error_data']['existing_services']))
+        self.assertFalse((self.root / '.mlx-agent-receipts/serve' / (str(second_port) + '.json')).exists())
+        self.assertTrue(activation._pid_alive(result['members']['coding']['pid']))
+        self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
+
     def test_racing_port_after_first_launch_retains_owned_endpoint(self):
         import json
         from mlx_agent import serve
@@ -201,6 +221,8 @@ class WorkflowActivationTests(unittest.TestCase):
         while second_port == self.port:
             second_port = free_port()
         self.definition['members']['z_media'] = dict(self.definition['members']['coding'], port=second_port)
+        from mlx_agent.model_serving import write_policy
+        write_policy([self.definition['members']['coding']['path']])
         path = workflow_sets._path('studio', self.root)
         path.write_text(json.dumps(self.definition))
         preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
@@ -230,6 +252,8 @@ class WorkflowActivationTests(unittest.TestCase):
             owned_port, race_port = free_port(), free_port()
         self.addCleanup(self.cleanup_port, owned_port)
         original_member = self.definition['members']['coding']
+        from mlx_agent.model_serving import write_policy
+        write_policy([original_member['path']])
         plan = workflow_sets._member_plan(original_member, self.root)
         borrowed = start_serve(plan, receipts_dir=self.root, confirm=True, preview_hash=plan['preview_hash'])['receipt']
         self.definition['members'] = {'a_borrowed': original_member,

@@ -28,9 +28,13 @@ STOP_SECONDS = 5
 
 
 def _error(error):
-    return {"code": getattr(error, "code", "task_execution_failed"),
-            "message": redact_secrets(str(error))[-2000:],
-            "remediation": getattr(error, "remediation", "Inspect this task's local log and retry after resolving the failure.")}
+    result = {"code": getattr(error, "code", "task_execution_failed"),
+              "message": redact_secrets(str(error))[-2000:],
+              "remediation": getattr(error, "remediation", "Inspect this task's local log and retry after resolving the failure.")}
+    if result['code'] == 'model_already_served' and getattr(error, 'data', None):
+        from .model_serving import public_error_data
+        result['data'] = public_error_data(error.data)
+    return result
 
 
 def _spawn(role, identifier, store, launcher=subprocess.Popen):

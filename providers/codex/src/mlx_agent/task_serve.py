@@ -204,7 +204,24 @@ def main():
     config = json.loads(path.read_text())
     if args.model != config['model'] or args.port != config['port']:
         raise ValueError('Endpoint configuration identity changed.')
-    server = TaskServer(('127.0.0.1', args.port), config)
+    from mlx_agent.model_serving import adopt_gateway
+    claim = adopt_gateway(config)
+    server = None
+    try:
+        server = TaskServer(('127.0.0.1', args.port), config)
+        server.controller.resident.model_serving_claim = claim
+        server.controller._persist()
+    except BaseException as failure:
+        if server is not None:
+            server.server_close()
+        try:
+            claim.cancel_unstarted_gateway()
+        except Exception as cleanup_error:
+            failure.add_note('Model ownership cleanup failed: ' + str(cleanup_error))
+        raise
+    if not config.get('model_serving_claim'):
+        from mlx_agent.model_serving import mark_foreground_ready
+        mark_foreground_ready(claim)
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: threading.Thread(target=server.shutdown, daemon=True).start())
     try:
@@ -212,6 +229,7 @@ def main():
     finally:
         server.controller.close()
         server.server_close()
+        claim.release()
 
 
 if __name__ == '__main__':

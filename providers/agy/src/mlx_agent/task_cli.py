@@ -45,9 +45,13 @@ def summary(record):
         if value[key] is not None:
             value[key] = {"pid": value[key].get("pid")}
     if value["error"]:
-        value["error"] = {"code": str(value["error"].get("code", "task_failed"))[:100],
-                          "message": redact_secrets(str(value["error"].get("message", "Task failed.")))[:1000],
-                          "remediation": redact_secrets(str(value["error"].get("remediation", "Inspect task status.")))[:500]}
+        original = value["error"]
+        value["error"] = {"code": str(original.get("code", "task_failed"))[:100],
+                          "message": redact_secrets(str(original.get("message", "Task failed.")))[:1000],
+                          "remediation": redact_secrets(str(original.get("remediation", "Inspect task status.")))[:500]}
+        if original.get('code') == 'model_already_served' and 'data' in original:
+            from .model_serving import public_error_data
+            value['error']['data'] = public_error_data(original['data'])
     return value
 
 
@@ -86,7 +90,8 @@ def run(arguments):
         envelope = ResultEnvelope.ok(operation, data)
         if action == "start" and data["task"]["state"] == "failed":
             error = data["task"]["error"]
-            envelope = ResultEnvelope(operation, "error", data=data, error=ErrorDetail(**error))
+            envelope = ResultEnvelope(operation, "error", data=data,
+                                      error=ErrorDetail(error['code'], error['message'], error['remediation']))
         payload = _bounded(envelope)
     except TaskError as error:
         payload = ResultEnvelope.fail(operation, error.code, redact_secrets(str(error))[:2000], error.remediation[:1000]).to_dict()

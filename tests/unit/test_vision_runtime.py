@@ -65,6 +65,8 @@ class VisionRuntimeTests(unittest.TestCase):
                 plan_start("pub/model", "mlx_lm", load_recipes(), vision_cache=True)
 
     def test_jit_receipt_and_status_retain_the_reviewed_profile(self):
+        from tests.unit.test_serve import _isolate_ownership
+        _isolate_ownership(self)
         with TemporaryDirectory() as root:
             entry, python, sources = self.environment(root)
             model = Path(root)/"model"

@@ -47,6 +47,8 @@ class PrefillRuntimeTests(unittest.TestCase):
 
     @patch("mlx_agent.prefill_runtime.can_wrap_runtime", return_value=True)
     def test_jit_keeps_kernel_binding_in_worker_receipt_and_status(self, _same_runtime):
+        from tests.unit.test_serve import _isolate_ownership
+        _isolate_ownership(self)
         with TemporaryDirectory() as folder:
             model = Path(folder) / "model"
             model.mkdir()

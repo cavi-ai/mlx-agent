@@ -135,10 +135,13 @@ class PrivateRuntimeTests(unittest.TestCase):
     def test_supervisor_reexec_retains_only_the_explicit_descriptor(self):
         entry, python = self.runtime()
         descriptor = os.dup(self.listener.fileno())
+        os.set_inheritable(descriptor, True)
         try:
-            with patch('os.execv', side_effect=RuntimeError('exec intercepted')) as execute:
+            with patch('mlx_agent.model_serving.verify_private_worker') as owner, \
+                 patch('os.execv', side_effect=RuntimeError('exec intercepted')) as execute:
                 with self.assertRaisesRegex(RuntimeError, 'intercepted'):
                     private_serve.main(['--model', str(self.model), '--socket-fd', str(descriptor), '--runtime-executable', str(entry)])
+            owner.assert_called_once_with(str(self.model), descriptor)
             self.assertEqual(execute.call_args.args[0], str(python))
             self.assertTrue(os.get_inheritable(descriptor))
             self.assertIn('--runtime-child', execute.call_args.args[1])

@@ -1,6 +1,7 @@
 import concurrent.futures
 import http.client
 import json
+import os
 import sys
 import subprocess
 import threading
@@ -170,6 +171,12 @@ class JITServingTests(unittest.TestCase):
         self.temp = TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
+        environment = mock.patch.dict(os.environ, {'XDG_STATE_HOME': str(self.root / 'state')})
+        environment.start()
+        self.addCleanup(environment.stop)
+        discovery = mock.patch('mlx_agent.service_registry.discover_services', return_value={'services': [], 'errors': []})
+        discovery.start()
+        self.addCleanup(discovery.stop)
         self.model = self.root / 'local model'
         self.model.mkdir()
         (self.model / 'config.json').write_text('{}')

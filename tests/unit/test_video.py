@@ -36,6 +36,8 @@ WAN_CONFIG = {"model_type": "t2v", "patch_size": [1, 2, 2], "vae_stride": [4, 8,
 
 class VideoTests(unittest.TestCase):
     def setUp(self):
+        from tests.unit.ownership_fixtures import isolate
+        isolate(self)
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)

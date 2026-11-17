@@ -1019,6 +1019,12 @@ def _add_serve_arguments(parser):
     status = actions.add_parser("status", help="cross-check serve receipts against live processes")
     status.add_argument("--receipts-dir", default=None)
     status.add_argument("--json", action="store_true")
+    duplication = actions.add_parser("duplication-policy", help="inspect or update the host model duplication policy")
+    selection = duplication.add_mutually_exclusive_group()
+    selection.add_argument("--allow-model", action="append", metavar="MODEL")
+    selection.add_argument("--clear", action="store_true")
+    duplication.add_argument("--confirm", action="store_true")
+    duplication.add_argument("--json", action="store_true")
     budget = actions.add_parser('budget', help='inspect or configure the shared agent memory budget')
     budget.add_argument('--limit-gb', type=float)
     budget.add_argument('--reserve-gb', type=float, default=8)
@@ -1108,8 +1114,22 @@ def _run_serve(arguments):
         ServeError, configure_serve_memory, reclaim_serve_cache, default_model_present, load_recipes, plan_start, resolve_serve_runtime,
         start_serve, status_serve, stop_serve, unload_serve, wired_port_claim,
     )
+    from .model_serving import ModelServingError
     operation = "serve-{0}".format(arguments.serve_command)
     try:
+        if arguments.serve_command == "duplication-policy":
+            from .model_serving import read_policy, resolve_model, write_policy
+            selection = arguments.allow_model is not None or arguments.clear
+            if arguments.confirm and not selection:
+                raise ValueError("--confirm requires --allow-model or --clear.")
+            if not selection:
+                data = read_policy()
+            else:
+                models = sorted(set(resolve_model(item) for item in (arguments.allow_model or [])))
+                data = (write_policy(models) if arguments.confirm else
+                        {"schema_version": 1, "duplicate_model_allowlist": models, "status": "preview"})
+            return _emit_serve_result(ResultEnvelope.ok(operation, data), arguments.json,
+                                      human=json.dumps(data, indent=2))
         if arguments.serve_command == 'budget':
             import math
             from .residency import MemoryRegistry
@@ -1179,6 +1199,10 @@ def _run_serve(arguments):
             else:
                 definition = workflow_sets.load_workflow(arguments.name, arguments.receipts_dir)
                 data = workflow_sets.preview_workflow(definition, receipts_dir=arguments.receipts_dir) if command == "preview" else definition
+            if data.get('error_code') == 'model_already_served':
+                return _emit_serve_result(ResultEnvelope.fail(operation, data['error_code'], data['error'],
+                    'Use the existing compatible endpoint with your authorized key.', data=data['error_data']),
+                    arguments.json)
             return _emit_serve_result(ResultEnvelope.ok(operation, data), arguments.json,
                                       human=json.dumps(data, indent=2))
         if arguments.serve_command == "discover":
@@ -1300,6 +1324,7 @@ def _run_serve(arguments):
             preview_hash=arguments.preview_hash,
             model_present=default_model_present(arguments.hf_cache),
             wired_claims=wired_claims,
+            hf_cache=arguments.hf_cache,
         )
         receipt = outcome["receipt"]
         served_model = receipt["repo"] or receipt.get("path")
@@ -1309,8 +1334,8 @@ def _run_serve(arguments):
                 served_model, receipt["port"], receipt["pid"], receipt["log_path"]
             ),
         )
-    except ServeError as error:
-        result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
+    except (ServeError, ModelServingError) as error:
+        result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation, data=error.data)
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         result = ResultEnvelope.fail(
             operation,
@@ -1325,6 +1350,8 @@ def _run_serve(arguments):
         print("serve failed [{0}]: {1}\nremediation: {2}".format(
             payload["code"], payload["message"], payload["remediation"]
         ))
+        if result.data.get('existing_services'):
+            print(json.dumps(result.data['existing_services'], indent=2))
     return 2
 
 
@@ -1339,9 +1366,6 @@ def _run_serve_launchd(arguments, plan, operation):
     )
     target = launchd_dir / "{0}.plist".format(launchd_label(plan["port"]))
     log_path = str(receipts_root(arguments.receipts_dir) / "{0}.log".format(plan["port"]))
-    content = render_launchd_plist(plan, log_path=log_path)
-    adapter = LaunchdPlistAdapter(target)
-    adapter.validate(content)
     if target.exists():
         result = ResultEnvelope.fail(
             operation,
@@ -1366,7 +1390,8 @@ def _run_serve_launchd(arguments, plan, operation):
             "Download it with the runtime's own pull command first; serve never downloads.",
         )
         return _emit_serve_result(result, arguments.json)
-    if plan["path"] is not None and not Path(plan["path"]).is_dir():
+    if plan["path"] is not None and not (Path(plan["path"]).is_dir()
+                                               or plan["runtime"] == "splash" and Path(plan["path"]).is_file()):
         result = ResultEnvelope.fail(
             operation,
             "model_not_local",
@@ -1374,6 +1399,9 @@ def _run_serve_launchd(arguments, plan, operation):
             "Point --path at an existing local model directory; serve never downloads models.",
         )
         return _emit_serve_result(result, arguments.json)
+    content = render_launchd_plist(plan, log_path=log_path, hf_cache=arguments.hf_cache)
+    adapter = LaunchdPlistAdapter(target)
+    adapter.validate(content)
     transaction = Transaction(receipts_dir=arguments.receipts_dir)
     preview = transaction.preview([{
         "path": str(target), "content": content, "runtime": "launchd",
@@ -1428,6 +1456,8 @@ def _emit_serve_result(result, as_json, human=None):
         print("{0} failed [{1}]: {2}\nremediation: {3}".format(
             result.operation, payload["code"], payload["message"], payload["remediation"]
         ))
+        if result.data.get('existing_services'):
+            print(json.dumps(result.data['existing_services'], indent=2))
     return 0 if result.status == "ok" else 2
 
 
@@ -2941,8 +2971,13 @@ def main(argv=None):
     raw = list(sys.argv[1:] if argv is None else argv)
     if raw[:2] == ["serve", "protected-service"]:
         from .protected_service import main as service_main
+        from .model_serving import ModelServingError
         try:
             return service_main(raw[2:])
+        except ModelServingError as error:
+            print(json.dumps(ResultEnvelope.fail('serve-protected-service', error.code, str(error),
+                                                 error.remediation, data=error.data).to_dict()), file=sys.stderr)
+            return 1
         except (OSError, ValueError, ImportError, RuntimeError):
             print("Protected MLX service unavailable; verify its runtime, private key and local model.", file=sys.stderr)
             return 1

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import signal
 import subprocess
 from dataclasses import dataclass, field
 from typing import Callable, Mapping, Tuple
@@ -53,20 +55,78 @@ def invoke(plan, contract, manifests=None, root=None, timeout=None, runner=subpr
     A printed refusal wins over the exit status; an accepted object counts only when the runner exits 0.
     """
     manifests = load_manifests() if manifests is None else manifests
+    from .model_serving import acquire, ModelServingError, _OwnedClaim
+    try:
+        from .resident_runner import ResidentRunner
+        from functools import partial
+        function = runner.func if isinstance(runner, partial) else runner
+        resident = getattr(function, '__self__', None)
+        owner_claim = getattr(resident, 'model_serving_claim', None) if isinstance(resident, ResidentRunner) else None
+        claim = acquire(plan["model"], kind="execution", owner_claim=owner_claim)
+    except ModelServingError as error:
+        failure = contract.error(error.code, str(error), error.remediation)
+        failure.data = error.data
+        raise failure from error
+    if runner is not subprocess.run and not isinstance(claim, _OwnedClaim):
+        claim.cancel_reserved()
+        raise contract.error('runner_ownership_unknown', 'The inference runner cannot establish process ownership.',
+                             'Use the managed inference runner and retry.')
     try:
         sync_ports(manifests[plan["backend"]], root)
-    except BackendError as error:
-        raise contract.error(error.code, str(error), error.remediation) from error
-    environment = backend_environment()
-    environment.update(contract.environment)
+        environment = backend_environment()
+        environment.update(contract.environment)
+    except BaseException as error:
+        claim.cancel_reserved()
+        if isinstance(error, BackendError):
+            raise contract.error(error.code, str(error), error.remediation) from error
+        raise
     try:
-        completed = runner(plan["argv"], stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                           timeout=timeout, env=environment, check=False)
+        claim.update(state="launching")
+        if runner is subprocess.run:
+            try:
+                process = subprocess.Popen(plan["argv"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                           stderr=subprocess.PIPE, text=True, env=environment, start_new_session=True)
+            except OSError:
+                claim.cancel_failed_spawn()
+                raise
+            from .compute import process_birth_identity
+            birth = None
+            try:
+                birth = process_birth_identity(process.pid)
+                if not birth:
+                    raise ModelServingError('model_serving_state_unknown', 'The model process identity is unavailable.',
+                                            'Inspect its owned processes before retrying.')
+                claim.update(state='active', pid=process.pid, birth=birth, pgid=process.pid, jit=False)
+                stdout, stderr = process.communicate(timeout=timeout)
+            except BaseException as failure:
+                # Until Popen reaps its child, its process-group ID cannot be reused.
+                if process.returncode is None:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                try:
+                    process.communicate(timeout=3)
+                except subprocess.TimeoutExpired:
+                    raise ModelServingError('model_serving_state_unknown', 'The model process group is still stopping.',
+                                            'Inspect its owned processes before retrying.') from failure
+                claim.complete_execution(process.pid, birth)
+                raise
+            claim.complete_execution(process.pid, birth)
+            completed = subprocess.CompletedProcess(plan["argv"], process.returncode, stdout, stderr)
+        else:
+            # The gateway owns this resident runner and its claim.
+            completed = runner(plan["argv"], stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                               timeout=timeout, env=environment, check=False)
     except subprocess.TimeoutExpired as error:
         raise contract.error(
             "{0}_timeout".format(contract.verb), "{0} exceeded {1} s.".format(contract.activity, timeout),
             contract.timeout_remediation,
         ) from error
+    except ModelServingError as error:
+        failure = contract.error(error.code, str(error), error.remediation)
+        failure.data = error.data
+        raise failure from error
     for line in reversed((completed.stdout or "").splitlines()):
         try:
             value = json.loads(line)

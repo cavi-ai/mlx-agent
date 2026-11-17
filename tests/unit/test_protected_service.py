@@ -46,7 +46,8 @@ class ProtectedServiceTests(unittest.TestCase):
                     self.assertEqual(Path(config['state_path']).parent, Path(config['state_path']).parent.resolve())
                     self.assertNotEqual(config['control_token'], key.read_text())
                     return server
-                with patch('mlx_agent.jit_serve.make_server', side_effect=construct):
+                with patch('mlx_agent.jit_serve.make_server', side_effect=construct), \
+                     patch('mlx_agent.model_serving.adopt_gateway', return_value=Mock()):
                     args = ['--model', str(model), '--api-key-file', str(key), '--port', '19001']
                     if failure:
                         with self.assertRaises(RuntimeError):

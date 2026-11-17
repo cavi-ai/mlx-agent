@@ -44,6 +44,8 @@ class PromptLookupRuntimeTests(unittest.TestCase):
 
     @patch("mlx_agent.prompt_lookup_runtime.can_wrap_runtime", return_value=True)
     def test_jit_preserves_worker_binding_receipt_and_status(self, _):
+        from tests.unit.test_serve import _isolate_ownership
+        _isolate_ownership(self)
         with TemporaryDirectory() as folder:
             model = Path(folder) / "model"
             model.mkdir()

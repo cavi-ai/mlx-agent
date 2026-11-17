@@ -39,6 +39,7 @@ python3 scripts/mlx-agent intake fetch --help
 | `convert transcribe/decide/generate/speak/music/describe/video/mesh` | Execute supported local inference tasks. |
 | `task capabilities/start/status/list/result/cancel/verify-model` | Manage durable local classification and media tasks. See [Durable inference tasks](../lifecycle/tasks.md). |
 | `serve start/status/stop` | Launch and inspect receipt-owned local servers. |
+| `serve duplication-policy` | Inspect or set exact model exceptions for duplicate serving. |
 | `serve discover` | Find services across registered receipt locations and installed runtime inventories. |
 | `serve protected-service/private-worker` | Run authenticated supervised services or private workers for an existing service manager. |
 | `serve unload/policy` | Release JIT workers or update an owned gateway's memory policy. |

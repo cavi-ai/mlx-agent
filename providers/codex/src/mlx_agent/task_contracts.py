@@ -138,9 +138,18 @@ def validate_record(value):
         _artifact_reference(value["result"])
     if value["error"] is not None:
         error = value["error"]
-        if (not isinstance(error, dict) or set(error) != {"code", "message", "remediation"}
+        if (not isinstance(error, dict) or not {"code", "message", "remediation"} <= set(error)
+                or set(error) - {"code", "message", "remediation", "data"}
                 or any(not _nonempty_string(error.get(key)) for key in ("code", "message", "remediation"))):
             raise TaskError("invalid_task_record", "Task error evidence is invalid.")
+        if 'data' in error:
+            try:
+                from .model_serving import public_error_data
+                if error['code'] != 'model_already_served':
+                    raise ValueError('Unexpected error data.')
+                public_error_data(error['data'])
+            except (ValueError, TypeError):
+                raise TaskError("invalid_task_record", "Task error evidence is invalid.") from None
     for key in ("supervisor", "execution"):
         process = value[key]
         if process is not None and (not isinstance(process, dict) or set(process) != {"pid", "identity"}

@@ -12,6 +12,7 @@
     "kind": { "const": "serve" },
     "repo": { "type": ["string", "null"], "minLength": 1 },
     "path": { "type": ["string", "null"], "minLength": 1 },
+    "model_artifact": { "type": "string", "pattern": "^/", "minLength": 1 },
     "jit": { "type": "boolean" },
     "api_key_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "protection": {

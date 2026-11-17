@@ -17,7 +17,8 @@ def identity():
     root = Path(__file__).parent
     digest = hashlib.sha256()
     for name in ("cli.py", "identity_pass.py", "protected_service.py", "private_serve.py", "serving_access.py",
-                 "jit_serve.py", "serve.py", "serving_plan.py", "inference_auth.py", "protected_worker.py", "worker_transport.py"):
+                 "jit_serve.py", "serve.py", "serving_plan.py", "inference_auth.py", "protected_worker.py", "worker_transport.py",
+                 "model_serving.py", "model_serving_entry.py"):
         digest.update(name.encode())
         digest.update((root / name).read_bytes())
     return {"protocol": PROTOCOL, "source_sha256": digest.hexdigest()}
@@ -54,7 +55,23 @@ def main(argv=None):
         config = gateway_config(plan, control_token=secrets.token_hex(32),
                                 state_path=str(Path(directory) / "state.json"))
         recheck_bound_identity(plan)
-        server = make_server(config, args.port)
+        from .model_serving import adopt_gateway
+        config['port'] = args.port
+        claim = adopt_gateway(config)
+        server = None
+        try:
+            server = make_server(config, args.port)
+            server.controller._persist()
+        except BaseException as failure:
+            if server is not None:
+                server.server_close()
+            try:
+                claim.cancel_unstarted_gateway()
+            except Exception as cleanup_error:
+                failure.add_note('Model ownership cleanup failed: ' + str(cleanup_error))
+            raise
+        from .model_serving import mark_foreground_ready
+        mark_foreground_ready(claim)
         previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
         try:
             for sig in previous:
@@ -63,6 +80,7 @@ def main(argv=None):
         finally:
             server.controller.close()
             server.server_close()
+            claim.release()
             for sig, handler in previous.items():
                 signal.signal(sig, handler)
     return 0

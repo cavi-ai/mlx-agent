@@ -108,3 +108,130 @@ class PrivateServingTests(unittest.TestCase):
             tcp.listen()
             with self.assertRaises(ValueError):
                 private_server_class(os.dup(tcp.fileno()))
+
+
+class RuntimeHookTests(unittest.TestCase):
+    def test_factory_receives_private_listener_when_run_drops_outer_classes(self):
+        import sys
+        import types
+        from unittest.mock import patch
+        from mlx_agent.private_serve import run_runtime
+
+        seen = []
+        runtime = types.ModuleType('mlx_lm.server')
+        runtime.APIHandler = BaseHTTPRequestHandler
+        def factory(host, port, generator, server_class=None, handler_class=None):
+            self.assertIsNotNone(server_class, 'the actual factory did not receive the private server')
+            self.assertIsNotNone(handler_class, 'the actual factory did not receive the guarded handler')
+            server = server_class((host, port), handler_class)
+            try:
+                seen.append((server.socket.family, handler_class is not runtime.APIHandler,
+                             issubclass(handler_class, runtime.APIHandler)))
+            finally:
+                server.server_close()
+        def run(host, port, provider, server_class=None, handler_class=None):
+            return runtime._run_http_server(host, port, provider)
+        def main():
+            runtime.run('127.0.0.1', 0, object())
+        runtime.run, runtime._run_http_server, runtime.main = run, factory, main
+        package = types.ModuleType('mlx_lm')
+        package.server = runtime
+        with TemporaryDirectory(prefix='mlx-private-hook-', dir='/tmp') as directory:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+                listener.bind(str(Path(directory) / 'sock'))
+                listener.listen()
+                with patch.dict(sys.modules, {'mlx_lm': package, 'mlx_lm.server': runtime}):
+                    run_runtime(directory, os.dup(listener.fileno()), [])
+        self.assertEqual(seen, [(socket.AF_UNIX, True, True)])
+        self.assertIs(runtime.run, run)
+        self.assertIs(runtime._run_http_server, factory)
+
+    def test_incompatible_factory_is_rejected_before_runtime_main(self):
+        import sys
+        import types
+        from unittest.mock import patch
+        from mlx_agent.private_serve import run_runtime
+
+        runtime = types.ModuleType('mlx_lm.server')
+        runtime.APIHandler = BaseHTTPRequestHandler
+        def run(host, port, provider, server_class=None, handler_class=None):
+            raise AssertionError('run must not be reached')
+        def factory(host, port, provider):
+            raise AssertionError('factory must not be reached')
+        def main():
+            raise AssertionError('main must not be reached')
+        runtime.run, runtime._run_http_server, runtime.main = run, factory, main
+        package = types.ModuleType('mlx_lm')
+        package.server = runtime
+        with TemporaryDirectory(prefix='mlx-private-hook-', dir='/tmp') as directory:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+                listener.bind(str(Path(directory) / 'sock'))
+                listener.listen()
+                with patch.dict(sys.modules, {'mlx_lm': package, 'mlx_lm.server': runtime}):
+                    with self.assertRaises(ValueError):
+                        run_runtime(directory, os.dup(listener.fileno()), [])
+        self.assertIs(runtime.run, run)
+        self.assertIs(runtime._run_http_server, factory)
+
+    def test_factory_overrides_positional_classes_and_restores_after_error(self):
+        import sys
+        import types
+        from unittest.mock import patch
+        from mlx_agent.private_serve import run_runtime
+
+        runtime = types.ModuleType('mlx_lm.server')
+        runtime.APIHandler = BaseHTTPRequestHandler
+        seen = []
+        def factory(host, port, provider, server_class=None, handler_class=None):
+            instance = server_class((host, port), handler_class)
+            try:
+                seen.append((instance.socket.family, issubclass(handler_class, runtime.APIHandler)))
+            finally:
+                instance.server_close()
+        def run(host, port, provider):
+            runtime._run_http_server(host, port, provider, object, object)
+        def main():
+            runtime.run('127.0.0.1', 0, object())
+            raise RuntimeError('stop')
+        runtime.run, runtime._run_http_server, runtime.main = run, factory, main
+        package = types.ModuleType('mlx_lm')
+        package.server = runtime
+        with TemporaryDirectory(prefix='mlx-private-hook-', dir='/tmp') as directory:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+                listener.bind(str(Path(directory) / 'sock'))
+                listener.listen()
+                with patch.dict(sys.modules, {'mlx_lm': package, 'mlx_lm.server': runtime}):
+                    with self.assertRaisesRegex(RuntimeError, 'stop'):
+                        run_runtime(directory, os.dup(listener.fileno()), [])
+        self.assertEqual(seen, [(socket.AF_UNIX, True)])
+        self.assertIs(runtime.run, run)
+        self.assertIs(runtime._run_http_server, factory)
+
+    def test_older_runtime_without_factory_retains_run_hook(self):
+        import sys
+        import types
+        from unittest.mock import patch
+        from mlx_agent.private_serve import run_runtime
+
+        runtime = types.ModuleType('mlx_lm.server')
+        runtime.APIHandler = BaseHTTPRequestHandler
+        seen = []
+        def run(host, port, provider, server_class=None, handler_class=None):
+            instance = server_class((host, port), handler_class)
+            try:
+                seen.append((instance.socket.family, issubclass(handler_class, runtime.APIHandler)))
+            finally:
+                instance.server_close()
+        def main():
+            runtime.run('127.0.0.1', 0, object())
+        runtime.run, runtime.main = run, main
+        package = types.ModuleType('mlx_lm')
+        package.server = runtime
+        with TemporaryDirectory(prefix='mlx-private-hook-', dir='/tmp') as directory:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+                listener.bind(str(Path(directory) / 'sock'))
+                listener.listen()
+                with patch.dict(sys.modules, {'mlx_lm': package, 'mlx_lm.server': runtime}):
+                    run_runtime(directory, os.dup(listener.fileno()), [])
+        self.assertEqual(seen, [(socket.AF_UNIX, True)])
+        self.assertIs(runtime.run, run)

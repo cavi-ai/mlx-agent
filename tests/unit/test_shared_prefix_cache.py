@@ -116,3 +116,34 @@ class TransportTests(unittest.TestCase):
             run_runtime(root, os.dup(sock.fileno()), [], 16, 'ok')
     self.assertEqual(calls, [socket.AF_UNIX])
     self.assertIs(server._run_http_server, http)
+
+ def test_prefix_requires_compatible_http_factory_and_restores_install(self):
+    import os
+    import socket
+    import sys
+    import tempfile
+    import types
+    from unittest import mock
+    from mlx_agent.private_serve import run_runtime
+    from mlx_agent.shared_prefix_cache import VERSIONS, UPSTREAM
+    facts = {'versions': VERSIONS, 'sources': UPSTREAM, 'fingerprint': 'ok'}
+    for factory in (None, lambda host, port, provider: None):
+        restored = []
+        server = types.ModuleType('mlx_lm.server')
+        server.APIHandler = type('Handler', (), {})
+        server.run = lambda host, port, provider, server_class=None, handler_class=None: None
+        server.main = lambda: self.fail('unsupported factory reached runtime main')
+        if factory is not None:
+            server._run_http_server = factory
+        package = types.ModuleType('mlx_lm')
+        package.server = server
+        with tempfile.TemporaryDirectory() as root:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+                sock.bind(root + '/sock')
+                sock.listen()
+                with mock.patch.dict(sys.modules, {'mlx_lm': package, 'mlx_lm.server': server}), \
+                     mock.patch('mlx_agent.shared_prefix_cache.identity_here', return_value=facts), \
+                     mock.patch('mlx_agent.shared_prefix_cache.install', return_value=lambda: restored.append(True)):
+                    with self.assertRaises(ValueError):
+                        run_runtime(root, os.dup(sock.fileno()), [], 16, 'ok')
+        self.assertEqual(restored, [True])

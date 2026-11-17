@@ -930,6 +930,22 @@ def _run_coding_bench(arguments):
 def _add_serve_arguments(parser):
     from .serve import MAX_TOKENS_DEFAULT
     actions = parser.add_subparsers(dest="serve_command", required=True)
+    tailnet = actions.add_parser("tailnet", help="share an authenticated managed endpoint over Tailscale")
+    tailnet_actions = tailnet.add_subparsers(dest="tailnet_command", required=True)
+    tailnet_start = tailnet_actions.add_parser("start", help="review and supervise one sharing session")
+    tailnet_start.add_argument("--port", type=int, required=True)
+    tailnet_start.add_argument("--https-port", type=int, default=8443)
+    tailnet_start.add_argument("--receipts-dir")
+    tailnet_start.add_argument("--confirm", action="store_true")
+    tailnet_start.add_argument("--preview-hash")
+    tailnet_start.add_argument("--watch-parent", action="store_true")
+    tailnet_start.add_argument("--share-id")
+    tailnet_start.add_argument("--json", action="store_true")
+    tailnet_status = tailnet_actions.add_parser("status", help="inspect the managed share")
+    tailnet_status.add_argument("--json", action="store_true")
+    tailnet_stop = tailnet_actions.add_parser("stop", help="stop the owned share")
+    tailnet_stop.add_argument("--expected-share-id")
+    tailnet_stop.add_argument("--json", action="store_true")
     service = actions.add_parser("protected-service", help="run an authenticated private-worker gateway in the foreground")
     service.add_argument("--describe", action="store_true")
     service.add_argument("--model")
@@ -1110,7 +1126,66 @@ def _start_memory_policy(arguments, runtime):
     return for_start(arguments, runtime)
 
 
+def _run_tailnet(arguments):
+    import hmac
+    import sys
+    import uuid
+    from . import tailnet
+    operation = "serve-tailnet-{}".format(arguments.tailnet_command)
+    parent = os.getppid()
+    emitted = False
+    try:
+        if arguments.tailnet_command == "status":
+            data = tailnet.status()
+        elif arguments.tailnet_command == "stop":
+            expected = str(uuid.UUID(arguments.expected_share_id)) if arguments.expected_share_id else None
+            data = tailnet.stop(expected)
+        else:
+            if arguments.preview_hash and not arguments.confirm:
+                raise ValueError("--preview-hash requires --confirm.")
+            if arguments.watch_parent and (not arguments.confirm or parent <= 1):
+                raise ValueError("--watch-parent requires a confirmed session with a live parent.")
+            if arguments.share_id and not arguments.confirm:
+                raise ValueError("--share-id requires --confirm.")
+            if arguments.share_id:
+                uuid.UUID(arguments.share_id)
+            data, binding, binary = tailnet.preview(arguments.port, arguments.https_port, arguments.receipts_dir)
+            if arguments.confirm:
+                if not arguments.preview_hash or not hmac.compare_digest(arguments.preview_hash, data["preview_hash"]):
+                    raise tailnet.TailnetError("tailnet_preview_changed", "The reviewed sharing preview changed.", "Preview sharing again.")
+            elif arguments.json:
+                if arguments.preview_hash:
+                    raise ValueError("--preview-hash requires --confirm.")
+                return _emit_serve_result(ResultEnvelope.ok(operation, data), True)
+            else:
+                if not sys.stdin.isatty():
+                    raise ValueError("Interactive sharing requires a terminal.")
+                print(json.dumps(data, indent=2))
+                if input("Share this endpoint with the tailnet? [y/N] ").strip().lower() not in ("y", "yes"):
+                    return 0
+            def ready(value):
+                nonlocal emitted
+                emitted = True
+                if arguments.json:
+                    print(json.dumps(ResultEnvelope.ok(operation, value).to_dict()), flush=True)
+                else:
+                    print(json.dumps(value, indent=2), flush=True)
+            tailnet.run_session(data, binding, binary, ready, arguments.watch_parent, arguments.share_id, parent)
+            return 0
+        return _emit_serve_result(ResultEnvelope.ok(operation, data), arguments.json)
+    except tailnet.TailnetError as error:
+        result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
+    except (OSError, ValueError, TypeError) as error:
+        result = ResultEnvelope.fail(operation, "tailnet_unavailable", str(error), "Check sharing settings and retry.")
+    if emitted:
+        print("Sharing stopped: {}".format(result.error.message), file=sys.stderr, flush=True)
+        return 2
+    return _emit_serve_result(result, arguments.json)
+
+
 def _run_serve(arguments):
+    if arguments.serve_command == "tailnet":
+        return _run_tailnet(arguments)
     from .serve import (
         ServeError, configure_serve_memory, reclaim_serve_cache, default_model_present, load_recipes, plan_start, resolve_serve_runtime,
         start_serve, status_serve, stop_serve, unload_serve, wired_port_claim,

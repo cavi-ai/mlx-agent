@@ -258,51 +258,73 @@ def run_runtime(model, descriptor, forwarded, shared_prefix_mib=None, shared_pre
     if shared_prefix_mib is not None:
         from mlx_agent.shared_prefix_cache import install
         restore = install(server, shared_prefix_mib * (1 << 20))
-    original_run = server.run
-    original_http = getattr(server, "_run_http_server", None)
-    if shared_prefix_mib is not None and original_http is None:
-        raise ValueError("Unsupported private HTTP runtime.")
-    parameters = inspect.signature(original_run).parameters
-    if "server_class" not in parameters or "handler_class" not in parameters:
-        raise ValueError("This MLX-LM version cannot serve an inherited private listener.")
-    local = Path(model).expanduser()
-    if not local.is_dir():
-        from huggingface_hub import try_to_load_from_cache
-        cached = try_to_load_from_cache(model, "config.json")
-        if not isinstance(cached, str):
-            raise ValueError("Prepare the model in the local cache before managed serving.")
-        local = Path(cached).parent
-    local = local.resolve()
-    maximum = 8192
-    if "--max-tokens" in forwarded:
-        maximum = int(forwarded[forwarded.index("--max-tokens") + 1])
-        if not 1 <= maximum <= 65536:
-            raise ValueError("Invalid private worker token limit.")
-    handler = guarded_handler(server.APIHandler, str(local), maximum, aliases=(model,))
-
-    def private_run(*args, **kwargs):
-        if len(args) > 3:
-            raise ValueError("Unsupported MLX-LM server initialization.")
-        return original_run(*args, **dict(kwargs, server_class=server_class, handler_class=handler))
-
-    def private_http(host, port, response_generator, *args, **kwargs):
-        return original_http(host, port, response_generator, server_class=server_class, handler_class=handler)
-
-    previous = sys.argv
-    server.run = private_run
-    if shared_prefix_mib is not None:
-        server._run_http_server = private_http
     try:
-        # Locked arguments come last: forwarded serving options cannot select a
-        # different model, host, or public listener.
-        sys.argv = [previous[0]] + forwarded + ["--model", str(local), "--host", "127.0.0.1", "--port", "0", "--log-level", "ERROR"]
-        server.main()
+        original_run = server.run
+        absent = object()
+        original_factory = getattr(server, "_run_http_server", absent)
+        if original_factory is not absent:
+            try:
+                factory_signature = inspect.signature(original_factory)
+                parameters = factory_signature.parameters
+                if any(name not in parameters or parameters[name].kind in (inspect.Parameter.VAR_POSITIONAL,
+                                                                           inspect.Parameter.VAR_KEYWORD)
+                       for name in ("server_class", "handler_class")):
+                    raise ValueError()
+                probe = factory_signature.bind_partial(None, None, None)
+                if "server_class" in probe.arguments or "handler_class" in probe.arguments:
+                    raise ValueError()
+                probe.arguments.update(server_class=object(), handler_class=object())
+                factory_signature.bind(*probe.args, **probe.kwargs)
+            except (TypeError, ValueError):
+                raise ValueError("This MLX-LM version cannot serve an inherited private listener.") from None
+        else:
+            if shared_prefix_mib is not None:
+                raise ValueError("Unsupported private HTTP runtime.")
+            parameters = inspect.signature(original_run).parameters
+            if "server_class" not in parameters or "handler_class" not in parameters:
+                raise ValueError("This MLX-LM version cannot serve an inherited private listener.")
+        local = Path(model).expanduser()
+        if not local.is_dir():
+            from huggingface_hub import try_to_load_from_cache
+            cached = try_to_load_from_cache(model, "config.json")
+            if not isinstance(cached, str):
+                raise ValueError("Prepare the model in the local cache before managed serving.")
+            local = Path(cached).parent
+        local = local.resolve()
+        maximum = 8192
+        if "--max-tokens" in forwarded:
+            maximum = int(forwarded[forwarded.index("--max-tokens") + 1])
+            if not 1 <= maximum <= 65536:
+                raise ValueError("Invalid private worker token limit.")
+        handler = guarded_handler(server.APIHandler, str(local), maximum, aliases=(model,))
+
+        def private_run(*args, **kwargs):
+            if len(args) > 3:
+                raise ValueError("Unsupported MLX-LM server initialization.")
+            return original_run(*args, **dict(kwargs, server_class=server_class, handler_class=handler))
+
+        def private_factory(*args, **kwargs):
+            bound = factory_signature.bind(*args, **kwargs)
+            bound.arguments.update(server_class=server_class, handler_class=handler)
+            return original_factory(*bound.args, **bound.kwargs)
+
+        previous = sys.argv
+        if original_factory is not absent:
+            server._run_http_server = private_factory
+        else:
+            server.run = private_run
+        try:
+            # Locked arguments come last: forwarded serving options cannot select a
+            # different model, host, or public listener.
+            sys.argv = [previous[0]] + forwarded + ["--model", str(local), "--host", "127.0.0.1", "--port", "0", "--log-level", "ERROR"]
+            server.main()
+        finally:
+            server.run = original_run
+            if original_factory is not absent:
+                server._run_http_server = original_factory
+            sys.argv = previous
     finally:
-        server.run = original_run
-        if shared_prefix_mib is not None:
-            server._run_http_server = original_http
         restore()
-        sys.argv = previous
 
 
 def main(argv=None):

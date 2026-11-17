@@ -15,7 +15,7 @@ from mlx_agent.jit_serve import model_fingerprint, validate_memory_policy
 from .backend_fixtures import synthetic_manifests, synthetic_registries
 
 
-def _claim_test_gateway(test):
+def _claim_test_gateway(test, server=None):
     import os
     from mlx_agent.compute import process_birth_identity
     from mlx_agent.model_serving import acquire, state_root
@@ -25,11 +25,12 @@ def _claim_test_gateway(test):
     discovery = patch('mlx_agent.service_registry.discover_services', return_value={'services': [], 'errors': []})
     discovery.start()
     test.addCleanup(discovery.stop)
-    service = {'port': test.server.server_port, 'runtime': 'tasks', 'auth_required': False}
+    server = test.server if server is None else server
+    service = {'port': server.server_port, 'runtime': 'tasks', 'auth_required': False}
     claim = acquire(str(test.model), kind='service', service=service, root=state_root())
     claim.update(state='active', pid=os.getpid(), birth=process_birth_identity(os.getpid()),
                  pgid=os.getpgrp(), jit=False, ready=True)
-    test.server.controller.resident.model_serving_claim = claim
+    server.controller.resident.model_serving_claim = claim
 
 
 class TaskServingTests(unittest.TestCase):
@@ -371,12 +372,15 @@ def predict(model, tokenizer, state, questions):
         mlx.mkdir()
         (mlx / '__init__.py').write_text('')
         (mlx / 'core.py').write_text('def set_memory_limit(limit): pass\n')
+        from mlx_agent.model_serving import write_policy
+        write_policy([str(self.model)])
         config = dict(controller.config, task_state_dir=str(self.root / 'second-tasks'), port=0)
         second = TaskServer(('127.0.0.1', 0), config)
-        second.controller.resident.environment = dict(controller.resident.environment)
-        second.controller.memory_probe = controller.memory_probe
         self.addCleanup(second.server_close)
         self.addCleanup(second.controller.close)
+        _claim_test_gateway(self, second)
+        second.controller.resident.environment = dict(controller.resident.environment)
+        second.controller.memory_probe = controller.memory_probe
         first_id = self.start('wait')
         second_record = second.controller.submit({'kind': 'classification', 'parameters': {
             'state': 'wait', 'questions': {'route': {'type': 'choice', 'instructions': 'Choose one.'}}}})

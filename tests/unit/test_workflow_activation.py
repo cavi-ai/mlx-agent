@@ -196,6 +196,24 @@ class WorkflowActivationTests(unittest.TestCase):
         self.assertIn('identity changed', stopped['members']['coding']['error'])
         self.assertTrue(activation._pid_alive(pid))
 
+    def test_duplicate_member_reports_existing_endpoint_without_launching_second(self):
+        import json
+        second_port = free_port()
+        while second_port == self.port:
+            second_port = free_port()
+        self.definition['members']['z_media'] = dict(self.definition['members']['coding'], port=second_port)
+        workflow_sets._path('studio', self.root).write_text(json.dumps(self.definition))
+        preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        result = activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.root)
+        self.assertEqual(result['state'], 'partial')
+        self.assertEqual(result['members']['z_media']['state'], 'launch_failed')
+        self.assertEqual(result['error_code'], 'model_already_served')
+        self.assertTrue(any(item['origin'] == 'http://127.0.0.1:' + str(self.port)
+                            for item in result['error_data']['existing_services']))
+        self.assertFalse((self.root / '.mlx-agent-receipts/serve' / (str(second_port) + '.json')).exists())
+        self.assertTrue(activation._pid_alive(result['members']['coding']['pid']))
+        self.assertEqual(activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
+
     def test_racing_port_after_first_launch_retains_owned_endpoint(self):
         import json
         from mlx_agent import serve
@@ -203,6 +221,8 @@ class WorkflowActivationTests(unittest.TestCase):
         while second_port == self.port:
             second_port = free_port()
         self.definition['members']['z_media'] = dict(self.definition['members']['coding'], port=second_port)
+        from mlx_agent.model_serving import write_policy
+        write_policy([self.definition['members']['coding']['path']])
         path = workflow_sets._path('studio', self.root)
         path.write_text(json.dumps(self.definition))
         preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)

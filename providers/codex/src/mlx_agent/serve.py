@@ -599,7 +599,7 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
 
     from .model_serving import acquire, resolve_model, ModelServingError
     try:
-        selector = plan.get("local_path") or plan.get("path") or plan.get("repo")
+        selector = plan.get("local_path") or plan.get("splash_model_dir") or plan.get("path") or plan.get("repo")
         model = resolve_model(selector, hf_cache)
         service = {"port": plan["port"], "runtime": plan["runtime"],
                    "auth_required": bool(plan.get("api_key_sha256") or plan.get("access_key_file"))}
@@ -1113,7 +1113,7 @@ def render_launchd_plist(plan, log_path=None, hf_cache=None):
     log = log_path or str(receipts_root() / "{0}.log".format(plan["port"]))
     from .model_serving import resolve_model
     try:
-        artifact = resolve_model(plan.get("local_path") or plan.get("path") or plan.get("repo"), hf_cache)
+        artifact = resolve_model(plan.get("local_path") or plan.get("splash_model_dir") or plan.get("path") or plan.get("repo"), hf_cache)
     except (OSError, ValueError, RuntimeError, TypeError):
         raise ServeError("model_serving_state_unknown", "The local model identity is unavailable.",
                          "Select existing local model files and review the launch again.") from None

@@ -176,7 +176,24 @@ class SplashServeTests(unittest.TestCase):
             "Qwen3.8-27B-4bit": {"family": "Qwen3.8-27B"},
         })
 
+    def test_cached_splash_start_uses_reviewed_snapshot_identity(self):
+        repo = 'mlx-community/Qwen3.8-27B-4bit'
+        hf = self.root / 'custom-hf'
+        entry = hf / 'models--mlx-community--Qwen3.8-27B-4bit'
+        snapshot = entry / 'snapshots/abc123'; snapshot.mkdir(parents=True)
+        (entry / 'refs').mkdir(); (entry / 'refs/main').write_text('abc123')
+        (snapshot / 'config.json').write_text(json.dumps({'model_type': 'qwen3_5', 'quantization': {'bits': 4, 'group_size': 64}}))
+        (snapshot / 'model.safetensors').write_bytes(b'weights')
+        plan = plan_start(repo, 'splash', load_recipes(), hf_cache=str(hf), receipts_dir=self.receipts)
+        with patch('mlx_agent.model_serving.state_root', return_value=self.root / 'state'), \
+             patch('mlx_agent.service_registry.discover_services', return_value={'services': [], 'errors': []}), \
+             patch('mlx_agent.compute.process_birth_identity', return_value='fixture-birth'):
+            receipt = self.start(plan)['receipt']
+        self.assertEqual(receipt['model_artifact'], str(snapshot.resolve()))
+
     def test_cached_mlx_repository_is_served_under_its_repository_id(self):
+        from tests.unit.test_serve import _isolate_ownership
+        _isolate_ownership(self)
         repo, hf = "mlx-community/Qwen3.8-27B-4bit", str(self.root / "hf")
         self.assertEqual(self.code(lambda: plan_start(repo, "splash", load_recipes(), hf_cache=hf)), "model_not_local")
         entry = self.root / "hf/models--mlx-community--Qwen3.8-27B-4bit"
@@ -248,6 +265,8 @@ class SplashServeTests(unittest.TestCase):
         spawn.assert_not_called()
 
     def test_receipt_owns_the_server_the_launcher_execs(self):
+        from tests.unit.test_serve import _isolate_ownership
+        _isolate_ownership(self)
         profile = self.strata_profile()
         plan = self.plan(profile)
         receipt = self.start(plan)["receipt"]
@@ -271,6 +290,8 @@ class SplashServeTests(unittest.TestCase):
         self.assertEqual(signals, [])
 
     def test_load_on_request_serves_splash_behind_the_endpoint_key(self):
+        from tests.unit.test_serve import _isolate_ownership
+        _isolate_ownership(self)
         import hashlib
         import http.client
         import sys
@@ -333,6 +354,8 @@ class SplashServeTests(unittest.TestCase):
                              (served, str(os.getpid()), str(profile / "Q2_0" / SHARD.format(1))))
 
     def test_stop_waits_for_the_engine_grace_period_before_killing(self):
+        from tests.unit.test_serve import _isolate_ownership
+        _isolate_ownership(self)
         plan = self.plan(write_gguf(self.root / "model.gguf"))
         self.start(plan)
         now, signals = [0.0], []

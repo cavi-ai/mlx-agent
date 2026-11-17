@@ -150,7 +150,8 @@ def start_workflow(name, preview_hash, *, receipts_dir=None):
                     raise ValueError('Service start identity is unavailable: ' + role)
             result['state'] = 'active'
         except (OSError, ValueError, TypeError, KeyError, RuntimeError) as error:
-            if getattr(error, 'code', None) == 'port_in_use' and result['members'].get(role, {}).get('state') == 'launching':
+            if (getattr(error, 'code', None) in ('port_in_use', 'model_already_served', 'model_load_in_progress')
+                    and result['members'].get(role, {}).get('state') == 'launching'):
                 result['members'][role]['state'] = 'launch_failed'
                 result['members'][role]['error'] = str(error)
             for item in result['members'].values():

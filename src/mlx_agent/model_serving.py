@@ -348,7 +348,8 @@ def _legacy_matches(model, services):
                 raise _unknown() from None
             continue
         try:
-            selector = _jit_config(receipt, root)['local_path'] if receipt.get('jit') else receipt.get('path') or receipt.get('repo')
+            selector = (_jit_config(receipt, root)['local_path'] if receipt.get('jit') else
+                        receipt.get('model_artifact') or receipt.get('splash_model_dir') or receipt.get('path') or receipt.get('repo'))
             if resolve_model(selector) != model:
                 continue
         except (OSError, ValueError, TypeError, KeyError, RuntimeError, subprocess.SubprocessError):

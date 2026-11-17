@@ -492,3 +492,18 @@ class ModelServingTests(unittest.TestCase):
             self.assertEqual(model_serving._legacy_matches(str(other), [entry]), [])
             with self.assertRaises(model_serving.ModelServingError):
                 model_serving._legacy_matches(str(first), [entry])
+
+    def test_legacy_splash_receipt_uses_its_bound_model_directory(self):
+        import json
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve(); model = root / 'cache' / 'snapshot'; model.mkdir(parents=True)
+            receipt_root = root / '.mlx-agent-receipts' / 'serve'; receipt_root.mkdir(parents=True)
+            receipt_path = receipt_root / '8018.json'
+            receipt_path.write_text(json.dumps({'kind': 'serve', 'pid': 97123, 'argv': ['splash'],
+                'port': 8018, 'runtime': 'splash', 'repo': 'pub/unavailable', 'path': None,
+                'splash_model_dir': str(model), 'process_started_at': 'birth'}))
+            entry = {'receipt': str(receipt_path), 'receipts_dir': str(root), 'alive': True,
+                     'argv_match': True, 'process_started_at': 'birth', 'port': 8018, 'runtime': 'splash',
+                     'service_id': 'a' * 64, 'api_key_sha256': None}
+            result = model_serving._legacy_matches(str(model), [entry])
+            self.assertEqual(result[0]['origin'], 'http://127.0.0.1:8018')

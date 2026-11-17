@@ -77,7 +77,7 @@ def _trellis_component_budget(model_path, kind, plan, telemetry, *, warm):
 TASKS = {'speech_to_text': ['transcribe'], 'text_to_speech': ['speak'], 'embedding': ['embedding'],
          'classification': ['classification'], 'music_generation': ['music_generation'],
          'image_generation': ['image_generation'], 'video_generation': ['video_generation'],
-         'mesh_generation': ['mesh_generation']}
+         'mesh_generation': ['mesh_generation'], 'image_segmentation': ['image_segmentation']}
 
 
 def resolve_model(path, manifests=None, registries=None, root=None, capture=True):

@@ -129,6 +129,18 @@ sys.stdin.readline()
 
 
 class TelemetryTests(unittest.TestCase):
+    def test_torch_allocation_does_not_report_mlx_counters(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from mlx_agent.worker_telemetry import capture
+        torch = SimpleNamespace(mps=SimpleNamespace(current_allocated_memory=lambda: 123))
+        core = SimpleNamespace(get_active_memory=lambda: 999, get_cache_memory=lambda: 888,
+                               get_peak_memory=lambda: 777)
+        with patch.dict(sys.modules, {'torch': torch, 'mlx.core': core}):
+            value = capture({'loads': 0, 'cache_hits': 0, 'load_seconds': 0.0}, 'torch')
+        self.assertEqual((value['active_bytes'], value['cache_bytes'], value['peak_bytes']), (123, None, None))
+
     def test_unavailable_allocator_methods_remain_unknown(self):
         from unittest.mock import patch,Mock
         from types import SimpleNamespace

@@ -17,8 +17,24 @@ from mlx_agent import runner_model_cache, worker_telemetry
 from mlx_agent.allocator_cache import AllocatorCache, CacheUnavailable
 
 RUNNERS = frozenset(("decide_runner", "music_runner", "transcribe_runner", "speak_runner",
-                     "generate_runner", "describe_runner", "video_runner", "mesh_runner", "embed_runner"))
+                     "generate_runner", "describe_runner", "video_runner", "mesh_runner", "embed_runner", "segment_runner"))
 MAX_MESSAGE = 16 * 1024 * 1024
+
+
+def apply_memory_limit(runner, limit):
+    if type(limit) is not int or not 0 < limit <= 2**60:
+        raise ValueError('Invalid worker memory limit.')
+    if runner == 'segment_runner':
+        torch = importlib.import_module('torch')
+        if not torch.backends.mps.is_available():
+            raise ValueError('The MPS device is unavailable.')
+        recommended = torch.mps.recommended_max_memory()
+        fraction = limit / recommended
+        if not 0 < fraction <= 2:
+            raise ValueError('Worker memory limit is outside the supported MPS range.')
+        torch.mps.set_per_process_memory_fraction(fraction)
+    else:
+        importlib.import_module('mlx.core').set_memory_limit(limit)
 
 
 class BoundedText(io.StringIO):
@@ -45,6 +61,7 @@ def main():
     runner_model_cache._enabled = True
     cache = AllocatorCache()
     runner_model_cache._allocator_cache = cache
+    framework = 'mlx'
     with os.fdopen(args.response_fd, "wb", buffering=0) as response:
         response.write(json.dumps({"ready": os.getpid()}).encode() + b"\n")
         while True:
@@ -73,11 +90,9 @@ def main():
                             or request['runner'] not in RUNNERS):
                         raise ValueError("Unknown inference runner.")
                     limit = request.get('memory_limit_bytes')
+                    framework = 'torch' if request['runner'] == 'segment_runner' else 'mlx'
                     if limit is not None:
-                        if type(limit) is not int or not 0 < limit <= 2**60:
-                            raise ValueError('Invalid worker memory limit.')
-                        core = importlib.import_module('mlx.core')
-                        core.set_memory_limit(limit)
+                        apply_memory_limit(request['runner'], limit)
                     cache.configure(request.get('cache_policy', {}))
                     with redirect_stdout(output), redirect_stderr(errors):
                         module = importlib.import_module("mlx_agent." + request["runner"])
@@ -94,7 +109,7 @@ def main():
                 errors.write(str(error)[-2000:])
             message = json.dumps({"returncode": code, "stdout": output.getvalue(), "stderr": errors.getvalue(),
                                   "loaded": runner_model_cache.loaded(),
-                                  "memory": worker_telemetry.capture(runner_model_cache.statistics()), "cache": cache.snapshot()}, allow_nan=False).encode() + b"\n"
+                                  "memory": worker_telemetry.capture(runner_model_cache.statistics(), framework), "cache": cache.snapshot()}, allow_nan=False).encode() + b"\n"
             if len(message) > MAX_MESSAGE:
                 return 2
             response.write(message)

@@ -239,3 +239,21 @@ class NamedInputTests(unittest.TestCase):
                 self.assertEqual(Path(store.verify_named_inputs(record['id'], request, record['input_artifacts'])['audio']).read_bytes(), b'audio')
                 with self.assertRaises(TaskError):
                     store.stage_input(str(audio), 'audio')
+
+    def test_served_video_paths_are_absolute_without_resolving_links(self):
+        from argparse import Namespace
+        from mlx_agent.served import request
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as temporary:
+            root = Path(temporary)
+            target = root / 'source.png'
+            target.write_bytes(b'image')
+            link = root / 'link.png'
+            link.symlink_to(target)
+            relative = str(link.relative_to(Path.cwd()))
+            values = dict(prompt='test', width=64, height=64, frames=9, steps=1, seed=42, fps=24,
+                          denoiser_cache='off', cache_memory_mib=256, image=relative, audio='audio.m4a', audio_start=None)
+            kind, parameters = request('video', Namespace(**values))
+            self.assertEqual(kind, 'video_generation')
+            self.assertEqual(parameters['image'], str(link))
+            self.assertTrue(Path(parameters['image']).is_symlink())
+            self.assertEqual(parameters['audio'], str(Path('audio.m4a').absolute()))

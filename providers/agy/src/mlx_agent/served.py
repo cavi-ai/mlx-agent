@@ -56,6 +56,10 @@ def request(verb, arguments):
     else:
         kind, names = VERBS[verb]
         parameters = {name: getattr(arguments, name) for name in names}
+        if verb == "video":
+            for name in ("image", "audio"):
+                if parameters[name] is not None:
+                    parameters[name] = str(Path(parameters[name]).expanduser().absolute())
     return kind, {name: value for name, value in parameters.items() if value is not None}
 
 

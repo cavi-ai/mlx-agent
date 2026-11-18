@@ -958,7 +958,7 @@ def _add_serve_arguments(parser):
     start.add_argument("--runtime", required=True, choices=["auto", "mlx_lm", "mlx-vlm", "strata", "splash", "tasks"])
     start.add_argument("--splash-draft-model", help="local DFlash2 draft directory (default: the family's draft in the Hugging Face cache)")
     start.add_argument("--splash-max-memory-gb", type=float, help="Splash Metal memory ceiling in decimal GB (1–1024); it can only lower Splash's own plan")
-    start.add_argument("--splash-max-context", type=int, help="Splash context limit in tokens (512–1010000)")
+    start.add_argument("--splash-max-context", dest="splash_max_context_tokens", type=int, help="Splash context limit in tokens (512–1010000)")
     decoding = start.add_mutually_exclusive_group()
     decoding.add_argument("--strata-speculation", choices=["on", "off"], help="legacy Strata draft-and-verify switch (default: off)")
     decoding.add_argument("--strata-decoding", choices=["plain", "lookup", "mtp"], help="Strata verified decoding mode; lookup needs no draft weights")
@@ -1044,6 +1044,8 @@ def _add_serve_arguments(parser):
             action.add_argument("--min-headroom-gb", type=float, required=True)
             action.add_argument("--strata-context-tokens", type=int, default=None)
             action.add_argument("--strata-decoding", choices=["plain", "lookup", "mtp"], default=None)
+            action.add_argument("--splash-max-memory-gb", type=float, default=None)
+            action.add_argument("--splash-max-context", dest="splash_max_context_tokens", type=int, default=None)
             action.add_argument("--idle-timeout", type=int, default=300)
             action.add_argument("--keep-loaded", action="store_true")
             action.add_argument("--unload-under-pressure", action=argparse.BooleanOptionalAction, default=True)
@@ -1151,6 +1153,7 @@ def _run_serve(arguments):
             command = arguments.profile_command
             if command == "save":
                 keys = ("memory_budget_gb", "min_headroom_gb", "strata_context_tokens", "strata_decoding",
+                        "splash_max_memory_gb", "splash_max_context_tokens",
                         "idle_timeout", "keep_loaded", "unload_under_pressure")
                 settings = {key: getattr(arguments, key) for key in keys if getattr(arguments, key) is not None}
                 strata = any(key in settings for key in ("strata_context_tokens", "strata_decoding"))
@@ -1264,6 +1267,9 @@ def _run_serve(arguments):
         if arguments.profile and any(key in settings for key in ("strata_context_tokens", "strata_decoding")) and runtime != "strata":
             raise ServeError("invalid_arguments", "Profiles with Strata settings require the Strata runtime.",
                              "Select a prepared Strata model or a profile containing only common settings.")
+        if arguments.profile and any(key in settings for key in ("splash_max_memory_gb", "splash_max_context_tokens")) and runtime != "splash":
+            raise ServeError("invalid_arguments", "Profiles with Splash settings require the Splash runtime.",
+                             "Select the Splash runtime or a profile containing only common settings.")
         if arguments.strata_speculation is not None and runtime != "strata":
             raise ServeError("invalid_arguments", "--strata-speculation requires the Strata runtime.", "Select a prepared local Strata profile.")
         plan = plan_start(
@@ -1296,7 +1302,7 @@ def _run_serve(arguments):
             vision_cache=arguments.vision_cache,
             splash_draft_model=arguments.splash_draft_model,
             splash_max_memory_gb=arguments.splash_max_memory_gb,
-            splash_max_context_tokens=arguments.splash_max_context,
+            splash_max_context_tokens=arguments.splash_max_context_tokens,
         )
         if arguments.launchd:
             if plan.get("jit"):

@@ -141,6 +141,8 @@ def _member_plan(member, root):
     runtime, executable = resolve_serve_runtime(repo, path, member['runtime'], recipes)
     if runtime != 'strata' and ('strata_context_tokens' in profile or 'strata_decoding' in profile):
         raise ValueError('Strata profile requires a Strata runtime.')
+    if runtime != 'splash' and ('splash_max_memory_gb' in profile or 'splash_max_context_tokens' in profile):
+        raise ValueError('Splash profile requires a Splash runtime.')
     policy = validate_policy(policy_from_profile(profile))
     if runtime != 'tasks':
         enforce_launch(policy, runtime, True)
@@ -148,7 +150,9 @@ def _member_plan(member, root):
                       receipts_dir=root, runtime_executable=executable, memory_policy=policy,
                       api_key_file=member.get('api_key_file'),
                       strata_context_tokens=profile.get('strata_context_tokens'),
-                      strata_decoding=profile.get('strata_decoding'))
+                      strata_decoding=profile.get('strata_decoding'),
+                      splash_max_memory_gb=profile.get('splash_max_memory_gb'),
+                      splash_max_context_tokens=profile.get('splash_max_context_tokens'))
 
 
 def _hash(value):

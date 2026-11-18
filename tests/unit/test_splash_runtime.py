@@ -127,6 +127,82 @@ class SplashServeTests(unittest.TestCase):
         other = self.plan(profile, splash_max_memory_gb=48, splash_max_context_tokens=32768, thinking="off")
         self.assertNotEqual(plan["preview_hash"], other["preview_hash"])
 
+    def test_saved_profile_flows_through_direct_and_workflow_plans(self):
+        import sys
+        from mlx_agent import workflow_sets
+        from mlx_agent.serve_profiles import save_profile
+        model = self.strata_profile()
+        libexec = Path(self.launcher).resolve().parents[1] / 'libexec'
+        python, launcher = libexec / 'python/bin/python3', libexec / 'install/launcher.py'
+        python.parent.mkdir(parents=True)
+        python.symlink_to(sys.executable)
+        launcher.parent.mkdir(parents=True)
+        launcher.write_text(SPLASH_LAUNCHER)
+        settings = {'min_headroom_gb': 8, 'idle_timeout': 0, 'keep_loaded': False,
+                    'unload_under_pressure': False, 'splash_max_memory_gb': 54,
+                    'splash_max_context_tokens': 32768}
+        save_profile('splash', settings, self.receipts)
+
+        def direct(*extra):
+            output = io.StringIO()
+            with redirect_stdout(output):
+                code = cli.main(['serve', 'start', '--path', str(model), '--runtime', 'splash', '--jit',
+                                 '--profile', 'splash', '--receipts-dir', self.receipts, '--json', *extra])
+            self.assertEqual(code, 2, output.getvalue())
+            return json.loads(output.getvalue())['data']['plan']
+
+        plan = direct()
+        self.assertEqual((plan['splash_max_memory_gb'], plan['splash_max_context_tokens']), (54, 32768))
+        changed = direct('--splash-max-memory-gb', '48', '--splash-max-context', '16384')
+        self.assertEqual((changed['splash_max_memory_gb'], changed['splash_max_context_tokens']), (48, 16384))
+        self.assertNotEqual(plan['preview_hash'], changed['preview_hash'])
+        self.assertEqual(direct('--splash-max-context', '8192')['splash_max_memory_gb'], 54)
+        self.assertEqual(direct('--splash-max-memory-gb', '32')['splash_max_context_tokens'], 32768)
+        for extra in (['--memory-budget-gb', '24'], ['--strata-context-tokens', '16384']):
+            output = io.StringIO()
+            with self.subTest(extra=extra), redirect_stdout(output):
+                code = cli.main(['serve', 'start', '--path', str(model), '--runtime', 'splash', '--jit',
+                                 '--profile', 'splash', '--receipts-dir', self.receipts, '--json', *extra])
+            self.assertEqual(code, 2)
+            self.assertEqual(json.loads(output.getvalue())['error']['code'], 'invalid_arguments')
+        member = {'path': str(model), 'runtime': 'splash', 'port': 8086, 'profile': 'splash'}
+        workflow = workflow_sets._member_plan(member, self.receipts)
+        self.assertEqual((workflow['splash_max_memory_gb'], workflow['splash_max_context_tokens']), (54, 32768))
+        self.assertIn('--max-memory', workflow['worker_argv'])
+        self.assertIn('54000000000', workflow['worker_argv'])
+        self.assertIn('32768', workflow['worker_argv'])
+        with patch('mlx_agent.workflow_sets.resolve_serve_runtime', return_value=('mlx_lm', sys.executable)):
+            with self.assertRaisesRegex(ValueError, 'Splash profile requires'):
+                workflow_sets._member_plan(dict(member, runtime='mlx_lm'), self.receipts)
+        output = io.StringIO()
+        with patch('mlx_agent.serve.resolve_serve_runtime', return_value=('mlx_lm', sys.executable)), redirect_stdout(output):
+            code = cli.main(['serve', 'start', '--path', str(model), '--runtime', 'mlx_lm', '--jit',
+                             '--profile', 'splash', '--receipts-dir', self.receipts, '--json'])
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(output.getvalue())['error']['code'], 'invalid_arguments')
+
+        from mlx_agent import workflow_activation
+        definition = {'schema': 'serving-workflow/1', 'name': 'studio', 'members': {'coding': member}}
+        workflow_sets.save_workflow('studio', definition, self.receipts)
+        claim = Mock(key='a' * 64, generation='b' * 64)
+        def launch(reviewed, **kwargs):
+            self.assertEqual((reviewed['splash_max_memory_gb'], reviewed['splash_max_context_tokens']), (54, 32768))
+            return {'receipt': {'runtime': 'splash', 'port': reviewed['port'], 'pid': 123,
+                                'process_started_at': 'start', 'task_kinds': []}}
+        with patch.dict(os.environ, {'XDG_STATE_HOME': str(self.root / 'state')}), \
+             patch('mlx_agent.workflow_sets._existing_claim_candidate', return_value=None), \
+             patch('mlx_agent.workflow_sets.MemoryRegistry.inspect', return_value={'state': 'uninitialized', 'entries': {}, 'errors': [], 'agent_budget': None}), \
+             patch('mlx_agent.workflow_sets.available_memory_bytes', return_value=100_000_000_000), \
+             patch('mlx_agent.workflow_activation._default_port_free', return_value=True), \
+             patch('mlx_agent.workflow_activation.start_serve', side_effect=launch) as start, \
+             patch('mlx_agent.workflow_activation._member_claim', return_value=claim), \
+             patch('mlx_agent.workflow_activation._config_identity', return_value='identity'):
+            preview = workflow_sets.preview_workflow(definition, receipts_dir=self.receipts)
+            self.assertEqual(preview['members']['coding']['action'], 'start')
+            result = workflow_activation.start_workflow('studio', preview['preview_hash'], receipts_dir=self.receipts)
+        self.assertEqual(result['state'], 'active', result)
+        self.assertEqual(start.call_count, 1)
+
     def test_split_gguf_requires_every_part_and_names_the_model(self):
         first = write_gguf(self.root / "gguf" / SHARD.format(1), architecture="qwen4exp")
         self.assertEqual(self.code(lambda: self.plan(first)), "model_not_local")

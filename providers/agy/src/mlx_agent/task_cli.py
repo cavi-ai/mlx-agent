@@ -21,6 +21,10 @@ def add_arguments(parser):
         "result": "retrieve a successful result or its owned artifact reference",
         "cancel": "request cancellation of one task",
         "verify-model": "check the task's recorded model and runtime identity without running it",
+        "storage-status": "inspect the opt-in submission storage high-water mark",
+        "storage-budget": "set the submission high-water mark in bytes, or zero to disable it",
+        "expire-media": "preview or confirm expiration of one settled task's owned media",
+        "media-provenance": "inspect preserved media references, including expired artifacts",
     }
     for command, description in descriptions.items():
         action = commands.add_parser(command, help=description)
@@ -28,8 +32,12 @@ def add_arguments(parser):
         action.add_argument("--json", action="store_true", help="emit the versioned JSON result envelope")
         if command == "start":
             action.add_argument("--request", type=Path, required=True, help="task-request/1 or task-request/2 JSON file; accepted inputs are retained privately")
-        elif command in ("status", "result", "cancel", "verify-model"):
+        elif command in ("status", "result", "cancel", "verify-model", "expire-media", "media-provenance"):
             action.add_argument("--id", required=True, help="task UUID returned by start")
+            if command == "expire-media":
+                action.add_argument("--confirm", help="confirmation value returned by the preview")
+        elif command == "storage-budget":
+            action.add_argument("--bytes", type=int, required=True, help="submission high-water mark; zero disables it")
         elif command == "list":
             action.add_argument("--limit", type=int, default=20, help="maximum recent records, 1..100 (default: 20)")
         elif command == "capabilities":
@@ -75,6 +83,13 @@ def run(arguments):
         store = TaskStore(arguments.state_dir) if action != "capabilities" else None
         if action == "capabilities":
             data = capabilities(model_path=getattr(arguments, "model_path", None))
+        elif action in ("storage-status", "storage-budget", "expire-media", "media-provenance"):
+            from . import task_storage
+            data = (task_storage.status(store) if action == "storage-status" else
+                    task_storage.set_budget(store, arguments.bytes) if action == "storage-budget" else
+                    task_storage.provenance(store, arguments.id) if action == "media-provenance" else
+                    task_storage.expire(store, arguments.id, arguments.confirm) if arguments.confirm else
+                    task_storage.preview(store, arguments.id))
         elif action == "verify-model":
             data = verify_task_model(arguments.id, store.root)
         elif action == "list":
@@ -87,6 +102,9 @@ def run(arguments):
             record = (start_task(arguments.request, store.root) if action == "start" else
                       cancel_task(arguments.id, store.root) if action == "cancel" else task_status(arguments.id, store.root))
             data = {"task": summary(record)}
+            if action == "status":
+                from .task_storage import expiry_status
+                data["media_expiration"] = expiry_status(store, record["id"])
         envelope = ResultEnvelope.ok(operation, data)
         if action == "start" and data["task"]["state"] == "failed":
             error = data["task"]["error"]

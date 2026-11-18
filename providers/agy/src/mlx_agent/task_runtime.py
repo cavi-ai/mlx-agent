@@ -65,10 +65,14 @@ def start_task(request_path, state_dir=None, launcher=subprocess.Popen):
             raise TaskError("request_too_large", "Task requests are limited to 1 MiB.")
         request = validate_request(json.loads(raw))
         kind = task_kinds.get(request["kind"])
-        if kind.input_media:
+        from .task_inputs import needs_named
+        if needs_named(request):
+            staged_input = store.stage_inputs(request)
+        elif kind.input_media:
             staged_input = store.stage_input(request["parameters"][kind.input_field], media_kind=kind.input_media)
         with tempfile.TemporaryDirectory(prefix="mlx-task-plan-") as directory:
-            plan = kind.plan(request, Path(directory), staged_input["staging_path"] if staged_input else None)
+            media = staged_input.get("paths", staged_input.get("staging_path")) if staged_input else None
+            plan = kind.plan(request, Path(directory), media)
             identity = capture_identity(Path(request["model_path"]), load_manifests()[plan["backend"]], Path(plan["argv"][0]))
     except (OSError, ValueError, InferenceError, BackendError) as error:
         if staged_input is not None:
@@ -79,7 +83,7 @@ def start_task(request_path, state_dir=None, launcher=subprocess.Popen):
             store.discard_staged_input(staged_input)
         raise
     try:
-        record = store.create(request, identity, input_artifact=staged_input["reference"] if staged_input else None,
+        record = store.create(request, identity, input_artifact=staged_input.get("reference") if staged_input else None,
                               staged_input=staged_input)
     except (TaskError, OSError, ValueError):
         if staged_input is not None:
@@ -151,6 +155,11 @@ def task_result(identifier, state_dir=None):
     record = task_status(identifier, state_dir)
     if record["state"] != "succeeded":
         raise TaskError("task_not_succeeded", "This task has no successful result.", "Inspect its status and error before retrying.")
+    from .task_storage import expiry_status
+    expiry = expiry_status(store, identifier)
+    if expiry:
+        raise TaskError("artifacts_" + ("expired" if expiry == "expired" else "expiring"),
+                        "The task's media artifacts have been " + ("expired." if expiry == "expired" else "selected for expiration."))
     path = store.artifact_path(identifier, "result.json")
     reference = record["result"]
     try:
@@ -165,12 +174,16 @@ def task_result(identifier, state_dir=None):
         inline = size <= 8192
         result = json.loads(path.read_bytes()) if inline else None
         kind = task_kinds.get(record["kind"])
-        if kind.input_media or kind.output:
+        if kind.input_media or kind.output or record["schema"] == "task-run/3":
             # The result names its media artifacts; each one is checked against the task directory.
             result = result if result is not None else json.loads(path.read_bytes())
             if not isinstance(result, dict):
                 raise TaskError("result_changed", "The task result is not a JSON object.")
-            if kind.input_media:
+            if record["schema"] == "task-run/3":
+                store.verify_named_inputs(identifier, store.read_request(identifier), record["input_artifacts"])
+                if result.get("input_artifacts") != record["input_artifacts"]:
+                    raise TaskError("result_changed", "The media input references changed.")
+            elif kind.input_media:
                 store.verify_input_artifact(identifier, record["input_artifact"], media_kind=kind.input_media)
                 if result.get("input_artifact") != record["input_artifact"]:
                     raise TaskError("result_changed", "The media input reference changed.")
@@ -359,11 +372,15 @@ def execute(identifier, state_dir):
         directory = store.artifact_path(identifier, "execution-result.json").parent
         kind = task_kinds.get(request["kind"])
         input_path = None
-        if kind.input_media:
+        if record["schema"] == "task-run/3":
+            input_path = store.verify_named_inputs(identifier, request, record["input_artifacts"])
+        elif kind.input_media:
             input_path = str(store.verify_input_artifact(identifier, record["input_artifact"], media_kind=kind.input_media))
         plan = kind.plan(request, directory, input_path)
         result = kind.run(plan)
-        if kind.input_media:
+        if record["schema"] == "task-run/3":
+            result["input_artifacts"] = record["input_artifacts"]
+        elif kind.input_media:
             result["input_artifact"] = record["input_artifact"]
         if kind.output:
             output = store.artifact_path(identifier, kind.output)

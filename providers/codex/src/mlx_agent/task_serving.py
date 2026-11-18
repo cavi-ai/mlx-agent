@@ -314,14 +314,18 @@ class TaskModelWorker(ModelWorker):
         record = None
         try:
             self._recheck_identity()
-            if kind.input_media:
+            from .task_inputs import needs_named
+            if needs_named(request):
+                staged = self.store.stage_inputs(request)
+            elif kind.input_media:
                 staged = self.store.stage_input(request['parameters'][kind.input_field], kind.input_media)
             with tempfile.TemporaryDirectory(prefix='mlx-task-endpoint-plan-') as directory:
-                plan = kind.plan(request, Path(directory), staged['staging_path'] if staged else None)
+                media = staged.get('paths', staged.get('staging_path')) if staged else None
+                plan = kind.plan(request, Path(directory), media)
                 if plan['backend'] != self.config['task_identity']['backend'] or plan['argv'][0] != self.resident.executable:
                     raise TaskError('identity_changed', 'The model task backend changed; review serving again.')
             record = self.store.create(request, self.config['task_identity'],
-                input_artifact=staged['reference'] if staged else None, staged_input=staged)
+                input_artifact=staged.get('reference') if staged else None, staged_input=staged)
             staged = None
             owner = process_identity(os.getpid())
             if not owner:
@@ -418,7 +422,10 @@ class TaskModelWorker(ModelWorker):
             request = self.store.read_request(identifier)
             kind = task_kinds.get(request['kind'])
             directory = self.store.artifact_path(identifier, 'result.json').parent
-            media = str(self.store.verify_input_artifact(identifier, record['input_artifact'], kind.input_media)) if kind.input_media else None
+            if record['schema'] == 'task-run/3':
+                media = self.store.verify_named_inputs(identifier, request, record['input_artifacts'])
+            else:
+                media = str(self.store.verify_input_artifact(identifier, record['input_artifact'], kind.input_media)) if kind.input_media else None
             plan = kind.plan(request, directory, media)
             if plan['backend'] != record['identity']['backend'] or plan['argv'][0] != self.resident.executable:
                 raise TaskError('identity_changed', 'The model task backend changed.')
@@ -463,7 +470,9 @@ class TaskModelWorker(ModelWorker):
             self._recheck_identity()
             check_identity(record['identity'])
             self.store.read_request(identifier)
-            if kind.input_media:
+            if record['schema'] == 'task-run/3':
+                result['input_artifacts'] = record['input_artifacts']
+            elif kind.input_media:
                 result['input_artifact'] = record['input_artifact']
             if kind.output:
                 output = self.store.artifact_path(identifier, kind.output)

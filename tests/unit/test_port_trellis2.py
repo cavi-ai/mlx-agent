@@ -462,6 +462,39 @@ class Trellis2NativeTests(unittest.TestCase):
         _, faces = dual_grid.to_mesh(coords[:3], vertices[:3], crossed[:3], np.ones((3, 1)), 4)
         self.assertEqual(faces.shape, (0, 3))
 
+    def test_occupancy_keys_match_lexicographic_unique_and_fall_back(self):
+        import numpy as np
+        from unittest.mock import patch
+        closed = port('closed')
+        bounds = np.iinfo(np.int64)
+        fixtures = (
+            np.array([[2, -3, 4], [-5, 2, -1], [2, -3, 4], [-5, 2, 0]], dtype=np.int64),
+            np.array([[bounds.min, 0, 0], [bounds.min + 3, -1, 4], [bounds.min, 0, 0]], dtype=np.int64),
+        )
+        with patch.object(closed, 'OCCUPANCY_KEY_MIN_ROWS', 0):
+            for rows in fixtures:
+                np.testing.assert_array_equal(closed._unique_occupancy(rows.copy()), np.unique(rows, axis=0))
+            extreme = np.array([[bounds.min, 0, 0], [bounds.max, 1, 1], [bounds.min, 0, 0]], dtype=np.int64)
+            with patch.object(np, 'ravel_multi_index', side_effect=AssertionError('overflow encoded')):
+                np.testing.assert_array_equal(closed._unique_occupancy(extreme.copy()), np.unique(extreme, axis=0))
+        with patch.object(np, 'ravel_multi_index', side_effect=AssertionError('small array encoded')):
+            np.testing.assert_array_equal(closed._unique_occupancy(fixtures[0].copy()), np.unique(fixtures[0], axis=0))
+
+    @unittest.skipUnless(HAS_SURFACE, 'requires scipy and scikit-image')
+    def test_closed_surface_expansion_matches_two_box_dilations(self):
+        import numpy as np
+        from scipy import ndimage
+        from unittest.mock import patch
+        closed = port('closed')
+        random = np.random.default_rng(42)
+        for shape in ((1, 2, 3), (7, 8, 9), (65, 5, 3)):
+            for occupancy in (0, 0.02, 0.5):
+                mask = random.random(shape) < occupancy
+                expected = ndimage.binary_dilation(mask, structure=np.ones((3, 3, 3), dtype=bool), iterations=2)
+                np.testing.assert_array_equal(closed._expanded_occupancy(mask), expected)
+        with patch.object(ndimage, 'maximum_filter', side_effect=AssertionError('empty mask expanded')):
+            self.assertFalse(closed._expanded_occupancy(np.zeros((5, 4, 3), dtype=bool)).any())
+
     @unittest.skipUnless(HAS_SURFACE, 'requires scipy and scikit-image')
     def test_closed_surface_wraps_an_open_branching_mesh_in_one_outward_shell(self):
         import numpy as np

@@ -141,6 +141,44 @@ class ResponsesGatewayTests(unittest.TestCase):
         status, _, text = self.request("GET", "/v1/responses/" + completed["id"])
         self.assertEqual((status, json.loads(text)), (200, completed))
 
+    def test_namespaced_calls_round_trip_and_stream(self):
+        worker = self.model.parent / "worker.py"
+        worker.write_text(WORKER.replace("'name': 'get_weather'", "'name': 'weather__get_weather'"))
+        namespace = {"type": "namespace", "name": "weather", "description": "Weather tools", "tools": [WEATHER]}
+        body = {"model": str(self.model), "input": "Weather?", "tools": [namespace]}
+        status, _, text = self.post(body)
+        self.assertEqual(status, 200, text)
+        [call] = json.loads(text)["output"]
+        self.assertEqual((call["namespace"], call["name"]), ("weather", "get_weather"))
+        self.assertEqual(self.sent()["tools"][0]["function"]["name"], "weather__get_weather")
+        result = {"type": "function_call_output", "call_id": call["call_id"], "output": "sunny"}
+        status, _, text = self.post(dict(body, input=[call, result]))
+        self.assertEqual(status, 200, text)
+        history = self.sent()["messages"]
+        self.assertEqual(history[0]["tool_calls"][0]["function"]["name"], "weather__get_weather")
+        self.assertEqual(history[1]["tool_call_id"], call["call_id"])
+        status, _, text = self.post(dict(body, stream=True))
+        self.assertEqual(status, 200, text)
+        frames = [json.loads(frame.split("\n")[1].removeprefix("data: ")) for frame in text.strip().split("\n\n")]
+        items = [f["item"] for f in frames if f["type"] in ("response.output_item.added", "response.output_item.done")
+                 and f["item"]["type"] == "function_call"]
+        self.assertEqual(len(items), 2)
+        self.assertTrue(all((i["namespace"], i["name"]) == ("weather", "get_weather") for i in items))
+        self.assertEqual(items[0]["call_id"], items[1]["call_id"])
+        self.assertEqual(frames[-1]["response"]["output"][-1]["namespace"], "weather")
+
+    def test_namespace_validation_precedes_worker_load(self):
+        def ns(name, tools): return {"type": "namespace", "name": name, "tools": tools}
+        for tools in ([ns("bad.name", [WEATHER])], [ns("ok", [])], [ns("ok", [{"type": "web_search"}])],
+                      [ns("ok", [dict(WEATHER, strict=True)])],
+                      [ns("a", [dict(WEATHER, name="b__c")]), ns("a__b", [dict(WEATHER, name="c")])],
+                      [ns("a", [dict(WEATHER, name="b")]), dict(WEATHER, name="a__b")],
+                      [ns("a", [dict(WEATHER, name="bad.name")])]):
+            with self.subTest(tools=tools):
+                status, _, text = self.post({"model": str(self.model), "input": "Hi", "tools": tools})
+                self.assertEqual(status, 400, text)
+        self.assertFalse(self.trace.exists())
+
     def test_splash_reasoning_effort_translation(self):
         for effort in ("none", "minimal", "low", "medium", "high", "xhigh", "max"):
             with self.subTest(effort=effort):

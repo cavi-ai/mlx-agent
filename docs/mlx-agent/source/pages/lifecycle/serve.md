@@ -424,7 +424,8 @@ generated when it gives none. The model name must be the gateway's model.
 
 The JIT gateway also answers `POST /v1/responses`, streamed and unstreamed, by
 translating to the worker's `/v1/chat/completions`. `instructions`, text
-message items (`developer` messages become system messages), `function` tools,
+message items (`developer` messages become system messages), `function` tools and
+namespaced function tools,
 `function_call` and `function_call_output` items, `max_output_tokens`,
 `temperature` and `top_p` are carried over. Streams emit `response.created`,
 output item, content part, text and function-call argument events, then

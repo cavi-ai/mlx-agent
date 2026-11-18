@@ -1273,8 +1273,9 @@ class GatewayHandler(BaseHTTPRequestHandler):
             elif self.path == "/v1/responses":
                 try:
                     from mlx_agent.splash_runtime import supports_reasoning_effort
+                    aliases = {}
                     fields, body = responses_api.envelope(body), responses_api.to_chat_request(
-                        body, allow_images=allow_images,
+                        body, allow_images=allow_images, aliases=aliases,
                         allow_reasoning_effort=runtime == "splash" and supports_reasoning_effort(
                             self.server.config.get("splash_version")))
                 except responses_api.ResponsesRequestError as error:
@@ -1333,11 +1334,11 @@ class GatewayHandler(BaseHTTPRequestHandler):
             if self.path == "/v1/responses":
                 if body.get("stream"):
                     response_started = True
-                    stream = responses_api.ResponseStream(requested, fields)
+                    stream = responses_api.ResponseStream(requested, fields, aliases)
                     self._stream(response, stream)
                     result = stream.response
                 else:
-                    result = self._relay(response, lambda value: responses_api.from_chat_response(trimmed(value), requested, fields))
+                    result = self._relay(response, lambda value: responses_api.from_chat_response(trimmed(value), requested, fields, aliases))
                 if fields["store"]:
                     self.server.remember(result)
                 return

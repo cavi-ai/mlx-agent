@@ -131,7 +131,7 @@ def _alias(namespace, name):
 def _tools(tools):
     if not isinstance(tools, list):
         raise ResponsesRequestError("tools must be a list.")
-    functions, aliases, names = [], {}, set()
+    functions, aliases = [], {}
 
     def add(tool, namespace=None):
         kind = tool.get("type") if isinstance(tool, dict) else None
@@ -144,9 +144,8 @@ def _tools(tools):
             raise ResponsesRequestError("Function parameters must be a JSON schema object.")
         name = _string(tool, "name")
         alias = _alias(namespace, _namespace_part(name)) if namespace is not None else name
-        if alias in names:
+        if alias in aliases:
             raise ResponsesRequestError("Function tool names collide.")
-        names.add(alias)
         aliases[alias] = (namespace, name)
         function = {"name": alias, "parameters": parameters}
         if isinstance(tool.get("description"), str):
@@ -192,7 +191,7 @@ def to_chat_request(body, *, allow_images=False, allow_reasoning_effort=False, a
     if choice not in ("auto", "none"):
         raise ResponsesRequestError("Forced tool use is not supported by the local runtime.")
     chat = [{"role": "system", "content": _text(body["instructions"], "instructions")}] if body.get("instructions") else []
-    functions, resolved_aliases = _tools(body.get("tools") or [])
+    functions, resolved_aliases = _tools(body.get("tools") or []) if choice == "auto" else ([], {})
     if aliases is not None:
         aliases.update(resolved_aliases)
     request = {"messages": chat + _input(body.get("input"), allow_images, resolved_aliases)}

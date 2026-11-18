@@ -167,6 +167,13 @@ class ResponsesGatewayTests(unittest.TestCase):
         self.assertEqual(items[0]["call_id"], items[1]["call_id"])
         self.assertEqual(frames[-1]["response"]["output"][-1]["namespace"], "weather")
 
+    def test_none_choice_ignores_inactive_unsupported_tools(self):
+        body = {"model": str(self.model), "input": "Hi", "tool_choice": "none",
+                "tools": [{"type": "web_search"}, {"type": "namespace", "name": "invalid.name", "tools": []}]}
+        status, _, text = self.post(body)
+        self.assertEqual(status, 200, text)
+        self.assertNotIn("tools", self.sent())
+
     def test_namespace_validation_precedes_worker_load(self):
         def ns(name, tools): return {"type": "namespace", "name": name, "tools": tools}
         for tools in ([ns("bad.name", [WEATHER])], [ns("ok", [])], [ns("ok", [{"type": "web_search"}])],

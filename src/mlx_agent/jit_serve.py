@@ -1245,7 +1245,11 @@ class GatewayHandler(BaseHTTPRequestHandler):
                     raise GatewayError(400, "invalid_request", str(error))
             elif self.path == "/v1/responses":
                 try:
-                    fields, body = responses_api.envelope(body), responses_api.to_chat_request(body, allow_images=allow_images)
+                    from mlx_agent.splash_runtime import supports_reasoning_effort
+                    fields, body = responses_api.envelope(body), responses_api.to_chat_request(
+                        body, allow_images=allow_images,
+                        allow_reasoning_effort=runtime == "splash" and supports_reasoning_effort(
+                            self.server.config.get("splash_version")))
                 except responses_api.ResponsesRequestError as error:
                     raise GatewayError(400, "invalid_request", str(error))
             elif self.path not in ("/v1/chat/completions", "/v1/completions"):

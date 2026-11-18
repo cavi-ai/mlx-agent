@@ -9,6 +9,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from mlx_agent.jit_serve import make_server, model_fingerprint
+from mlx_agent import responses_api
+from mlx_agent.splash_runtime import supports_reasoning_effort
 from mlx_agent.probe_assets import vision_probe_image_base64
 from .test_messages_api import WORKER
 
@@ -38,6 +40,7 @@ class ResponsesGatewayTests(unittest.TestCase):
                             "--port", "{worker_port}", "--trace", str(self.trace)],
         }
         self.server = make_server(config, port=0)
+        self.server.controller.memory_probe = lambda: 100_000_000_000
         self.port = self.server.server_port
         thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         thread.start()
@@ -137,6 +140,38 @@ class ResponsesGatewayTests(unittest.TestCase):
         self.assertEqual((sent["stream"], sent["stream_options"]), (True, {"include_usage": True}))
         status, _, text = self.request("GET", "/v1/responses/" + completed["id"])
         self.assertEqual((status, json.loads(text)), (200, completed))
+
+    def test_splash_reasoning_effort_translation(self):
+        for effort in ("none", "minimal", "low", "medium", "high", "xhigh", "max"):
+            with self.subTest(effort=effort):
+                request = responses_api.to_chat_request({"input": "Hi", "reasoning": {"effort": effort, "summary": None}},
+                                                        allow_reasoning_effort=True)
+                self.assertEqual(request["reasoning_effort"], effort)
+        for reasoning in (None, {}, {"effort": None}, {"effort": None, "summary": None}):
+            request = responses_api.to_chat_request({"input": "Hi", "reasoning": reasoning}, allow_reasoning_effort=True)
+            self.assertNotIn("reasoning_effort", request)
+        for reasoning in ({"effort": "unknown"}, {"effort": True}, {"summary": "auto"},
+                          {"context": "other"}, {"effort": "high", "summary": "concise"}, []):
+            with self.subTest(reasoning=reasoning), self.assertRaises(responses_api.ResponsesRequestError):
+                responses_api.to_chat_request({"input": "Hi", "reasoning": reasoning}, allow_reasoning_effort=True)
+        self.assertFalse(supports_reasoning_effort("1.6.0"))
+        self.assertFalse(supports_reasoning_effort("1.6.1-rc1"))
+        self.assertFalse(supports_reasoning_effort(None))
+        self.assertTrue(supports_reasoning_effort("1.6.1"))
+
+    def test_effort_route_is_version_gated_before_loading(self):
+        self.addCleanup(self.server.config.update, runtime="mlx_lm")
+        body = {"model": str(self.model), "input": "Hi", "reasoning": {"effort": "medium"}}
+        for runtime, version in (("mlx_lm", "1.6.1"), ("splash", "1.6.0"), ("splash", None)):
+            with self.subTest(runtime=runtime, version=version):
+                self.server.config.update(runtime=runtime, splash_version=version)
+                self.assertEqual(self.post(body)[0], 400)
+                self.assertFalse(self.trace.exists())
+        self.server.config.update(runtime="mlx_lm")
+        self.assertEqual(self.post({"model": str(self.model), "input": "warm"})[0], 200)
+        self.server.config.update(runtime="splash", splash_version="1.6.1", splash_served_model=str(self.model))
+        self.assertEqual(self.post(body)[0], 200)
+        self.assertEqual(self.sent()["reasoning_effort"], "medium")
 
     def test_unsupported_requests_return_openai_errors_without_loading(self):
         image = {"type": "message", "role": "user", "content": [{"type": "input_image", "image_url": "data:image/png;base64,AA=="}]}

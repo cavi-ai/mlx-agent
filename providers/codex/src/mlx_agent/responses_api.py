@@ -127,13 +127,21 @@ def _tools(tools):
     return functions
 
 
-def to_chat_request(body, *, allow_images=False):
+def to_chat_request(body, *, allow_images=False, allow_reasoning_effort=False):
     """Translate a Responses request into the worker's chat-completions request."""
     unknown = sorted(set(body) - PARAMETERS)
     if unknown:
         raise ResponsesRequestError("Unsupported parameters: {}.".format(", ".join(unknown)))
-    if body.get("reasoning") not in (None, {}):
-        raise ResponsesRequestError("Reasoning controls are not supported by the local runtime.")
+    reasoning = body.get("reasoning")
+    effort = None
+    if reasoning not in (None, {}):
+        if (not allow_reasoning_effort or not isinstance(reasoning, dict)
+                or set(reasoning) - {"effort", "summary"} or reasoning.get("summary") is not None):
+            raise ResponsesRequestError("Reasoning controls are not supported by the local runtime.")
+        effort = reasoning.get("effort")
+        if effort is not None and (not isinstance(effort, str) or effort not in
+                                   {"none", "minimal", "low", "medium", "high", "xhigh", "max"}):
+            raise ResponsesRequestError("Unsupported reasoning effort.")
     include = body.get("include") or []
     if not isinstance(include, list) or not all(isinstance(value, str) and value in INCLUDES for value in include):
         raise ResponsesRequestError("Unsupported include values.")
@@ -146,6 +154,8 @@ def to_chat_request(body, *, allow_images=False):
         raise ResponsesRequestError("Forced tool use is not supported by the local runtime.")
     chat = [{"role": "system", "content": _text(body["instructions"], "instructions")}] if body.get("instructions") else []
     request = {"messages": chat + _input(body.get("input"), allow_images)}
+    if effort is not None:
+        request["reasoning_effort"] = effort
     if "model" in body:
         request["model"] = body["model"]
     if body.get("max_output_tokens") is not None:

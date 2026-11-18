@@ -256,7 +256,7 @@ def status_workflow(name, *, receipts_dir=None):
     return result
 
 
-def resolve_workflow_role(name, role, *, receipts_dir=None):
+def resolve_workflow_role(name, role, *, receipts_dir=None, expected_plan=None):
     workflow_sets._name(role)
     value = _read(_path(name, receipts_dir))
     if value['state'] == 'stopped':
@@ -300,6 +300,9 @@ def resolve_workflow_role(name, role, *, receipts_dir=None):
     state = _jit_control(receipt, service_root, 'status')
     if state.get('api_key_sha256') != receipt.get('api_key_sha256'):
         raise ValueError('Workflow role credential identity changed.')
+    if expected_plan is not None and (state.get('memory_policy') != expected_plan.get('memory_policy')
+                                      or state.get('api_key_sha256') != expected_plan.get('api_key_sha256')):
+        raise ValueError('Live service policy or credential identity changed.')
     from .endpoint_contract import operations
     origin = 'http://127.0.0.1:' + str(member['port'])
     return {'schema': 'serving-workflow-role/1', 'workflow': name, 'activation_id': value['activation_id'],

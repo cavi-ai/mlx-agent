@@ -1071,14 +1071,19 @@ def _add_serve_arguments(parser):
             action.add_argument("--replace", action="store_true")
     workflow = actions.add_parser("workflow", help="manage local serving workflows")
     workflow_actions = workflow.add_subparsers(dest="workflow_command", required=True)
-    for command in ("save", "show", "list", "delete", "preview", "start", "status", "stop", "resolve"):
+    for command in ("save", "show", "list", "delete", "preview", "start", "status", "stop", "resolve", "stage", "handoff"):
         action = workflow_actions.add_parser(command)
         if command != "list":
             action.add_argument("--name", required=True)
         if command == "save":
             action.add_argument("--file", required=True)
-        if command == "resolve":
+        if command in ("resolve", "handoff"):
             action.add_argument("--role", required=True)
+        if command == "stage":
+            action.add_argument("--role", action="append", required=True)
+        if command == "handoff":
+            action.add_argument("--task-id", required=True)
+            action.add_argument("--out")
         if command == "start":
             action.add_argument("--confirm", action="store_true", required=True)
             action.add_argument("--preview-hash", required=True)
@@ -1193,6 +1198,8 @@ def _run_serve(arguments):
         start_serve, status_serve, stop_serve, unload_serve, wired_port_claim,
     )
     from .model_serving import ModelServingError
+    from .inference_runner import InferenceError
+    from .task_contracts import TaskError
     operation = "serve-{0}".format(arguments.serve_command)
     try:
         if arguments.serve_command == "duplication-policy":
@@ -1254,7 +1261,14 @@ def _run_serve(arguments):
         if arguments.serve_command == "workflow":
             from . import workflow_sets
             command = arguments.workflow_command
-            if command in ("start", "status", "stop", "resolve"):
+            if command in ("stage", "handoff"):
+                from . import workflow_operations
+                if command == "stage":
+                    data = workflow_operations.stage(arguments.name, arguments.role, receipts_dir=arguments.receipts_dir)
+                else:
+                    data = workflow_operations.handoff(arguments.name, arguments.role, arguments.task_id,
+                                                       out=arguments.out, receipts_dir=arguments.receipts_dir)
+            elif command in ("start", "status", "stop", "resolve"):
                 from . import workflow_activation
                 if command == "start":
                     data = workflow_activation.start_workflow(arguments.name, arguments.preview_hash, receipts_dir=arguments.receipts_dir)
@@ -1419,6 +1433,8 @@ def _run_serve(arguments):
         )
     except (ServeError, ModelServingError) as error:
         result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation, data=error.data)
+    except (InferenceError, TaskError) as error:
+        result = ResultEnvelope.fail(operation, error.code, str(error), error.remediation)
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         result = ResultEnvelope.fail(
             operation,

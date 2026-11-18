@@ -2,8 +2,17 @@
 
 ## Unreleased
 
+## 0.14.0 - 2026-11-18
+
 - Add `--json` and `--watch-parent` to `serve front-door`: one result line reports the listening port or the startup failure, and the front door stops when the launching process exits.
 - Serve with Splash 1.7.0 or later, and tune it at start or in saved profiles: verify rows, cached-state and KV precision, a server-wide reasoning effort, a thinking budget, the persistent SSD prompt cache and its quota, and a reviewed custom chat template.
+- Splash accepts Messages query URLs, keeps ordered system text messages, preserves namespaced Responses tools and streamed tool arguments and forwards reasoning effort; saved profiles carry its memory and context limits into direct and workflow launches, and `serve stop --if-idle` stops a Splash gateway only when idle.
+- Add `serve tailnet`: share one API-key-protected chat endpoint over Tailscale Serve after reviewing its HTTPS address; stopping the share keeps the local endpoint running, and remote responses return the selected model ID.
+- Refuse a second endpoint for a model that is already served, with the existing endpoint's details in CLI and MCP errors, and add `serve duplication-policy` for models allowed on more than one endpoint. Discovery, duplicate-load errors and workflow roles report one service identity, and workflow members opt into a compatible endpoint with `reuse_existing`.
+- Add `serve workflow stage`, which estimates memory for selected roles of an active workflow, and `serve workflow handoff`, which verifies a completed task and retrieves its retained artifacts by task ID.
+- Keyed MLX-LM endpoints share verified instruction and tool prefixes, with retained KV bounded and counted in JIT memory admission.
+- Add the optional `ltx-video` backend with an `ltx2` port for LTX-2.3 distilled: `convert video` and the served `video_generation` task take `--image` as the first frame and `--audio` with `--audio-start` as driving sound; text-only models refuse them.
+- `convert mesh` reuses a warm mesh endpoint; durable media tasks snapshot TRELLIS and LTX conditioning inputs, take a storage threshold and explicit media expiration, and keep provenance after expiry. TRELLIS reconstruction reuses surface fields and deduplicates occupancy faster with byte-identical meshes.
 
 ## 0.13.0 - 2026-11-16
 

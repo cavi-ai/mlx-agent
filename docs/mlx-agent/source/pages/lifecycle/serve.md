@@ -806,3 +806,22 @@ boundary. Reclamation never starts an unloaded model.
 Chat runtimes advertise `supported: false` for these controls and reject active
 allocator settings. Their existing context and Strata expert-memory controls
 remain available through their own policies.
+
+## Share over Tailscale
+
+Share a managed JIT chat endpoint with an API key on macOS using Tailscale
+1.104.2 or later. Connect Tailscale with MagicDNS and HTTPS enabled, then
+choose a free HTTPS port. Tailnet policy controls which devices can reach
+that port. Client requests also require the endpoint's existing API key.
+
+```bash
+mlx-agent serve tailnet start --port 8080 --https-port 8443
+mlx-agent serve tailnet status --json
+mlx-agent serve tailnet stop --json
+```
+
+The start command shows the API base URL and model ID for review. In scripts,
+use `start --json` to preview, then repeat with `--confirm` and the reviewed
+`--preview-hash`. Sharing ends when that process exits or you run `stop`. The
+local endpoint stays running. The shared API supports model listing and chat
+completions, including streaming, with one remote generation at a time.

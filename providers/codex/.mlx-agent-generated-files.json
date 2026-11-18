@@ -327,6 +327,7 @@
     "src/mlx_agent/standalone_assets.py",
     "src/mlx_agent/strata_runtime.py",
     "src/mlx_agent/study_recipes.py",
+    "src/mlx_agent/tailnet.py",
     "src/mlx_agent/task_cli.py",
     "src/mlx_agent/task_contracts.py",
     "src/mlx_agent/task_identity.py",

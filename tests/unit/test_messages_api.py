@@ -92,10 +92,10 @@ class MessagesGatewayTests(unittest.TestCase):
         self.addCleanup(self.server.controller.close)
         self.addCleanup(self.server.shutdown)
 
-    def post(self, body):
+    def post(self, body, path="/v1/messages"):
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
         try:
-            connection.request("POST", "/v1/messages", json.dumps(body),
+            connection.request("POST", path, json.dumps(body),
                                {"Content-Type": "application/json", "x-api-key": "local", "anthropic-version": "2023-06-01"})
             response = connection.getresponse()
             return response.status, response.getheader("Content-Type"), response.read().decode()
@@ -176,6 +176,18 @@ class MessagesGatewayTests(unittest.TestCase):
             status, _, text = self.post(body)
             error = json.loads(text)
             self.assertEqual((status, error["type"], error["error"]["type"]), (400, "error", "invalid_request_error"), text)
+        self.assertFalse(self.trace.exists())
+
+    def test_system_message_returns_specific_error_before_loading(self):
+        for role, expected in (("system", 'Unexpected role "system".'),
+                               ("other", "Each message needs the user or assistant role.")):
+            with self.subTest(role=role):
+                body = {"model": str(self.model), "max_tokens": 16,
+                        "messages": [{"role": role, "content": "Reminder"}]}
+                status, _, text = self.post(body, "/v1/messages?beta=true")
+                error = json.loads(text)
+                self.assertEqual((status, error['type'], error['error']['type'], error['error']['message']),
+                                 (400, 'error', 'invalid_request_error', expected))
         self.assertFalse(self.trace.exists())
 
     def test_vision_worker_receives_images_in_streamed_and_complete_requests(self):

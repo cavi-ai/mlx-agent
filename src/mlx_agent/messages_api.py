@@ -46,6 +46,8 @@ def _string(block, key):
 
 
 def _messages(message, allow_images=False):
+    if isinstance(message, dict) and message.get("role") == "system":
+        raise MessagesRequestError('Unexpected role "system".')
     if not isinstance(message, dict) or message.get("role") not in ("user", "assistant"):
         raise MessagesRequestError("Each message needs the user or assistant role.")
     role, content = message["role"], message.get("content")

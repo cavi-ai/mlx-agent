@@ -34,7 +34,7 @@ retain the selected budget and decoding mode. This budget is distinct from the
 activation-cache limits used by video and 3D generation.
 
 Splash serves a local GGUF file, a quantized MLX directory, or the GGUF of a
-prepared Strata profile through an installed Splash 1.4.0 or later launcher on
+prepared Strata profile through an installed Splash 1.7.0 or later launcher on
 an Apple M3 or newer with macOS 26.4 or later. It runs offline and never
 downloads weights or drafts. See [Serve](../lifecycle/serve.md#splash).
 

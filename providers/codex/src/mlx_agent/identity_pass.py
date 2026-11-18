@@ -134,16 +134,18 @@ def _require_vision_identity(plan):
 def _require_splash_identity(plan):
     if plan.get("runtime") != "splash":
         return
-    from .splash_runtime import SplashError, installed_runtime, read_draft, read_target
+    from .splash_runtime import SplashError, installed_runtime, read_chat_template, read_draft, read_target
 
     try:
         current = (read_target(plan["splash_model_dir"])["fingerprint"],
                    read_draft(plan["splash_draft_model"])["fingerprint"] if plan.get("splash_draft_model") else None,
-                   installed_runtime(plan["splash_launcher"])["fingerprint"])
+                   installed_runtime(plan["splash_launcher"])["fingerprint"],
+                   read_chat_template(plan["splash_chat_template"])["sha256"] if plan.get("splash_chat_template") else None)
     except (SplashError, KeyError) as error:
         _rejected("preview_stale", str(error), "Review a fresh Splash serve plan.")
-    if current != (plan["splash_model_fingerprint"], plan["splash_draft_fingerprint"], plan["splash_runtime_fingerprint"]):
-        _rejected("preview_stale", "The Splash target, draft or launcher changed after preview.",
+    if current != (plan["splash_model_fingerprint"], plan["splash_draft_fingerprint"], plan["splash_runtime_fingerprint"],
+                   plan.get("splash_chat_template_sha256")):
+        _rejected("preview_stale", "The Splash target, draft, chat template or launcher changed after preview.",
                   "Review a fresh Splash serve plan.")
 
 

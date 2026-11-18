@@ -9,20 +9,21 @@ import stat
 from .allocator_cache import FIELDS as CACHE_FIELDS
 from .memory_policy import policy_from_profile, validate
 from .serve import receipts_root
+from .splash_runtime import TUNING as SPLASH_TUNING
 from .strata_runtime import StrataError, _validate_context
 from .transactions import _atomic_in_directory, _target_locks, _walk_directory
 
 _COMMON = {"min_headroom_gb", "idle_timeout", "keep_loaded", "unload_under_pressure"}
 _STRATA = {"strata_context_tokens", "strata_decoding"}
-_SPLASH = {"splash_max_memory_gb", "splash_max_context_tokens"}
-_FIELDS = _COMMON | _STRATA | _SPLASH | {"memory_budget_gb"} | CACHE_FIELDS | {"execution_wait_seconds", "release_after_request"}
+SPLASH_FIELDS = frozenset({"splash_max_memory_gb", "splash_max_context_tokens", *SPLASH_TUNING})
+_FIELDS = _COMMON | _STRATA | SPLASH_FIELDS | {"memory_budget_gb"} | CACHE_FIELDS | {"execution_wait_seconds", "release_after_request"}
 
 
 def _validate(settings):
     if not isinstance(settings, dict) or not _COMMON <= set(settings) or set(settings) - _FIELDS:
         raise ValueError("A serving profile requires memory, headroom and residency settings only.")
     strata = bool(set(settings) & _STRATA)
-    splash = bool(set(settings) & _SPLASH)
+    splash = bool(set(settings) & SPLASH_FIELDS)
     if splash and (strata or "memory_budget_gb" in settings):
         raise ValueError("Splash profiles cannot combine Splash limits with Strata settings or a model budget.")
     if strata and not (_STRATA | {"memory_budget_gb"}) <= set(settings):
@@ -32,11 +33,12 @@ def _validate(settings):
     validate(policy_from_profile(settings))
     if splash:
         from .splash_runtime import SplashError, serve_arguments
-        if any(settings[key] is None for key in _SPLASH if key in settings):
+        if any(settings[key] is None for key in SPLASH_FIELDS if key in settings):
             raise ValueError("Splash profile limits must have a value.")
         try:
             serve_arguments(max_memory_gb=settings.get('splash_max_memory_gb'),
-                            max_context_tokens=settings.get('splash_max_context_tokens'))
+                            max_context_tokens=settings.get('splash_max_context_tokens'),
+                            tuning={key: settings[key] for key in SPLASH_TUNING if key in settings})
         except SplashError as error:
             raise ValueError(str(error)) from error
     if strata:

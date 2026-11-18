@@ -175,6 +175,20 @@ The front door applies the same key, Host and Origin checks as a gateway;
 routes keep their own loading, memory admission and lifecycle. Stored
 response reads and `/v1/tasks` stay on each route's own port.
 
+An application that owns the front door as a child process adds `--json` and
+`--watch-parent`:
+
+```bash
+mlx-agent serve front-door --port 8090 --api-key-sha256 DIGEST --json --watch-parent
+```
+
+`--json` prints one `serve-front-door` result line once the port is
+listening, with `state`, `port`, `api_base` and `pid`. A startup failure
+prints an error result and exits with status 2: `front_door_port_unavailable`,
+`front_door_key_unavailable` or `front_door_parent_unavailable`.
+`--watch-parent` stops the front door when the launching process exits.
+SIGINT and SIGTERM stop it with exit status 0.
+
 ## Serve a trained adapter
 
 Use a completed LoRA receipt to select the base snapshot and adapter together:

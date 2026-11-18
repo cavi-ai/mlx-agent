@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `--json` and `--watch-parent` to `serve front-door`: one result line reports the listening port or the startup failure, and the front door stops when the launching process exits.
+
 ## 0.13.0 - 2026-11-16
 
 - Add `serve front-door`: one authenticated loopback port that lists discovered routes sharing its API key by path-free model name and routes chat, Messages, Responses and embeddings to them. The `mlx-agent` OpenClaw provider plugin discovers its chat models with the gateway key.

@@ -4,6 +4,14 @@ import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
+import os
+from pathlib import Path
+import select
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
 import threading
 import unittest
 
@@ -172,3 +180,99 @@ class FrontDoorTests(unittest.TestCase):
                 main(['serve', 'front-door', '--port', '18492'])
             with self.assertRaises(SystemExit):
                 main(['serve', 'front-door', '--port', '18492', '--api-key-sha256', DIGEST, '--api-key-file', '/missing'])
+
+
+class FrontDoorSessionTests(unittest.TestCase):
+    """Run the real command: its signal handlers and parent watch need a process of their own."""
+
+    COMMAND = [sys.executable, str(Path(__file__).resolve().parents[2] / 'scripts/mlx-agent'), 'serve', 'front-door']
+    # Owns the front door as its child and exits when its input closes.
+    LAUNCHER = 'import subprocess, sys; subprocess.Popen(sys.argv[1:]); sys.stdin.read()'
+
+    def setUp(self):
+        state = tempfile.TemporaryDirectory()
+        self.addCleanup(state.cleanup)
+        self.environment = dict(os.environ, XDG_STATE_HOME=state.name)
+        self.orphan = None
+        self.addCleanup(self.stop_orphan)
+
+    def stop_orphan(self):
+        if self.orphan is not None:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(self.orphan, signal.SIGKILL)
+
+    def launch(self, command, **options):
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                   env=self.environment, **options)
+        for stream in (process.stdout, process.stdin):
+            if stream is not None:
+                self.addCleanup(stream.close)
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+        return process
+
+    def read(self, process, seconds=60):
+        """The next output line, or b'' once every writer closed the pipe."""
+        if not select.select([process.stdout], [], [], seconds)[0]:
+            self.fail('No output within {} seconds.'.format(seconds))
+        return process.stdout.readline()
+
+    def health(self, port):
+        client = http.client.HTTPConnection('127.0.0.1', port, timeout=5)
+        try:
+            client.request('GET', '/health')
+            return client.getresponse().status
+        finally:
+            client.close()
+
+    def free_port(self):
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            return probe.getsockname()[1]
+
+    def test_json_session_reports_the_listening_port_and_stops_on_sigterm(self):
+        port = self.free_port()
+        process = self.launch(self.COMMAND + ['--port', str(port), '--api-key-sha256', DIGEST, '--json'])
+        ready = json.loads(self.read(process))
+        self.assertEqual((ready['operation'], ready['status']), ('serve-front-door', 'ok'))
+        self.assertEqual(ready['data'], {'state': 'listening', 'port': port,
+                                         'api_base': 'http://127.0.0.1:{}/v1'.format(port), 'pid': process.pid})
+        self.assertEqual(self.health(port), 200)
+        process.send_signal(signal.SIGTERM)
+        self.assertEqual(process.wait(timeout=30), 0)
+        self.assertEqual(process.stdout.read(), b'')
+
+    def test_watch_parent_stops_the_front_door_when_its_launcher_exits(self):
+        port = self.free_port()
+        launcher = self.launch([sys.executable, '-c', self.LAUNCHER] + self.COMMAND + [
+            '--port', str(port), '--api-key-sha256', DIGEST, '--json', '--watch-parent'], stdin=subprocess.PIPE)
+        ready = json.loads(self.read(launcher))['data']
+        self.orphan = ready['pid']
+        self.assertNotEqual(ready['pid'], launcher.pid)
+        self.assertEqual(self.health(port), 200)
+        launcher.stdin.close()
+        self.assertEqual(launcher.wait(timeout=30), 0)
+        # The front door holds the last write end of the pipe: end of output is its exit.
+        self.assertEqual(self.read(launcher, 30), b'')
+        self.orphan = None
+        with self.assertRaises(OSError):
+            self.health(port)
+
+    def test_json_session_names_a_port_that_is_in_use(self):
+        with socket.socket() as taken:
+            taken.bind(('127.0.0.1', 0))
+            taken.listen(1)
+            process = self.launch(self.COMMAND + ['--port', str(taken.getsockname()[1]),
+                                                  '--api-key-sha256', DIGEST, '--json'])
+            self.assertEqual(process.wait(timeout=60), 2)
+        result = json.loads(process.stdout.read())
+        self.assertEqual((result['operation'], result['status'], result['error']['code']),
+                         ('serve-front-door', 'error', 'front_door_port_unavailable'))
+
+    def test_json_session_names_an_unusable_key(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
+            status = main(['serve', 'front-door', '--port', '18492', '--api-key-sha256', 'not-a-digest', '--json'])
+        result = json.loads(output.getvalue())
+        self.assertEqual((status, result['status'], result['error']['code']),
+                         (2, 'error', 'front_door_key_unavailable'))

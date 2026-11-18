@@ -959,6 +959,8 @@ def _add_serve_arguments(parser):
     front_key.add_argument("--api-key-file")
     front_key.add_argument("--api-key-sha256")
     front.add_argument("--receipts-dir", action="append", default=[])
+    front.add_argument("--watch-parent", action="store_true")
+    front.add_argument("--json", action="store_true")
     private = actions.add_parser("private-worker", help="serve an existing model over a supervisor-owned Unix listener")
     private.add_argument("--describe", action="store_true", help="report the private transport protocol without starting a model")
     private.add_argument("--model")

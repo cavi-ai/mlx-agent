@@ -560,10 +560,12 @@ def stop(expected_share_id=None):
 def serve_child(binary, https_port, relay_port):
     """Do not start Serve until the supervisor has bound this child's identity."""
     import sys
+    os.write(sys.stdout.fileno(), b"R")
     if os.read(sys.stdin.fileno(), 1) != b"1":
         return 2
-    null = os.open(os.devnull, os.O_RDONLY)
+    null = os.open(os.devnull, os.O_RDWR)
     os.dup2(null, 0)
+    os.dup2(null, 1)
     os.close(null)
     command = [binary, "serve", "--yes", "--https={}".format(https_port),
                "http://127.0.0.1:{}".format(relay_port)]
@@ -584,8 +586,12 @@ def guard(binary, https_port, relay_port, listener_fd):
               str(https_port), str(relay_port)]
     expected = [binary, "serve", "--yes", "--https={}".format(https_port),
                 "http://127.0.0.1:{}".format(relay_port)]
-    child = subprocess.Popen(helper, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=sys.stderr)
+    child = subprocess.Popen(helper, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=sys.stderr)
     try:
+        readable, _, _ = select.select([child.stdout], [], [], 2.5)
+        if not readable or os.read(child.stdout.fileno(), 1) != b"R":
+            raise RuntimeError("The sharing helper did not become ready.")
+        child.stdout.close()
         birth = process_birth_identity(child.pid)
         argv = _process_arguments(child.pid)
         print(json.dumps({"pid": child.pid, "birth": birth, "argv": argv, "expected": expected}), flush=True)
@@ -602,6 +608,8 @@ def guard(binary, https_port, relay_port, listener_fd):
                     child.stdin.close()
                     acknowledged = True
     finally:
+        if not child.stdout.closed:
+            child.stdout.close()
         if not child.stdin.closed:
             child.stdin.close()
         if child.poll() is None:

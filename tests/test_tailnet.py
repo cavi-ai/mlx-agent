@@ -233,7 +233,7 @@ class TailnetTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             marker = Path(tmp) / "started"
             binary = Path(tmp) / "tailscale"
-            binary.write_text("#!/bin/sh\necho started > " + str(marker) + "\nexec /bin/sleep 30\n")
+            binary.write_text("#!/bin/sh\necho unexpected-output\necho started > " + str(marker) + "\nexec /bin/sleep 30\n")
             binary.chmod(0o700)
             listener = socket.socket()
             listener.bind(("127.0.0.1", 0))
@@ -256,6 +256,7 @@ class TailnetTests(unittest.TestCase):
                 child.stdin.close()
                 child.wait(timeout=10)
                 assert child.returncode != 0
+                assert child.stdout.read() == b''
             finally:
                 listener.close()
                 if child.poll() is None:
@@ -535,3 +536,61 @@ class TailnetTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(tailnet.TailnetError):
                 tailnet.owned_mapping_present(bad, BINDING, 12345)
         self.assertFalse(tailnet.matching_session({'TCP': {'8443': {'HTTPS': True}}}, BINDING, 12345))
+
+    def test_helper_signals_ready_before_release(self):
+        import os
+        import select
+        import subprocess
+        import sys
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            env = dict(os.environ, PYTHONPATH=str(Path(tailnet.__file__).resolve().parent.parent))
+            child = subprocess.Popen([sys.executable, '-m', 'mlx_agent.tailnet', '--serve-child',
+                                      '/not-started', '8443', '12345'], cwd=tmp, env=env,
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                readable, _, _ = select.select([child.stdout], [], [], 3)
+                self.assertTrue(readable, 'helper did not signal readiness')
+                self.assertEqual(os.read(child.stdout.fileno(), 1), b'R')
+                self.assertIsNone(child.poll())
+                child.stdin.close()
+                child.wait(timeout=5)
+                self.assertNotEqual(child.returncode, 0)
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                    child.wait()
+                if not child.stdin.closed:
+                    child.stdin.close()
+                child.stdout.close()
+                child.stderr.close()
+
+    def test_guard_rejects_missing_or_wrong_helper_readiness(self):
+        import os
+        import signal
+        from mlx_agent import compute, service_registry
+
+        for byte in (b'', b'X'):
+            read_fd, write_fd = os.pipe()
+            if byte:
+                os.write(write_fd, byte)
+            os.close(write_fd)
+            listener_fd = os.open(os.devnull, os.O_RDONLY)
+            child = mock.MagicMock()
+            child.stdout = os.fdopen(read_fd, 'rb', buffering=0)
+            child.stdin.closed = False
+            child.poll.return_value = None
+            with self.subTest(byte=byte), \
+                 mock.patch.object(tailnet.subprocess, 'Popen', return_value=child), \
+                 mock.patch.object(signal, 'signal'), \
+                 mock.patch.object(compute, 'process_birth_identity') as birth, \
+                 mock.patch.object(service_registry, '_process_arguments') as argv:
+                with self.assertRaisesRegex(RuntimeError, 'did not become ready'):
+                    tailnet.guard('/unused', 8443, 12345, listener_fd)
+                birth.assert_not_called()
+                argv.assert_not_called()
+                child.stdin.write.assert_not_called()
+                child.send_signal.assert_called_once_with(signal.SIGINT)
+                self.assertTrue(child.stdout.closed)

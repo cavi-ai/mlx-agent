@@ -345,9 +345,13 @@ class JITServingTests(unittest.TestCase):
         token = 'client-' + 'a' * 40
         self.config['api_key_sha256'] = hashlib.sha256(token.encode()).hexdigest()
         for method, path in [('GET', '/v1/models'), ('POST', '/v1/chat/completions'),
-                             ('POST', '/v1/messages'), ('POST', '/v1/responses'), ('GET', '/v1/responses/unknown')]:
+                             ('POST', '/v1/messages'), ('POST', '/v1/messages?beta=true'),
+                             ('POST', '/v1/responses'), ('GET', '/v1/responses/unknown')]:
             with self.subTest(path=path):
-                self.assertEqual(self.request(method, path, {} if method == 'POST' else None)[0], 401)
+                status, body = self.request(method, path, {} if method == 'POST' else None)
+                self.assertEqual(status, 401)
+                if path == '/v1/messages?beta=true':
+                    self.assertEqual((body['type'], body['error']['type']), ('error', 'authentication_error'))
         self.assertFalse(self.trace.exists())
         self.assertEqual(self.request('GET', '/v1/models', headers={'Authorization': 'Bearer wrong'})[0], 401)
         authorized = {'Authorization': 'Bearer ' + token}
@@ -941,7 +945,7 @@ class JITServingTests(unittest.TestCase):
 
     def test_messages_stream_forwards_worker_keepalive_as_ping(self):
         self.config['worker_argv'] += ['--keepalive']
-        status, text = self.stream('/v1/messages', {'model': 'default_model', 'max_tokens': 8, 'stream': True,
+        status, text = self.stream('/v1/messages?beta=true', {'model': 'default_model', 'max_tokens': 8, 'stream': True,
                                                     'messages': [{'role': 'user', 'content': 'x'}]})
         self.assertEqual(status, 200)
         events = [line[len('event: '):] for line in text.splitlines() if line.startswith('event: ')]

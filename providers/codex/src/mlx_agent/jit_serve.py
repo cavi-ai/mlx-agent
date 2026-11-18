@@ -1201,6 +1201,8 @@ class GatewayHandler(BaseHTTPRequestHandler):
         return True
 
     def do_POST(self):
+        if self.path.startswith('/v1/messages?'):
+            self.path = '/v1/messages'
         self._measurement = None
         self._inference_success = False
         connection = None

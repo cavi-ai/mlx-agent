@@ -143,6 +143,9 @@ def _download(port, key, identifier, out, reference):
                 for chunk in iter(lambda: response.read(65536), b""):
                     digest.update(chunk)
                     size += len(chunk)
+                    if size > reference.get("bytes", -1):
+                        raise InferenceError("artifact_changed", "The served output exceeds its recorded size.",
+                                             "Run the job again.")
                     target.write(chunk)
             if size != reference.get("bytes") or digest.hexdigest() != reference.get("sha256"):
                 raise InferenceError("artifact_changed", "The served output does not match its recorded digest.",

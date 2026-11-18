@@ -706,6 +706,13 @@ at `GET /v1/tasks/ID/artifacts/result`, including results too large to return
 inline. The server retains accepted jobs if the client disconnects. Endpoint
 interruption is recorded as interrupted when its job is next inspected.
 
+For an active serving workflow, `serve workflow stage --name NAME --role ROLE`
+estimates the selected roles using the current shared memory registry. Repeat
+`--role` to assess concurrent work. `serve workflow handoff --name NAME --role ROLE
+--task-id ID` reads an existing successful typed task and its verified result;
+add `--out PATH` to download its output artifact to a new file. Neither command
+submits a task or changes the gateway's admission policy.
+
 An endpoint that advertises `embedding` also answers OpenAI
 `POST /v1/embeddings` with `{"model":"...","input":...}`. `model` is the `id`
 from `GET /v1/models` or the model directory name, as a gateway accepts, and is

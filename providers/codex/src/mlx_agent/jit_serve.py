@@ -1233,10 +1233,14 @@ class GatewayHandler(BaseHTTPRequestHandler):
             if self._dispatch_control(body):
                 return
             translated = self.path in ("/v1/messages", "/v1/responses")
-            allow_images = self.server.config.get("runtime") == "mlx-vlm"
+            runtime = self.server.config.get("runtime")
+            allow_images = runtime == "mlx-vlm"
             if self.path == "/v1/messages":
                 try:
-                    body = to_chat_request(body, allow_images=allow_images)
+                    from mlx_agent.splash_runtime import supports_system_messages
+                    body = to_chat_request(body, allow_images=allow_images,
+                                           allow_system_messages=runtime == "splash" and supports_system_messages(
+                                               self.server.config.get("splash_version")))
                 except MessagesRequestError as error:
                     raise GatewayError(400, "invalid_request", str(error))
             elif self.path == "/v1/responses":
@@ -1255,7 +1259,6 @@ class GatewayHandler(BaseHTTPRequestHandler):
             if not isinstance(tokens, int) or isinstance(tokens, bool) or tokens <= 0:
                 raise GatewayError(400, "invalid_body", "max_tokens must be a positive integer.")
             body["max_tokens"] = min(tokens, self.server.config["max_tokens"])
-            runtime = self.server.config.get("runtime")
             # Splash answers only to its served name.
             body["model"] = self.server.config["splash_served_model" if runtime == "splash" else "local_path"]
             # Existing receipts predate the runtime field; recognize only the

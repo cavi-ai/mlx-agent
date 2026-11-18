@@ -96,6 +96,8 @@ def worker_config(plan, *, control_token, state_path, log_path=None, config_path
             config["strata_memory_allocation"] = plan["strata_memory_allocation"]
     if plan["runtime"] == "splash":
         config.update({key: plan[key] for key in ("splash_served_model", "splash_weight_bytes", "splash_max_memory_gb")})
+        if "splash_version" in plan:
+            config["splash_version"] = plan["splash_version"]
     for key in (
         "jit", "prefill_kernel", "decode_profile", "vision_profile", "shared_prefix_cache",
         "splash_model_dir", "splash_model_fingerprint", "splash_draft_model", "splash_draft_fingerprint",

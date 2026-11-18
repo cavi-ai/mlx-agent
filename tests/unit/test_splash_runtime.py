@@ -398,6 +398,7 @@ class SplashServeTests(unittest.TestCase):
 
         state = self.root.resolve()
         config = gateway_config(plan, control_token="control-" + "c" * 32, state_path=str(state / "state.json"))
+        self.assertEqual(config['splash_version'], '1.6.0')
         config.update(memory_state_dir=str(state / "memory"), compute_state_dir=str(state / "compute"))
         server = make_server(config, port=0)
         thread = threading.Thread(target=server.serve_forever, daemon=True)

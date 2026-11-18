@@ -45,9 +45,11 @@ def _string(block, key):
     return value
 
 
-def _messages(message, allow_images=False):
+def _messages(message, allow_images=False, allow_system_messages=False):
     if isinstance(message, dict) and message.get("role") == "system":
-        raise MessagesRequestError('Unexpected role "system".')
+        if not allow_system_messages:
+            raise MessagesRequestError('Unexpected role "system".')
+        return [{"role": "system", "content": _text(message.get("content"), "system message")}]
     if not isinstance(message, dict) or message.get("role") not in ("user", "assistant"):
         raise MessagesRequestError("Each message needs the user or assistant role.")
     role, content = message["role"], message.get("content")
@@ -94,7 +96,7 @@ def _tools(tools):
     return functions
 
 
-def to_chat_request(body, *, allow_images=False):
+def to_chat_request(body, *, allow_images=False, allow_system_messages=False):
     """Translate a Messages request into the worker's chat-completions request."""
     unknown = sorted(set(body) - PARAMETERS)
     if unknown:
@@ -105,7 +107,7 @@ def to_chat_request(body, *, allow_images=False):
         raise MessagesRequestError("max_tokens is required.")
     chat = [{"role": "system", "content": _text(body["system"], "system")}] if body.get("system") else []
     for message in body["messages"]:
-        chat.extend(_messages(message, allow_images))
+        chat.extend(_messages(message, allow_images, allow_system_messages))
     request = {"model": body.get("model"), "messages": chat, "max_tokens": body["max_tokens"]}
     choice = (body.get("tool_choice") or {"type": "auto"}).get("type")
     if choice not in ("auto", "none"):

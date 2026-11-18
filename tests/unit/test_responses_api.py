@@ -9,6 +9,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from mlx_agent.jit_serve import make_server, model_fingerprint
+from mlx_agent import responses_api
+from mlx_agent.splash_runtime import supports_reasoning_effort
 from mlx_agent.probe_assets import vision_probe_image_base64
 from .test_messages_api import WORKER
 
@@ -38,6 +40,7 @@ class ResponsesGatewayTests(unittest.TestCase):
                             "--port", "{worker_port}", "--trace", str(self.trace)],
         }
         self.server = make_server(config, port=0)
+        self.server.controller.memory_probe = lambda: 100_000_000_000
         self.port = self.server.server_port
         thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         thread.start()
@@ -137,6 +140,142 @@ class ResponsesGatewayTests(unittest.TestCase):
         self.assertEqual((sent["stream"], sent["stream_options"]), (True, {"include_usage": True}))
         status, _, text = self.request("GET", "/v1/responses/" + completed["id"])
         self.assertEqual((status, json.loads(text)), (200, completed))
+
+    def test_namespaced_calls_round_trip_and_stream(self):
+        worker = self.model.parent / "worker.py"
+        worker.write_text(WORKER.replace("'name': 'get_weather'", "'name': 'weather__get_weather'"))
+        namespace = {"type": "namespace", "name": "weather", "description": "Weather tools", "tools": [WEATHER]}
+        body = {"model": str(self.model), "input": "Weather?", "tools": [namespace]}
+        status, _, text = self.post(body)
+        self.assertEqual(status, 200, text)
+        [call] = json.loads(text)["output"]
+        self.assertEqual((call["namespace"], call["name"]), ("weather", "get_weather"))
+        self.assertEqual(self.sent()["tools"][0]["function"]["name"], "weather__get_weather")
+        result = {"type": "function_call_output", "call_id": call["call_id"], "output": "sunny"}
+        status, _, text = self.post(dict(body, input=[call, result]))
+        self.assertEqual(status, 200, text)
+        history = self.sent()["messages"]
+        self.assertEqual(history[0]["tool_calls"][0]["function"]["name"], "weather__get_weather")
+        self.assertEqual(history[1]["tool_call_id"], call["call_id"])
+        status, _, text = self.post(dict(body, stream=True))
+        self.assertEqual(status, 200, text)
+        frames = [json.loads(frame.split("\n")[1].removeprefix("data: ")) for frame in text.strip().split("\n\n")]
+        items = [f["item"] for f in frames if f["type"] in ("response.output_item.added", "response.output_item.done")
+                 and f["item"]["type"] == "function_call"]
+        self.assertEqual(len(items), 2)
+        self.assertTrue(all((i["namespace"], i["name"]) == ("weather", "get_weather") for i in items))
+        self.assertEqual(items[0]["call_id"], items[1]["call_id"])
+        self.assertEqual(frames[-1]["response"]["output"][-1]["namespace"], "weather")
+
+    def test_indexed_stream_assembles_interleaved_namespaced_calls(self):
+        stream = responses_api.ResponseStream("local", {}, {"weather__lookup": ("weather", "lookup")})
+        def chunk(*calls, reason=None):
+            return stream.chunk({"choices": [{"delta": {"tool_calls": list(calls)}, "finish_reason": reason}]})
+        def decoded(events):
+            return [json.loads(event.decode().split("\n")[1].removeprefix("data: ")) for event in events]
+        first = decoded(chunk({"index": 0, "id": "call_a", "type": "function", "function": {"name": "weather__lookup"}},
+                              {"index": 1, "id": "call_b", "type": "function", "function": {"name": "plain"}}))
+        self.assertEqual([(e["item"]["call_id"], e["item"]["status"]) for e in first],
+                         [("call_a", "in_progress"), ("call_b", "in_progress")])
+        self.assertEqual((first[0]["item"]["namespace"], first[0]["item"]["name"]), ("weather", "lookup"))
+        self.assertEqual(chunk({"index": 0, "function": {"arguments": '{"city":'}},
+                               {"index": 1, "function": {"arguments": '{"n":1}'}},
+                               {"index": 0, "function": {"arguments": '"Paris"}'}}), [])
+        chunk(reason="tool_calls")
+        events = decoded(stream.finish())
+        done = [e["item"] for e in events if e["type"] == "response.output_item.done"]
+        self.assertEqual([(i["call_id"], json.loads(i["arguments"])) for i in done],
+                         [("call_a", {"city": "Paris"}), ("call_b", {"n": 1})])
+        self.assertEqual((done[0]["namespace"], done[0]["name"]), ("weather", "lookup"))
+        self.assertEqual(events[-1]["response"]["output"], done)
+
+    def test_indexed_stream_accepts_complete_object_and_bounds_shared_bytes(self):
+        def chunk(stream, call, reason=None):
+            return stream.chunk({"choices": [{"delta": {"tool_calls": [call] if call else []}, "finish_reason": reason}]})
+        header = {"index": 1000, "id": "call_a", "type": "function",
+                  "function": {"name": "lookup", "arguments": {"city": "Paris"}}}
+        stream = responses_api.ResponseStream("local", {})
+        chunk(stream, header)
+        chunk(stream, None, "tool_calls")
+        stream.finish()
+        self.assertEqual(json.loads(stream.response["output"][0]["arguments"]), {"city": "Paris"})
+        stream = responses_api.ResponseStream("local", {})
+        chunk(stream, header)
+        with self.assertRaises(responses_api.WorkerResponseError):
+            chunk(stream, {"index": 1000, "function": {"arguments": " "}})
+        stream = responses_api.ResponseStream("local", {})
+        chunk(stream, {"index": 0, "function": {"name": "first", "arguments": "{"}})
+        stream.call_argument_bytes = 16 * 1024 * 1024 - 1
+        with self.assertRaises(responses_api.WorkerResponseError):
+            chunk(stream, {"index": 1, "function": {"name": "second", "arguments": "{}"}})
+
+    def test_indexed_stream_rejects_invalid_or_incomplete_calls(self):
+        def chunk(stream, call, reason=None):
+            return stream.chunk({"choices": [{"delta": {"tool_calls": [call] if call else []}, "finish_reason": reason}]})
+        header = {"index": 0, "id": "call_a", "type": "function", "function": {"name": "lookup"}}
+        with self.assertRaises(responses_api.WorkerResponseError):
+            chunk(responses_api.ResponseStream("local", {}), {"index": 0, "function": {"arguments": "{}"}})
+        for fragment in ({"index": 0, "id": "changed", "function": {"arguments": "{}"}},
+                         {"index": 0, "function": {"name": "changed"}}):
+            stream = responses_api.ResponseStream("local", {})
+            chunk(stream, header)
+            with self.assertRaises(responses_api.WorkerResponseError): chunk(stream, fragment)
+        for arguments, reason in (("{", "tool_calls"), ("[]", "tool_calls"), ("{}", None), ("{}", "length")):
+            stream = responses_api.ResponseStream("local", {})
+            chunk(stream, header)
+            chunk(stream, {"index": 0, "function": {"arguments": arguments}}, reason)
+            with self.assertRaises(responses_api.WorkerResponseError): stream.finish()
+
+    def test_none_choice_ignores_inactive_unsupported_tools(self):
+        body = {"model": str(self.model), "input": "Hi", "tool_choice": "none",
+                "tools": [{"type": "web_search"}, {"type": "namespace", "name": "invalid.name", "tools": []}]}
+        status, _, text = self.post(body)
+        self.assertEqual(status, 200, text)
+        self.assertNotIn("tools", self.sent())
+
+    def test_namespace_validation_precedes_worker_load(self):
+        def ns(name, tools): return {"type": "namespace", "name": name, "tools": tools}
+        for tools in ([ns("bad.name", [WEATHER])], [ns("ok", [])], [ns("ok", [{"type": "web_search"}])],
+                      [ns("ok", [dict(WEATHER, strict=True)])],
+                      [ns("a", [dict(WEATHER, name="b__c")]), ns("a__b", [dict(WEATHER, name="c")])],
+                      [ns("a", [dict(WEATHER, name="b")]), dict(WEATHER, name="a__b")],
+                      [ns("a", [dict(WEATHER, name="bad.name")])]):
+            with self.subTest(tools=tools):
+                status, _, text = self.post({"model": str(self.model), "input": "Hi", "tools": tools})
+                self.assertEqual(status, 400, text)
+        self.assertFalse(self.trace.exists())
+
+    def test_splash_reasoning_effort_translation(self):
+        for effort in ("none", "minimal", "low", "medium", "high", "xhigh", "max"):
+            with self.subTest(effort=effort):
+                request = responses_api.to_chat_request({"input": "Hi", "reasoning": {"effort": effort, "summary": None}},
+                                                        allow_reasoning_effort=True)
+                self.assertEqual(request["reasoning_effort"], effort)
+        for reasoning in (None, {}, {"effort": None}, {"effort": None, "summary": None}):
+            request = responses_api.to_chat_request({"input": "Hi", "reasoning": reasoning}, allow_reasoning_effort=True)
+            self.assertNotIn("reasoning_effort", request)
+        for reasoning in ({"effort": "unknown"}, {"effort": True}, {"summary": "auto"},
+                          {"context": "other"}, {"effort": "high", "summary": "concise"}, []):
+            with self.subTest(reasoning=reasoning), self.assertRaises(responses_api.ResponsesRequestError):
+                responses_api.to_chat_request({"input": "Hi", "reasoning": reasoning}, allow_reasoning_effort=True)
+        self.assertFalse(supports_reasoning_effort("1.6.0"))
+        self.assertFalse(supports_reasoning_effort("1.6.1-rc1"))
+        self.assertFalse(supports_reasoning_effort(None))
+        self.assertTrue(supports_reasoning_effort("1.6.1"))
+
+    def test_effort_route_is_version_gated_before_loading(self):
+        self.addCleanup(self.server.config.update, runtime="mlx_lm")
+        body = {"model": str(self.model), "input": "Hi", "reasoning": {"effort": "medium"}}
+        for runtime, version in (("mlx_lm", "1.6.1"), ("splash", "1.6.0"), ("splash", None)):
+            with self.subTest(runtime=runtime, version=version):
+                self.server.config.update(runtime=runtime, splash_version=version)
+                self.assertEqual(self.post(body)[0], 400)
+                self.assertFalse(self.trace.exists())
+        self.server.config.update(runtime="mlx_lm")
+        self.assertEqual(self.post({"model": str(self.model), "input": "warm"})[0], 200)
+        self.server.config.update(runtime="splash", splash_version="1.6.1", splash_served_model=str(self.model))
+        self.assertEqual(self.post(body)[0], 200)
+        self.assertEqual(self.sent()["reasoning_effort"], "medium")
 
     def test_unsupported_requests_return_openai_errors_without_loading(self):
         image = {"type": "message", "role": "user", "content": [{"type": "input_image", "image_url": "data:image/png;base64,AA=="}]}

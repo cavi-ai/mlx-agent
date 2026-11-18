@@ -1013,6 +1013,7 @@ def _add_serve_arguments(parser):
     stop.add_argument("--receipts-dir", default=None)
     stop.add_argument("--expected-pid", type=int, default=None)
     stop.add_argument("--expected-start", default=None, help="process start identity returned by service discovery")
+    stop.add_argument("--if-idle", action="store_true", help="stop a Splash JIT endpoint only when idle")
     stop.add_argument("--json", action="store_true")
     unload = actions.add_parser("unload", help="release JIT model weights while keeping the endpoint reachable")
     unload.add_argument("--port", type=int, required=True)
@@ -1312,7 +1313,8 @@ def _run_serve(arguments):
         if arguments.serve_command == "stop":
             outcome = stop_serve(arguments.port, arguments.receipts_dir, **(
                 {**({"expected_pid": arguments.expected_pid} if arguments.expected_pid is not None else {}),
-                 **({"expected_start": arguments.expected_start} if arguments.expected_start is not None else {})}))
+                 **({"expected_start": arguments.expected_start} if arguments.expected_start is not None else {}),
+                 **({"if_idle": True} if arguments.if_idle else {})}))
             return _emit_serve_result(
                 ResultEnvelope.ok(operation, outcome), arguments.json,
                 human="serve {0}: port {1} (pid {2})".format(

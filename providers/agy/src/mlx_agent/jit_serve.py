@@ -881,6 +881,22 @@ class ModelWorker:
                 self.condition.notify_all()
                 self._persist()
 
+    def begin_idle_stop(self):
+        """Seal admission only if the Splash worker has no in-flight work."""
+        with self.condition:
+            if self.config.get("runtime") != "splash":
+                raise GatewayError(400, "unsupported_runtime", "Idle stop requires a Splash endpoint.")
+            if self.closed or self.shutdown_requested:
+                raise GatewayError(409, "endpoint_stopping", "Endpoint is already stopping.")
+            if (self.active_requests or self.cache_control_active or self.execution_unresolved
+                    or self.memory_budget_pending or self.worker_launch_pending
+                    or self.model_state in ("loading", "unloading")
+                    or self.execution.users or self.execution.waiting):
+                raise GatewayError(409, "model_busy", "Finish active requests before stopping.")
+            self.closed = True
+            self.shutdown_requested = True
+            self.condition.notify_all()
+
     def unload(self):
         with self.condition:
             if self.closed:
@@ -1188,7 +1204,18 @@ class GatewayHandler(BaseHTTPRequestHandler):
 
     def _dispatch_control(self, body):
         """Shared unload, cache, and policy routes for chat and task endpoints."""
-        if self.path == "/_mlx/unload":
+        if self.path == "/_mlx/idle-stop":
+            from mlx_agent.serve import _pid_start
+            pid, birth = body.get("pid"), body.get("process_started_at")
+            if (set(body) != {"pid", "process_started_at"} or type(pid) is not int or pid != os.getpid()
+                    or not isinstance(birth, str) or not birth or _pid_start(pid) != birth):
+                raise GatewayError(409, "server_changed", "The selected endpoint generation changed.")
+            self.server.controller.begin_idle_stop()
+            try:
+                self._json(200, {"accepted": True, "pid": pid, "process_started_at": birth})
+            finally:
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
+        elif self.path == "/_mlx/unload":
             self._json(200, self.server.controller.unload())
         elif self.path == "/_mlx/cache":
             if body:
@@ -1211,7 +1238,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
         response = upstream = None
         submitted = False
         try:
-            self._guard(control=self.path in ("/_mlx/unload", "/_mlx/policy", "/_mlx/cache"))
+            self._guard(control=self.path in ("/_mlx/unload", "/_mlx/policy", "/_mlx/cache", "/_mlx/idle-stop"))
             if self.headers.get("Transfer-Encoding"):
                 raise GatewayError(400, "invalid_body", "Use a bounded Content-Length request.")
             try:
@@ -1245,7 +1272,12 @@ class GatewayHandler(BaseHTTPRequestHandler):
                     raise GatewayError(400, "invalid_request", str(error))
             elif self.path == "/v1/responses":
                 try:
-                    fields, body = responses_api.envelope(body), responses_api.to_chat_request(body, allow_images=allow_images)
+                    from mlx_agent.splash_runtime import supports_reasoning_effort
+                    aliases = {}
+                    fields, body = responses_api.envelope(body), responses_api.to_chat_request(
+                        body, allow_images=allow_images, aliases=aliases,
+                        allow_reasoning_effort=runtime == "splash" and supports_reasoning_effort(
+                            self.server.config.get("splash_version")))
                 except responses_api.ResponsesRequestError as error:
                     raise GatewayError(400, "invalid_request", str(error))
             elif self.path not in ("/v1/chat/completions", "/v1/completions"):
@@ -1302,11 +1334,11 @@ class GatewayHandler(BaseHTTPRequestHandler):
             if self.path == "/v1/responses":
                 if body.get("stream"):
                     response_started = True
-                    stream = responses_api.ResponseStream(requested, fields)
+                    stream = responses_api.ResponseStream(requested, fields, aliases)
                     self._stream(response, stream)
                     result = stream.response
                 else:
-                    result = self._relay(response, lambda value: responses_api.from_chat_response(trimmed(value), requested, fields))
+                    result = self._relay(response, lambda value: responses_api.from_chat_response(trimmed(value), requested, fields, aliases))
                 if fields["store"]:
                     self.server.remember(result)
                 return

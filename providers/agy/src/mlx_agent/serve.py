@@ -29,7 +29,7 @@ from pathlib import Path
 from .identity_pass import recheck_bound_identity
 from .model_doctor import scan_wired_configs
 from .serving_plan import preview_hash, receipt_fields
-from .transactions import _atomic_in_directory
+from .transactions import _atomic_in_directory, _target_locks
 from .wiring import require_secret_free_config, validate_health_endpoint
 
 
@@ -752,7 +752,8 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
             receipt["process_started_at"] = process_start
         receipt.update(receipt_fields(plan))
         content = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
-        _atomic_in_directory(root, receipt_path.name, content, 0o600)
+        with _target_locks([receipt_path], blocking=True):
+            _atomic_in_directory(root, receipt_path.name, content, 0o600)
         claim.update(ready=True, receipt_path=str(receipt_path.absolute()))
         return {"status": "started", "receipt": receipt}
 
@@ -931,14 +932,16 @@ def _jit_config(receipt, root):
 def _jit_control(receipt, root, action, policy=None, timeout=None):
     config = _jit_config(receipt, root)
     request = urllib.request.Request("http://127.0.0.1:{}/_mlx/{}".format(receipt["port"], action),
-        data=json.dumps(policy or {}).encode() if action in ("unload", "policy", "cache") else None,
+        data=json.dumps(policy or {}).encode() if action in ("unload", "policy", "cache", "idle-stop") else None,
         headers={"Authorization": "Bearer " + config["control_token"], "Content-Type": "application/json"})
     from .inference_auth import loopback_opener
     opener = loopback_opener()
     try:
         with opener.open(request, timeout=timeout if timeout is not None else (15 if action in ("unload", "policy", "cache") else 2)) as response:
             state = json.load(response)
-            if not isinstance(state, dict) or state.get("model_state") not in ("loaded", "unloaded", "loading", "unloading", "failed"):
+            if not isinstance(state, dict):
+                raise ValueError("Invalid control response.")
+            if action != "idle-stop" and state.get("model_state") not in ("loaded", "unloaded", "loading", "unloading", "failed"):
                 raise ValueError("Invalid model residency status.")
             return state
     except urllib.error.HTTPError as error:
@@ -1025,8 +1028,10 @@ def _configure_owned_jit(port, receipts_dir, expected_pid, action, policy=None, 
 
 
 def stop_serve(port, receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_command,
-               terminate=_terminate_pid, clock=time.monotonic, sleep=time.sleep, expected_pid=None, expected_start=None):
+               terminate=_terminate_pid, clock=time.monotonic, sleep=time.sleep, expected_pid=None, expected_start=None, if_idle=False):
     """Stop exactly the process a serve receipt owns; never kills by port scan."""
+    if if_idle and (type(expected_pid) is not int or expected_pid <= 0 or not isinstance(expected_start, str) or not expected_start):
+        raise ServeError("invalid_arguments", "Idle stop requires the exact process identity.", "Refresh serving status and retry.")
     root = receipts_root(receipts_dir)
     receipt_path = root / "{0}.json".format(port)
     receipt = _read_receipt(receipt_path) if receipt_path.is_file() else None
@@ -1040,10 +1045,16 @@ def stop_serve(port, receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_c
     if (expected_pid is not None and pid != expected_pid) or (expected_start is not None and _pid_start(pid) != expected_start):
         raise ServeError("server_changed", "The selected serving process changed; nothing was stopped.",
                          "Refresh serving status and review the current service.")
-    orphan = _owned_jit_worker(receipt, root) if not pid_alive(pid) else None
+    if if_idle and receipt.get("process_started_at") != expected_start:
+        raise ServeError("server_changed", "The selected serving receipt has a different process identity.", "Refresh serving status.")
+    if if_idle and (not receipt.get("jit") or receipt.get("runtime") != "splash"):
+        raise ServeError("unsupported_runtime", "Idle stop requires a Splash JIT endpoint.", "Refresh serving status.")
+    if if_idle and not pid_alive(pid):
+        raise ServeError("server_changed", "The selected gateway is no longer running.", "Refresh serving status.")
+    orphan = _owned_jit_worker(receipt, root) if not if_idle and not pid_alive(pid) else None
     if orphan:
         pid = orphan
-    if not pid_alive(pid):
+    if not if_idle and not pid_alive(pid):
         from .model_serving import release_stopped_service
         release_stopped_service(receipt)
         receipt_path.unlink()
@@ -1055,6 +1066,23 @@ def stop_serve(port, receipts_dir=None, pid_alive=_pid_alive, pid_command=_pid_c
             "The live pid {0} does not match the serve receipt; refusing to signal it.".format(pid),
             "Inspect the process yourself; the receipt is retained at {0}.".format(receipt_path),
         )
+    if if_idle:
+        reply = _jit_control(receipt, root, "idle-stop", {"pid": expected_pid, "process_started_at": expected_start})
+        if (set(reply) != {"accepted", "pid", "process_started_at"} or reply["accepted"] is not True
+                or type(reply["pid"]) is not int or reply["pid"] != expected_pid or reply["process_started_at"] != expected_start):
+            raise ServeError("server_changed", "The endpoint did not confirm its identity.", "Refresh serving status and retry.")
+        deadline = clock() + SPLASH_STOP_DEADLINE_SECONDS
+        while clock() < deadline:
+            if not pid_alive(pid):
+                from .model_serving import release_stopped_service
+                release_stopped_service(receipt)
+                with _target_locks([receipt_path], blocking=True):
+                    if _read_receipt(receipt_path) != receipt:
+                        raise ServeError("server_changed", "The serving receipt changed during shutdown.", "Refresh serving status.")
+                    receipt_path.unlink()
+                return {"status": "stopped", "port": port, "pid": pid}
+            sleep(0.2)
+        raise ServeError("stop_failed", "The idle endpoint did not finish stopping.", "Refresh serving status before retrying.")
     if (receipt.get("jit") or receipt.get("runtime") in ("strata", "splash")) and terminate is _terminate_pid and os.getpgid(pid) == receipt["pid"]:
         terminate = lambda _pid, sig: os.killpg(receipt["pid"], sig)
     terminate(pid, signal.SIGTERM)

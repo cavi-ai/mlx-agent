@@ -424,7 +424,8 @@ generated when it gives none. The model name must be the gateway's model.
 
 The JIT gateway also answers `POST /v1/responses`, streamed and unstreamed, by
 translating to the worker's `/v1/chat/completions`. `instructions`, text
-message items (`developer` messages become system messages), `function` tools,
+message items (`developer` messages become system messages), `function` tools and
+namespaced function tools,
 `function_call` and `function_call_output` items, `max_output_tokens`,
 `temperature` and `top_p` are carried over. Streams emit `response.created`,
 output item, content part, text and function-call argument events, then
@@ -494,6 +495,10 @@ saved settings. Use `serve profile show shared`, `save shared --replace` with th
 updated values, or `delete shared` to manage them. Saved changes apply to future
 launches; use `serve policy` to change a running endpoint's memory budget.
 Restart the endpoint with the selected profile to change Splash startup limits.
+For an idle Splash JIT endpoint, `serve stop --if-idle --port <port>
+--expected-pid <gateway-pid> --expected-start <process-start>` closes request
+admission only when the exact gateway has no active work. If it is busy or does
+not support this control, it remains running.
 Add `--no-unload-under-pressure` when saving a profile that uses `--keep-loaded`.
 Each launch still checks available memory; a saved profile does not reserve RAM.
 

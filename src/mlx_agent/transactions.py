@@ -558,7 +558,7 @@ def legacy_lock_problem(targets, lock_root):
 
 
 @contextmanager
-def _target_locks(targets, create_parents=False, lock_root=None):
+def _target_locks(targets, create_parents=False, lock_root=None, blocking=False):
     """Acquire filesystem-identity locks in canonical order to avoid deadlocks."""
     canonical = sorted({_physical_absolute(target) for target in targets}, key=str)
     identities = {}
@@ -601,7 +601,7 @@ def _target_locks(targets, create_parents=False, lock_root=None):
                 if not stat.S_ISREG(os.fstat(lock_fd).st_mode):
                     raise ValueError("target transaction lock is not a regular file")
                 os.fsync(directory_fd)
-                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(lock_fd, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
                 held.append((lock_fd, directory_fd))
             except OSError as error:
                 if lock_fd is not None:

@@ -494,6 +494,10 @@ saved settings. Use `serve profile show shared`, `save shared --replace` with th
 updated values, or `delete shared` to manage them. Saved changes apply to future
 launches; use `serve policy` to change a running endpoint's memory budget.
 Restart the endpoint with the selected profile to change Splash startup limits.
+For an idle Splash JIT endpoint, `serve stop --if-idle --port <port>
+--expected-pid <gateway-pid> --expected-start <process-start>` closes request
+admission only when the exact gateway has no active work. If it is busy or does
+not support this control, it remains running.
 Add `--no-unload-under-pressure` when saving a profile that uses `--keep-loaded`.
 Each launch still checks available memory; a saved profile does not reserve RAM.
 

@@ -214,6 +214,45 @@ class JITServingTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_idle_stop_binds_control_key_pid_and_seals_admission(self):
+        from mlx_agent.serve import _pid_start
+        self.server.controller.config['runtime'] = 'splash'
+        control = {'Authorization': 'Bearer test-control-token'}
+        body = {'pid': os.getpid(), 'process_started_at': _pid_start(os.getpid())}
+        status, _ = self.request('POST', '/_mlx/idle-stop', body)
+        self.assertEqual(status, 403)
+        wrong = dict(body, pid=os.getpid() + 1)
+        status, error = self.request('POST', '/_mlx/idle-stop', wrong, control)
+        self.assertEqual((status, error['error']['code']), (409, 'server_changed'))
+        self.assertFalse(self.server.controller.closed)
+        self.server.controller.active_requests = 1
+        status, error = self.request('POST', '/_mlx/idle-stop', body, control)
+        self.assertEqual((status, error['error']['code']), (409, 'model_busy'))
+        self.server.controller.active_requests = 0
+        scheduled = threading.Event()
+        with mock.patch.object(self.server, 'shutdown', side_effect=scheduled.set):
+            status, result = self.request('POST', '/_mlx/idle-stop', body, control)
+            self.assertEqual(status, 200)
+            self.assertEqual(result, dict(body, accepted=True))
+            self.assertTrue(scheduled.wait(2))
+        self.assertTrue(self.server.controller.closed)
+        with self.assertRaises(Exception) as error:
+            self.server.controller.acquire()
+        self.assertEqual(error.exception.code, 'endpoint_stopping')
+
+    def test_idle_stop_schedules_shutdown_when_acknowledgement_fails(self):
+        from mlx_agent.jit_serve import GatewayHandler
+        from mlx_agent.serve import _pid_start
+        from types import SimpleNamespace
+        self.server.controller.config['runtime'] = 'splash'
+        scheduled = threading.Event()
+        handler = SimpleNamespace(path='/_mlx/idle-stop', server=SimpleNamespace(controller=self.server.controller, shutdown=scheduled.set),
+                                  _json=mock.Mock(side_effect=BrokenPipeError()))
+        with self.assertRaises(BrokenPipeError):
+            GatewayHandler._dispatch_control(handler, {'pid': os.getpid(), 'process_started_at': _pid_start(os.getpid())})
+        self.assertTrue(scheduled.wait(2))
+        self.assertTrue(self.server.controller.closed)
+
     def test_request_defaults_reach_worker_and_status_keeps_prompt_private(self):
         config = dict(self.config, request_defaults={'system_prompt': 'Be concise.', 'temperature': 0.6, 'top_p': 0.9})
         config['worker_argv'] = self.config['worker_argv'] + ['--usage']

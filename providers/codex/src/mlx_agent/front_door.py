@@ -5,6 +5,7 @@ import argparse
 import http.client
 from http.server import ThreadingHTTPServer
 import json
+import os
 from pathlib import Path
 import signal
 import threading
@@ -18,6 +19,15 @@ SYSTEMONE_PATH = "/v1/systemone"
 # Typed-route endpoints and the task kind a route must serve to answer them.
 TASK_PATHS = {EMBEDDINGS_PATH: "embedding", SYSTEMONE_PATH: "classification"}
 REFRESH_SECONDS = 5
+OPERATION = "serve-front-door"
+
+
+class FrontDoorError(ValueError):
+    """A startup step that failed, with the recovery a host can show."""
+
+    def __init__(self, code, message, remediation):
+        super().__init__(message)
+        self.code, self.remediation = code, remediation
 
 
 def route_table(services, digest):
@@ -160,6 +170,30 @@ class FrontDoorHandler(GatewayHandler):
             connection.close()
 
 
+def _listen(args, parent):
+    """Bind the listener, naming the startup step that failed."""
+    from .inference_auth import configuration_digest
+    from .service_registry import discover_services
+    if args.watch_parent and parent <= 1:
+        raise FrontDoorError("front_door_parent_unavailable", "--watch-parent requires a live parent.",
+                             "Start the front door from the process that owns it.")
+    try:
+        if args.api_key_file:
+            path = str(Path(args.api_key_file).absolute())
+            config = {"access_key_file": path, "access_key_sha256": configuration_digest(key_file=path)}
+        else:
+            config = {"api_key_sha256": configuration_digest(key_sha256=args.api_key_sha256)}
+    except (OSError, ValueError):
+        raise FrontDoorError("front_door_key_unavailable", "The front door API key is unavailable.",
+                             "Pass an owned private key file or a lowercase SHA-256 key digest.") from None
+    receipts = [str(Path(value).absolute()) for value in args.receipts_dir]
+    try:
+        return FrontDoorServer(("127.0.0.1", args.port), config, lambda: discover_services(receipts))
+    except OSError:
+        raise FrontDoorError("front_door_port_unavailable", "Port {} is unavailable on 127.0.0.1.".format(args.port),
+                             "Choose another port or stop the process using it.") from None
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="mlx-agent serve front-door", description=__doc__)
     parser.add_argument("--port", type=int, required=True)
@@ -167,22 +201,37 @@ def main(argv=None):
     key.add_argument("--api-key-file")
     key.add_argument("--api-key-sha256")
     parser.add_argument("--receipts-dir", action="append", default=[])
+    parser.add_argument("--watch-parent", action="store_true", help="stop when the launching process exits")
+    parser.add_argument("--json", action="store_true", help="print one result when listening or when startup fails")
     args = parser.parse_args(argv)
     if not 1 <= args.port <= 65535:
         parser.error("--port must be between 1 and 65535")
-    from .inference_auth import configuration_digest
-    from .service_registry import discover_services
-    if args.api_key_file:
-        path = str(Path(args.api_key_file).absolute())
-        config = {"access_key_file": path, "access_key_sha256": configuration_digest(key_file=path)}
-    else:
-        config = {"api_key_sha256": configuration_digest(key_sha256=args.api_key_sha256)}
-    receipts = [str(Path(value).absolute()) for value in args.receipts_dir]
-    server = FrontDoorServer(("127.0.0.1", args.port), config, lambda: discover_services(receipts))
+    from .contracts import ResultEnvelope
+    parent = os.getppid()
+    try:
+        server = _listen(args, parent)
+    except FrontDoorError as error:
+        if not args.json:
+            raise
+        print(json.dumps(ResultEnvelope.fail(OPERATION, error.code, str(error), error.remediation).to_dict(), indent=2))
+        return 2
+
+    def watch_parent():
+        while os.getppid() == parent:
+            time.sleep(.25)
+        server.shutdown()
+
     previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
     try:
         for sig in previous:
             signal.signal(sig, lambda *_: threading.Thread(target=server.shutdown, daemon=True).start())
+        if args.watch_parent:
+            threading.Thread(target=watch_parent, daemon=True).start()
+        if args.json:
+            # The listener already accepts connections; a host reads this line as readiness.
+            print(json.dumps(ResultEnvelope.ok(OPERATION, {
+                "state": "listening", "port": args.port, "api_base": "http://127.0.0.1:{}/v1".format(args.port),
+                "pid": os.getpid()}).to_dict()), flush=True)
         server.serve_forever()
     finally:
         server.server_close()

@@ -478,7 +478,9 @@ limit. OS headroom remains a separate admission and pressure guard.
 Save named settings for shared work or dedicated inference. Profiles
 contain headroom, residency and execution-wait settings; choose the model
 and endpoint when starting. Strata profiles can also include a model budget,
-context and decoding settings. Settings stay under the selected receipts directory.
+context and decoding settings. Splash profiles can include `--splash-max-memory-gb`
+and `--splash-max-context` startup limits, which cannot be combined with a model
+budget or Strata settings. Settings stay under the selected receipts directory.
 
 ```bash
 python3 scripts/mlx-agent serve profile save shared --memory-budget-gb 24 --min-headroom-gb 24 --strata-decoding lookup --json
@@ -491,6 +493,7 @@ Launch uses the usual preview and confirmation. Explicit launch options override
 saved settings. Use `serve profile show shared`, `save shared --replace` with the
 updated values, or `delete shared` to manage them. Saved changes apply to future
 launches; use `serve policy` to change a running endpoint's memory budget.
+Restart the endpoint with the selected profile to change Splash startup limits.
 Add `--no-unload-under-pressure` when saving a profile that uses `--keep-loaded`.
 Each launch still checks available memory; a saved profile does not reserve RAM.
 

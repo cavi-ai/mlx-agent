@@ -36,6 +36,25 @@ class ServeProfileTests(unittest.TestCase):
         self.assertNotIn('strata_context_tokens', settings)
         self.assertNotIn('strata_decoding', settings)
 
+    def test_splash_profile_cli_roundtrip_and_validation(self):
+        import io
+        from contextlib import redirect_stdout
+        from mlx_agent.cli import main
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = main(['serve', 'profile', 'save', 'splash', '--receipts-dir', str(self.root),
+                         '--min-headroom-gb', '8', '--splash-max-memory-gb', '54',
+                         '--splash-max-context', '32768', '--json'])
+        self.assertEqual(code, 0, output.getvalue())
+        settings = profiles.load_profile('splash', self.root)
+        self.assertEqual(settings['splash_max_memory_gb'], 54)
+        self.assertEqual(settings['splash_max_context_tokens'], 32768)
+        for delta in ({'splash_max_memory_gb': 0.5}, {'splash_max_memory_gb': True}, {'splash_max_memory_gb': None},
+                      {'splash_max_context_tokens': 511}, {'splash_max_context_tokens': 1_010_001},
+                      {'memory_budget_gb': 24}, {'strata_context_tokens': 16384}):
+            with self.subTest(delta=delta), self.assertRaises(ValueError):
+                profiles.save_profile('invalid', dict(settings, **delta), self.root)
+
     def test_task_budget_profile_needs_no_strata_context_or_decoding(self):
         settings = dict(min_headroom_gb=2, idle_timeout=0, keep_loaded=False,
                         unload_under_pressure=False, memory_budget_gb=12)

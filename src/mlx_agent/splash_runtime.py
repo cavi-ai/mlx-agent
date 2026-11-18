@@ -42,6 +42,13 @@ def find_launcher():
     raise SplashError("splash_not_installed", "No executable Splash launcher was found.")
 
 
+def supports_system_messages(version):
+    """Enable ordered system messages only for verified Splash releases."""
+    if not isinstance(version, str) or len(version) > 32 or not re.fullmatch(r'\d+\.\d+\.\d+', version):
+        return False
+    return tuple(int(part) for part in version.split('.')) >= (1, 6, 1)
+
+
 def installed_runtime(launcher=None, run=subprocess.run):
     """Version and identity of a released Splash launcher; a source checkout reports no version."""
     path = Path(launcher) if launcher is not None else find_launcher()

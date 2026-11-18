@@ -5,6 +5,7 @@ import json
 import sys
 import threading
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -92,10 +93,10 @@ class MessagesGatewayTests(unittest.TestCase):
         self.addCleanup(self.server.controller.close)
         self.addCleanup(self.server.shutdown)
 
-    def post(self, body):
+    def post(self, body, path="/v1/messages"):
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
         try:
-            connection.request("POST", "/v1/messages", json.dumps(body),
+            connection.request("POST", path, json.dumps(body),
                                {"Content-Type": "application/json", "x-api-key": "local", "anthropic-version": "2023-06-01"})
             response = connection.getresponse()
             return response.status, response.getheader("Content-Type"), response.read().decode()
@@ -177,6 +178,50 @@ class MessagesGatewayTests(unittest.TestCase):
             error = json.loads(text)
             self.assertEqual((status, error["type"], error["error"]["type"]), (400, "error", "invalid_request_error"), text)
         self.assertFalse(self.trace.exists())
+
+    def test_system_message_returns_specific_error_before_loading(self):
+        for role, expected in (("system", 'Unexpected role "system".'),
+                               ("other", "Each message needs the user or assistant role.")):
+            with self.subTest(role=role):
+                body = {"model": str(self.model), "max_tokens": 16,
+                        "messages": [{"role": role, "content": "Reminder"}]}
+                status, _, text = self.post(body, "/v1/messages?beta=true")
+                error = json.loads(text)
+                self.assertEqual((status, error['type'], error['error']['type'], error['error']['message']),
+                                 (400, 'error', 'invalid_request_error', expected))
+        self.assertFalse(self.trace.exists())
+
+    def test_splash_preserves_ordered_system_messages_when_supported(self):
+        from mlx_agent.splash_runtime import supports_system_messages
+        self.assertTrue(supports_system_messages('1.6.1'))
+        for version in ('1.6.0', None, '1.6.1-rc1', 'invalid'):
+            self.assertFalse(supports_system_messages(version))
+        self.server.config.update(runtime='splash', splash_served_model=str(self.model),
+                                  splash_weight_bytes=100, splash_max_memory_gb=3)
+        self.server.controller.memory_probe = lambda: 100_000_000_000
+        system = {'role': 'system', 'content': 'later reminder'}
+        body = {'model': str(self.model), 'max_tokens': 16, 'system': 'leading instruction',
+                'messages': [{'role': 'user', 'content': 'first request'}, system,
+                             {'role': 'user', 'content': 'next request'}]}
+        for version in ('1.6.0', None):
+            with self.subTest(version=version):
+                self.server.config['splash_version'] = version
+                status, _, text = self.post(body, '/v1/messages?beta=true')
+                self.assertEqual((status, json.loads(text)['error']['message']),
+                                 (400, 'Unexpected role "system".'))
+        self.server.config['splash_version'] = '1.6.1'
+        invalid = dict(body, messages=[{'role': 'system', 'content': [{'type': 'image', 'source': {}}]}])
+        status, _, text = self.post(invalid, '/v1/messages?beta=true')
+        self.assertEqual((status, json.loads(text)['error']['message']), (400, 'system message supports only text content.'))
+        self.assertFalse(self.trace.exists())
+        with patch.object(self.server.controller, '_match_serving_plan'):
+            status, _, text = self.post(body, '/v1/messages?beta=true')
+        self.assertEqual(status, 200, text)
+        self.assertEqual(self.sent()['messages'], [
+            {'role': 'system', 'content': 'leading instruction'},
+            {'role': 'user', 'content': 'first request'},
+            {'role': 'system', 'content': 'later reminder'},
+            {'role': 'user', 'content': 'next request'}])
 
     def test_vision_worker_receives_images_in_streamed_and_complete_requests(self):
         self.server.config["runtime"] = "mlx-vlm"

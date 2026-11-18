@@ -167,6 +167,65 @@ class ResponsesGatewayTests(unittest.TestCase):
         self.assertEqual(items[0]["call_id"], items[1]["call_id"])
         self.assertEqual(frames[-1]["response"]["output"][-1]["namespace"], "weather")
 
+    def test_indexed_stream_assembles_interleaved_namespaced_calls(self):
+        stream = responses_api.ResponseStream("local", {}, {"weather__lookup": ("weather", "lookup")})
+        def chunk(*calls, reason=None):
+            return stream.chunk({"choices": [{"delta": {"tool_calls": list(calls)}, "finish_reason": reason}]})
+        def decoded(events):
+            return [json.loads(event.decode().split("\n")[1].removeprefix("data: ")) for event in events]
+        first = decoded(chunk({"index": 0, "id": "call_a", "type": "function", "function": {"name": "weather__lookup"}},
+                              {"index": 1, "id": "call_b", "type": "function", "function": {"name": "plain"}}))
+        self.assertEqual([(e["item"]["call_id"], e["item"]["status"]) for e in first],
+                         [("call_a", "in_progress"), ("call_b", "in_progress")])
+        self.assertEqual((first[0]["item"]["namespace"], first[0]["item"]["name"]), ("weather", "lookup"))
+        self.assertEqual(chunk({"index": 0, "function": {"arguments": '{"city":'}},
+                               {"index": 1, "function": {"arguments": '{"n":1}'}},
+                               {"index": 0, "function": {"arguments": '"Paris"}'}}), [])
+        chunk(reason="tool_calls")
+        events = decoded(stream.finish())
+        done = [e["item"] for e in events if e["type"] == "response.output_item.done"]
+        self.assertEqual([(i["call_id"], json.loads(i["arguments"])) for i in done],
+                         [("call_a", {"city": "Paris"}), ("call_b", {"n": 1})])
+        self.assertEqual((done[0]["namespace"], done[0]["name"]), ("weather", "lookup"))
+        self.assertEqual(events[-1]["response"]["output"], done)
+
+    def test_indexed_stream_accepts_complete_object_and_bounds_shared_bytes(self):
+        def chunk(stream, call, reason=None):
+            return stream.chunk({"choices": [{"delta": {"tool_calls": [call] if call else []}, "finish_reason": reason}]})
+        header = {"index": 1000, "id": "call_a", "type": "function",
+                  "function": {"name": "lookup", "arguments": {"city": "Paris"}}}
+        stream = responses_api.ResponseStream("local", {})
+        chunk(stream, header)
+        chunk(stream, None, "tool_calls")
+        stream.finish()
+        self.assertEqual(json.loads(stream.response["output"][0]["arguments"]), {"city": "Paris"})
+        stream = responses_api.ResponseStream("local", {})
+        chunk(stream, header)
+        with self.assertRaises(responses_api.WorkerResponseError):
+            chunk(stream, {"index": 1000, "function": {"arguments": " "}})
+        stream = responses_api.ResponseStream("local", {})
+        chunk(stream, {"index": 0, "function": {"name": "first", "arguments": "{"}})
+        stream.call_argument_bytes = 16 * 1024 * 1024 - 1
+        with self.assertRaises(responses_api.WorkerResponseError):
+            chunk(stream, {"index": 1, "function": {"name": "second", "arguments": "{}"}})
+
+    def test_indexed_stream_rejects_invalid_or_incomplete_calls(self):
+        def chunk(stream, call, reason=None):
+            return stream.chunk({"choices": [{"delta": {"tool_calls": [call] if call else []}, "finish_reason": reason}]})
+        header = {"index": 0, "id": "call_a", "type": "function", "function": {"name": "lookup"}}
+        with self.assertRaises(responses_api.WorkerResponseError):
+            chunk(responses_api.ResponseStream("local", {}), {"index": 0, "function": {"arguments": "{}"}})
+        for fragment in ({"index": 0, "id": "changed", "function": {"arguments": "{}"}},
+                         {"index": 0, "function": {"name": "changed"}}):
+            stream = responses_api.ResponseStream("local", {})
+            chunk(stream, header)
+            with self.assertRaises(responses_api.WorkerResponseError): chunk(stream, fragment)
+        for arguments, reason in (("{", "tool_calls"), ("[]", "tool_calls"), ("{}", None), ("{}", "length")):
+            stream = responses_api.ResponseStream("local", {})
+            chunk(stream, header)
+            chunk(stream, {"index": 0, "function": {"arguments": arguments}}, reason)
+            with self.assertRaises(responses_api.WorkerResponseError): stream.finish()
+
     def test_none_choice_ignores_inactive_unsupported_tools(self):
         body = {"model": str(self.model), "input": "Hi", "tool_choice": "none",
                 "tools": [{"type": "web_search"}, {"type": "namespace", "name": "invalid.name", "tools": []}]}

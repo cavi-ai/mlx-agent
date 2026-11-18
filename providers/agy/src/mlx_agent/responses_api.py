@@ -9,7 +9,7 @@ import re
 import secrets
 import time
 
-from mlx_agent.messages_api import sse, tool_call
+from mlx_agent.messages_api import WorkerResponseError, sse, tool_call
 from mlx_agent.image_inputs import responses_image
 
 PARAMETERS = {"model", "input", "instructions", "max_output_tokens", "tools", "tool_choice", "parallel_tool_calls",
@@ -274,6 +274,8 @@ class ResponseStream:
         self.aliases = aliases or {}
         self.response = _response(model, fields, "in_progress", [])
         self.sequence, self.text, self.finish_reason, self.usage = 0, None, None, None
+        self.calls = {}
+        self.call_argument_bytes = 0
 
     def _event(self, kind, **data):
         self.sequence += 1
@@ -298,6 +300,78 @@ class ResponseStream:
                 self._event("response.content_part.done", part=item["content"][0], **where),
                 self._event("response.output_item.done", output_index=index, item=item)]
 
+    def _indexed_call(self, call):
+        index = call.get("index")
+        function = call.get("function")
+        if (type(index) is not int or index < 0 or not isinstance(function, dict)
+                or call.get("type") not in (None, "function")):
+            raise WorkerResponseError("The model produced an invalid tool call.")
+        name, identifier, arguments = function.get("name"), call.get("id"), function.get("arguments")
+        if (name is not None and (not isinstance(name, str) or not name)
+                or identifier is not None and (not isinstance(identifier, str) or not identifier)
+                or arguments is not None and not isinstance(arguments, (str, dict))):
+            raise WorkerResponseError("The model produced an invalid tool call.")
+        events = []
+        current = self.calls.get(index)
+        if current is None:
+            if not name or len(self.calls) >= 256:
+                raise WorkerResponseError("The model produced an invalid tool call.")
+            item = {"type": "function_call", "id": _identifier("fc_"),
+                    "call_id": identifier or _identifier("call_"), "name": name,
+                    "arguments": "", "status": "in_progress"}
+            if name in self.aliases and self.aliases[name][0] is not None:
+                item["namespace"], item["name"] = self.aliases[name]
+            events += self._close_text()
+            events.append(self._add(item))
+            current = {"name": name, "worker_id": identifier, "output_index": len(self.response["output"]) - 1,
+                       "fragments": [], "object_argument": False}
+            self.calls[index] = current
+        elif (name is not None and name != current["name"] or
+              identifier is not None and identifier != current["worker_id"]):
+            raise WorkerResponseError("The model produced an invalid tool call.")
+        if arguments is not None:
+            if isinstance(arguments, dict):
+                if current["fragments"] or current["object_argument"]:
+                    raise WorkerResponseError("The model produced an invalid tool call.")
+                try:
+                    fragment = json.dumps(arguments)
+                except (TypeError, ValueError):
+                    raise WorkerResponseError("The model produced an invalid tool call.") from None
+                current["object_argument"] = True
+            else:
+                if current["object_argument"]:
+                    raise WorkerResponseError("The model produced an invalid tool call.")
+                fragment = arguments
+            self.call_argument_bytes += len(fragment.encode("utf-8"))
+            if self.call_argument_bytes > 16 * 1024 * 1024:
+                raise WorkerResponseError("The model produced an invalid tool call.")
+            current["fragments"].append(fragment)
+        return events
+
+    def _finish_calls(self):
+        if self.calls and self.finish_reason in (None, "length"):
+            raise WorkerResponseError("The model produced an invalid tool call.")
+        # Validate every call before completing any of them.
+        for current in self.calls.values():
+            try:
+                current["arguments"] = "".join(current.pop("fragments"))
+                arguments = json.loads(current["arguments"])
+            except (ValueError, TypeError):
+                raise WorkerResponseError("The model produced an invalid tool call.") from None
+            if not isinstance(arguments, dict):
+                raise WorkerResponseError("The model produced an invalid tool call.")
+        events = []
+        for current in self.calls.values():
+            index = current["output_index"]
+            item = self.response["output"][index]
+            item.update(arguments=current["arguments"], status="completed")
+            events += [self._event("response.function_call_arguments.delta", item_id=item["id"],
+                                   output_index=index, delta=item["arguments"]),
+                       self._event("response.function_call_arguments.done", item_id=item["id"],
+                                   output_index=index, arguments=item["arguments"]),
+                       self._event("response.output_item.done", output_index=index, item=item)]
+        return events
+
     def chunk(self, value):
         events = []
         if isinstance(value.get("usage"), dict):
@@ -318,6 +392,9 @@ class ResponseStream:
                 events.append(self._event("response.output_text.delta", item_id=item["id"], output_index=self.text,
                                           content_index=0, delta=delta["content"]))
             for call in delta.get("tool_calls") or []:
+                if isinstance(call, dict) and "index" in call:
+                    events += self._indexed_call(call)
+                    continue
                 item = _function_call(call, self.aliases)
                 events += self._close_text()
                 events.append(self._add(dict(item, arguments="", status="in_progress")))
@@ -334,7 +411,7 @@ class ResponseStream:
         return events
 
     def finish(self):
-        events = self._close_text()
+        events = self._close_text() + self._finish_calls()
         self.response.update(_outcome(self.finish_reason), usage=_usage(self.usage))
         return events + [self._event("response." + self.response["status"], response=self.response)]
 

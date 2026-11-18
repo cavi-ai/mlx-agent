@@ -977,6 +977,7 @@ def _add_serve_arguments(parser):
                        help="opt-in M5 affine Q4 prompt kernel; unsupported hardware/models use native MLX")
     start.add_argument("--prompt-lookup", action="store_true",
                        help="opt-in code-edit decoding; plain greedy requests run one at a time")
+    start.add_argument("--shared-prefix-cache-mib", type=int, help="reuse instruction prefixes within a keyed project endpoint (16–2048 MiB)")
     start.add_argument("--vision-cache", action="store_true",
                        help="opt-in bounded Qwen2.5-VL and Qwen3-VL image feature reuse with MLX-VLM")
     start.add_argument("--jit", action="store_true", help="keep endpoint reachable; load local weights on inference requests")
@@ -1291,6 +1292,7 @@ def _run_serve(arguments):
             default_top_p=arguments.default_top_p,
             m5_prefill=arguments.m5_prefill,
             prompt_lookup=arguments.prompt_lookup,
+            shared_prefix_cache_mib=arguments.shared_prefix_cache_mib,
             vision_cache=arguments.vision_cache,
             splash_draft_model=arguments.splash_draft_model,
             splash_max_memory_gb=arguments.splash_max_memory_gb,

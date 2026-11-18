@@ -1,5 +1,11 @@
 # Serve
 
+## Shared instruction prefixes
+
+A supervised MLX-LM endpoint can reuse a verified leading system instruction and its tool definitions across requests. Set `--shared-prefix-cache-mib` to 16–2048 with `--jit` and `--api-key-file` on both preview and confirmed launch. The key authorizes one project endpoint; everyone holding it shares this prefix cache.
+
+The budget is included in memory admission. Prefixes stay in worker memory and are released when the worker unloads. Requests without a supported instruction boundary use ordinary generation. The supported runtime is MLX-LM 0.31.3 with MLX 0.32.0; the reviewed runtime files must match the serving preview.
+
 ## Shared agent memory budget
 
 `serve budget --json` reports the engine's shared memory policy. Configure a

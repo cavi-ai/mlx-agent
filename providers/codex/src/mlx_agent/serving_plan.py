@@ -97,7 +97,7 @@ def worker_config(plan, *, control_token, state_path, log_path=None, config_path
     if plan["runtime"] == "splash":
         config.update({key: plan[key] for key in ("splash_served_model", "splash_weight_bytes", "splash_max_memory_gb")})
     for key in (
-        "jit", "prefill_kernel", "decode_profile", "vision_profile",
+        "jit", "prefill_kernel", "decode_profile", "vision_profile", "shared_prefix_cache",
         "splash_model_dir", "splash_model_fingerprint", "splash_draft_model", "splash_draft_fingerprint",
         "splash_launcher", "splash_runtime_fingerprint",
         "strata_memory_estimate_bytes", "strata_memory_growth_bytes",

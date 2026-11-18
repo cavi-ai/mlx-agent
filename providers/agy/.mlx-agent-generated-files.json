@@ -319,6 +319,7 @@
     "src/mlx_agent/service_registry.py",
     "src/mlx_agent/serving_access.py",
     "src/mlx_agent/serving_plan.py",
+    "src/mlx_agent/shared_prefix_cache.py",
     "src/mlx_agent/source_evidence.py",
     "src/mlx_agent/speak.py",
     "src/mlx_agent/speak_runner.py",

@@ -539,7 +539,7 @@ class ModelWorker:
             if private:
                 from mlx_agent.private_serve import worker_command
                 descriptor = self.private_endpoint.listener.fileno()
-                argv = worker_command(argv, self.config["local_path"], descriptor)
+                argv = worker_command(argv, self.config["local_path"], descriptor, self.config.get("shared_prefix_cache"))
                 extra["pass_fds"] = (descriptor,)
             environment = dict(os.environ, HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_DATASETS_OFFLINE="1")
             splash = self.config.get("runtime") == "splash"

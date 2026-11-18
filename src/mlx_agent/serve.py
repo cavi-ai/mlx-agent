@@ -206,12 +206,18 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                runtime_executable=None, strata_speculation=False, strata_decoding=None,
                strata_expert_memory_gb=None, strata_context_tokens=None, training_receipt=None, thinking="default",
                m5_prefill=False, prompt_lookup=False, vision_cache=False, api_key_file=None, api_key_sha256=None,
-               system_prompt=None, default_temperature=None, default_top_p=None,
+               system_prompt=None, default_temperature=None, default_top_p=None, shared_prefix_cache_mib=None,
                splash_draft_model=None, splash_max_memory_gb=None, splash_max_context_tokens=None):
     """Render the start plan and local file identities without side effects."""
     if runtime != "splash" and (splash_draft_model is not None or splash_max_memory_gb is not None
                                 or splash_max_context_tokens is not None):
         raise ServeError("invalid_arguments", "Splash options require the Splash runtime.", "Use --runtime splash.")
+    if shared_prefix_cache_mib is not None:
+        if (type(shared_prefix_cache_mib) is not int or not 16 <= shared_prefix_cache_mib <= 2048
+                or runtime != "mlx_lm" or not jit or api_key_file is None or m5_prefill or prompt_lookup
+                or vision_cache or system_prompt is not None or adapter_path is not None or training_receipt is not None):
+            raise ServeError("invalid_arguments", "Shared prefixes require a keyed MLX-LM JIT endpoint and a 16–2048 MiB budget.",
+                             "Use an API key file and remove incompatible runtime options.")
     access = None
     if api_key_file is not None:
         if api_key_sha256 is not None:
@@ -345,6 +351,11 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         "max_tokens": str(max_tokens),
         "runtime_adapter": str(Path(__file__).with_name("strata_runtime.py").resolve()),
     }
+    if shared_prefix_cache_mib is not None:
+        resolved = shutil.which(values['executable'])
+        if resolved is None:
+            raise ServeError('runtime_not_installed', 'The MLX-LM runtime is unavailable.', 'Install a supported runtime.')
+        values['executable'] = str(Path(resolved).resolve())
     contribution = None
     if runtime != "strata" and (strata_expert_memory_gb is not None or strata_context_tokens is not None or strata_decoding is not None):
         raise ServeError("invalid_arguments", "Strata memory controls require the Strata runtime.",
@@ -418,6 +429,15 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         "readiness": recipe["readiness"].format(port=selected_port),
         "bind": "127.0.0.1",
     }
+    if shared_prefix_cache_mib is not None:
+        from .private_serve import runtime_python
+        from .shared_prefix_cache import identity as prefix_identity
+        try:
+            plan['shared_prefix_cache'] = {'mib': shared_prefix_cache_mib,
+                                           'runtime': prefix_identity(runtime_python(values['executable']))}
+        except (OSError, ValueError, subprocess.SubprocessError, KeyError) as error:
+            raise ServeError('unsupported_runtime', 'Shared prefixes require the supported MLX-LM build.',
+                             'Use the reviewed runtime or omit the shared prefix option.') from error
     if contribution is not None:
         contribution.apply_fields(plan)
     elif has_path:

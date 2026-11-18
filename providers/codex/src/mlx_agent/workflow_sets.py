@@ -17,7 +17,7 @@ from .compute import process_identity
 from .memory_budget import same_identity
 from .serve import (SERVE_RECEIPT_KIND, SERVE_RECEIPT_SCHEMA_VERSION, load_recipes, plan_start, receipts_root, resolve_serve_runtime,
                     _argv_matches, _pid_alive, _pid_command, _pid_start)
-from .serve_profiles import load_profile
+from .serve_profiles import SPLASH_FIELDS, SPLASH_TUNING, load_profile
 from .transactions import _atomic_in_directory, _target_locks, _walk_directory
 from .wiring import _MODEL
 
@@ -141,7 +141,7 @@ def _member_plan(member, root):
     runtime, executable = resolve_serve_runtime(repo, path, member['runtime'], recipes)
     if runtime != 'strata' and ('strata_context_tokens' in profile or 'strata_decoding' in profile):
         raise ValueError('Strata profile requires a Strata runtime.')
-    if runtime != 'splash' and ('splash_max_memory_gb' in profile or 'splash_max_context_tokens' in profile):
+    if runtime != 'splash' and SPLASH_FIELDS & set(profile):
         raise ValueError('Splash profile requires a Splash runtime.')
     policy = validate_policy(policy_from_profile(profile))
     if runtime != 'tasks':
@@ -152,7 +152,8 @@ def _member_plan(member, root):
                       strata_context_tokens=profile.get('strata_context_tokens'),
                       strata_decoding=profile.get('strata_decoding'),
                       splash_max_memory_gb=profile.get('splash_max_memory_gb'),
-                      splash_max_context_tokens=profile.get('splash_max_context_tokens'))
+                      splash_max_context_tokens=profile.get('splash_max_context_tokens'),
+                      splash_tuning={key: profile[key] for key in SPLASH_TUNING if key in profile})
 
 
 def _hash(value):

@@ -13,15 +13,27 @@ from pathlib import Path
 
 from .serving_plan import Contribution
 
-MIN_VERSION = (1, 4, 0)
+MIN_VERSION = (1, 7, 0)
 _VERSION = re.compile(r"Splash (\d+)\.(\d+)\.(\d+)")
 _SPLIT = re.compile(r"(.+)-(\d{5})-of-(\d{5})\.gguf")
 # Splash's --model rule: an OWNER/REPO repository ID without "--" or "..".
 _OWNER = re.compile(r"[A-Za-z0-9_](?:[A-Za-z0-9._-]*[A-Za-z0-9_])?")
 _SERVED_NAME = re.compile(r"[A-Za-z0-9_](?:[A-Za-z0-9._-]{0,94}[A-Za-z0-9_])?")
 _LAUNCHER_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "~/.local/bin")
-_INSTALL = ("Install Splash 1.4.0 or later on an Apple M3 or newer with macOS 26.4 or later "
+_INSTALL = ("Install Splash 1.7.0 or later on an Apple M3 or newer with macOS 26.4 or later "
             "(brew install incoai/tap/splash); serve never installs runtimes.")
+EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+# Server tuning a profile or start may set: its Splash flag and its accepted values.
+TUNING = {
+    "splash_verify_rows": ("--verify-rows", ("auto", "all")),
+    "splash_cached_states": ("--cached-states", ("int8", "exact")),
+    "splash_kv_format": ("--kv-format", ("int8", "bf16")),
+    "splash_reasoning_effort": ("--reasoning-effort", EFFORTS),
+    "splash_thinking_token_budget": ("--thinking-token-budget", None),
+    "splash_persistent_cache": ("--persistent-cache", None),
+    "splash_max_cache_disk_gb": ("--max-cache-disk", None),
+}
+_TEMPLATE_BYTES = 1 << 20
 
 
 class SplashError(RuntimeError):
@@ -73,7 +85,7 @@ def installed_runtime(launcher=None, run=subprocess.run):
     text = ".".join(str(part) for part in version)
     if version < MIN_VERSION:
         raise SplashError("splash_version_unsupported",
-                          "Splash {0} predates 1.4.0, the first release serving split GGUFs.".format(text),
+                          "Splash {0} predates 1.7.0, the oldest release mlx-agent serves.".format(text),
                           "Upgrade Splash (brew upgrade incoai/tap/splash).")
     digest = hashlib.sha256()
     for part in (str(path), str(resolved), text):
@@ -246,7 +258,57 @@ def read_draft(path):
     return {"path": str(root), "fingerprint": _fingerprint(identities), "weight_bytes": size}
 
 
-def serve_arguments(draft=None, max_memory_gb=None, max_context_tokens=None):
+def read_chat_template(path):
+    """A local Jinja chat template file, bound to the preview by its SHA-256."""
+    root = Path(path).expanduser().absolute()
+    remediation = "Pass a UTF-8 Jinja chat template file of at most 1 MiB."
+    try:
+        content = root.read_bytes()
+        if not root.is_file() or len(content) > _TEMPLATE_BYTES or not content.strip():
+            raise ValueError("The chat template is not a non-empty file of at most 1 MiB: " + str(root))
+        content.decode("utf-8")
+    except (OSError, ValueError) as error:
+        raise SplashError("splash_chat_template_invalid", str(error), remediation) from error
+    return {"path": str(root), "sha256": hashlib.sha256(content).hexdigest()}
+
+
+def _invalid(message, flag):
+    return SplashError("invalid_arguments", message, "Pass {0} with a supported value.".format(flag))
+
+
+def tuning_arguments(tuning):
+    """Splash server tuning: TUNING keys to flags, sizes as whole bytes; unknown keys and values are refused."""
+    tuning = dict(tuning or {})
+    unknown = sorted(set(tuning) - set(TUNING))
+    if unknown:
+        raise SplashError("invalid_arguments", "Unknown Splash settings: " + ", ".join(unknown), "Remove them.")
+    args = []
+    for key, (flag, choices) in TUNING.items():
+        value = tuning.get(key)
+        if value is None:
+            continue
+        cli = "--splash-" + flag[2:]
+        if choices is not None:
+            if value not in choices:
+                raise _invalid("Splash {0} must be one of {1}.".format(flag[2:], ", ".join(choices)), cli)
+            args += [flag, value]
+        elif key == "splash_thinking_token_budget":
+            if type(value) is not int or not 0 <= value <= 1_010_000:
+                raise _invalid("Splash thinking budget must be an integer from 0 to 1010000 tokens.",
+                               "--splash-thinking-budget")
+            args += [flag, str(value)]
+        elif key == "splash_persistent_cache":
+            if type(value) is not bool:
+                raise _invalid("Splash persistent cache must be on or off.", cli)
+            args += [flag] if value else []
+        elif type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 4096:
+            raise _invalid("Splash SSD cache size must be a finite value from 0 to 4096 GB; 0 turns it off.", cli + "-gb")
+        else:
+            args += [flag, str(math.floor(value * 1e9))]
+    return args
+
+
+def serve_arguments(draft=None, max_memory_gb=None, max_context_tokens=None, tuning=None, chat_template=None):
     """Bounded Splash options appended after the recipe; sizes go as whole bytes, never binary-unit text."""
     args = []
     if draft is not None:
@@ -261,15 +323,20 @@ def serve_arguments(draft=None, max_memory_gb=None, max_context_tokens=None):
             raise SplashError("invalid_arguments", "Splash context must be an integer from 512 to 1010000 tokens.",
                               "Pass --splash-max-context in tokens.")
         args += ["--max-context", str(max_context_tokens)]
+    args += tuning_arguments(tuning)
+    if chat_template is not None:
+        args += ["--chat-template-file", chat_template["path"]]
     return args
 
 
 def plan_contribution(local_path, has_repo, repo, hf_cache, adapter_path, jit, runtime_executable,
-                      draft_model, max_memory_gb, max_context_tokens):
+                      draft_model, max_memory_gb, max_context_tokens, tuning=None, chat_template=None):
     """Splash's part of a serving plan. Raises SplashError; the caller maps it."""
     if adapter_path is not None:
         raise SplashError("invalid_arguments", "Splash serves local weights without a LoRA adapter.",
                           "Remove the adapter path.")
+    tuning_arguments(tuning)
+    template = read_chat_template(chat_template) if chat_template is not None else None
     model_dir = local_path
     if has_repo:
         from .convert import cached_snapshot
@@ -293,6 +360,9 @@ def plan_contribution(local_path, has_repo, repo, hf_cache, adapter_path, jit, r
               "splash_source": target["source"], "splash_draft_model": draft["path"] if draft else None,
               "splash_draft_fingerprint": draft["fingerprint"] if draft else None,
               "splash_max_memory_gb": max_memory_gb, "splash_max_context_tokens": max_context_tokens,
+              **{key: (tuning or {}).get(key) for key in TUNING},
+              "splash_chat_template": template["path"] if template else None,
+              "splash_chat_template_sha256": template["sha256"] if template else None,
               "weight_format": target["format"], "weight_bytes": target["weight_bytes"],
               "weights_preserved": True, "readiness_deadline": 900}
     entry = worker_entry(runtime) if jit else None
@@ -300,4 +370,5 @@ def plan_contribution(local_path, has_repo, repo, hf_cache, adapter_path, jit, r
         fields.update(splash_worker_entry=entry,
                       splash_weight_bytes=target["weight_bytes"] + (draft["weight_bytes"] if draft else 0))
     values = {"executable": runtime["launcher"], "served_model": target["served_model"], "splash_target": target["target"]}
-    return Contribution(serve_arguments(draft, max_memory_gb, max_context_tokens), values, fields, worker_entry=entry)
+    return Contribution(serve_arguments(draft, max_memory_gb, max_context_tokens, tuning, template),
+                        values, fields, worker_entry=entry)

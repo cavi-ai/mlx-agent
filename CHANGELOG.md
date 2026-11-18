@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Add `--json` and `--watch-parent` to `serve front-door`: one result line reports the listening port or the startup failure, and the front door stops when the launching process exits.
+- Serve with Splash 1.7.0 or later, and tune it at start or in saved profiles: verify rows, cached-state and KV precision, a server-wide reasoning effort, a thinking budget, the persistent SSD prompt cache and its quota, and a reviewed custom chat template.
 
 ## 0.13.0 - 2026-11-16
 

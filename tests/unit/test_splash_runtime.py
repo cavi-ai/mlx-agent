@@ -18,6 +18,9 @@ from .test_gguf import write_gguf
 
 SCHEMA = Path(__file__).resolve().parents[2] / "schemas/serve-receipt.schema.json"
 SHARD = "Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-0000{0}-of-00002.gguf"
+TUNING = {"splash_verify_rows": "all", "splash_cached_states": "exact", "splash_kv_format": "bf16",
+          "splash_reasoning_effort": "low", "splash_thinking_token_budget": 4096,
+          "splash_persistent_cache": True, "splash_max_cache_disk_gb": 16}
 # Splash's serving contract: its key from SPLASH_API_KEY, and only its served name as a request model.
 SPLASH_SERVER = '''
 import argparse, json, os
@@ -67,7 +70,7 @@ class SplashServeTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.receipts = str(self.root / "receipts")
-        self.launcher = self.install("Splash 1.6.0")
+        self.launcher = self.install("Splash 1.7.0")
 
     def install(self, version_line):
         launcher = self.root / "bin/splash"
@@ -122,7 +125,7 @@ class SplashServeTests(unittest.TestCase):
             "--port", "8086", "--max-memory", "64000000000", "--max-context", "32768",
             "--default-reasoning-effort", "none"])
         self.assertEqual((plan["splash_source"], plan["splash_version"], plan["weight_format"], plan["thinking"]),
-                         ("strata_profile", "1.6.0", "gguf", "off"))
+                         ("strata_profile", "1.7.0", "gguf", "off"))
         self.assertEqual(plan["readiness"], "http://127.0.0.1:8086/ready")
         other = self.plan(profile, splash_max_memory_gb=48, splash_max_context_tokens=32768, thinking="off")
         self.assertNotEqual(plan["preview_hash"], other["preview_hash"])
@@ -294,10 +297,13 @@ class SplashServeTests(unittest.TestCase):
             read_target(snapshot, served_model="pub/name--copy")
         self.assertEqual(error.exception.code, "invalid_repo")
 
-    def test_launcher_must_report_a_release_with_split_gguf_support(self):
+    def test_launcher_must_report_splash_1_7_or_later(self):
         target = write_gguf(self.root / "model.gguf")
-        self.install("Splash 1.3.9")
-        self.assertEqual(self.code(lambda: self.plan(target)), "splash_version_unsupported")
+        self.install("Splash 1.6.1")
+        with self.assertRaises(ServeError) as error:
+            self.plan(target)
+        self.assertEqual(error.exception.code, "splash_version_unsupported")
+        self.assertIn("1.7.0", str(error.exception))
         self.install("Splash (source checkout)")
         self.assertEqual(self.code(lambda: self.plan(target)), "splash_not_installed")
         with patch.dict(os.environ, {"MLX_AGENT_SPLASH": str(self.root / "missing")}):
@@ -328,6 +334,98 @@ class SplashServeTests(unittest.TestCase):
         (draft / "config.json").write_text(json.dumps({"model_type": "qwen3"}))
         self.assertEqual(self.code(lambda: self.plan(target, splash_draft_model=str(draft))), "splash_draft_invalid")
 
+    def test_splash_1_7_tuning_reaches_the_reviewed_launch(self):
+        from tests.unit.test_serve import _isolate_ownership
+        _isolate_ownership(self)
+        target = write_gguf(self.root / "model.gguf")
+        base = self.plan(target)
+        plan = self.plan(target, splash_tuning=dict(TUNING))
+        added = ["--verify-rows", "all", "--cached-states", "exact", "--kv-format", "bf16",
+                 "--reasoning-effort", "low", "--thinking-token-budget", "4096",
+                 "--persistent-cache", "--max-cache-disk", "16000000000"]
+        self.assertEqual(plan["argv"], base["argv"] + added)
+        self.assertEqual({key: plan[key] for key in TUNING}, TUNING)
+        self.assertEqual({key: base[key] for key in TUNING}, dict.fromkeys(TUNING))
+        self.assertNotEqual(plan["preview_hash"], base["preview_hash"])
+        self.assertEqual(self.start(plan)["receipt"]["argv"][-len(added):], added)
+        off = self.plan(target, splash_tuning={"splash_persistent_cache": False, "splash_max_cache_disk_gb": 0})
+        self.assertEqual(off["argv"], base["argv"] + ["--max-cache-disk", "0"])
+
+    def test_splash_tuning_outside_its_values_is_refused(self):
+        target = write_gguf(self.root / "model.gguf")
+        for tuning in ({"splash_verify_rows": "some"}, {"splash_cached_states": "fp32"}, {"splash_kv_format": "fp8"},
+                       {"splash_reasoning_effort": "extreme"}, {"splash_thinking_token_budget": -1},
+                       {"splash_thinking_token_budget": True}, {"splash_persistent_cache": "yes"},
+                       {"splash_max_cache_disk_gb": -1}, {"splash_max_cache_disk_gb": float("nan")},
+                       {"splash_unknown": 1}):
+            with self.subTest(tuning=tuning):
+                self.assertEqual(self.code(lambda: self.plan(target, splash_tuning=tuning)), "invalid_arguments")
+        self.assertEqual(self.code(lambda: self.plan(target, thinking="off",
+                                                     splash_tuning={"splash_reasoning_effort": "high"})),
+                         "invalid_arguments")
+        self.assertEqual(self.code(lambda: plan_start("pub/model", "mlx_lm", load_recipes(),
+                                                      splash_tuning={"splash_verify_rows": "all"})),
+                         "invalid_arguments")
+
+    def test_chat_template_file_is_bound_to_the_preview(self):
+        target = write_gguf(self.root / "model.gguf")
+        template = self.root / "chat.jinja"
+        template.write_text("{% for message in messages %}{{ message.content }}{% endfor %}")
+        plan = self.plan(target, splash_chat_template=str(template))
+        self.assertEqual(plan["argv"][-2:], ["--chat-template-file", str(template)])
+        self.assertEqual(plan["splash_chat_template"], str(template))
+        template.write_text("changed")
+        spawn = Mock()
+        self.assertEqual(self.code(lambda: self.start(plan, spawn)), "preview_stale")
+        spawn.assert_not_called()
+        for missing in (self.root / "missing.jinja", self.root):
+            with self.subTest(path=missing):
+                self.assertEqual(self.code(lambda: self.plan(target, splash_chat_template=str(missing))),
+                                 "splash_chat_template_invalid")
+
+    def test_profile_tuning_flows_through_cli_and_workflow_plans(self):
+        import sys
+        from mlx_agent import workflow_sets
+        model = self.strata_profile()
+        libexec = Path(self.launcher).resolve().parents[1] / 'libexec'
+        (libexec / 'python/bin').mkdir(parents=True)
+        (libexec / 'python/bin/python3').symlink_to(sys.executable)
+        (libexec / 'install').mkdir(parents=True)
+        (libexec / 'install/launcher.py').write_text(SPLASH_LAUNCHER)
+
+        def run(*argv):
+            output = io.StringIO()
+            with redirect_stdout(output):
+                code = cli.main([*argv, '--receipts-dir', self.receipts, '--json'])
+            return code, json.loads(output.getvalue())
+
+        code, saved = run('serve', 'profile', 'save', 'agents', '--min-headroom-gb', '8',
+                          '--splash-verify-rows', 'all', '--splash-cached-states', 'exact', '--splash-kv-format', 'bf16',
+                          '--splash-reasoning-effort', 'low', '--splash-thinking-budget', '4096',
+                          '--splash-persistent-cache', '--splash-max-cache-disk-gb', '16')
+        self.assertEqual(code, 0, saved)
+        self.assertEqual({key: saved['data']['settings'][key] for key in TUNING}, TUNING)
+        start = ('serve', 'start', '--path', str(model), '--runtime', 'splash', '--jit', '--profile', 'agents')
+        code, preview = run(*start)
+        self.assertEqual(code, 2, preview)
+        plan = preview['data']['plan']
+        self.assertEqual({key: plan[key] for key in TUNING}, TUNING)
+        self.assertIn('--verify-rows', plan['worker_argv'])
+        code, preview = run(*start, '--splash-verify-rows', 'auto', '--no-splash-persistent-cache')
+        changed = preview['data']['plan']
+        self.assertEqual((changed['splash_verify_rows'], changed['splash_persistent_cache']), ('auto', False))
+        self.assertNotIn('--persistent-cache', changed['worker_argv'])
+        member = {'path': str(model), 'runtime': 'splash', 'port': 8086, 'profile': 'agents'}
+        workflow = workflow_sets._member_plan(member, self.receipts)
+        self.assertEqual({key: workflow[key] for key in TUNING}, TUNING)
+        self.assertIn('--cached-states', workflow['worker_argv'])
+        with patch('mlx_agent.workflow_sets.resolve_serve_runtime', return_value=('mlx_lm', sys.executable)):
+            with self.assertRaisesRegex(ValueError, 'Splash profile requires'):
+                workflow_sets._member_plan(dict(member, runtime='mlx_lm'), self.receipts)
+        with patch('mlx_agent.serve.resolve_serve_runtime', return_value=('mlx_lm', sys.executable)):
+            code, refused = run('serve', 'start', '--path', str(model), '--runtime', 'mlx_lm', '--jit', '--profile', 'agents')
+        self.assertEqual((code, refused['error']['code']), (2, 'invalid_arguments'))
+
     def test_confirm_refuses_target_or_launcher_changed_after_preview(self):
         profile = self.strata_profile()
         plan = self.plan(profile)
@@ -336,7 +434,7 @@ class SplashServeTests(unittest.TestCase):
         self.assertEqual(self.code(lambda: self.start(plan, spawn)), "preview_stale")
         target = write_gguf(self.root / "model.gguf")
         plan = self.plan(target)
-        Path(self.launcher).write_text("#!/bin/sh\nprintf '%s\\n' 'Splash 1.6.1'\n")
+        Path(self.launcher).write_text("#!/bin/sh\nprintf '%s\\n' 'Splash 1.7.1'\n")
         self.assertEqual(self.code(lambda: self.start(plan, spawn)), "preview_stale")
         spawn.assert_not_called()
 
@@ -349,10 +447,10 @@ class SplashServeTests(unittest.TestCase):
         validator = Draft202012Validator(json.loads(SCHEMA.read_text()), format_checker=FormatChecker())
         self.assertEqual(list(validator.iter_errors(receipt)), [])
         self.assertEqual((receipt["runtime"], receipt["splash_served_model"], receipt["splash_version"]),
-                         ("splash", "local/Qwen3.8-Flash-Next-Q2_0", "1.6.0"))
-        server = ("/opt/homebrew/Cellar/splash/1.6.0/libexec/runtime/bin/python -u -P -m server.server "
+                         ("splash", "local/Qwen3.8-Flash-Next-Q2_0", "1.7.0"))
+        server = ("/opt/homebrew/Cellar/splash/1.7.0/libexec/runtime/bin/python -u -P -m server.server "
                   "/Users/me/Library/Application Support/Splash/models/prepared --model {0} "
-                  "--binary /opt/homebrew/Cellar/splash/1.6.0/libexec/engine/splash --port {1} --host 127.0.0.1")
+                  "--binary /opt/homebrew/Cellar/splash/1.7.0/libexec/engine/splash --port {1} --host 127.0.0.1")
         own = server.format("local/Qwen3.8-Flash-Next-Q2_0", 8086)
         foreign = server.format("local/other", 8086)
         status = lambda command: status_serve(self.receipts, pid_alive=lambda pid: True,
@@ -398,7 +496,7 @@ class SplashServeTests(unittest.TestCase):
 
         state = self.root.resolve()
         config = gateway_config(plan, control_token="control-" + "c" * 32, state_path=str(state / "state.json"))
-        self.assertEqual(config['splash_version'], '1.6.0')
+        self.assertEqual(config['splash_version'], '1.7.0')
         config.update(memory_state_dir=str(state / "memory"), compute_state_dir=str(state / "compute"))
         server = make_server(config, port=0)
         thread = threading.Thread(target=server.serve_forever, daemon=True)

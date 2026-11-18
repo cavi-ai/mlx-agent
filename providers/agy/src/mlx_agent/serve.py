@@ -207,11 +207,17 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
                strata_expert_memory_gb=None, strata_context_tokens=None, training_receipt=None, thinking="default",
                m5_prefill=False, prompt_lookup=False, vision_cache=False, api_key_file=None, api_key_sha256=None,
                system_prompt=None, default_temperature=None, default_top_p=None, shared_prefix_cache_mib=None,
-               splash_draft_model=None, splash_max_memory_gb=None, splash_max_context_tokens=None):
+               splash_draft_model=None, splash_max_memory_gb=None, splash_max_context_tokens=None,
+               splash_tuning=None, splash_chat_template=None):
     """Render the start plan and local file identities without side effects."""
+    splash_tuning = {key: value for key, value in (splash_tuning or {}).items() if value is not None}
     if runtime != "splash" and (splash_draft_model is not None or splash_max_memory_gb is not None
-                                or splash_max_context_tokens is not None):
+                                or splash_max_context_tokens is not None or splash_tuning
+                                or splash_chat_template is not None):
         raise ServeError("invalid_arguments", "Splash options require the Splash runtime.", "Use --runtime splash.")
+    if thinking == "off" and "splash_reasoning_effort" in splash_tuning:
+        raise ServeError("invalid_arguments", "Splash refuses a reasoning effort together with --thinking off.",
+                         "Use --splash-reasoning-effort none instead of --thinking off.")
     if shared_prefix_cache_mib is not None:
         if (type(shared_prefix_cache_mib) is not int or not 16 <= shared_prefix_cache_mib <= 2048
                 or runtime != "mlx_lm" or not jit or api_key_file is None or m5_prefill or prompt_lookup
@@ -371,7 +377,8 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         from .splash_runtime import SplashError, plan_contribution
         try:
             contribution = plan_contribution(local_path, has_repo, repo, hf_cache, adapter_path, jit, runtime_executable,
-                                             splash_draft_model, splash_max_memory_gb, splash_max_context_tokens)
+                                             splash_draft_model, splash_max_memory_gb, splash_max_context_tokens,
+                                             splash_tuning, splash_chat_template)
         except SplashError as error:
             raise ServeError(error.code, str(error), error.remediation) from error
     if contribution is not None:

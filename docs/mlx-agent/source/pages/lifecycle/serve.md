@@ -299,10 +299,14 @@ Other serving runtimes reject the option. It can be combined with `--m5-prefill`
 
 ## Splash
 
-`--runtime splash` serves local weights through an installed Splash 1.4.0 or
+`--runtime splash` serves local weights through an installed Splash 1.7.0 or
 later launcher (`brew install incoai/tap/splash`; Apple M3 or newer, macOS 26.4
 or later). Serve finds `splash` through `MLX_AGENT_SPLASH`, `PATH`, Homebrew and
-`~/.local/bin`, and never installs it.
+`~/.local/bin`, and never installs it. An older launcher is refused with
+`splash_version_unsupported`; upgrade it with `brew upgrade incoai/tap/splash`.
+Splash 1.7 verifies draft trees and prompt-lookup chains in one decode pass and
+stores cached recurrent states as int8 codes, about a third of their 1.6 size.
+Persistent caches written by 1.6 start cold once after the upgrade.
 
 ```bash
 python3 scripts/mlx-agent serve start --path /absolute/strata/profile --runtime splash --json
@@ -319,7 +323,7 @@ in place, never copied or converted. The server runs with `--offline` on
 `127.0.0.1` and lists the model under its `--repo` ID, or as `local/<name>`
 for `--path`.
 
-Splash 1.6 serves the Qwen3.8-27B, Qwen3.6-35B-A3B, Qwen3.5-122B-A10B and
+Splash serves the Qwen3.8-27B, Qwen3.6-35B-A3B, Qwen3.5-122B-A10B and
 Qwen3.8-Flash-Next families and their fine-tunes. MLX weights must be
 quantized (affine 2–8 bits, mxfp4 or nvfp4). Every model decodes with its
 family's DFlash2 draft: pass `--splash-draft-model`, or keep the family's
@@ -333,8 +337,26 @@ engine checks its configuration.
 - `--splash-max-context` caps context in tokens (512–1,010,000).
 - `--thinking off` sets the default reasoning effort to `none`.
 
+Server tuning, each passed to Splash unchanged and omitted for Splash's own
+default:
+
+| Option | Values | Effect |
+|---|---|---|
+| `--splash-verify-rows` | `auto`, `all` | `all` verifies every draft row so greedy and seeded output repeats run to run; `auto` picks rows by measured cost and is faster. |
+| `--splash-cached-states` | `int8`, `exact` | `exact` keeps cached recurrent states at full precision, at about three times the memory and SSD space. |
+| `--splash-kv-format` | `int8`, `bf16` | `bf16` avoids KV quantization at about twice the KV memory. |
+| `--splash-reasoning-effort` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | Sets the effort of every request, whatever the client asks; `none` turns thinking off. Not combined with `--thinking off`. |
+| `--splash-thinking-budget` | 0–1,010,000 tokens | Caps the thinking of a request that sets no budget of its own. |
+| `--splash-persistent-cache` | flag | Keeps the SSD prompt cache across restarts, so follow-up turns skip prefill after a restart. |
+| `--splash-max-cache-disk-gb` | 0–4096 decimal GB | SSD prompt cache quota; `0` turns the cache off. |
+| `--splash-chat-template` | file | A local Jinja chat template used in place of the model's own. |
+
+```bash
+python3 scripts/mlx-agent serve start --path /absolute/mlx/model --runtime splash --splash-verify-rows all --splash-reasoning-effort low --splash-thinking-budget 4096 --splash-persistent-cache --json
+```
+
 The preview binds the launcher, its reported version, and the content of the
-target and draft files; a change requires a fresh preview. Splash rejects
+target, draft and chat template files; a change requires a fresh preview. Splash rejects
 adapters and releases idle weights itself. Stop signals
 the receipt's process group and waits 20 seconds before a forced kill, since
 Splash gives its engine 15 seconds to exit. When startup fails after the launcher replaces itself, the gateway checks the owned process birth and group before stopping it and releasing its execution lease.
@@ -494,8 +516,10 @@ Save named settings for shared work or dedicated inference. Profiles
 contain headroom, residency and execution-wait settings; choose the model
 and endpoint when starting. Strata profiles can also include a model budget,
 context and decoding settings. Splash profiles can include `--splash-max-memory-gb`
-and `--splash-max-context` startup limits, which cannot be combined with a model
-budget or Strata settings. Settings stay under the selected receipts directory.
+and `--splash-max-context` startup limits and every Splash tuning option except
+`--splash-chat-template`; they cannot be combined with a model budget or Strata
+settings. Options given at start override the profile. Settings stay under the
+selected receipts directory.
 
 ```bash
 python3 scripts/mlx-agent serve profile save shared --memory-budget-gb 24 --min-headroom-gb 24 --strata-decoding lookup --json

@@ -977,6 +977,8 @@ def _add_serve_arguments(parser):
     start.add_argument("--splash-draft-model", help="local DFlash2 draft directory (default: the family's draft in the Hugging Face cache)")
     start.add_argument("--splash-max-memory-gb", type=float, help="Splash Metal memory ceiling in decimal GB (1–1024); it can only lower Splash's own plan")
     start.add_argument("--splash-max-context", dest="splash_max_context_tokens", type=int, help="Splash context limit in tokens (512–1010000)")
+    _add_splash_tuning_arguments(start)
+    start.add_argument("--splash-chat-template", help="local Jinja chat template file that replaces the model's own")
     decoding = start.add_mutually_exclusive_group()
     decoding.add_argument("--strata-speculation", choices=["on", "off"], help="legacy Strata draft-and-verify switch (default: off)")
     decoding.add_argument("--strata-decoding", choices=["plain", "lookup", "mtp"], help="Strata verified decoding mode; lookup needs no draft weights")
@@ -1065,6 +1067,7 @@ def _add_serve_arguments(parser):
             action.add_argument("--strata-decoding", choices=["plain", "lookup", "mtp"], default=None)
             action.add_argument("--splash-max-memory-gb", type=float, default=None)
             action.add_argument("--splash-max-context", dest="splash_max_context_tokens", type=int, default=None)
+            _add_splash_tuning_arguments(action)
             action.add_argument("--idle-timeout", type=int, default=300)
             action.add_argument("--keep-loaded", action="store_true")
             action.add_argument("--unload-under-pressure", action=argparse.BooleanOptionalAction, default=True)
@@ -1095,6 +1098,29 @@ def _add_serve_arguments(parser):
     discover = actions.add_parser("discover", help="find engine services across registered and live receipt locations")
     discover.add_argument("--receipts-dir", action="append", default=[])
     discover.add_argument("--json", action="store_true")
+
+
+def _add_splash_tuning_arguments(parser):
+    from .splash_runtime import EFFORTS
+    parser.add_argument("--splash-verify-rows", choices=["auto", "all"],
+                        help="rows each decode cycle verifies; all keeps greedy and seeded output repeatable (default: auto)")
+    parser.add_argument("--splash-cached-states", choices=["int8", "exact"],
+                        help="cached recurrent state storage; exact keeps full precision at about 3x the memory (default: int8)")
+    parser.add_argument("--splash-kv-format", choices=["int8", "bf16"],
+                        help="KV cache storage; bf16 uses about twice the KV memory (default: int8)")
+    parser.add_argument("--splash-reasoning-effort", choices=list(EFFORTS),
+                        help="reasoning effort of every request, whatever the client asks; none turns thinking off")
+    parser.add_argument("--splash-thinking-budget", dest="splash_thinking_token_budget", type=int,
+                        help="thinking tokens of a request that sets no budget (0–1010000)")
+    parser.add_argument("--splash-persistent-cache", action=argparse.BooleanOptionalAction, default=None,
+                        help="keep Splash's SSD prompt cache across restarts")
+    parser.add_argument("--splash-max-cache-disk-gb", type=float,
+                        help="SSD prompt cache quota in decimal GB (0 turns the cache off; default: Splash's own)")
+
+
+def _splash_tuning(arguments):
+    from .splash_runtime import TUNING
+    return {key: getattr(arguments, key) for key in TUNING if getattr(arguments, key) is not None}
 
 
 def _add_allocator_cache_arguments(parser):
@@ -1241,6 +1267,7 @@ def _run_serve(arguments):
                         "splash_max_memory_gb", "splash_max_context_tokens",
                         "idle_timeout", "keep_loaded", "unload_under_pressure")
                 settings = {key: getattr(arguments, key) for key in keys if getattr(arguments, key) is not None}
+                settings.update(_splash_tuning(arguments))
                 strata = any(key in settings for key in ("strata_context_tokens", "strata_decoding"))
                 if strata:
                     settings.setdefault("strata_context_tokens", 16384)
@@ -1360,7 +1387,8 @@ def _run_serve(arguments):
         if arguments.profile and any(key in settings for key in ("strata_context_tokens", "strata_decoding")) and runtime != "strata":
             raise ServeError("invalid_arguments", "Profiles with Strata settings require the Strata runtime.",
                              "Select a prepared Strata model or a profile containing only common settings.")
-        if arguments.profile and any(key in settings for key in ("splash_max_memory_gb", "splash_max_context_tokens")) and runtime != "splash":
+        from .serve_profiles import SPLASH_FIELDS
+        if arguments.profile and SPLASH_FIELDS & set(settings) and runtime != "splash":
             raise ServeError("invalid_arguments", "Profiles with Splash settings require the Splash runtime.",
                              "Select the Splash runtime or a profile containing only common settings.")
         if arguments.strata_speculation is not None and runtime != "strata":
@@ -1396,6 +1424,8 @@ def _run_serve(arguments):
             splash_draft_model=arguments.splash_draft_model,
             splash_max_memory_gb=arguments.splash_max_memory_gb,
             splash_max_context_tokens=arguments.splash_max_context_tokens,
+            splash_tuning=_splash_tuning(arguments),
+            splash_chat_template=arguments.splash_chat_template,
         )
         if arguments.launchd:
             if plan.get("jit"):

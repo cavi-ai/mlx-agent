@@ -20,6 +20,7 @@ from mlx_agent.gguf import (
     read_gguf_header,
     scan_gguf,
     scan_mlx_outputs,
+    scan_ollama,
 )
 
 
@@ -504,6 +505,18 @@ class OllamaTests(unittest.TestCase):
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
+
+    def test_remote_configs_are_skipped_but_a_local_cloud_tag_is_kept(self):
+        store = self.root / "ollama"
+        for marker in ("remote_host", "remote_model"):
+            content = write_gguf(self.root / "source" / (marker + ".gguf"), name=marker).read_bytes()
+            write_ollama_model(store, marker, "latest", [("model", content, None)],
+                               {marker: "remote"})
+        content = write_gguf(self.root / "source" / "local.gguf", name="Local Model").read_bytes()
+        local = write_ollama_model(store, "local", "cloud", [("model", content, None)],
+                                   {"remote_host": "", "remote_model": " "})
+        self.assertEqual([(item["name"], item["path"]) for item in scan_ollama([store])],
+                         [("local:cloud", str(local))])
 
     def test_an_ollama_copy_of_a_gguf_file_is_kept_and_the_file_is_redundant(self):
         source = write_gguf(self.root / "lmstudio" / "rho-model-Q4_K_M.gguf", name="Rho Model", padding=b"x" * 64)

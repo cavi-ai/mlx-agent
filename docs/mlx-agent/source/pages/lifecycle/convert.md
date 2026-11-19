@@ -197,6 +197,8 @@ GGUF model joins the GGUF groups by its model blob; when it duplicates a file,
 the Ollama copy is kept, since only Ollama removes its blobs. A safetensors
 model joins the MLX `variant` groups through its `config.json` layer. Models
 listed in both manifest trees count once, and models sharing a blob are one copy.
+Manifests whose config identifies remote execution are excluded from this local
+storage inventory.
 
 `storage` lists every model once in `items`: a GGUF model with all its shards
 (and the projectors beside it when it is the only model in its folder), a model

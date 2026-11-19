@@ -966,6 +966,11 @@ def _describe_ollama(store, tree, manifest, signature):
     layers = value.get("layers") if value else None
     if len(parts) < 3 or not isinstance(layers, list) or not layers:
         return None
+    config = value.get("config") if isinstance(value.get("config"), dict) else {}
+    config_blob = _ollama_blob(store, config.get("digest"))
+    config = (_read_json_object(config_blob, MAX_CONFIG_BYTES) if config_blob else None) or {}
+    if any(isinstance(config.get(key), str) and config[key].strip() for key in ("remote_host", "remote_model")):
+        return None
     described = []
     for layer in layers:
         media = layer.get("mediaType") if isinstance(layer, dict) else None
@@ -973,9 +978,6 @@ def _describe_ollama(store, tree, manifest, signature):
         if blob is None:
             return None
         described.append((media[len(_OLLAMA_MEDIA):] if media.startswith(_OLLAMA_MEDIA) else media, layer, blob))
-    config = value.get("config") if isinstance(value.get("config"), dict) else {}
-    config_blob = _ollama_blob(store, config.get("digest"))
-    config = (_read_json_object(config_blob, MAX_CONFIG_BYTES) if config_blob else None) or {}
     model, tag = parts[-2], parts[-1]
     name = "{0}:{1}".format(model if parts[1:-2] == ("library",) else "/".join(parts[:-1]), tag)
     sizes = {layer["digest"]: layer.get("size") for _kind, layer, _blob in described}

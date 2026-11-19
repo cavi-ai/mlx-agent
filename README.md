@@ -1,10 +1,10 @@
 # mlx-agent
 
-[![PyPI version](https://img.shields.io/pypi/v/mlx-agent)](https://pypi.org/project/mlx-agent/) [![PyPI weekly downloads](https://img.shields.io/pypi/dw/mlx-agent?label=PyPI%20downloads%2Fweek)](https://pypi.org/project/mlx-agent/) [![Tests](https://img.shields.io/github/actions/workflow/status/cavi-ai/mlx-agent/test.yml?branch=main)](https://github.com/cavi-ai/mlx-agent/actions/workflows/test.yml?query=branch%3Amain)
+Discover, run and manage local AI models on Apple Silicon.
 
 ![Your coding agent can make the props too. Local 3D generation on Apple Silicon. A duck knight holding a croissant lance.](.github/assets/mlx-agent-hero.png)
 
-Discover, run and manage local AI models on Apple Silicon.
+[![PyPI version](https://img.shields.io/pypi/v/mlx-agent)](https://pypi.org/project/mlx-agent/) [![PyPI weekly downloads](https://img.shields.io/pypi/dw/mlx-agent?label=PyPI%20downloads%2Fweek)](https://pypi.org/project/mlx-agent/) [![Tests](https://img.shields.io/github/actions/workflow/status/cavi-ai/mlx-agent/test.yml?branch=main)](https://github.com/cavi-ai/mlx-agent/actions/workflows/test.yml?query=branch%3Amain)
 
 Generate images, video, music, speech and 3D assets with local models. Manage model discovery, conversion and serving, then keep task inputs and results together through the CLI or MCP.
 

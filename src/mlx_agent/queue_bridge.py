@@ -8,18 +8,17 @@ import sys
 CLI_RELATIVE = Path("scripts/mlx-agent")
 DEFAULT_TIMEOUT = 300
 MAX_LOG_BYTES = 64 * 1024
-_receipts_directory = None
 
-def run(agent_path, argv, timeout=DEFAULT_TIMEOUT, runner=None):
+def run(agent_path, argv, timeout=DEFAULT_TIMEOUT, runner=None, receipts_dir=None):
     arguments = list(argv) + ["--json"]
+    if receipts_dir is not None:
+        arguments += ["--receipts-dir", str(receipts_dir)]
     if runner is not None:
         result = runner([sys.executable, str(Path(agent_path) / "scripts/mlx-agent"), *arguments], timeout=timeout)
         try:
             return json.loads(result["stdout"])
         except (KeyError, ValueError, TypeError) as error:
             raise BridgeError("queue_execution_invalid", str(error), "Inspect the agent operation.") from error
-    if _receipts_directory is not None:
-        arguments += ["--receipts-dir", str(_receipts_directory)]
     from mlx_agent.cli import main
     output = io.StringIO()
     with redirect_stdout(output):
@@ -66,7 +65,7 @@ def _preparation_arguments(values):
 
 
 def start(agent_path, gguf_path, preview_hash, q_bits=4, out=None,
-          timeout=DEFAULT_TIMEOUT, runner=None, **preparation):
+          timeout=DEFAULT_TIMEOUT, runner=None, receipts_dir=None, **preparation):
     """Start a reviewed GGUF conversion. The hash must come from a preview."""
     argv = [
         "convert", "start", "--gguf", gguf_path, "--q-bits", str(q_bits),
@@ -74,10 +73,10 @@ def start(agent_path, gguf_path, preview_hash, q_bits=4, out=None,
     ]
     if out:
         argv.extend(["--out", out])
-    return unwrap(run(agent_path, argv + _preparation_arguments(preparation), timeout=timeout, runner=runner))
+    return unwrap(run(agent_path, argv + _preparation_arguments(preparation), timeout=timeout, runner=runner, receipts_dir=receipts_dir))
 
 def start_repo(agent_path, repo, preview_hash, q_bits=4, out=None, hf_cache=None,
-               timeout=DEFAULT_TIMEOUT, runner=None, **preparation):
+               timeout=DEFAULT_TIMEOUT, runner=None, receipts_dir=None, **preparation):
     """Start a reviewed HF-cache conversion. The hash must come from a preview."""
     argv = [
         "convert", "start", "--repo", repo, "--q-bits", str(q_bits),
@@ -87,11 +86,11 @@ def start_repo(agent_path, repo, preview_hash, q_bits=4, out=None, hf_cache=None
         argv.extend(["--out", out])
     if hf_cache:
         argv.extend(["--hf-cache", hf_cache])
-    return unwrap(run(agent_path, argv + _preparation_arguments(preparation), timeout=timeout, runner=runner))
+    return unwrap(run(agent_path, argv + _preparation_arguments(preparation), timeout=timeout, runner=runner, receipts_dir=receipts_dir))
 
-def jobs(agent_path, timeout=DEFAULT_TIMEOUT, runner=None):
+def jobs(agent_path, timeout=DEFAULT_TIMEOUT, runner=None, receipts_dir=None):
     """Cross-check conversion receipts against live processes."""
-    return unwrap(run(agent_path, ["convert", "status"], timeout=timeout, runner=runner))
+    return unwrap(run(agent_path, ["convert", "status"], timeout=timeout, runner=runner, receipts_dir=receipts_dir))
 
 def read_convert_receipts(entries, max_bytes=MAX_LOG_BYTES, include_path=False):
     """Read bounded receipt JSON from paths advertised by convert status."""

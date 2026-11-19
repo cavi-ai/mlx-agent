@@ -425,18 +425,18 @@ class ConvertQueue:
                 self._publish_locked(candidate)
                 return True
 
-    def try_start_next(self, agent_path, runner=None):
+    def try_start_next(self, agent_path, runner=None, receipts_dir=None):
         """Start the head item if no convert is live. Returns a status dict or None."""
         with self._drain_lock:
-            return self._try_start_next(agent_path, runner=runner)
+            return self._try_start_next(agent_path, runner=runner, receipts_dir=receipts_dir)
 
-    def _try_start_next(self, agent_path, runner=None):
+    def _try_start_next(self, agent_path, runner=None, receipts_dir=None):
         with self._lock:
             actionable_index = self._actionable_index_locked()
             if actionable_index is None:
                 return None
             item = dict(self._items[actionable_index])
-        status = bridge.jobs(agent_path, runner=runner)
+        status = bridge.jobs(agent_path, runner=runner, receipts_dir=receipts_dir)
         raw_jobs = status.get("jobs")
         if raw_jobs is None:
             raw_jobs = []
@@ -492,6 +492,7 @@ class ConvertQueue:
                     q_bits=starting["q_bits"],
                     out=starting.get("out"),
                     runner=runner,
+                    receipts_dir=receipts_dir,
                     **{key: starting[key] for key in PREPARATION_FIELDS if key in starting},
                     **({"attempt_id": starting["attempt_id"]} if "attempt_id" in starting else {}),
                 )
@@ -504,6 +505,7 @@ class ConvertQueue:
                     out=starting.get("out"),
                     hf_cache=starting.get("hf_cache"),
                     runner=runner,
+                    receipts_dir=receipts_dir,
                     **{key: starting[key] for key in PREPARATION_FIELDS if key in starting},
                     **({"attempt_id": starting["attempt_id"]} if "attempt_id" in starting else {}),
                 )

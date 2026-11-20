@@ -334,7 +334,7 @@ engine checks its configuration.
 - `--splash-draft-model` selects a local DFlash2 draft directory
   (`config.json` with `dflash_config`, and safetensors weights).
 - `--splash-max-memory-gb` caps Splash memory in decimal GB (1–1024).
-- `--splash-max-context` caps context in tokens (512–1,010,000).
+- `--splash-max-context` caps context in tokens (512–1,010,000). Gateway status reports the configured limit and, while loaded, the effective limit when the Splash worker reports it.
 - `--thinking off` sets the default reasoning effort to `none`.
 
 Server tuning, each passed to Splash unchanged and omitted for Splash's own

@@ -308,6 +308,23 @@ def tuning_arguments(tuning):
     return args
 
 
+def reported_context_tokens(payload):
+    if not isinstance(payload, dict):
+        return None
+    entries = payload.get("data")
+    if not isinstance(entries, list) or not entries:
+        return None
+    values = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            return None
+        value = entry.get("context_length")
+        if type(value) is not int or not 512 <= value <= 1010000:
+            return None
+        values.append(value)
+    return values[0] if all(value == values[0] for value in values) else None
+
+
 def serve_arguments(draft=None, max_memory_gb=None, max_context_tokens=None, tuning=None, chat_template=None):
     """Bounded Splash options appended after the recipe; sizes go as whole bytes, never binary-unit text."""
     args = []

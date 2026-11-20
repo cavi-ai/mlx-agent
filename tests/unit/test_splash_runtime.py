@@ -16,6 +16,17 @@ from mlx_agent.serve import (ServeError, load_recipes, plan_start, resolve_serve
 from mlx_agent.splash_runtime import SplashError, read_target
 from .test_gguf import write_gguf
 
+
+class ReportedContextTests(unittest.TestCase):
+    def test_context_requires_consistent_bounded_integers(self):
+        from mlx_agent.splash_runtime import reported_context_tokens
+        self.assertEqual(reported_context_tokens({"data": [{"context_length": 4096}, {"context_length": 4096}]}), 4096)
+        for payload in ({}, {"data": []}, {"data": [{}]}, {"data": [{"context_length": True}]},
+                        {"data": [{"context_length": 4096}, {"context_length": 8192}]},
+                        {"data": [{"context_length": 511}]}, {"data": [None]}):
+            with self.subTest(payload=payload):
+                self.assertIsNone(reported_context_tokens(payload))
+
 SCHEMA = Path(__file__).resolve().parents[2] / "schemas/serve-receipt.schema.json"
 SHARD = "Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-0000{0}-of-00002.gguf"
 TUNING = {"splash_verify_rows": "all", "splash_cached_states": "exact", "splash_kv_format": "bf16",

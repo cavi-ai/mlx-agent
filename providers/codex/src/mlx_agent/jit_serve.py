@@ -111,6 +111,7 @@ class ModelWorker:
         self.private_endpoint = None
         self.worker_argv = None
         self.model_state = "unloaded"
+        self.splash_context_tokens = None
         self.active_requests = 0
         self.inference_telemetry = InferenceTelemetry()
         defaults = config.get('request_defaults', {})
@@ -256,6 +257,9 @@ class ModelWorker:
                     "request_blocked_reason": self.request_blocked_reason,
                     "last_unload_reason": self.last_unload_reason,
                     "api_key_sha256": self.config.get("api_key_sha256", self.config.get("access_key_sha256"))}
+            if self.config.get("runtime") == "splash":
+                result["splash_configured_context_tokens"] = self.config.get("splash_max_context_tokens")
+                result["splash_effective_context_tokens"] = self.splash_context_tokens if self.model_state == "loaded" else None
             if self.config.get("private_worker"):
                 result["worker_transport"] = "inherited-unix-v1"
             if self.config.get("runtime") == "strata":
@@ -604,6 +608,7 @@ class ModelWorker:
             opener = loopback_opener()
             readiness_seconds = self.config.get("worker_readiness_seconds", 60)
             deadline = time.monotonic() + readiness_seconds
+            splash_context_tokens = None
             while time.monotonic() < deadline:
                 if process.poll() is not None or self.closed:
                     raise GatewayError(503, "model_load_failed", "Model worker exited before readiness.")
@@ -625,6 +630,14 @@ class ModelWorker:
                             headers={"Authorization": "Bearer " + self.worker_key} if self.config.get("api_key_sha256") is not None else {})
                         with opener.open(request, timeout=1) as response:
                             if response.status == 200:
+                                if splash:
+                                    try:
+                                        from mlx_agent.splash_runtime import reported_context_tokens
+                                        body = response.read(65537)
+                                        if len(body) <= 65536:
+                                            splash_context_tokens = reported_context_tokens(json.loads(body))
+                                    except (ValueError, OSError, http.client.HTTPException):
+                                        pass
                                 break
                 except OSError:
                     time.sleep(0.1)
@@ -643,6 +656,7 @@ class ModelWorker:
             with self.condition:
                 if self.closed:
                     raise GatewayError(503, "endpoint_stopping", "Endpoint is stopping.")
+                self.splash_context_tokens = splash_context_tokens
                 self.model_state = "loaded"
                 self._persist()
                 self.condition.notify_all()

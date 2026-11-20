@@ -28,6 +28,7 @@ p.add_argument('--adapter-path'); p.add_argument('--mutate-adapter', action='sto
 p.add_argument('--reply-delay', type=float, default=0); p.add_argument('--keepalive', action='store_true')
 p.add_argument('--stream-release')
 p.add_argument('--usage', action='store_true')
+p.add_argument('--reported-context', type=int)
 a = p.parse_args()
 with open(a.trace, 'a') as f: f.write('start\\n')
 if a.mutate_adapter:
@@ -36,7 +37,8 @@ if a.mutate_adapter:
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args): pass
     def do_GET(self):
-        self.send_response(200); self.end_headers(); self.wfile.write(b'{}')
+        self.send_response(200); self.end_headers()
+        self.wfile.write(json.dumps({'data': [{'context_length': a.reported_context}]} if a.reported_context is not None else {}).encode())
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         # Like MLX-LM, write nothing until the reply starts.
@@ -77,6 +79,18 @@ Server(('127.0.0.1', a.port), Handler).serve_forever()
 
 
 class JITServingTests(unittest.TestCase):
+    def test_splash_context_status_tracks_loaded_state(self):
+        controller = self.server.controller
+        controller.config.update(runtime="splash", splash_max_context_tokens=8192)
+        controller.splash_context_tokens = 4096
+        self.assertEqual(controller.status()["splash_configured_context_tokens"], 8192)
+        self.assertIsNone(controller.status()["splash_effective_context_tokens"])
+        with mock.patch.object(controller, "_refresh"):
+            controller.model_state = "loaded"
+            self.assertEqual(controller.status()["splash_effective_context_tokens"], 4096)
+        controller.config["runtime"] = "mlx_lm"
+        self.assertNotIn("splash_effective_context_tokens", controller.status())
+
     def test_direct_script_namespace_records_memory_refusal(self):
         import runpy
         namespace = runpy.run_path(str(Path(__file__).resolve().parents[2] / 'src/mlx_agent/jit_serve.py'),
@@ -1154,6 +1168,24 @@ class JITServingTests(unittest.TestCase):
             controller.worker_group = None
             controller.worker_birth_identity = None
             controller.close()
+
+    def test_splash_readiness_reports_effective_context_until_unload(self):
+        self.config.update(runtime='splash', splash_served_model='test', splash_max_context_tokens=8192)
+        self.config['worker_argv'] += ['--reported-context', '4096']
+        controller = self.server.controller
+        with mock.patch.object(controller, '_match_serving_plan'), \
+             mock.patch.object(controller, '_check_memory'), \
+             mock.patch.object(controller, '_launching_memory'):
+            controller.acquire()
+            controller.release()
+        status = controller.status()
+        self.assertEqual(status['model_state'], 'loaded')
+        self.assertEqual(status['splash_configured_context_tokens'], 8192)
+        self.assertEqual(status['splash_effective_context_tokens'], 4096)
+        self.assertEqual(self.unload()[0], 200)
+        status = controller.status()
+        self.assertEqual(status['splash_configured_context_tokens'], 8192)
+        self.assertIsNone(status['splash_effective_context_tokens'])
 
     def test_splash_exec_timeout_stops_owned_worker_and_releases_compute(self):
         self.config.update(runtime='splash', splash_served_model='test', worker_readiness_seconds=1,

@@ -147,12 +147,11 @@ def execute(request, path=None, receipts_dir=None):
         elif operation == "clear":
             result["removed_count"] = queue.clear()
         elif operation == "run":
-            queue_bridge._receipts_directory = receipts_dir
             receipts = load_receipts(receipts_dir)
             for item in queue.snapshot():
                 if item["state"] == "queued" and any(queue._receipt_matches(item, receipt) for receipt in receipts):
                     queue.cancel(item["id"])
-            result = queue.try_start_next(str(Path(__file__).resolve().parents[2])) or {"status": "waiting"}
+            result = queue.try_start_next(str(Path(__file__).resolve().parents[2]), receipts_dir=receipts_dir) or {"status": "waiting"}
         return {**result, "queue_path": str(location),
                 "conversion_queue": {"schema_version": "1.2", "items": queue.snapshot()}}
 

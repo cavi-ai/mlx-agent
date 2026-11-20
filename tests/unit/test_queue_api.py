@@ -1,10 +1,12 @@
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 from mlx_agent.queue_cli import execute, _guard
 from mlx_agent.convert_queue import QueueStore
+from mlx_agent import queue_bridge
 
 class QueueAPITests(unittest.TestCase):
     def setUp(self):
@@ -56,6 +58,25 @@ class QueueAPITests(unittest.TestCase):
         with _guard(self.target):
             with self.assertRaises(BlockingIOError):
                 self.call(operation="snapshot")
+    def test_receipt_roots_are_isolated_between_operations(self):
+        for name in ("one", "two"):
+            root = self.root / name / ".mlx-agent-receipts" / "convert"
+            root.mkdir(parents=True)
+            (root / "receipt.json").write_text(json.dumps({
+                "kind": "convert", "pid": 1, "argv": [], "repo": name,
+                "q_bits": 4, "out": "/unused", "completed_at": "2026-01-01",
+            }))
+        for name in ("one", "two", "one"):
+            jobs = queue_bridge.jobs(str(self.root), receipts_dir=self.root / name)["jobs"]
+            self.assertEqual([job["repo"] for job in jobs], [name])
+        execute({"operation": "run"}, self.target, self.root / "one")
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(self.root / "two")
+            jobs = queue_bridge.jobs(str(self.root))["jobs"]
+        finally:
+            os.chdir(original_cwd)
+        self.assertEqual([job["repo"] for job in jobs], ["two"])
     def test_unsafe_input_is_preserved(self):
         source = self.root / "legacy.json"
         source.write_text('{"schema_version":"999","items":[]}')

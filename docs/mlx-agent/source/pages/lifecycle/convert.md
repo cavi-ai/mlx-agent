@@ -316,6 +316,9 @@ The queue saves the reviewed intent before launch and forwards it to the same
 conversion entry point and shared compute lease. Use `run` to advance queued
 work, then poll the matching conversion receipt; a queue entry disappearing is
 not completion evidence.
+When supplied, `--receipts-dir` selects the same receipt root for queue
+reconciliation, conversion status and conversion start. If omitted, the current
+directory remains the receipt root.
 Prepared starts persist an `attempt_id` before launch and carry it through the
 receipt and status. Retries receive a new token; reconciliation requires the
 exact starting token and never consumes an older completed or failed attempt.

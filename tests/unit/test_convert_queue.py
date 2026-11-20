@@ -444,6 +444,17 @@ class ConvertQueueTests(unittest.TestCase):
         self.assertIn("--confirm", start_cmd)
         self.assertIn("/a.gguf", start_cmd)
 
+    def test_receipt_directory_reaches_status_and_both_start_routes(self):
+        for kind in ("gguf", "repo"):
+            with self.subTest(kind=kind):
+                queue = convert_queue.ConvertQueue()
+                source = {"path": "/a.gguf"} if kind == "gguf" else {"repo": "owner/model"}
+                queue.enqueue(kind, "a" * 64, 4, **source)
+                runner = SequenceRunner([envelope(data={"jobs": []}), envelope(data={"status": "started"})])
+                queue.try_start_next(str(self.root), runner=runner, receipts_dir=self.root / "receipts")
+                for command in runner.commands:
+                    self.assertEqual(command[command.index("--receipts-dir") + 1], str(self.root / "receipts"))
+
     def test_try_start_next_rejects_non_list_job_status(self):
         self.queue.enqueue("gguf", "a" * 64, 4, path="/a.gguf", out="/out")
         commands = []

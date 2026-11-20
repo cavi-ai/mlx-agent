@@ -196,6 +196,7 @@
     "src/mlx_agent/music_requantize_runner.py",
     "src/mlx_agent/music_runner.py",
     "src/mlx_agent/music_speed.py",
+    "src/mlx_agent/opencode_provider.py",
     "src/mlx_agent/owned_worker.py",
     "src/mlx_agent/port_analysis.py",
     "src/mlx_agent/port_plan.py",

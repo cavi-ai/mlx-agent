@@ -495,7 +495,7 @@ def _opencode_plugin() -> str:
     The tool accepts exactly the capabilities the package ships commands for.
     """
 
-    content = """import { tool } from "@opencode-ai/plugin"
+    content = """import { Plugin } from "@opencode/plugin"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -531,50 +531,137 @@ async function readBounded(stream: ReadableStream<Uint8Array>) {
   return { text: text + decoder.decode(), truncated }
 }
 
-export const MLXAgentCommandPlugin = async () => ({
-  tool: {
-    mlx_agent_command: tool({
-      description: "Run one validated MLX agent command (__MLX_AGENT_CAPABILITY_LIST__) without shell interpolation.",
-      args: {
-        capability: tool.schema.enum(__MLX_AGENT_CAPABILITIES__),
-        arguments: tool.schema.string().max(MAX_ARGUMENT_BYTES),
-      },
-      async execute(args) {
-        const child = Bun.spawn({
-          cmd: ["python3", "-m", "mlx_agent.command_executor", "--provider", "opencode", "--capability", args.capability],
-          cwd: runtimeRoot,
-          env: { ...globalThis.process.env, PYTHONPATH: runtimeRoot },
-          stdin: "pipe",
-          stdout: "pipe",
-          stderr: "pipe",
-        })
-        const writer = child.stdin.getWriter()
-        await writer.write(encoder.encode(args.arguments))
-        await writer.close()
-        const [stdout, stderr, exitCode] = await Promise.all([
-          readBounded(child.stdout),
-          readBounded(child.stderr),
-          child.exited,
-        ])
-        return JSON.stringify({
-          status: exitCode === 0 ? "ok" : "error",
-          capability: args.capability,
-          exit_code: exitCode,
-          stdout: stdout.text,
-          stderr: stderr.text,
-          stdout_truncated: stdout.truncated,
-          stderr_truncated: stderr.truncated,
-        })
-      },
-    }),
+type CommandInput = { capability: string; arguments: string }
+
+export default Plugin.define({
+  id: "mlx-agent-command",
+  setup: async (ctx) => {
+    await ctx.tool.transform((tools) => {
+      tools.add({
+        name: "mlx_agent_command",
+        options: { codemode: false },
+        description: "Run one validated MLX agent command (__MLX_AGENT_CAPABILITY_LIST__) without shell interpolation.",
+        input: {
+          type: "object",
+          properties: {
+            capability: { type: "string", enum: __MLX_AGENT_CAPABILITIES__ },
+            arguments: { type: "string", maxLength: MAX_ARGUMENT_BYTES },
+          },
+          required: ["capability", "arguments"],
+          additionalProperties: false,
+        },
+        execute: async (args: CommandInput) => ({ content: await runCommand(args) }),
+      })
+    })
   },
 })
+
+async function runCommand(args: CommandInput) {
+  const child = Bun.spawn({
+    cmd: ["python3", "-m", "mlx_agent.command_executor", "--provider", "opencode", "--capability", args.capability],
+    cwd: runtimeRoot,
+    env: { ...globalThis.process.env, PYTHONPATH: runtimeRoot },
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const writer = child.stdin.getWriter()
+  await writer.write(encoder.encode(args.arguments))
+  await writer.close()
+  const [stdout, stderr, exitCode] = await Promise.all([
+    readBounded(child.stdout),
+    readBounded(child.stderr),
+    child.exited,
+  ])
+  return JSON.stringify({
+    status: exitCode === 0 ? "ok" : "error",
+    capability: args.capability,
+    exit_code: exitCode,
+    stdout: stdout.text,
+    stderr: stderr.text,
+    stdout_truncated: stdout.truncated,
+    stderr_truncated: stderr.truncated,
+  })
+}
 """
     return content.replace(
         "__MLX_AGENT_CAPABILITIES__", json.dumps(list(CAPABILITIES))
     ).replace(
         "__MLX_AGENT_CAPABILITY_LIST__", ", ".join(CAPABILITIES[:-1]) + ", or " + CAPABILITIES[-1]
     )
+
+
+def _opencode_provider_plugin() -> str:
+    """Render the OpenCode plugin that lists live mlx-agent chat endpoints as provider `mlx-agent`."""
+
+    return """import { Plugin } from "@opencode/plugin"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
+
+const PROVIDER_ID = "mlx-agent"
+const DISCOVERY_TIMEOUT_MS = 15000
+const runtimeRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "src")
+
+type Served = { id: string; runtime: string; settings: { baseURL: string } & Record<string, string> }
+
+function isServed(value: unknown): value is Served {
+  const row = value as Served
+  return typeof row?.id === "string" && row.id.length > 0 && typeof row.runtime === "string"
+    && typeof row.settings === "object" && row.settings !== null
+    && Object.values(row.settings).every((item) => typeof item === "string")
+    && /^http:\\/\\/127\\.0\\.0\\.1:\\d{1,5}\\/v1$/.test(row.settings.baseURL)
+}
+
+async function discover(): Promise<Served[]> {
+  const child = Bun.spawn({
+    cmd: ["python3", "-m", "mlx_agent.opencode_provider"],
+    cwd: runtimeRoot,
+    env: { ...globalThis.process.env, PYTHONPATH: runtimeRoot },
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const timer = setTimeout(() => child.kill(), DISCOVERY_TIMEOUT_MS)
+  try {
+    const [stdout, exitCode] = await Promise.all([new Response(child.stdout).text(), child.exited])
+    if (exitCode !== 0) return []
+    const models = JSON.parse(stdout)?.models
+    return Array.isArray(models) ? models.filter(isServed) : []
+  } catch {
+    return []
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+export default Plugin.define({
+  id: "mlx-agent-provider",
+  setup: async (ctx) => {
+    const served = await discover()
+    await ctx.provider.transform((providers) => {
+      if (served.length === 0) return
+      providers.update(PROVIDER_ID, (provider) => {
+        provider.activation = "enabled"
+        provider.name = "mlx-agent (local)"
+        provider.package = "aisdk:@ai-sdk/openai-compatible"
+        provider.settings = { ...provider.settings, timeout: false }
+      })
+      for (const row of served) {
+        providers.models.update(PROVIDER_ID, row.id, (model) => {
+          model.name = row.id
+          model.settings = { ...model.settings, ...row.settings }
+          model.capabilities = {
+            ...model.capabilities,
+            tools: true,
+            input: row.runtime === "mlx-vlm" ? ["text", "image"] : ["text"],
+            output: ["text"],
+          }
+        })
+      }
+    })
+  },
+})
+"""
 
 
 def _plugin_metadata(manifest: Mapping[str, object]) -> str:
@@ -795,7 +882,7 @@ def _allowed_surface_paths(surface: Optional[Path]) -> set:
             allowed.update(skill / path for path in former_runtime)
         return allowed
     if surface == Path("providers/opencode"):
-        allowed = {Path("plugins/mlx-agent-command.ts"), Path("agents/mlx-advisor.md")}
+        allowed = {Path("plugins/mlx-agent-command.ts"), Path("plugins/mlx-agent-provider.ts"), Path("agents/mlx-advisor.md")}
         allowed.update(former_runtime)
         for capability in CAPABILITIES:
             skill = Path("skills/mlx-{0}".format(capability))
@@ -880,6 +967,7 @@ def _render(manifest: Mapping[str, object], provider_ids: Sequence[str]) -> Dict
     if "opencode" in selected:
         opencode_root = Path("providers/opencode")
         rendered[opencode_root / "plugins" / "mlx-agent-command.ts"] = _opencode_plugin()
+        rendered[opencode_root / "plugins" / "mlx-agent-provider.ts"] = _opencode_provider_plugin()
         rendered[opencode_root / "agents" / "mlx-advisor.md"] = _opencode_advisor_markdown(manifest)
         for capability in CAPABILITIES:
             skill_root = opencode_root / "skills" / "mlx-{0}".format(capability)

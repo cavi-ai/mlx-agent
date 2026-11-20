@@ -1,4 +1,4 @@
-import { tool } from "@opencode-ai/plugin"
+import { Plugin } from "@opencode/plugin"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -34,41 +34,55 @@ async function readBounded(stream: ReadableStream<Uint8Array>) {
   return { text: text + decoder.decode(), truncated }
 }
 
-export const MLXAgentCommandPlugin = async () => ({
-  tool: {
-    mlx_agent_command: tool({
-      description: "Run one validated MLX agent command (scout, adopt, wire, bench, doctor, watch, fleet, or task) without shell interpolation.",
-      args: {
-        capability: tool.schema.enum(["scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "task"]),
-        arguments: tool.schema.string().max(MAX_ARGUMENT_BYTES),
-      },
-      async execute(args) {
-        const child = Bun.spawn({
-          cmd: ["python3", "-m", "mlx_agent.command_executor", "--provider", "opencode", "--capability", args.capability],
-          cwd: runtimeRoot,
-          env: { ...globalThis.process.env, PYTHONPATH: runtimeRoot },
-          stdin: "pipe",
-          stdout: "pipe",
-          stderr: "pipe",
-        })
-        const writer = child.stdin.getWriter()
-        await writer.write(encoder.encode(args.arguments))
-        await writer.close()
-        const [stdout, stderr, exitCode] = await Promise.all([
-          readBounded(child.stdout),
-          readBounded(child.stderr),
-          child.exited,
-        ])
-        return JSON.stringify({
-          status: exitCode === 0 ? "ok" : "error",
-          capability: args.capability,
-          exit_code: exitCode,
-          stdout: stdout.text,
-          stderr: stderr.text,
-          stdout_truncated: stdout.truncated,
-          stderr_truncated: stderr.truncated,
-        })
-      },
-    }),
+type CommandInput = { capability: string; arguments: string }
+
+export default Plugin.define({
+  id: "mlx-agent-command",
+  setup: async (ctx) => {
+    await ctx.tool.transform((tools) => {
+      tools.add({
+        name: "mlx_agent_command",
+        options: { codemode: false },
+        description: "Run one validated MLX agent command (scout, adopt, wire, bench, doctor, watch, fleet, or task) without shell interpolation.",
+        input: {
+          type: "object",
+          properties: {
+            capability: { type: "string", enum: ["scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "task"] },
+            arguments: { type: "string", maxLength: MAX_ARGUMENT_BYTES },
+          },
+          required: ["capability", "arguments"],
+          additionalProperties: false,
+        },
+        execute: async (args: CommandInput) => ({ content: await runCommand(args) }),
+      })
+    })
   },
 })
+
+async function runCommand(args: CommandInput) {
+  const child = Bun.spawn({
+    cmd: ["python3", "-m", "mlx_agent.command_executor", "--provider", "opencode", "--capability", args.capability],
+    cwd: runtimeRoot,
+    env: { ...globalThis.process.env, PYTHONPATH: runtimeRoot },
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const writer = child.stdin.getWriter()
+  await writer.write(encoder.encode(args.arguments))
+  await writer.close()
+  const [stdout, stderr, exitCode] = await Promise.all([
+    readBounded(child.stdout),
+    readBounded(child.stderr),
+    child.exited,
+  ])
+  return JSON.stringify({
+    status: exitCode === 0 ? "ok" : "error",
+    capability: args.capability,
+    exit_code: exitCode,
+    stdout: stdout.text,
+    stderr: stderr.text,
+    stdout_truncated: stdout.truncated,
+    stderr_truncated: stderr.truncated,
+  })
+}

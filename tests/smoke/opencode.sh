@@ -39,7 +39,9 @@ assert_package() {
   package_root="$1"
   test -f "$package_root/agents/mlx-advisor.md"
   test -f "$package_root/plugins/mlx-agent-command.ts"
+  test -f "$package_root/plugins/mlx-agent-provider.ts"
   test -f "$package_root/src/mlx_agent/command_executor.py"
+  test -f "$package_root/src/mlx_agent/opencode_provider.py"
   for command in mlx-scout mlx-adopt mlx-wire; do
     test -f "$package_root/commands/$command.md"
     test -f "$package_root/skills/$command/SKILL.md"
@@ -89,6 +91,7 @@ test ! -e "$PROJECT/.opencode/plugins/mlx-agent-command.ts"
 test "$(cat "$PROJECT/opencode.json")" = '{"model":"unowned-project"}'
 uninstall_scope user "$PROJECT"
 test ! -e "$USER_ROOT/plugins/mlx-agent-command.ts"
+test ! -e "$USER_ROOT/plugins/mlx-agent-provider.ts"
 test "$(cat "$USER_ROOT/opencode.json")" = '{"model":"unowned-global"}'
 
 echo 'PASS: OpenCode package installed, equivalent no-shell argv/stdin transport contract ran, and owned artifacts were removed cleanly'

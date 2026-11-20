@@ -10,6 +10,7 @@
     "commands/mlx-watch.md",
     "commands/mlx-wire.md",
     "plugins/mlx-agent-command.ts",
+    "plugins/mlx-agent-provider.ts",
     "skills/mlx-adopt/SKILL.md",
     "skills/mlx-bench/SKILL.md",
     "skills/mlx-doctor/SKILL.md",

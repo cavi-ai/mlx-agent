@@ -260,26 +260,32 @@ class MemoryRegistry:
             row['headroom_bytes']=amount
             return dict(registry=self._summary(rows),allocation=dict(row))
 
-    def _agent_budget(self, rows, replacement=None):
-        from .memory_budget import read_policy, process_snapshot, account, identified_pids
-        policy = read_policy(self.root)
-        if policy is None:
+    def _agent_budget(self, rows, replacement=None, persist=True):
+        from .memory_budget import read_policy, process_snapshot, account, identified_pids, expire_external
+        record = read_policy(self.root, with_mtime=True)
+        if record is None:
             return None
+        policy, saved_ns = record
         try:
             processes = self.process_probe() if self.process_probe else process_snapshot(identified_pids(policy, rows))
         except (OSError, ValueError, SubprocessError) as error:
             raise MemoryAdmissionError('memory_unknown', 'Agent process memory is unavailable.') from error
-        return account(policy, rows, processes, self._owner(), replacement)
+        filtered = expire_external(policy, processes, saved_ns)
+        if persist and filtered != policy:
+            _atomic_in_directory(self.root, 'budget.json', json.dumps(filtered).encode(), 0o600)
+        return account(filtered, rows, processes, self._owner(), replacement)
 
     def configure_budget(self, limit_bytes, reserve_bytes=0, external_pids=None):
-        from .memory_budget import SCHEMA as BUDGET_SCHEMA, validate_policy, process_snapshot, read_policy, identified_pids
+        from .memory_budget import SCHEMA as BUDGET_SCHEMA, validate_policy, process_snapshot, read_policy, identified_pids, expire_external
         with self._locked() as rows:
-            previous = read_policy(self.root)
+            record = read_policy(self.root, with_mtime=True)
+            previous = record[0] if record is not None else None
             processes = (self.process_probe() if self.process_probe
                          else process_snapshot(identified_pids(previous, rows, external_pids)))
-            external = list(previous['external']) if previous is not None and external_pids is None else []
+            filtered = expire_external(previous, processes, record[1]) if previous is not None else None
+            external = list(filtered['external']) if filtered is not None and external_pids is None else []
             for pid in sorted(set(external_pids or ())):
-                if type(pid) is not int or pid <= 0 or pid not in processes:
+                if type(pid) is not int or pid <= 0 or pid not in processes or not processes[pid].get('identity'):
                     raise MemoryAdmissionError('memory_unknown', 'An external agent process cannot be inspected.')
                 row = processes[pid]
                 external.append({'pid': pid, 'identity': row['identity'], 'group': row['group']})
@@ -288,7 +294,8 @@ class MemoryRegistry:
             validate_policy(policy)
             from .memory_budget import account
             summary = account(policy, rows, processes, self._owner())
-            _atomic_in_directory(self.root, 'budget.json', json.dumps(policy).encode(), 0o600)
+            if policy != previous:
+                _atomic_in_directory(self.root, 'budget.json', json.dumps(policy).encode(), 0o600)
             return summary
 
     def reserve_execution(self, key, limit_bytes=None, probe=None):
@@ -407,7 +414,7 @@ class MemoryRegistry:
                 if worker is not None and (not self.alive(worker['pid']) or self.inspector(worker['pid']) != worker['identity']):
                     raise ValueError('Memory worker ownership is uncertain.')
             result['entries'] = rows
-            result['agent_budget'] = self._agent_budget(rows)
+            result['agent_budget'] = self._agent_budget(rows, persist=False)
             result['state'] = 'ok'
         except (OSError, ValueError, TypeError, KeyError, SubprocessError) as error:
             result['errors'].append(str(error))

@@ -1,11 +1,13 @@
 """Private, host-wide agent memory policy and process-family accounting."""
 import ctypes
+import datetime
 import errno
 import json
 import os
 import stat
 import subprocess
 import sys
+import time
 from functools import lru_cache
 from pathlib import Path
 
@@ -49,6 +51,8 @@ def _physical_bytes(pid):
 def identified_pids(policy, entries, external_pids=()):
     """The PIDs whose start and command ``account`` compares: external bindings and managed workers."""
     pids = {binding['pid'] for binding in policy['external']} if policy is not None else set()
+    if policy is not None:
+        pids.update(binding['group'] for binding in policy['external'])
     pids.update(external_pids or ())
     pids.update(entry['worker']['pid'] for entry in entries.values() if entry['worker'] is not None)
     return pids
@@ -69,8 +73,8 @@ def process_snapshot(identities=None):
                          'physical_bytes': None if usage is None else usage.phys_footprint}
         for pid, identity in observe(pid for pid in identities if pid in rows).items():
             rows[pid]['identity'] = identity
-        # A process that exits before its identity is read is no longer running.
-        return {pid: row for pid, row in rows.items() if pid not in identities or 'identity' in row}
+        # A missing identity can also be a permissions failure; retain the observed row.
+        return rows
     result = subprocess.run(['/bin/ps', '-axo', 'pid=,ppid=,pgid=,rss=,stat=,lstart=,command='],
                             capture_output=True, text=True, timeout=5, check=True)
     rows = {}
@@ -93,7 +97,7 @@ def same_identity(left, right):
     return isinstance(left, str) and isinstance(right, str) and left.split() == right.split()
 
 
-def read_policy(root):
+def read_policy(root, with_mtime=False):
     path = Path(root) / 'budget.json'
     try:
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
@@ -106,7 +110,7 @@ def read_policy(root):
             raise ValueError('Agent memory policy must be a private owned regular file.')
         value = json.loads(stream.read(65537))
     validate_policy(value)
-    return value
+    return (value, info.st_mtime_ns) if with_mtime else value
 
 
 def validate_policy(value):
@@ -122,6 +126,48 @@ def validate_policy(value):
                 or type(row['group']) is not int or row['group'] <= 0
                 or not isinstance(row['identity'], str) or not row['identity']):
             raise ValueError('Invalid external agent process identity.')
+
+
+def _earliest_start_ns(identity):
+    """Parse ps lstart, choosing the earliest valid epoch when local time repeats."""
+    if not isinstance(identity, str):
+        return None
+    fields = identity.split(None, 5)
+    if len(fields) < 6:
+        return None
+    try:
+        parsed = datetime.datetime.strptime(' '.join(fields[:5]), '%a %b %d %H:%M:%S %Y')
+        stamps = []
+        for dst in (0, 1):
+            stamp = time.mktime((*parsed.timetuple()[:8], dst))
+            if time.localtime(stamp)[:6] == parsed.timetuple()[:6]:
+                stamps.append(stamp)
+        return int(min(stamps) * 1_000_000_000) if stamps else None
+    except (ValueError, OverflowError, OSError):
+        return None
+
+
+def expire_external(policy, rows, saved_ns):
+    """Remove only bindings whose root and original process group have ended."""
+    retained = []
+    groups = {row['group'] for row in rows.values()}
+    for binding in policy['external']:
+        root = rows.get(binding['pid'])
+        if root is not None and same_identity(binding['identity'], root.get('identity')):
+            retained.append(binding)
+            continue
+        if root is not None:
+            root_birth = _earliest_start_ns(root.get('identity'))
+            if root_birth is None or root_birth <= saved_ns:
+                retained.append(binding)
+                continue
+        if binding['group'] not in groups:
+            continue
+        leader = rows.get(binding['group'])
+        birth = _earliest_start_ns(leader.get('identity')) if leader and leader['group'] == binding['group'] else None
+        if birth is None or birth <= saved_ns:
+            retained.append(binding)
+    return dict(policy, external=retained)
 
 
 def family(rows, roots, groups=()):
@@ -153,10 +199,12 @@ def account(policy, entries, rows, owner, replacement=None):
     external = set()
     for binding in policy['external']:
         observed = rows.get(binding['pid'])
-        if observed is not None and same_identity(binding['identity'], observed['identity']):
+        if observed is not None and not observed.get('identity'):
+            raise MemoryAdmissionError('memory_unknown', f'Agent process identity is unavailable for PID {binding["pid"]}.')
+        if observed is not None and same_identity(binding['identity'], observed.get('identity')):
             external.update(family(rows, {binding['pid']}))
-        elif observed is None:
-            # A reparented child in the original group remains charged.
+        else:
+            # A surviving or ambiguous original group remains charged.
             external.update(family(rows, set(), {binding['group']}))
     counted = set(external)
     external_bytes = rss(external)
@@ -183,7 +231,7 @@ def account(policy, entries, rows, owner, replacement=None):
         pids = set()
         if worker is not None:
             observed = rows.get(worker['pid'])
-            if observed is not None and not same_identity(worker['identity'], observed['identity']):
+            if observed is not None and not same_identity(worker['identity'], observed.get('identity')):
                 raise MemoryAdmissionError('memory_unknown', 'A managed worker identity changed.')
             pids = family(rows, {worker['pid']}, {worker['pgid']})
         uncounted = pids - counted

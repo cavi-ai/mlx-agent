@@ -32,6 +32,8 @@ TUNING = {
     "splash_thinking_token_budget": ("--thinking-token-budget", None),
     "splash_persistent_cache": ("--persistent-cache", None),
     "splash_max_cache_disk_gb": ("--max-cache-disk", None),
+    "splash_project_cache": ("--cache-dir", None),
+    "splash_max_cache_disk_writes_gb": ("--max-cache-disk-writes", None),
 }
 _TEMPLATE_BYTES = 1 << 20
 
@@ -284,10 +286,23 @@ def tuning_arguments(tuning):
     unknown = sorted(set(tuning) - set(TUNING))
     if unknown:
         raise SplashError("invalid_arguments", "Unknown Splash settings: " + ", ".join(unknown), "Remove them.")
+    name = tuning.get("splash_project_cache")
+    writes = tuning.get("splash_max_cache_disk_writes_gb")
+    if name is not None:
+        if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", name):
+            raise _invalid("Splash project cache name must be a lowercase slug of at most 64 characters.", "--splash-project-cache")
+        if tuning.get("splash_persistent_cache") is False:
+            raise _invalid("A Splash project cache requires persistent caching.", "--splash-persistent-cache")
+        for key in ("splash_max_cache_disk_gb", "splash_max_cache_disk_writes_gb"):
+            value = tuning.get(key)
+            if type(value) not in (int, float) or not math.isfinite(value) or not 1 <= value * 1e9 <= 4096e9:
+                raise _invalid("A Splash project cache requires positive disk and write caps of at least one byte.", "--" + key.replace("_", "-"))
+    elif writes is not None:
+        raise _invalid("A Splash write cap requires a named project cache.", "--splash-project-cache")
     args = []
     for key, (flag, choices) in TUNING.items():
         value = tuning.get(key)
-        if value is None:
+        if value is None or key == "splash_project_cache":
             continue
         cli = "--splash-" + flag[2:]
         if choices is not None:
@@ -307,7 +322,31 @@ def tuning_arguments(tuning):
             raise _invalid("Splash SSD cache size must be a finite value from 0 to 4096 GB; 0 turns it off.", cli + "-gb")
         else:
             args += [flag, str(math.floor(value * 1e9))]
+    if name is not None and not tuning.get("splash_persistent_cache"):
+        args.append("--persistent-cache")
     return args
+
+
+def project_cache_directory(root, name, digest, fields):
+    """Derive a project cache namespace without creating it."""
+    binding = {"project": name, "auth": digest, **fields}
+    namespace = hashlib.sha256(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return str(Path(root).absolute() / "splash-cache" / namespace)
+
+
+def prepare_project_cache(path):
+    """Create and validate the private cache parent and namespace without following links."""
+    from .transactions import _walk_directory
+    import stat
+    cache = Path(path)
+    for directory in (cache.parent, cache):
+        _, fd = _walk_directory(directory, create=True)
+        try:
+            info = os.fstat(fd)
+            if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
+                raise ValueError("Splash cache directory must be owned by the current user and mode 0700: " + str(directory))
+        finally:
+            os.close(fd)
 
 
 def reported_context_tokens(payload):
@@ -379,7 +418,8 @@ def plan_contribution(local_path, has_repo, repo, hf_cache, adapter_path, jit, r
               "splash_source": target["source"], "splash_draft_model": draft["path"] if draft else None,
               "splash_draft_fingerprint": draft["fingerprint"] if draft else None,
               "splash_max_memory_gb": max_memory_gb, "splash_max_context_tokens": max_context_tokens,
-              **{key: (tuning or {}).get(key) for key in TUNING},
+              **{key: (tuning or {}).get(key) for key in TUNING
+                 if key not in ("splash_project_cache", "splash_max_cache_disk_writes_gb") or key in (tuning or {})},
               "splash_chat_template": template["path"] if template else None,
               "splash_chat_template_sha256": template["sha256"] if template else None,
               "weight_format": target["format"], "weight_bytes": target["weight_bytes"],

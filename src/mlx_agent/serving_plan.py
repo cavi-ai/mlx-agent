@@ -104,7 +104,7 @@ def worker_config(plan, *, control_token, state_path, log_path=None, config_path
     for key in (
         "jit", "prefill_kernel", "decode_profile", "vision_profile", "shared_prefix_cache",
         "splash_model_dir", "splash_model_fingerprint", "splash_draft_model", "splash_draft_fingerprint",
-        "splash_launcher", "splash_runtime_fingerprint",
+        "splash_launcher", "splash_runtime_fingerprint", "splash_project_cache_dir",
         "strata_memory_estimate_bytes", "strata_memory_growth_bytes",
     ):
         if key in plan:

@@ -91,6 +91,27 @@ Server(('127.0.0.1', a.port), Handler).serve_forever()
 
 
 class JITServingTests(unittest.TestCase):
+    def test_splash_cache_refused_before_worker_spawn(self):
+        from mlx_agent.jit_serve import GatewayError
+        controller = self.server.controller
+        parent = self.root / 'splash-cache'
+        parent.mkdir(mode=0o700)
+        cache = parent / 'namespace'
+        cache.mkdir(mode=0o755)
+        controller.config['splash_project_cache_dir'] = str(cache)
+        with mock.patch.object(controller, '_match_serving_plan'), mock.patch('subprocess.Popen') as spawn:
+            with self.assertRaises(GatewayError) as failure:
+                controller._start()
+            self.assertEqual(failure.exception.code, 'unsafe_splash_cache')
+            spawn.assert_not_called()
+        cache.rmdir()
+        cache.symlink_to(self.root, target_is_directory=True)
+        with mock.patch.object(controller, '_match_serving_plan'), mock.patch('subprocess.Popen') as spawn:
+            with self.assertRaises(GatewayError) as failure:
+                controller._start()
+            self.assertEqual(failure.exception.code, 'unsafe_splash_cache')
+            spawn.assert_not_called()
+
     def test_splash_context_status_tracks_loaded_state(self):
         controller = self.server.controller
         controller.config.update(runtime="splash", splash_max_context_tokens=8192)

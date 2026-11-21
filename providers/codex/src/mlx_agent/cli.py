@@ -1115,6 +1115,8 @@ def _add_splash_tuning_arguments(parser):
                         help="thinking tokens of a request that sets no budget (0–1010000)")
     parser.add_argument("--splash-persistent-cache", action=argparse.BooleanOptionalAction, default=None,
                         help="keep Splash's SSD prompt cache across restarts")
+    parser.add_argument("--splash-project-cache", help="named project SSD prompt cache")
+    parser.add_argument("--splash-max-cache-disk-writes-gb", type=float, help="project cache write cap in decimal GB")
     parser.add_argument("--splash-max-cache-disk-gb", type=float,
                         help="SSD prompt cache quota in decimal GB (0 turns the cache off; default: Splash's own)")
 

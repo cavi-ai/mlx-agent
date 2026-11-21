@@ -426,6 +426,62 @@ class SplashServeTests(unittest.TestCase):
                 self.assertEqual(self.code(lambda: self.plan(target, splash_chat_template=str(missing))),
                                  "splash_chat_template_invalid")
 
+    def test_project_cache_binding_and_validation(self):
+        import sys
+        model = self.strata_profile()
+        libexec = Path(self.launcher).resolve().parents[1] / 'libexec'
+        (libexec / 'python/bin').mkdir(parents=True)
+        (libexec / 'python/bin/python3').symlink_to(sys.executable)
+        (libexec / 'install').mkdir(parents=True)
+        (libexec / 'install/launcher.py').write_text(SPLASH_LAUNCHER)
+        tuning = {'splash_project_cache': 'agents', 'splash_max_cache_disk_gb': 2,
+                  'splash_max_cache_disk_writes_gb': 3}
+        def plan(**kw):
+            return self.plan(model, jit=True, api_key_sha256=kw.pop('digest', 'a' * 64),
+                             splash_tuning=kw.pop('tuning', tuning), **kw)
+        first = plan()
+        directory = Path(first['splash_project_cache_dir'])
+        self.assertFalse(directory.exists())
+        self.assertEqual(first['worker_argv'][-2:], ['--cache-dir', str(directory)])
+        self.assertIn('--persistent-cache', first['worker_argv'])
+        self.assertEqual(first['worker_argv'][first['worker_argv'].index('--max-cache-disk-writes') + 1], '3000000000')
+        self.assertEqual(directory, Path(plan()['splash_project_cache_dir']))
+        self.assertEqual(directory, Path(plan(tuning={**tuning, 'splash_max_cache_disk_gb': 4, 'splash_max_cache_disk_writes_gb': 5})['splash_project_cache_dir']))
+        self.assertNotEqual(directory, Path(plan(port=9876)['splash_project_cache_dir']))
+        self.assertNotEqual(directory, Path(plan(digest='b' * 64)['splash_project_cache_dir']))
+        self.assertNotEqual(directory, Path(plan(tuning={**tuning, 'splash_kv_format': 'bf16'})['splash_project_cache_dir']))
+        template = self.root / 'template.jinja'
+        template.write_text('template')
+        self.assertNotEqual(directory, Path(plan(splash_chat_template=str(template))['splash_project_cache_dir']))
+        from mlx_agent.worker_transport import gateway_config
+        templated = plan(splash_chat_template=str(template))
+        config = gateway_config(templated, control_token='x', state_path='state')
+        self.assertEqual(config['splash_chat_template_sha256'], templated['splash_chat_template_sha256'])
+        (model / 'Q2_0' / SHARD.format(1)).write_bytes(b'changed')
+        with self.assertRaises(ServeError):
+            from mlx_agent.identity_pass import recheck_bound_identity
+            recheck_bound_identity(first)
+        for bad in ({**tuning, 'splash_project_cache': '../bad'},
+                    {**tuning, 'splash_persistent_cache': False},
+                    {**tuning, 'splash_max_cache_disk_gb': 0},
+                    {**tuning, 'splash_max_cache_disk_writes_gb': 1e-10},
+                    {**tuning, 'splash_max_cache_disk_writes_gb': float('nan')},
+                    {'splash_max_cache_disk_writes_gb': 1}):
+            with self.subTest(bad=bad):
+                self.assertEqual(self.code(lambda: plan(tuning=bad)), 'invalid_arguments')
+        self.assertEqual(self.code(lambda: self.plan(model, jit=True, splash_tuning=tuning)), 'invalid_arguments')
+        from mlx_agent.splash_runtime import prepare_project_cache
+        prepare_project_cache(directory)
+        self.assertEqual(directory.stat().st_mode & 0o777, 0o700)
+        directory.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, '0700'):
+            prepare_project_cache(directory)
+        directory.chmod(0o700)
+        directory.rmdir()
+        directory.symlink_to(self.root, target_is_directory=True)
+        with self.assertRaises((ValueError, OSError)):
+            prepare_project_cache(directory)
+
     def test_profile_tuning_flows_through_cli_and_workflow_plans(self):
         import sys
         from mlx_agent import workflow_sets
@@ -462,6 +518,17 @@ class SplashServeTests(unittest.TestCase):
         workflow = workflow_sets._member_plan(member, self.receipts)
         self.assertEqual({key: workflow[key] for key in TUNING}, TUNING)
         self.assertIn('--cached-states', workflow['worker_argv'])
+        key = self.root / 'key'
+        key.write_text('a' * 40)
+        key.chmod(0o600)
+        code, saved_cache = run('serve', 'profile', 'save', 'cache', '--min-headroom-gb', '8',
+                                '--splash-project-cache', 'agents', '--splash-max-cache-disk-gb', '2',
+                                '--splash-max-cache-disk-writes-gb', '3')
+        self.assertEqual(code, 0, saved_cache)
+        cache_member = dict(member, profile='cache', api_key_file=str(key))
+        cache_plan = workflow_sets._member_plan(cache_member, self.receipts)
+        self.assertIn('--cache-dir', cache_plan['worker_argv'])
+        self.assertEqual(cache_plan['splash_project_cache'], 'agents')
         with patch('mlx_agent.workflow_sets.resolve_serve_runtime', return_value=('mlx_lm', sys.executable)):
             with self.assertRaisesRegex(ValueError, 'Splash profile requires'):
                 workflow_sets._member_plan(dict(member, runtime='mlx_lm'), self.receipts)

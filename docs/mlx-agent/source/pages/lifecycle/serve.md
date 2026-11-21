@@ -19,7 +19,7 @@ The reserve stays inside the limit, leaving 56 GB for admission. Reservations
 count pending loads, resident model workers, active workspace and process
 overhead. `--include-pid PID` includes an existing agent process and its family,
 bound to that process's start identity; changing only the limits preserves those
-bindings. All values use decimal GB. Unknown accounting blocks new allocations.
+bindings. Expired process bindings are removed automatically when their original processes and groups have ended. All values use decimal GB. Unknown accounting blocks new allocations.
 
 ### Per-route task job caps
 

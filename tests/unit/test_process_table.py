@@ -33,6 +33,15 @@ class ProcessTableTests(unittest.TestCase):
         self.assertTrue(state.startswith('Z'), state)
         return leader, zombie
 
+    @unittest.skipUnless(sys.platform == 'darwin', 'Native selective snapshot is used on macOS.')
+    def test_selective_snapshot_keeps_rows_with_unavailable_identity(self):
+        from mlx_agent.memory_budget import process_snapshot
+        usage = type('Usage', (), {'resident_size': 10, 'phys_footprint': 12})()
+        with patch.object(process_table, 'rows', return_value={7: (1, 7)}), \
+             patch.object(process_table, 'identities', return_value={}), \
+             patch('mlx_agent.memory_budget._usage', return_value=usage):
+            self.assertEqual(process_snapshot({7}), {7: {'parent': 1, 'group': 7, 'rss': 10, 'physical_bytes': 12}})
+
     def test_group_and_rows_list_live_members_without_zombies(self):
         leader, zombie = self.leader_with_zombie()
         self.assertEqual(process_table.group(leader.pid), [leader.pid])

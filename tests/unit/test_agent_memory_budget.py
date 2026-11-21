@@ -1,4 +1,6 @@
 """A shared budget counts pending loads, warm models and external agent families."""
+import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +9,104 @@ from mlx_agent.residency import MemoryAdmissionError, MemoryRegistry
 
 
 class AgentBudgetTests(unittest.TestCase):
+    def test_reused_group_expires_before_unreadable_memory_is_accounted(self):
+        self.rows[302]['identity'] = 'Mon Jan  1 00:00:00 2001 agent'
+        self.budget(external=[302])
+        path = self.root / 'budget.json'
+        os.utime(path, ns=(1_600_000_000_000_000_000, 1_600_000_000_000_000_000))
+        del self.rows[301], self.rows[302]
+        self.rows[303] = {'parent': 1, 'group': 301, 'rss': None}
+        self.rows[301] = {'parent': 1, 'group': 301, 'rss': None,
+                          'identity': 'Fri Jan  1 00:00:00 2099 other'}
+        # The original root is gone; this replacement is the new group leader.
+        result = self.registry.snapshot()['agent_budget']
+        self.assertEqual(result.get('external_bytes'), 0, result)
+        self.assertEqual(json.loads(path.read_text())['external'], [])
+
+    def test_expired_binding_inspection_is_read_only_then_snapshot_persists(self):
+        self.budget(external=[301])
+        path = self.root / 'budget.json'
+        before = path.read_bytes()
+        del self.rows[301], self.rows[302]
+        self.assertEqual(self.registry.inspect()['agent_budget']['external_bytes'], 0)
+        self.assertEqual(path.read_bytes(), before)
+        self.registry.snapshot()
+        self.assertEqual(json.loads(path.read_text())['external'], [])
+
+    def test_reparented_group_and_ambiguous_identity_remain_bound(self):
+        self.rows[302]['identity'] = 'Mon Jan  1 00:00:00 2001 agent'
+        self.budget(external=[302])
+        path = self.root / 'budget.json'
+        os.utime(path, ns=(1_600_000_000_000_000_000, 1_600_000_000_000_000_000))
+        del self.rows[302]
+        self.rows[303] = {'parent': 1, 'group': 301, 'rss': 5}
+        self.rows[301] = {'parent': 1, 'group': 301, 'rss': 3,
+                          'identity': 'Fri Jan  1 00:00:00 2010 leader'}
+        before = path.read_bytes()
+        self.assertEqual(self.registry.snapshot()['agent_budget']['external_bytes'], 8)
+        self.assertEqual(path.read_bytes(), before)
+        self.rows[301]['identity'] = 'unparseable'
+        self.assertEqual(self.registry.snapshot()['agent_budget']['external_bytes'], 8)
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_missing_root_identity_retains_binding_despite_newer_leader(self):
+        self.budget(external=[302])
+        path = self.root / 'budget.json'
+        os.utime(path, ns=(1_600_000_000_000_000_000, 1_600_000_000_000_000_000))
+        self.rows[302].pop('identity')
+        self.rows[302]['group'] = 400
+        self.rows[301]['identity'] = 'Fri Jan  1 00:00:00 2099 leader'
+        before = path.read_bytes()
+        self.assertEqual(self.registry.snapshot()['agent_budget']['status'], 'unavailable')
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_unchanged_budget_is_not_rewritten_and_reconfigure_expires(self):
+        self.budget(external=[301])
+        path = self.root / 'budget.json'
+        old = path.stat().st_mtime_ns
+        self.registry.configure_budget(200, 20)
+        self.assertEqual(path.stat().st_mtime_ns, old)
+        del self.rows[301], self.rows[302]
+        self.registry.configure_budget(200, 20)
+        self.assertEqual(json.loads(path.read_text())['external'], [])
+        self.assertEqual(json.loads(path.read_text())['limit_bytes'], 200)
+        self.assertEqual(json.loads(path.read_text())['reserve_bytes'], 20)
+
+    def test_live_child_exit_expires_external_binding(self):
+        import subprocess
+        import sys
+        registry = MemoryRegistry(self.root / 'child')
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'], start_new_session=True)
+        try:
+            registry.configure_budget(64_000_000_000, 8_000_000_000, [child.pid])
+            child.terminate()
+            child.wait(timeout=5)
+            registry.snapshot()
+            policy = json.loads((self.root / 'child' / 'budget.json').read_text())
+            self.assertEqual(policy['external'], [])
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.wait(timeout=5)
+
+    def test_ambiguous_local_start_uses_earliest_plausible_epoch(self):
+        import time
+        from unittest.mock import patch
+        from mlx_agent.memory_budget import _earliest_start_ns
+        previous = os.environ.get('TZ')
+        try:
+            with patch.dict(os.environ, {'TZ': 'America/New_York'}):
+                time.tzset()
+                self.assertEqual(_earliest_start_ns('Sun Nov  3 01:30:00 2024 process'),
+                                 1_730_611_800_000_000_000)
+                self.assertIsNone(_earliest_start_ns('not a valid start'))
+        finally:
+            if previous is None:
+                os.environ.pop('TZ', None)
+            else:
+                os.environ['TZ'] = previous
+            time.tzset()
+
     def test_unknown_process_accounting_retains_observed_headroom(self):
         self.budget()
         def unavailable():
@@ -87,6 +187,8 @@ class AgentBudgetTests(unittest.TestCase):
     def test_replaced_external_pid_is_not_charged_as_the_original_agent(self):
         self.budget(external=[301])
         self.rows[301]['identity'] = 'replacement'
+        self.rows[301]['group'] = 400
+        del self.rows[302]
         self.assertEqual(self.registry.snapshot()['agent_budget']['external_bytes'], 0)
 
     def test_unknown_process_accounting_blocks_new_load_without_losing_warm_worker(self):

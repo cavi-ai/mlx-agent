@@ -357,6 +357,10 @@ class ProviderRegistry:
             raise ValueError("provider opencode must not mutate global or project config")
         if not any(item.destination == Path("plugins/mlx-agent-command.ts") for item in artifacts):
             raise ValueError("provider opencode must install its native custom tool")
+        if not any(item.destination == Path("plugins/mlx-agent-provider.ts") for item in artifacts):
+            raise ValueError("provider opencode must install its model provider plugin")
+        if not any(item.destination == Path("src/mlx_agent/opencode_provider.py") for item in artifacts):
+            raise ValueError("provider opencode must install its model provider runtime")
         if not any(item.destination == Path("src/mlx_agent/command_executor.py") for item in artifacts):
             raise ValueError("provider opencode must install its custom-tool runtime")
 

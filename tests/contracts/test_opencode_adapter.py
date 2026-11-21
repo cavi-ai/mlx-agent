@@ -20,6 +20,7 @@ from pathlib import Path
 from mlx_agent import command_executor
 from mlx_agent.installer import Installer
 from mlx_agent.providers import ProviderRegistry
+from mlx_agent.wiring import contains_resolved_secrets
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -75,10 +76,10 @@ class OpenCodeAdapterContractTests(unittest.TestCase):
             self.assertFalse((package_root / "src").exists())
             plugin = package_root / "plugins" / "mlx-agent-command.ts"
             plugin_text = plugin.read_text(encoding="utf-8")
-            self.assertIn('tool: {', plugin_text)
-            self.assertIn('mlx_agent_command', plugin_text)
-            self.assertIn('tool.schema.enum(["scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "task"])', plugin_text)
-            self.assertIn('tool.schema.string().max(MAX_ARGUMENT_BYTES)', plugin_text)
+            self.assertIn('export default Plugin.define({', plugin_text)
+            self.assertIn('name: "mlx_agent_command"', plugin_text)
+            self.assertIn('enum: ["scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "task"]', plugin_text)
+            self.assertIn('maxLength: MAX_ARGUMENT_BYTES', plugin_text)
             self.assertIn('Bun.spawn({', plugin_text)
             self.assertIn('cmd: ["python3", "-m", "mlx_agent.command_executor"', plugin_text)
             self.assertIn('"--provider", "opencode", "--capability", args.capability', plugin_text)
@@ -91,6 +92,13 @@ class OpenCodeAdapterContractTests(unittest.TestCase):
                 plugin_text,
                 r"async function readBounded\(stream: ReadableStream<Uint8Array>\) \{\n  const decoder = new TextDecoder\(\)",
             )
+            provider_text = (package_root / "plugins" / "mlx-agent-provider.ts").read_text(encoding="utf-8")
+            self.assertIn('export default Plugin.define({', provider_text)
+            self.assertIn('const PROVIDER_ID = "mlx-agent"', provider_text)
+            self.assertIn('cmd: ["python3", "-m", "mlx_agent.opencode_provider"]', provider_text)
+            self.assertIn('ctx.provider.transform(', provider_text)
+            self.assertNotIn('shell:', provider_text)
+            self.assertFalse(contains_resolved_secrets(provider_text))
             command_paths = sorted(path.name for path in (package_root / "commands").glob("*.md"))
             self.assertEqual(["mlx-adopt.md", "mlx-bench.md", "mlx-doctor.md", "mlx-fleet.md", "mlx-scout.md", "mlx-task.md", "mlx-watch.md", "mlx-wire.md"], command_paths)
             for capability in CAPABILITIES:
@@ -123,7 +131,7 @@ class OpenCodeAdapterContractTests(unittest.TestCase):
             generator.generate(("opencode",), output_root)
             package_root = output_root / "providers" / "opencode"
             plugin_text = (package_root / "plugins" / "mlx-agent-command.ts").read_text(encoding="utf-8")
-            accepted = json.loads(re.search(r"tool\.schema\.enum\((\[[^\]]*\])\)", plugin_text).group(1))
+            accepted = json.loads(re.search(r"capability: \{ type: \"string\", enum: (\[[^\]]*\]) \}", plugin_text).group(1))
             shipped = sorted(path.stem[len("mlx-"):] for path in (package_root / "commands").glob("mlx-*.md"))
             self.assertEqual(sorted(accepted), shipped)
             self.assertEqual(sorted(manifest["capabilities"]), sorted(accepted))

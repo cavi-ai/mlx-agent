@@ -12,7 +12,18 @@ python3 scripts/mlx-agent uninstall opencode --scope user --dry-run --json
 python3 scripts/mlx-agent doctor opencode --scope user --json
 ```
 
-User-scope artifacts go to `$XDG_CONFIG_HOME/opencode` when `XDG_CONFIG_HOME` is set, otherwise `~/.config/opencode`. Project scope uses `<project>/.opencode`. The package includes commands, the `mlx-advisor` agent, the TypeScript plugin, skills, and the Python runtime (`src/mlx_agent`, copied from the repository root).
+User-scope artifacts go to `$XDG_CONFIG_HOME/opencode` when `XDG_CONFIG_HOME` is set, otherwise `~/.config/opencode`. Project scope uses `<project>/.opencode`. The package includes commands, the `mlx-advisor` agent, two OpenCode 2 plugins (`mlx-agent-command.ts` and `mlx-agent-provider.ts`), skills, and the Python runtime (`src/mlx_agent`, copied from the repository root).
+
+## Model provider
+
+`mlx-agent-provider.ts` registers provider `mlx-agent` when OpenCode starts. Every live chat endpoint that `serve discover` finds (`mlx_lm`, `mlx-vlm`, `strata`, `splash`) becomes model `mlx-agent/<model name>`, using the path-free name the front door lists. A keyed endpoint is included when its receipt names an API key file this user can read; the key stays in memory and is never written to `opencode.json`. A name served by two endpoints is left out.
+
+```bash
+opencode models mlx-agent
+opencode run -m mlx-agent/<model name> "Reply with OK."
+```
+
+Endpoints started after OpenCode are listed after OpenCode restarts.
 
 A symlinked config directory needs no configuration. If `~/.config/opencode` points at another location, the installer resolves it once and writes to the real directory; the resolved path is what the preview and the receipt record.
 
@@ -29,4 +40,4 @@ python3 scripts/mlx-agent install opencode --scope user --confirm --preview-hash
 opencode
 ```
 
-In OpenCode, press `Ctrl+P` and filter for `mlx` to verify `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, `/mlx-fleet`, and `/mlx-task`. `opencode debug paths` should report the intended XDG config, data, state, and cache roots. OpenCode 1.18.9 completed the receipt-owned package lifecycle during native validation; the model-backed provider response remained blocked by unavailable network access.
+In OpenCode, press `Ctrl+P` and filter for `mlx` to verify `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, `/mlx-fleet`, and `/mlx-task`. `opencode debug paths` should report the intended XDG config, data, state, and cache roots. The plugins use the OpenCode 2 plugin API (`@opencode/plugin`); OpenCode 1.x does not load them.

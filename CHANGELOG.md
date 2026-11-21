@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The OpenCode package registers provider `mlx-agent`: live chat endpoints with readable keys appear as `mlx-agent/<model name>`, and both OpenCode plugins use the OpenCode 2 plugin API.
+
 ## 0.14.0 - 2026-11-18
 
 - Add `--json` and `--watch-parent` to `serve front-door`: one result line reports the listening port or the startup failure, and the front door stops when the launching process exits.

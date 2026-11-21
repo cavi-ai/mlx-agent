@@ -25,6 +25,8 @@ opencode run -m mlx-agent/<model name> "Reply with OK."
 
 Endpoints started after OpenCode are listed after OpenCode restarts.
 
+To use a shared authenticated front door, set `MLX_AGENT_FRONT_DOOR_URL` to `http://127.0.0.1:<port>/v1` and provide its key in `MLX_AGENT_FRONT_DOOR_KEY` in the OpenCode process environment. Both values are required. The provider authenticates the front door and lists its chat routes; task routes are excluded. If either value is invalid or authentication fails, no direct endpoints are listed. The key is passed in memory and is not written to `opencode.json`.
+
 A symlinked config directory needs no configuration. If `~/.config/opencode` points at another location, the installer resolves it once and writes to the real directory; the resolved path is what the preview and the receipt record.
 
 To keep an OpenCode harness on a separate disk without changing native `HOME`, use the same scoped XDG variables for installation and every OpenCode launch:

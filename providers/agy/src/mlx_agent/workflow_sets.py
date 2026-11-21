@@ -393,6 +393,8 @@ def _resource_forecast(members, inspection, available, root):
     return result
 
 def preview_workflow(definition, *, receipts_dir=None):
+    if receipts_dir is not None:
+        receipts_dir = Path(receipts_dir).absolute()
     definition = validate_workflow(definition)
     members, binding, forecasts = {}, {}, {}
     root = receipts_root(receipts_dir)

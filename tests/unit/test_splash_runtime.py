@@ -378,6 +378,38 @@ class SplashServeTests(unittest.TestCase):
                                                       splash_tuning={"splash_verify_rows": "all"})),
                          "invalid_arguments")
 
+    def test_jit_worker_rechecks_reviewed_template_and_refuses_legacy_unbound(self):
+        import sys
+        from mlx_agent.identity_pass import recheck_bound_identity
+        from mlx_agent.serving_plan import worker_config
+        model = self.strata_profile()
+        libexec = Path(self.launcher).resolve().parents[1] / 'libexec'
+        (libexec / 'python/bin').mkdir(parents=True)
+        (libexec / 'python/bin/python3').symlink_to(sys.executable)
+        (libexec / 'install').mkdir(parents=True)
+        (libexec / 'install/launcher.py').write_text(SPLASH_LAUNCHER)
+        template = self.root / 'chat.jinja'
+        template.write_text('original')
+        plan = self.plan(model, jit=True, splash_chat_template=str(template))
+        config = worker_config(plan, control_token='token', state_path='state')
+        recheck_bound_identity(config)
+        recheck_bound_identity(config)
+        legacy = dict(config)
+        legacy.pop('splash_chat_template', None)
+        legacy.pop('splash_chat_template_sha256', None)
+        with self.assertRaises(ServeError):
+            recheck_bound_identity(legacy)
+        template.write_text('changed')
+        with self.assertRaises(ServeError):
+            recheck_bound_identity(config)
+
+    def test_support_scan_skips_launcher_without_eligible_outputs(self):
+        from mlx_agent.splash_runtime import annotate_support
+        run = Mock(return_value=Mock(stdout="Splash 1.7.0", returncode=0))
+        items = [{'path': '/model', 'runtime': 'strata', 'quantization': {}}, {'path': '/other'}]
+        self.assertIs(annotate_support(items, run=run), items)
+        self.assertEqual(run.call_count, 0)
+
     def test_chat_template_file_is_bound_to_the_preview(self):
         target = write_gguf(self.root / "model.gguf")
         template = self.root / "chat.jinja"

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Splash JIT workers recheck custom chat templates before each load.
+- Workflow activation accepts relative receipt directories.
+
 - The OpenCode package registers provider `mlx-agent`: live chat endpoints with readable keys appear as `mlx-agent/<model name>`, and both OpenCode plugins use the OpenCode 2 plugin API.
 
 ## 0.14.0 - 2026-11-18

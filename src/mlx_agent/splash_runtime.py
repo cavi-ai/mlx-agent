@@ -115,6 +115,8 @@ def annotate_support(outputs, run=subprocess.run):
     The engine's ``model-check`` is the rule Splash holds every start to. Nothing is added without an installed
     release whose engine knows the check; Strata profiles keep their own runtime.
     """
+    if not any(output.get("runtime") is None and isinstance(output.get("quantization"), dict) for output in outputs):
+        return outputs
     try:
         engine = _engine(installed_runtime(run=run))
     except SplashError:

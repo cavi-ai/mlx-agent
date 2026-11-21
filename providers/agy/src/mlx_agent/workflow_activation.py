@@ -74,6 +74,8 @@ def _owned_receipt(member, root):
 
 def _member_root(member, default):
     root = member.get('service_receipts_dir', default)
+    if 'service_receipts_dir' not in member and isinstance(root, (str, os.PathLike)):
+        root = Path(root).absolute()
     if root is not None and (not isinstance(root, (str, os.PathLike)) or not Path(root).is_absolute()):
         raise ValueError('Invalid service location.')
     return root
@@ -154,6 +156,8 @@ def _repeat_activation(value, name, preview_hash, root):
 
 
 def start_workflow(name, preview_hash, *, receipts_dir=None):
+    if receipts_dir is not None:
+        receipts_dir = Path(receipts_dir).absolute()
     path = _path(name, receipts_dir)
     with _target_locks([path], create_parents=True):
         if os.path.lexists(path):

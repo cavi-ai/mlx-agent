@@ -8,7 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from mlx_agent.service_registry import register_receipts, registered_roots, discover_services, live_receipt_roots
+from mlx_agent.service_registry import MAX_INDEX_FILES, MAX_ROOTS, register_receipts, registered_roots, discover_services, live_receipt_roots
 
 
 class ServiceRegistryTests(unittest.TestCase):
@@ -123,3 +123,102 @@ class ServiceRegistryTests(unittest.TestCase):
         rows += f'43 {os.getuid()+1} python /engine/src/mlx_agent/jit_serve.py --config /other/.mlx-agent-receipts/serve/1.jit-config.json\n'
         rows += f'44 {os.getuid()} python random.py --config /ignored/.mlx-agent-receipts/serve/1.jit-config.json\n'
         self.assertEqual(live_receipt_roots(rows), ['/models/service'])
+
+    def test_stale_registrations_above_max_roots_do_not_trigger_limit_error(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            registry = root / 'registry'
+            registry.mkdir()
+            live = []
+            for index in range(MAX_ROOTS):
+                item = root / f'live-{index:02d}'
+                item.mkdir()
+                live.append(str(item.resolve()))
+                (registry / f'z-live-{index:02d}.json').write_text(json.dumps({
+                    'schema_version': 1, 'receipts_dir': str(item),
+                }))
+            for index in range(15):
+                stale = root / f'stale-{index:02d}'
+                (registry / f'a-stale-{index:02d}.json').write_text(json.dumps({
+                    'schema_version': 1, 'receipts_dir': str(stale),
+                }))
+            inspected = []
+            result = discover_services(
+                registry=registry,
+                process_roots=[],
+                inspect=lambda path: inspected.append(path) or [],
+            )
+            self.assertEqual(result['errors'], [])
+            self.assertEqual(set(inspected), set(live))
+            self.assertEqual(len(inspected), MAX_ROOTS)
+
+    def test_more_than_max_roots_existing_directories_emits_limit_error_and_caps(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            registry = root / 'registry'
+            for index in range(MAX_ROOTS + 3):
+                item = root / f'live-{index:02d}'
+                item.mkdir()
+                register_receipts(item, registry)
+            inspected = []
+            result = discover_services(
+                registry=registry,
+                process_roots=[],
+                inspect=lambda path: inspected.append(path) or [],
+            )
+            self.assertEqual(len(inspected), MAX_ROOTS)
+            self.assertEqual(
+                result['errors'],
+                [{'source': str(registry), 'message': 'Service location limit reached.'}],
+            )
+
+    def test_exceeding_max_index_files_scan_bound_emits_limit_error(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            registry = root / 'registry'
+            registry.mkdir()
+            for index in range(MAX_INDEX_FILES + 2):
+                stale = root / f'stale-{index:03d}'
+                (registry / f'{index:04d}.json').write_text(json.dumps({
+                    'schema_version': 1, 'receipts_dir': str(stale),
+                }))
+            result = discover_services(registry=registry, process_roots=[], inspect=lambda _: [])
+            self.assertEqual(result['services'], [])
+            self.assertEqual(
+                result['errors'],
+                [{'source': str(registry), 'message': 'Service location limit reached.'}],
+            )
+
+    def test_register_receipts_prunes_stale_registrations_and_preserves_live_and_unsafe(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            registry = root / 'registry'
+            live_a = root / 'live-a'
+            live_b = root / 'live-b'
+            stale = root / 'stale'
+            live_a.mkdir()
+            live_b.mkdir()
+            stale.mkdir()
+
+            register_receipts(live_a, registry)
+            register_receipts(stale, registry)
+            stale_files = set(registry.glob('*.json'))
+            stale.rmdir()
+
+            corrupt = registry / 'corrupt.json'
+            corrupt.write_text('{bad')
+            link = registry / 'link.json'
+            link.symlink_to(next(iter(stale_files)))
+
+            register_receipts(live_b, registry)
+
+            self.assertEqual(set(registered_roots(registry)), {str(live_a.resolve()), str(live_b.resolve())})
+            # Stale regular registration was pruned; corrupt file and symlink were left untouched.
+            self.assertTrue(corrupt.exists())
+            self.assertTrue(link.is_symlink())
+            remaining_records = [
+                json.loads(item.read_text())['receipts_dir']
+                for item in registry.glob('*.json')
+                if not item.is_symlink() and item.name != 'corrupt.json'
+            ]
+            self.assertEqual(set(remaining_records), {str(live_a.resolve()), str(live_b.resolve())})

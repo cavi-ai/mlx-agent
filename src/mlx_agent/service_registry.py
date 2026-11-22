@@ -15,6 +15,7 @@ from pathlib import Path
 from .transactions import _assert_safe_directory, _atomic_in_directory
 
 MAX_ROOTS = 32
+MAX_INDEX_FILES = 256
 MAX_RECORD_BYTES = 16_384
 
 
@@ -26,15 +27,54 @@ def _safe_root(value):
     return _assert_safe_directory(Path(value).expanduser().absolute()).resolve()
 
 
+def _read_registration(location):
+    descriptor = os.open(location, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, 'rb') as source:
+        metadata = os.fstat(source.fileno())
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid() or metadata.st_size > MAX_RECORD_BYTES:
+            raise ValueError('Invalid service location record')
+        raw = source.read(MAX_RECORD_BYTES + 1)
+        if len(raw) > MAX_RECORD_BYTES:
+            raise ValueError('Service location record is too large')
+        record = json.loads(raw)
+    if not isinstance(record, dict) or record.get('schema_version') != 1 or not isinstance(record.get('receipts_dir'), str):
+        raise ValueError('Unsupported service location record')
+    return record, metadata
+
+
+def _prune_stale_registrations(index, keep_name=None):
+    """Opportunistically remove regular, user-owned registrations whose root no longer exists."""
+    for location in sorted(index.glob('*.json'))[:MAX_INDEX_FILES]:
+        if keep_name is not None and location.name == keep_name:
+            continue
+        try:
+            record, metadata = _read_registration(location)
+            try:
+                _safe_root(record['receipts_dir'])
+                continue
+            except ValueError as error:
+                if not str(error).startswith('path component does not exist:'):
+                    continue
+            current = os.stat(location, follow_symlinks=False)
+            if not stat.S_ISREG(current.st_mode) or current.st_uid != os.getuid():
+                continue
+            if (current.st_dev, current.st_ino) != (metadata.st_dev, metadata.st_ino):
+                continue
+            location.unlink()
+        except (OSError, ValueError, TypeError):
+            continue
+
+
 def register_receipts(receipts_dir, registry=None):
     """Index one explicit location; independent atomic files avoid lost updates."""
     root = _safe_root(receipts_dir)
     index = Path(registry) if registry is not None else registry_root()
     _assert_safe_directory(index, create=True)
-    key = hashlib.sha256(str(root).encode()).hexdigest()
-    _atomic_in_directory(index, key + '.json', json.dumps({
+    name = hashlib.sha256(str(root).encode()).hexdigest() + '.json'
+    _atomic_in_directory(index, name, json.dumps({
         'schema_version': 1, 'receipts_dir': str(root),
     }, sort_keys=True).encode(), 0o600)
+    _prune_stale_registrations(index, keep_name=name)
 
 
 def _read_roots(registry, errors):
@@ -43,32 +83,36 @@ def _read_roots(registry, errors):
         return []
     _assert_safe_directory(index)
     roots = []
+    seen = set()
+    limit_reached = False
     locations = sorted(index.glob('*.json'))
-    if len(locations) > MAX_ROOTS:
-        errors.append({'source': str(index), 'message': 'Service location limit reached.'})
-    for location in locations[:MAX_ROOTS]:
+    if len(locations) > MAX_INDEX_FILES:
+        limit_reached = True
+    for location in locations[:MAX_INDEX_FILES]:
         try:
-            descriptor = os.open(location, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-            with os.fdopen(descriptor, 'rb') as source:
-                metadata = os.fstat(source.fileno())
-                if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid() or metadata.st_size > MAX_RECORD_BYTES:
-                    raise ValueError('Invalid service location record')
-                raw = source.read(MAX_RECORD_BYTES + 1)
-                if len(raw) > MAX_RECORD_BYTES:
-                    raise ValueError('Service location record is too large')
-                record = json.loads(raw)
-            if not isinstance(record, dict) or record.get('schema_version') != 1 or not isinstance(record.get('receipts_dir'), str):
-                raise ValueError('Unsupported service location record')
             try:
-                roots.append(str(_safe_root(record['receipts_dir'])))
+                record, _metadata = _read_registration(location)
+            except FileNotFoundError:
+                continue
+            try:
+                resolved = str(_safe_root(record['receipts_dir']))
             except ValueError as error:
                 if not str(error).startswith('path component does not exist:'):
                     raise
                 # A historical registration can outlive its directory. Explicit
                 # and live roots are still checked independently by discovery.
-
+                continue
+            if resolved in seen:
+                continue
+            if len(roots) >= MAX_ROOTS:
+                limit_reached = True
+                break
+            seen.add(resolved)
+            roots.append(resolved)
         except (OSError, ValueError, TypeError) as error:
             errors.append({'source': str(location), 'message': str(error)})
+    if limit_reached:
+        errors.append({'source': str(index), 'message': 'Service location limit reached.'})
     return roots
 
 

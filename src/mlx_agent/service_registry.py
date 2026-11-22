@@ -12,7 +12,7 @@ import sys
 import time
 from pathlib import Path
 
-from .transactions import _assert_safe_directory, _atomic_in_directory
+from .transactions import _assert_safe_directory, _atomic_in_directory, _target_locks, _walk_directory
 
 MAX_ROOTS = 32
 MAX_INDEX_FILES = 256
@@ -27,8 +27,8 @@ def _safe_root(value):
     return _assert_safe_directory(Path(value).expanduser().absolute()).resolve()
 
 
-def _read_registration(location):
-    descriptor = os.open(location, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+def _read_registration(location, dir_fd=None):
+    descriptor = os.open(location, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dir_fd)
     with os.fdopen(descriptor, 'rb') as source:
         metadata = os.fstat(source.fileno())
         if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid() or metadata.st_size > MAX_RECORD_BYTES:
@@ -42,75 +42,101 @@ def _read_registration(location):
     return record, metadata
 
 
+def _index_names(directory):
+    """Read at most one bounded page, including unrelated directory entries."""
+    names = []
+    overflow = False
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            if len(names) == MAX_INDEX_FILES:
+                overflow = True
+                break
+            names.append(entry.name)
+    return sorted(name for name in names if name.endswith('.json')), overflow
+
+
 def _prune_stale_registrations(index, keep_name=None):
-    """Opportunistically remove regular, user-owned registrations whose root no longer exists."""
-    for location in sorted(index.glob('*.json'))[:MAX_INDEX_FILES]:
-        if keep_name is not None and location.name == keep_name:
-            continue
-        try:
-            record, metadata = _read_registration(location)
+    """Remove only unchanged owned records whose receipt roots have disappeared."""
+    _, directory = _walk_directory(index)
+    try:
+        names, _overflow = _index_names(directory)
+        for name in names:
+            if name == keep_name:
+                continue
             try:
-                _safe_root(record['receipts_dir'])
-                continue
-            except ValueError as error:
-                if not str(error).startswith('path component does not exist:'):
+                record, metadata = _read_registration(name, dir_fd=directory)
+                try:
+                    _safe_root(record['receipts_dir'])
                     continue
-            current = os.stat(location, follow_symlinks=False)
-            if not stat.S_ISREG(current.st_mode) or current.st_uid != os.getuid():
+                except ValueError as error:
+                    if not str(error).startswith('path component does not exist:'):
+                        continue
+                current = os.stat(name, dir_fd=directory, follow_symlinks=False)
+                if (not stat.S_ISREG(current.st_mode) or current.st_uid != os.getuid()
+                        or (current.st_dev, current.st_ino) != (metadata.st_dev, metadata.st_ino)):
+                    continue
+                os.unlink(name, dir_fd=directory)
+            except (OSError, ValueError, TypeError):
                 continue
-            if (current.st_dev, current.st_ino) != (metadata.st_dev, metadata.st_ino):
-                continue
-            location.unlink()
-        except (OSError, ValueError, TypeError):
-            continue
+    finally:
+        os.close(directory)
+
+
+def prune_stale_registrations(registry=None):
+    """Bounded cleanup serialized with managed registrations."""
+    index = Path(registry) if registry is not None else registry_root()
+    if not os.path.lexists(index):
+        return
+    with _target_locks([index], blocking=True):
+        _assert_safe_directory(index)
+        _prune_stale_registrations(index)
 
 
 def register_receipts(receipts_dir, registry=None):
-    """Index one explicit location; independent atomic files avoid lost updates."""
+    """Index one explicit location under the shared registry lock."""
     root = _safe_root(receipts_dir)
     index = Path(registry) if registry is not None else registry_root()
-    _assert_safe_directory(index, create=True)
     name = hashlib.sha256(str(root).encode()).hexdigest() + '.json'
-    _atomic_in_directory(index, name, json.dumps({
-        'schema_version': 1, 'receipts_dir': str(root),
-    }, sort_keys=True).encode(), 0o600)
-    _prune_stale_registrations(index, keep_name=name)
+    with _target_locks([index], create_parents=True, blocking=True):
+        _assert_safe_directory(index, create=True)
+        _atomic_in_directory(index, name, json.dumps({
+            'schema_version': 1, 'receipts_dir': str(root),
+        }, sort_keys=True).encode(), 0o600)
+        _prune_stale_registrations(index, keep_name=name)
 
 
 def _read_roots(registry, errors):
     index = Path(registry) if registry is not None else registry_root()
     if not index.exists() and not index.is_symlink():
         return []
-    _assert_safe_directory(index)
-    roots = []
-    seen = set()
-    limit_reached = False
-    locations = sorted(index.glob('*.json'))
-    if len(locations) > MAX_INDEX_FILES:
-        limit_reached = True
-    for location in locations[:MAX_INDEX_FILES]:
-        try:
+    _, directory = _walk_directory(index)
+    roots, seen = [], set()
+    try:
+        names, limit_reached = _index_names(directory)
+        for name in names:
+            location = index / name
             try:
-                record, _metadata = _read_registration(location)
-            except FileNotFoundError:
-                continue
-            try:
-                resolved = str(_safe_root(record['receipts_dir']))
-            except ValueError as error:
-                if not str(error).startswith('path component does not exist:'):
-                    raise
-                # A historical registration can outlive its directory. Explicit
-                # and live roots are still checked independently by discovery.
-                continue
-            if resolved in seen:
-                continue
-            if len(roots) >= MAX_ROOTS:
-                limit_reached = True
-                break
-            seen.add(resolved)
-            roots.append(resolved)
-        except (OSError, ValueError, TypeError) as error:
-            errors.append({'source': str(location), 'message': str(error)})
+                try:
+                    record, _metadata = _read_registration(name, dir_fd=directory)
+                except FileNotFoundError:
+                    continue
+                try:
+                    resolved = str(_safe_root(record['receipts_dir']))
+                except ValueError as error:
+                    if not str(error).startswith('path component does not exist:'):
+                        raise
+                    continue
+                if resolved in seen:
+                    continue
+                if len(roots) >= MAX_ROOTS:
+                    limit_reached = True
+                    break
+                seen.add(resolved)
+                roots.append(resolved)
+            except (OSError, ValueError, TypeError) as error:
+                errors.append({'source': str(location), 'message': str(error)})
+    finally:
+        os.close(directory)
     if limit_reached:
         errors.append({'source': str(index), 'message': 'Service location limit reached.'})
     return roots

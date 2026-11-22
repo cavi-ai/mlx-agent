@@ -562,6 +562,11 @@ def acquire(selector, *, kind='execution', service=None, root=None, discover=Non
                 raise ModelServingError('model_load_in_progress', 'This model is already in use.',
                                         'Wait for the existing model operation to finish.')
             found = (discover or discover_services)()
+            if discover is None and any(error.get('source') == str(registry_root())
+                    and error.get('message') == 'Service location limit reached.' for error in found.get('errors', [])):
+                from .service_registry import prune_stale_registrations
+                prune_stale_registrations()
+                found = discover_services()
             if found.get('errors'):
                 raise _unknown()
             legacy = _legacy_matches(model, found.get('services', []))

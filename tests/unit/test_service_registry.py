@@ -12,6 +12,88 @@ from mlx_agent.service_registry import MAX_INDEX_FILES, MAX_ROOTS, register_rece
 
 
 class ServiceRegistryTests(unittest.TestCase):
+    def test_enumeration_stops_after_bounded_entries_even_for_non_json(self):
+        from mlx_agent import service_registry as registry_module
+
+        with TemporaryDirectory() as folder:
+            index = Path(folder) / 'index'
+            index.mkdir()
+            for i in range(MAX_INDEX_FILES + 5):
+                (index / f'{i:04d}.other').touch()
+            real = os.scandir
+            counts = []
+
+            class Limited:
+                def __init__(self, path):
+                    self.iterator = real(path)
+                    self.count = 0
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *args):
+                    self.iterator.close()
+                    counts.append(self.count)
+
+                def __iter__(self):
+                    return self
+
+                def __next__(self):
+                    self.count += 1
+                    if self.count > MAX_INDEX_FILES + 1:
+                        raise AssertionError('unbounded enumeration')
+                    return next(self.iterator)
+
+            with patch.object(registry_module.os, 'scandir', side_effect=Limited):
+                result = discover_services(registry=index, process_roots=[], inspect=lambda _: [])
+            self.assertTrue(result['errors'])
+            self.assertLessEqual(max(counts), MAX_INDEX_FILES + 1)
+
+    def test_registration_survives_concurrent_stale_prune(self):
+        import threading
+        from mlx_agent import service_registry as registry_module
+        from mlx_agent.transactions import ConcurrentTransactionError, _target_locks
+
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            index = root / 'index'
+            target = root / 'target'
+            target.mkdir()
+            register_receipts(target, index)
+            target.rmdir()
+            hit, proceed, started = threading.Event(), threading.Event(), threading.Event()
+            real_unlink = os.unlink
+
+            def delayed(path, *args, **kwargs):
+                if str(path).endswith('.json') and not hit.is_set():
+                    hit.set()
+                    if not proceed.wait(5):
+                        raise TimeoutError('stale prune was not released')
+                return real_unlink(path, *args, **kwargs)
+
+            def register_again():
+                started.set()
+                register_receipts(target, index)
+
+            other = root / 'other'
+            other.mkdir()
+            with patch.object(registry_module.os, 'unlink', delayed):
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    first = pool.submit(register_receipts, other, index)
+                    try:
+                        self.assertTrue(hit.wait(5))
+                        with self.assertRaises(ConcurrentTransactionError):
+                            with _target_locks([index]):
+                                pass
+                        target.mkdir()
+                        second = pool.submit(register_again)
+                        self.assertTrue(started.wait(5))
+                    finally:
+                        proceed.set()
+                    first.result()
+                    second.result()
+            self.assertIn(str(target.resolve()), registered_roots(index))
+
     def test_non_object_records_are_errors_without_aborting_discovery(self):
         for value in ([], None, 17, 'record'):
             with self.subTest(value=value), TemporaryDirectory() as folder:

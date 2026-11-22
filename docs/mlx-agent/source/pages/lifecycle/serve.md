@@ -140,10 +140,17 @@ include another known location. Discovery is read-only; each result includes its
 receipt location, process identity and reported model residency. An unloaded JIT
 gateway can remain available to clients.
 
+Discovery skips missing registered receipt directories before applying its
+32-location limit. Explicit locations and live gateway locations are still
+checked, and corrupt or unsafe registrations remain errors. The index scan is
+bounded. Registration removes only records whose receipt roots are missing. If
+ownership discovery reaches the index limit at startup, it can prune one bounded
+batch of missing roots and retry. Remaining limit or safety errors block admission.
+
 Use the result's `receipts_dir` for controls. `--expected-pid` and
 `--expected-start` bind stop, unload and policy changes to the selected process;
 a changed process is refused. Errors from an unavailable location are reported
-separately from services found elsewhere. A registered location that no longer exists is skipped; an explicitly requested or live gateway location that is unavailable remains an error.
+separately from services found elsewhere.
 
 ## Front door
 

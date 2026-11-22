@@ -1,6 +1,6 @@
 # Version and support
 
-Package version in this checkout: **0.14.0** (release tag `v0.14.0`).
+Package version in this checkout: **0.15.0** (release tag `v0.15.0`).
 Source documentation can include changes made after a published release. Use
 the artifact attached to a specific release when you need that version's docs.
 
@@ -11,11 +11,12 @@ the artifact attached to a specific release when you need that version's docs.
 | Claude Code | 2.1.143 | 2.1.198 |
 | Codex CLI | 0.137.0 | 0.137.0 |
 | Agy | 1.1.14 | 1.1.14 |
-| OpenCode | 1.17.7 | 1.18.9 |
+| OpenCode | 2.3.2 (OpenCode 2 plugin API) | 2.3.2 (model discovery) |
 | AgentSkills hosts | — | — |
 
-A provider release newer than its last tested version is used, and `doctor`
-reports a `provider_untested` warning for it; a release below the minimum is
+For version checks, `doctor` compares provider releases with the minimum and
+last-tested versions recorded in the compatibility metadata. A newer release
+receives a `provider_untested` warning. A release below the recorded minimum is
 unsupported.
 
 Python 3.11+ for the core; macOS on Apple Silicon for host inspection and MLX

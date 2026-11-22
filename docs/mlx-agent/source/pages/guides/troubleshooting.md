@@ -64,6 +64,16 @@ Inspect the receipt's log path for startup failure; preserve receipts and backup
 if recovery is required. Do not stop an unrelated process to make a port free.
 For a changed configuration, review a fresh apply or [rollback](../capabilities/wire.md#recover-a-configuration).
 
+## Service ownership cannot be established
+
+For `model_serving_state_unknown` or `Service location limit reached`, run
+`python3 scripts/mlx-agent serve discover --json` and inspect its `errors` for
+the affected location. Discovery is read-only and skips missing registered
+receipt directories. Startup can clean one bounded batch of missing roots and
+retry. Corrupt or unsafe records and remaining location-limit errors still
+block ownership checks. Check the reported locations and running services before
+retrying. See [Discover running services](../lifecycle/serve.md#discover-running-services).
+
 ## JIT requests return HTTP 503
 
 `memory_unknown` means headroom or local weight size could not be established;

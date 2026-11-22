@@ -2,6 +2,8 @@
 
 OpenCode is packaged for `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, `/mlx-fleet`, and `/mlx-task`, backed by a narrow native custom tool.
 
+Both packaged plugins require the OpenCode 2 plugin API (`@opencode/plugin`).
+
 Use the receipt-owned installer; it never creates or edits `opencode.json`:
 
 ```bash
@@ -42,4 +44,4 @@ python3 scripts/mlx-agent install opencode --scope user --confirm --preview-hash
 opencode
 ```
 
-In OpenCode, press `Ctrl+P` and filter for `mlx` to verify `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, `/mlx-fleet`, and `/mlx-task`. `opencode debug paths` should report the intended XDG config, data, state, and cache roots. The plugins use the OpenCode 2 plugin API (`@opencode/plugin`); OpenCode 1.x does not load them.
+In OpenCode, press `Ctrl+P` and filter for `mlx` to verify `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, `/mlx-fleet`, and `/mlx-task`. `opencode debug paths` should report the intended XDG config, data, state, and cache roots.

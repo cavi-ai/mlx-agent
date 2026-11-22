@@ -7,6 +7,60 @@ from mlx_agent import model_serving
 
 
 class ModelServingTests(unittest.TestCase):
+    def test_admission_recovers_overflow_of_missing_registered_roots(self):
+        import json
+        import os
+        from unittest.mock import patch
+        from mlx_agent.service_registry import MAX_INDEX_FILES
+
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            state = root / 'state'
+            index = state / 'mlx-agent/services'
+            index.mkdir(parents=True)
+            model = root / 'model'
+            model.mkdir()
+            for i in range(MAX_INDEX_FILES + 2):
+                record = {'schema_version': 1, 'receipts_dir': str(root / f'missing-{i}')}
+                (index / f'{i:04d}.json').write_text(json.dumps(record))
+            with patch.dict(os.environ, {'XDG_STATE_HOME': str(state)}), \
+                 patch('mlx_agent.service_registry.live_receipt_roots', return_value=[]):
+                claim = model_serving.acquire(str(model), root=root / 'claims')
+                claim.release()
+            self.assertLess(len(list(index.glob('*.json'))), MAX_INDEX_FILES)
+
+    def test_overflow_recovery_remains_fail_closed_for_live_roots_and_custom_discovery(self):
+        import json
+        import os
+        from unittest.mock import patch
+        from mlx_agent.service_registry import MAX_ROOTS
+
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            state = root / 'state'
+            index = state / 'mlx-agent/services'
+            index.mkdir(parents=True)
+            model = root / 'model'
+            model.mkdir()
+            for i in range(MAX_ROOTS + 1):
+                live = root / f'live-{i}'
+                live.mkdir()
+                record = {'schema_version': 1, 'receipts_dir': str(live)}
+                (index / f'{i:04d}.json').write_text(json.dumps(record))
+            with patch.dict(os.environ, {'XDG_STATE_HOME': str(state)}), \
+                 patch('mlx_agent.service_registry.live_receipt_roots', return_value=[]):
+                with self.assertRaises(model_serving.ModelServingError) as failure:
+                    model_serving.acquire(str(model), root=root / 'claims')
+                self.assertEqual(failure.exception.code, 'model_serving_state_unknown')
+                self.assertEqual(len(list(index.glob('*.json'))), MAX_ROOTS + 1)
+                result = {'services': [], 'errors': [
+                    {'source': str(index), 'message': 'Service location limit reached.'}
+                ]}
+                with patch('mlx_agent.service_registry.prune_stale_registrations') as cleanup:
+                    with self.assertRaises(model_serving.ModelServingError):
+                        model_serving.acquire(str(model), root=root / 'claims', discover=lambda: result)
+                    self.assertEqual(cleanup.call_count, 0)
+
     def test_model_identity_resolves_directory_aliases(self):
         with TemporaryDirectory() as directory:
             model = Path(directory) / 'model'

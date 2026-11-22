@@ -2,7 +2,7 @@
 
 OpenCode is packaged for `/mlx-scout`, `/mlx-adopt`, `/mlx-wire`, `/mlx-bench`, `/mlx-doctor`, `/mlx-watch`, `/mlx-fleet`, and `/mlx-task`, backed by a narrow native custom tool.
 
-Both packaged plugins require the OpenCode 2 plugin API (`@opencode/plugin`).
+Both packaged plugins require OpenCode 2.3.2 or later and the OpenCode 2 plugin API (`@opencode/plugin`).
 
 Use the receipt-owned installer; it never creates or edits `opencode.json`:
 

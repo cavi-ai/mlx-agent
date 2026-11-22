@@ -2,9 +2,11 @@
 
 ## Unreleased
 
+## 0.15.0 - 2026-11-21
+
 - Splash JIT workers recheck custom chat templates before each load.
 - Workflow activation accepts relative receipt directories.
-- The OpenCode 2 plugins register unkeyed chat endpoints and keyed endpoints with readable keys as `mlx-agent/<model name>`, with optional discovery through a shared authenticated front door.
+- The OpenCode plugins require 2.3.2 or later. They register unkeyed chat endpoints and keyed endpoints with readable keys as `mlx-agent/<model name>`, with optional discovery through a shared authenticated front door.
 - `convert scan` excludes Ollama manifests configured for remote execution from the local model inventory and skips the Splash compatibility probe when no outputs are eligible.
 - Conversion queues use the selected `--receipts-dir` for reconciliation, status and new conversions.
 - Splash gateway status reports the configured context limit and, when the loaded worker reports it, the effective limit.

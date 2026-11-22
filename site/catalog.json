@@ -8,7 +8,7 @@
     "license": "MIT"
   },
   "release": {
-    "version": "0.14.0",
+    "version": "0.15.0",
     "channel": "source-checkout"
   },
   "links": {
@@ -113,8 +113,8 @@
     },
     "opencode": {
       "install_guide": "docs/install/opencode.md",
-      "minimum_version": "1.17.7",
-      "last_tested_version": "1.18.9",
+      "minimum_version": "2.3.2",
+      "last_tested_version": "2.3.2",
       "scopes": ["user", "project"],
       "commands": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task"]
     },

@@ -108,6 +108,22 @@ class ProviderRegistryTests(unittest.TestCase):
         self.assertFalse(calls[0][1]["shell"])
         self.assertLessEqual(calls[0][1]["timeout"], 5)
 
+    def test_opencode_requires_qualified_v2_host(self):
+        with tempfile.TemporaryDirectory() as directory:
+            registry = ProviderRegistry(ROOT / "plugin.json", home=Path(directory) / "home",
+                                        config_root=Path(directory) / "config")
+            definition = registry.definitions()["opencode"]
+            for version, expected in (("1.18.9", "unsupported"), ("2.3.1", "unsupported"),
+                                      ("2.3.2", "native-visible")):
+                with self.subTest(version=version):
+                    result = detect_providers(
+                        [definition], env={"PATH": "/fake/bin"},
+                        executable_lookup=lambda command, path=None: "/fake/bin/opencode",
+                        probe_runner=lambda argv, **kwargs: subprocess.CompletedProcess(
+                            argv, 0, (version + "\n").encode()),
+                    )[0]
+                    self.assertEqual(result.state, expected)
+
     def test_default_version_probe_caps_captured_output_before_process_exit(self):
         completed = _run_bounded_probe(
             [sys.executable, "-c", "print('provider 1.2.3')"],

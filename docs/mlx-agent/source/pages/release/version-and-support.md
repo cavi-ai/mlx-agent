@@ -1,6 +1,6 @@
 # Version and support
 
-Package version in this checkout: **0.14.0** (release tag `v0.14.0`).
+Package version in this checkout: **0.15.0** (release tag `v0.15.0`).
 Source documentation can include changes made after a published release. Use
 the artifact attached to a specific release when you need that version's docs.
 
@@ -11,7 +11,7 @@ the artifact attached to a specific release when you need that version's docs.
 | Claude Code | 2.1.143 | 2.1.198 |
 | Codex CLI | 0.137.0 | 0.137.0 |
 | Agy | 1.1.14 | 1.1.14 |
-| OpenCode | OpenCode 2 plugin API | 2.3.2 (model discovery) |
+| OpenCode | 2.3.2 (OpenCode 2 plugin API) | 2.3.2 (model discovery) |
 | AgentSkills hosts | — | — |
 
 For version checks, `doctor` compares provider releases with the minimum and

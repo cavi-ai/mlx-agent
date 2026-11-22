@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "plugin_version": "0.14.0",
+  "plugin_version": "0.15.0",
   "allowed_evidence_statuses": ["supported", "not-run", "blocked", "static", "fixture"],
   "providers": {
     "claude": {
@@ -91,8 +91,8 @@
       "id": "opencode",
       "display_name": "OpenCode",
       "documentation": "docs/install/opencode.md",
-      "minimum_version": "1.17.7",
-      "last_tested_version": "1.18.9",
+      "minimum_version": "2.3.2",
+      "last_tested_version": "2.3.2",
       "scopes": ["user", "project"],
       "config_paths": ["$XDG_CONFIG_HOME/opencode", "<project>/.opencode"],
       "capabilities": {
@@ -105,12 +105,12 @@
         "fleet": {"command": "mlx-fleet", "invocation": "/mlx-fleet"},
         "task": {"command": "mlx-task", "invocation": "/mlx-task"}
       },
-      "last_smoke_test": {"status": "blocked", "date": "2026-07-29", "summary": "Seven-command installation and removal checked with OpenCode 1.18.9. Command transport checked with fixtures; model invocation not verified."},
-      "release_evidence": {"id": "rc-2026-07-29-opencode", "status": "blocked", "date": "2026-07-29", "environment": "macOS arm64", "cli_version": "1.18.9", "scopes_tested": ["user", "project"], "native_discovery": "all seven commands installed", "fixture_bundle": "passed", "uninstall": "passed"},
+      "last_smoke_test": {"status": "blocked", "date": "2026-11-21", "summary": "OpenCode 2.3.2 user and project install, doctor and uninstall passed. User-scoped shared-route discovery and model chat succeeded."},
+      "release_evidence": {"id": "rc-2026-11-21-opencode", "status": "blocked", "date": "2026-11-21", "environment": "macOS arm64", "cli_version": "2.3.2", "scopes_tested": ["user", "project"], "native_discovery": "User-scoped shared front-door chat discovery and model chat succeeded.", "fixture_bundle": "passed", "uninstall": "passed"},
       "evidence": {
         "schema": {"status": "static", "summary": "Generated TypeScript plugin and command contracts are statically validated."},
         "install_round_trip": {"status": "fixture", "summary": "Receipt-owned install/update/uninstall lifecycle is tested without an OpenCode CLI."},
-        "native_discovery": {"status": "supported", "summary": "Seven-command installation checked with OpenCode 1.18.9."},
+        "native_discovery": {"status": "supported", "summary": "OpenCode 2.3.2 discovered a shared front-door chat route in user scope."},
         "bundle_execution": {"status": "fixture", "summary": "Equivalent no-shell argv/stdin transport reached the bundled executor."},
         "model_backed_invocation": {"status": "blocked", "summary": "No successful model-backed invocation recorded."}
       }

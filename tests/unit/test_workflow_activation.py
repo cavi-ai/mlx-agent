@@ -472,6 +472,35 @@ class WorkflowActivationTests(unittest.TestCase):
                 code = main(['serve', 'workflow', *args, '--receipts-dir', str(self.root), '--json'])
             self.assertEqual(code, 0, output.getvalue())
 
+    def test_cli_relative_receipts_root_across_workflow_lifecycle(self):
+        import io
+        import json
+        from contextlib import redirect_stdout
+        from mlx_agent.cli import main
+        original = os.getcwd()
+        os.chdir(self.root.parent)
+        self.addCleanup(os.chdir, original)
+        relative = self.root.name
+        def run(*args):
+            output = io.StringIO()
+            with redirect_stdout(output):
+                code = main(['serve', 'workflow', *args, '--receipts-dir', relative, '--json'])
+            self.assertEqual(code, 0, output.getvalue())
+            return json.loads(output.getvalue())['data']
+        preview = run('preview', '--name', 'studio')
+        started = run('start', '--name', 'studio', '--confirm', '--preview-hash', preview['preview_hash'])
+        self.assertEqual(started['state'], 'active')
+        self.assertEqual(run('status', '--name', 'studio')['state'], 'active')
+        self.assertEqual(run('stage', '--name', 'studio', '--role', 'coding')['roles']['coding']['role'], 'coding')
+        self.assertEqual(run('resolve', '--name', 'studio', '--role', 'coding')['role'], 'coding')
+        relative_preview = workflow_sets.preview_workflow(self.definition, receipts_dir=relative)
+        absolute_preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
+        self.assertEqual(relative_preview['preview_hash'], absolute_preview['preview_hash'])
+        self.assertTrue(Path(relative_preview['members']['coding']['candidate']['receipt']).is_absolute())
+        self.assertEqual(run('stop', '--name', 'studio')['state'], 'stopped')
+        with self.assertRaisesRegex(ValueError, 'Invalid service location'):
+            activation._member_root({'service_receipts_dir': 'relative'}, relative)
+
     def test_occupied_port_is_rejected_before_any_launch(self):
         preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
         with socket.socket() as blocker:

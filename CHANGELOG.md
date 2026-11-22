@@ -2,7 +2,13 @@
 
 ## Unreleased
 
+- Splash JIT workers recheck custom chat templates before each load.
+- Workflow activation accepts relative receipt directories.
+- OpenCode can discover chat routes through a shared authenticated front door.
 - The OpenCode package registers provider `mlx-agent`: live chat endpoints with readable keys appear as `mlx-agent/<model name>`, and both OpenCode plugins use the OpenCode 2 plugin API.
+- `convert scan` excludes Ollama manifests configured for remote execution from the local model inventory.
+- Conversion queues use the selected `--receipts-dir` for reconciliation, status and new conversions.
+- Splash gateway status reports the configured context limit and, when the loaded worker reports it, the effective limit.
 
 ## 0.14.0 - 2026-11-18
 

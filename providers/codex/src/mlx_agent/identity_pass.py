@@ -136,6 +136,16 @@ def _require_splash_identity(plan):
         return
     from .splash_runtime import SplashError, installed_runtime, read_chat_template, read_draft, read_target
 
+    argv = plan.get('worker_argv', [])
+    flags = [i for i, value in enumerate(argv) if value == '--chat-template-file' or value.startswith('--chat-template-file=')]
+    if flags:
+        index = flags[0]
+        value = (argv[index + 1] if argv[index] == '--chat-template-file' and index + 1 < len(argv)
+                 else argv[index].partition('=')[2])
+        if (len(flags) != 1 or not plan.get('splash_chat_template_sha256')
+                or value != plan.get('splash_chat_template')):
+            _rejected('preview_stale', 'The Splash chat template is not bound to the reviewed plan.',
+                      'Review a fresh Splash serve plan.')
     try:
         current = (read_target(plan["splash_model_dir"])["fingerprint"],
                    read_draft(plan["splash_draft_model"])["fingerprint"] if plan.get("splash_draft_model") else None,

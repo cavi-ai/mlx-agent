@@ -168,7 +168,7 @@
       "opencode": {
         "schema_validation": "static",
         "cli_smoke": "blocked",
-        "last_tested": "2026-07-29"
+        "last_tested": "2026-11-21"
       },
       "openclaw": {
         "schema_validation": "supported",

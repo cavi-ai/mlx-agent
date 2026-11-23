@@ -62,10 +62,7 @@ class WorkflowSupplyChainTests(unittest.TestCase):
 
     def test_only_publishing_jobs_receive_write_scopes(self):
         expected = {("release.yml", "release"): {"contents": "write"},
-                    ("release.yml", "pypi"): {"id-token": "write"},
-                    # Reads the merged pull request, its head tree and its workflow runs.
-                    ("test.yml", "merged-pr"): {"actions": "read", "contents": "read",
-                                                "pull-requests": "read"}}
+                    ("release.yml", "pypi"): {"id-token": "write"}}
         for path in WORKFLOWS:
             for job, block in _jobs(path.read_text(encoding="utf-8")).items():
                 with self.subTest(workflow=path.name, job=job):

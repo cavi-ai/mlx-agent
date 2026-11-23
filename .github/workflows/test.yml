@@ -220,7 +220,7 @@ jobs:
           python -m coverage report
       - name: Upload coverage report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@ea165f8d65e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-macos-python-3.12
           path: .run/coverage.xml

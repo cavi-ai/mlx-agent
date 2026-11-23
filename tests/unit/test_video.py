@@ -5,6 +5,7 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest import mock
 
 from mlx_agent import cli
@@ -112,6 +113,23 @@ class VideoTests(unittest.TestCase):
         self.assertEqual(port.generate.call_args.kwargs["denoiser_cache"], "adaptive")
         self.assertEqual(port.generate.call_args.kwargs["cache_memory_mib"], 64)
 
+    def test_release_after_request_discards_retained_video_components(self):
+        port = mock.Mock()
+        port.generate.return_value = {"path": self.out}
+        args = ["--module", "test_port", "--model", "/model", "--prompt", "A pan.", "--out", self.out,
+                "--width", "320", "--height", "192", "--frames", "33", "--fps", "16", "--steps", "50",
+                "--seed", "42"]
+        for options, retained in (([], True), (["--no-retain-weights"], False)):
+            with self.subTest(retained=retained):
+                model = SimpleNamespace(components={"transformer": object()})
+                with mock.patch.object(video_runner.importlib, "import_module", return_value=port), \
+                        mock.patch.object(video_runner, "load_model", return_value=model), \
+                        mock.patch.object(video_runner, "enabled", return_value=True), redirect_stdout(io.StringIO()):
+                    self.assertEqual(video_runner.main(args + options), 0)
+                self.assertIs(port.generate.call_args.args[0], model)
+                self.assertEqual(model.retain_weights, retained)
+                self.assertEqual(bool(model.components), retained)
+
     def test_bounds_follow_the_model_strides(self):
         wide = self.model(dict(WAN_CONFIG, vae_stride=[4, 16, 16]))
         self.plan(wide, width=640, height=352)
@@ -208,6 +226,7 @@ class VideoTests(unittest.TestCase):
         with mock.patch("mlx_agent.video.load_manifests", return_value=self.manifests), \
                 mock.patch("mlx_agent.video.load_registries", return_value=self.registries), \
                 mock.patch("mlx_agent.video.is_installed", return_value=True), \
+                mock.patch("mlx_agent.compute.compute_root", return_value=self.root.resolve() / "compute"), \
                 mock.patch("mlx_agent.inference_runner.sync_ports", return_value=[]), \
                 mock.patch("mlx_agent.video.run_video", run):
             buffer = io.StringIO()

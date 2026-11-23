@@ -176,8 +176,8 @@ def family(rows, roots, groups=()):
 
 
 def _charged_pids(policy, entries, rows, owner):
-    """PIDs ``account`` can charge: external families, managed workers, and the owner."""
-    watched = set()
+    """PIDs ``account`` can charge: external families, managed workers, and owners."""
+    watched = {owner[0]}
     for binding in policy['external']:
         observed = rows.get(binding['pid'])
         if observed is not None and same_identity(binding['identity'], observed.get('identity')):
@@ -185,11 +185,10 @@ def _charged_pids(policy, entries, rows, owner):
         else:
             watched.update(family(rows, set(), {binding['group']}))
     for entry in entries.values():
+        watched.add(entry['owner'][0])
         worker = entry.get('worker')
         if worker is not None:
             watched.update(family(rows, {worker['pid']}, {worker['pgid']}))
-    if owner[0] in rows:
-        watched.add(owner[0])
     return watched
 
 

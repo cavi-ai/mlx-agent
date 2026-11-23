@@ -17,7 +17,7 @@ from .inference_runner import InferenceError
 from .identity_pass import recheck_bound_identity
 from .jit_serve import GatewayError, ModelWorker, model_fingerprint
 from .memory_policy import (PolicyRejected, TASK_CONTEXT, execution_wait_seconds, reject_task_context,
-                            validate as validate_memory_policy)
+                            releases_after_request, validate as validate_memory_policy)
 from .resident_runner import ResidentRunner
 from .residency import MemoryAdmissionError
 from .task_contracts import TaskError, validate_request
@@ -480,9 +480,12 @@ class TaskModelWorker(ModelWorker):
             self.store.transition(identifier, ('starting',), {'state': 'running', 'execution': {'pid': self.process.pid, 'identity': worker_identity}})
             dispatched = True
             from functools import partial
+            policy = self.memory_policy
             runner = partial(self.resident.run,
                 cancelled=lambda: self._task_cancelled(identifier),
-                cache_policy=allocator_cache.from_memory(self.memory_policy), memory_limit_bytes=worker_limit)
+                cache_policy=allocator_cache.from_memory(policy), memory_limit_bytes=worker_limit)
+            if kind.name == 'video_generation' and releases_after_request(policy):
+                plan['argv'].append('--no-retain-weights')
             result = kind.run(plan, runner=runner)
             self._confirm_identity(record)
             self.store.read_request(identifier)

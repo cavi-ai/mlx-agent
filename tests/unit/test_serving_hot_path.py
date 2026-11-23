@@ -166,10 +166,11 @@ class FootprintTests(unittest.TestCase):
             1: {"parent": 0, "group": 1},
             2: {"parent": 1, "group": 2, "identity": "worker"},
             3: {"parent": 2, "group": 2},
+            4: {"parent": 0, "group": 4},
             9: {"parent": 1, "group": 9},
         }
         policy = {"schema": SCHEMA, "limit_bytes": 1000, "reserve_bytes": 0, "external": []}
-        entries = {"job": {"phase": "resident", "owner": (1, "owner"), "resident_bytes": 10,
+        entries = {"job": {"phase": "resident", "owner": (4, "other owner"), "resident_bytes": 10,
                            "reserved_bytes": 0, "growth_bytes": 0,
                            "worker": {"pid": 2, "identity": "worker", "pgid": 2}}}
         seen = []
@@ -180,8 +181,9 @@ class FootprintTests(unittest.TestCase):
 
         with patch("mlx_agent.memory_budget._usage", side_effect=usage), \
              patch("mlx_agent.memory_budget.sys.platform", "darwin"):
-            account(policy, entries, rows, (1, "owner"))
-        self.assertEqual(set(seen), {1, 2, 3})
+            result = account(policy, entries, rows, (1, "owner"))
+        self.assertCountEqual(seen, [1, 2, 3, 4])
+        self.assertEqual(result["overhead_bytes"], 24)
         self.assertNotIn(9, seen)
 
 
@@ -195,6 +197,7 @@ class LTXRetainTests(unittest.TestCase):
             with self.subTest(retain=retain), TemporaryDirectory() as directory:
                 root = Path(directory)
                 calls = {}
+                encodings = []
 
                 def counted(name):
                     def function(*args, **kwargs):
@@ -225,18 +228,29 @@ class LTXRetainTests(unittest.TestCase):
                 ltx.PipelineType = types.SimpleNamespace(DISTILLED="distilled")
                 ltx.mux_video_audio = lambda *args, **kwargs: True
 
-                class LTX2TextEncoder:
+                class LTX2TextEncoder(dict):
                     def __init__(self, has_prompt_adaln=False):
                         self.has_prompt_adaln = has_prompt_adaln
+                        self.language_model = None
+                        self["projection"] = object()
 
                     def load(self, *args, **kwargs):
                         calls["text_encoder"] = calls.get("text_encoder", 0) + 1
+                        del self.language_model
+                        self["language_model"] = object()
+                        self["projection"] = object()
+                        self.tokenizer = object()
+
+                    def __getattr__(self, name):
+                        if name in self:
+                            return self[name]
+                        raise AttributeError(name)
 
                     def parameters(self):
-                        return []
+                        return self["projection"]
 
                     def __call__(self, *args, **kwargs):
-                        return object(), object()
+                        return self.language_model, self.tokenizer
 
                 text = types.ModuleType("mlx_video.models.ltx_2.text_encoder")
                 class LanguageModel:
@@ -258,7 +272,7 @@ class LTXRetainTests(unittest.TestCase):
                 def generate_video(**options):
                     encoder = LTX2TextEncoder(has_prompt_adaln=False)
                     encoder.load(model_path=options["model_repo"], text_encoder_path=options["text_encoder_repo"])
-                    encoder.parameters()
+                    encodings.append((*encoder(options["prompt"]), encoder.parameters()))
                     ltx.LTXModel.from_pretrained(model_path=options["model_repo"] + "/transformer", strict=True)
                     ltx.VideoEncoder.from_pretrained(options["model_repo"] + "/vae/encoder")
                     ltx.load_upsampler(options["spatial_upscaler"])
@@ -291,3 +305,4 @@ class LTXRetainTests(unittest.TestCase):
                          "audio_decoder", "vocoder", "text_encoder")
                 self.assertEqual(calls, {name: expected for name in names})
                 self.assertEqual(len(model.components), len(names) if retain else 0)
+                self.assertEqual(encodings[0] == encodings[1], retain)

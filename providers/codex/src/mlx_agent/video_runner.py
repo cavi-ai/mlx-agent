@@ -29,6 +29,7 @@ def main(argv=None):
     parser.add_argument("--image", default=None)
     parser.add_argument("--audio", default=None)
     parser.add_argument("--audio-start", type=float, default=0.0)
+    parser.add_argument("--no-retain-weights", action="store_true", help=argparse.SUPPRESS)
     arguments = parser.parse_args(argv)
     conditioning = {"image": arguments.image} if arguments.image else {}
     if arguments.audio:
@@ -37,7 +38,9 @@ def main(argv=None):
     port = importlib.import_module(arguments.module)
     started = time.time()
     model = load_model(port.load, arguments.model)
-    model.retain_weights = enabled()
+    model.retain_weights = enabled() and not arguments.no_retain_weights
+    if arguments.no_retain_weights and (components := getattr(model, "components", None)) is not None:
+        components.clear()
     open_seconds = time.time() - started
     result = port.generate(
         model, arguments.prompt, arguments.out, width=arguments.width, height=arguments.height,

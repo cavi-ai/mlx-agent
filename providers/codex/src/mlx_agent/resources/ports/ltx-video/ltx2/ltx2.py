@@ -89,23 +89,21 @@ def _wrap_loader(model, name, function):
     return wrapper
 
 
-def _wrap_load_method(model, name, function):
-    """Cache an instance ``load``. A later instance with the same paths reuses those weights."""
+def _wrap_text_encoder_load(model, function):
+    """Restore the loaded MLX module state and encoder attributes on a cache hit."""
 
     def wrapper(self, *arguments, **keywords):
         key = _cache_key(arguments, keywords)
-        retained = _cached(model, name, key)
+        retained = _cached(model, "text_encoder", key)
         if retained is not None:
             if retained is not self:
-                cached, current = getattr(retained, "__dict__", None), getattr(self, "__dict__", None)
-                if cached is None or current is None:
-                    function(self, *arguments, **keywords)
-                    return None
-                current.clear()
-                current.update(cached)
+                dict.clear(self)
+                dict.update(self, retained)
+                self.__dict__.clear()
+                self.__dict__.update(retained.__dict__)
             return None
         function(self, *arguments, **keywords)
-        _remember(model, name, key, self)
+        _remember(model, "text_encoder", key, self)
         return None
 
     return wrapper
@@ -161,7 +159,7 @@ def generate(model: Model, prompt: str, out: str, width: int = 768, height: int 
         _install(stack, ltx, "load_audio_decoder", _wrap_loader(model, "audio_decoder", ltx.load_audio_decoder))
         _install(stack, ltx, "load_vocoder_model", _wrap_loader(model, "vocoder", ltx.load_vocoder_model))
         _install(stack, AudioEncoder, "from_pretrained", _wrap_loader(model, "audio_encoder", AudioEncoder.from_pretrained))
-        _install(stack, LTX2TextEncoder, "load", _wrap_load_method(model, "text_encoder", LTX2TextEncoder.load))
+        _install(stack, LTX2TextEncoder, "load", _wrap_text_encoder_load(model, LTX2TextEncoder.load))
         result = ltx.generate_video(
             model_repo=str(model.path), text_encoder_repo=str(model.path / "text_encoder"), prompt=prompt,
             pipeline=ltx.PipelineType.DISTILLED, height=height, width=width, num_frames=frames,

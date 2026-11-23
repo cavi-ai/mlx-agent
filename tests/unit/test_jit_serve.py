@@ -996,6 +996,21 @@ class JITServingTests(unittest.TestCase):
         with ComputeLease('other-model', self.root / 'compute'):
             pass
 
+    def test_worker_header_timeout_stops_worker_before_lease_is_released(self):
+        from mlx_agent.compute import ComputeLease
+        from mlx_agent.http_relay import RelayLimits
+
+        self.config['worker_argv'] += ['--reply-delay', '10']
+        self.server.relay_limits = RelayLimits(headers=.1)
+        status, result = self.request("POST", "/v1/chat/completions", {"messages": []})
+        self.assertEqual((status, result["error"]["code"]), (504, "worker_timeout"))
+        controller = self.server.controller
+        with controller.condition:
+            self.assertTrue(controller.condition.wait_for(lambda: controller.active_requests == 0, timeout=3))
+            self.assertIsNone(controller.process)
+        with ComputeLease('other-model', self.root / 'compute'):
+            pass
+
     def test_messages_stream_forwards_worker_keepalive_as_ping(self):
         self.config['worker_argv'] += ['--keepalive']
         status, text = self.stream('/v1/messages?beta=true', {'model': 'default_model', 'max_tokens': 8, 'stream': True,

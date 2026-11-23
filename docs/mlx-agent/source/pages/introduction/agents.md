@@ -77,6 +77,12 @@ non-retryable errors. `mlx_agent_execute` is marked as able to change local
 files, start jobs and contact model registries, so clients that honor tool
 annotations ask before calling it.
 
+The server executes one CLI command at a time and accepts up to eight outstanding
+tool calls. Protocol requests such as `ping` are answered while a command runs.
+A command has 660 seconds to finish. A cancellation notification stops the command
+associated with its request ID. Cancel a durable job already started by the command
+with `task cancel --id` and the job's ID.
+
 ## Confirmation boundaries
 
 - Discovery, adoption, bench, doctor and watch never download weights or change

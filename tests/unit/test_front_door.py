@@ -182,6 +182,161 @@ class FrontDoorTests(unittest.TestCase):
                 main(['serve', 'front-door', '--port', '18492', '--api-key-sha256', DIGEST, '--api-key-file', '/missing'])
 
 
+class FrontDoorRelayTests(unittest.TestCase):
+    def serve(self, server):
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": .02}, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 2)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return server
+
+    @staticmethod
+    def route(port, name="chat"):
+        return {"path": "/models/" + name, "runtime": "mlx_lm", "jit": True, "port": port,
+                "alive": True, "argv_match": True, "api_key_sha256": DIGEST}
+
+    def front(self, discover, limits=None):
+        from mlx_agent.front_door import FrontDoorServer
+        server = FrontDoorServer(("127.0.0.1", 0), {"api_key_sha256": DIGEST}, discover)
+        if limits is not None:
+            server.relay_limits = limits
+        return self.serve(server)
+
+    def request(self, server, method="POST", path="/v1/chat/completions", body=None):
+        conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+        self.addCleanup(conn.close)
+        conn.request(method, path, body, {"Authorization": "Bearer " + AUTH_PROBE_VALUE})
+        return conn
+
+    def test_disconnect_closes_unanswered_upstream_connection(self):
+        received, disconnected = threading.Event(), threading.Event()
+
+        class WaitingUpstream(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers["Content-Length"]))
+                received.set()
+                self.connection.settimeout(1.5)
+                try:
+                    if self.connection.recv(1) == b"":
+                        disconnected.set()
+                except TimeoutError:
+                    pass
+
+        upstream = self.serve(ThreadingHTTPServer(("127.0.0.1", 0), WaitingUpstream))
+        front = self.front(lambda: {"services": [self.route(upstream.server_port)]})
+        client = self.request(front, body='{"model":"chat"}')
+        self.assertTrue(received.wait(1))
+        client.close()
+        self.assertTrue(disconnected.wait(2))
+
+    def test_headers_deadline_returns_504(self):
+        from mlx_agent.http_relay import RelayLimits
+
+        class WaitingUpstream(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers["Content-Length"]))
+                self.connection.settimeout(1.5)
+                try:
+                    self.connection.recv(1)
+                except TimeoutError:
+                    pass
+
+        upstream = self.serve(ThreadingHTTPServer(("127.0.0.1", 0), WaitingUpstream))
+        front = self.front(lambda: {"services": [self.route(upstream.server_port)]}, RelayLimits(headers=.1))
+        response = self.request(front, body='{"model":"chat"}').getresponse()
+        self.assertEqual(response.status, 504)
+        self.assertEqual(json.loads(response.read())["error"]["code"], "route_timeout")
+
+    def test_idle_deadline_ends_a_stalled_stream(self):
+        from mlx_agent.http_relay import RelayLimits
+
+        class StalledStream(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):
+                self.rfile.read(int(self.headers["Content-Length"]))
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.end_headers()
+                self.wfile.write(b"data: first\n\n")
+                self.connection.settimeout(1.5)
+                try:
+                    self.connection.recv(1)
+                except TimeoutError:
+                    pass
+
+        upstream = self.serve(ThreadingHTTPServer(("127.0.0.1", 0), StalledStream))
+        front = self.front(lambda: {"services": [self.route(upstream.server_port)]}, RelayLimits(idle=.1))
+        reply = self.request(front, body='{"model":"chat","stream":true}').getresponse()
+        self.assertEqual(reply.status, 200)
+        self.assertEqual(reply.read(), b"data: first\n\n")
+
+    def test_failed_connect_refreshes_route_before_post(self):
+        dead = socket.socket()
+        dead.bind(("127.0.0.1", 0))
+        self.addCleanup(dead.close)
+        upstream = self.serve(Upstream())
+        services = [self.route(dead.getsockname()[1])]
+        front = self.front(lambda: {"services": services})
+        front.routes()
+        front.attempted_at -= 2
+        services[:] = [self.route(upstream.server_port)]
+        dead.close()
+
+        response = self.request(front, body='{"model":"chat"}').getresponse()
+        self.assertEqual(json.loads(response.read())["served_by"], upstream.server_port)
+        self.assertEqual(len(upstream.seen), 1)
+
+    def test_failed_reply_never_replays_post(self):
+        seen = []
+
+        class DroppedReply(BaseHTTPRequestHandler):
+            def do_POST(self):
+                seen.append(self.rfile.read(int(self.headers["Content-Length"])))
+
+        upstream = self.serve(ThreadingHTTPServer(("127.0.0.1", 0), DroppedReply))
+        replacement = self.serve(Upstream())
+        services = [self.route(upstream.server_port)]
+        front = self.front(lambda: {"services": services})
+        front.routes()
+        front.attempted_at -= 2
+        services[:] = [self.route(replacement.server_port)]
+
+        response = self.request(front, body='{"model":"chat"}').getresponse()
+        self.assertEqual(response.status, 503)
+        response.read()
+        self.assertEqual(seen, [b'{"model":"chat"}'])
+        self.assertFalse(replacement.seen)
+
+    def test_route_refresh_keeps_last_complete_table_and_coalesces_readers(self):
+        refreshing, release = threading.Event(), threading.Event()
+        upstream = self.serve(Upstream())
+        calls = []
+
+        def discover():
+            calls.append(1)
+            if len(calls) == 1:
+                return {"services": [self.route(upstream.server_port)]}
+            refreshing.set()
+            release.wait(2)
+            return {"services": [], "errors": [{"message": "deadline"}]}
+
+        front = self.front(discover)
+        self.addCleanup(release.set)
+        front.routes()
+        front.attempted_at -= 6
+        for _ in range(2):
+            response = self.request(front, "GET", "/v1/models").getresponse()
+            self.assertEqual([row["id"] for row in json.loads(response.read())["data"]], ["chat"])
+        self.assertTrue(refreshing.wait(1))
+        self.assertEqual(len(calls), 2)
+        release.set()
+        self.assertIn("chat", front.routes(wait=True))
+        self.assertTrue(front.degraded)
+
+
 class FrontDoorSessionTests(unittest.TestCase):
     """Run the real command: its signal handlers and parent watch need a process of their own."""
 

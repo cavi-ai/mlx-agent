@@ -66,7 +66,8 @@ def generate(loaded, image_path, output_path, box, points, labels, threshold):
     from PIL import Image, ImageOps
     model, processor, unexpected, loading_report = loaded
     source = Path(image_path)
-    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    with source.open('rb') as stream:
+        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
     with Image.open(source) as original:
         image = ImageOps.exif_transpose(original).convert('RGB')
     width, height = image.size

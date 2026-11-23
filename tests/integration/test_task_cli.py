@@ -77,6 +77,23 @@ class TaskCliTests(unittest.TestCase):
         self.assertEqual(value["error"]["code"], "model_unreadable")
         self.assertFalse(self.state.exists())
 
+    def test_segmentation_start_rejects_non_object_model_config_and_discards_staged_input(self):
+        model = self.root / "local model"
+        model.mkdir()
+        image = self.root / "input.png"
+        image.write_bytes(b"image data")
+        request = self.root / "request.json"
+        request.write_text(json.dumps({
+            "schema": "task-request/2", "kind": "image_segmentation", "model_path": str(model),
+            "parameters": {"image_path": str(image), "box": [0, 0, 1, 1], "mask_threshold": 0.0},
+        }))
+        for config in ("null", "[]"):
+            with self.subTest(config=config):
+                (model / "config.json").write_text(config)
+                code, value = self.run_cli("start", "--request", str(request))
+                self.assertEqual((code, value["error"]["code"]), (2, "model_unreadable"))
+                self.assertEqual(list((self.state / "artifacts").glob(".staging-*")), [])
+
     def test_status_and_cancel_use_the_same_persisted_id(self):
         record = self.create()
         code, value = self.run_cli("status", "--id", record["id"])

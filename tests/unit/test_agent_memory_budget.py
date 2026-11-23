@@ -226,6 +226,32 @@ class AgentBudgetTests(unittest.TestCase):
         self.registry.settle('first', resident_bytes=70)
         self.cold('second', resident=45, workspace=10)
 
+    def test_auto_execution_leaves_partial_controller_margin(self):
+        self.budget(limit=125, reserve=20)
+        self.cold('first', resident=80, workspace=10)
+        diagnostics = {}
+        grant = self.registry.reserve_execution('first', probe=lambda: 1000,
+                                                diagnostics=diagnostics, overhead_bytes=20)
+        self.assertEqual(grant, 90)
+        self.assertEqual(diagnostics['controller_headroom_bytes'], 10)
+        self.assertEqual(diagnostics['required_available_bytes'], 90)
+        self.assertEqual(self.registry.snapshot()['reserved_bytes'], 90)
+        self.rows[101]['rss'] += 10
+        self.assertTrue(self.registry.snapshot()['agent_budget']['within_budget'])
+
+    def test_warm_auto_execution_checks_headroom_for_the_actual_grant(self):
+        self.budget(limit=95, reserve=20)
+        self.registry.reserve('first', 'a' * 64, 60, 0, 10, lambda: 1000)
+        self.registry.launching('first')
+        self.registry.bind_worker('first', 201, 'worker', 201)
+        self.registry.settle('first', resident_bytes=70)
+        before = self.registry.snapshot()
+        with self.assertRaises(MemoryAdmissionError) as caught:
+            self.registry.reserve_execution('first', probe=lambda: 5, overhead_bytes=20)
+        self.assertEqual(caught.exception.code, 'insufficient_headroom')
+        self.assertEqual(caught.exception.details['required_available_bytes'], 10)
+        self.assertEqual(self.registry.snapshot(), before)
+
     def test_job_cap_includes_warm_pending_component_reservation(self):
         self.budget(limit=300, reserve=20)
         self.cold('first')

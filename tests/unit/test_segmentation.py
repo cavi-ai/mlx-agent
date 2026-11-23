@@ -66,6 +66,29 @@ class SegmentationTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(TaskError):
                 validate_parameters(kind, dict(value, **change))
 
+    def test_runner_digests_the_image_without_reading_it_all_at_once(self):
+        import sys
+        from tempfile import TemporaryDirectory
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from mlx_agent.resources.ports.sam2 import segment
+
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / 'input.png'
+            source.write_bytes(b'image data')
+            # Stop at decoding so this check needs neither Pillow nor Torch.
+            def stop_at_decode(path):
+                self.assertEqual(path, source)
+                raise ValueError('reached image decoding')
+
+            pillow = SimpleNamespace(Image=SimpleNamespace(open=stop_at_decode), ImageOps=None)
+            with (patch.dict(sys.modules, {'PIL': pillow, 'torch': SimpleNamespace()}),
+                  patch.object(Path, 'read_bytes', side_effect=AssertionError('unbounded file read')),
+                  self.assertRaisesRegex(ValueError, 'reached image decoding')):
+                segment.generate((None, None, [], {}), source, source.with_name('mask.png'),
+                                 [0, 0, 1, 1], [], [], 0.0)
+
     def test_loader_rejects_non_video_extras_and_missing_weights(self):
         path = Path(__file__).parents[2] / 'src/mlx_agent/resources/ports/sam2/segment/__init__.py'
         spec = importlib.util.spec_from_file_location('segment_port', path)

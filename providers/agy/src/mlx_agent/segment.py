@@ -24,6 +24,8 @@ def plan_segment(model_path, parameters, output, image, directory):
         config = json.loads((model / 'config.json').read_text())
     except (OSError, ValueError) as error:
         raise SegmentError('model_unreadable', 'The model config cannot be read.', 'Select a local SAM 2 model.') from error
+    if not isinstance(config, dict):
+        raise SegmentError('model_unreadable', 'The model config must be a JSON object.', 'Select a local SAM 2 model.')
     manifests = load_manifests()
     registries = load_registries(manifests)
     hits = [hit for hit in lookup(config.get('model_type'), manifests, registries)

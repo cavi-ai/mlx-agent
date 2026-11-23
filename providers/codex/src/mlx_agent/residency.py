@@ -356,36 +356,27 @@ class MemoryRegistry:
                 headroom = max([row['headroom_bytes']] + [r['headroom_bytes'] for r in others])
                 physical = (resident if row['phase'] == 'resident' else 0) + max(0, available - other_reserved - headroom)
                 details.update(agent_capacity_bytes=agent_capacity, physical_ceiling_bytes=physical)
-                if limit_bytes is None:
-                    bounded_by_physical = physical < capacity
-                    capacity = min(capacity, physical)
-                    if bounded_by_physical and max(0, capacity - overhead_bytes) < minimum:
+                if limit_bytes is None and physical < capacity:
+                    capacity = physical
+                    if max(0, capacity - overhead_bytes) < minimum:
                         raise MemoryAdmissionError('insufficient_headroom',
                             'The minimum job memory does not fit available system headroom.', details)
-                checked_capacity = max(0, capacity - overhead_bytes) if limit_bytes is None else capacity
-                amount = checked_capacity - resident if row['phase'] == 'resident' else checked_capacity
-                required = amount + sum(r['reserved_bytes'] for r in others) + max(
-                    [row['headroom_bytes']] + [r['headroom_bytes'] for r in others])
-                details.update(available_bytes=available, required_available_bytes=required,
-                               headroom_bytes=max([row['headroom_bytes']] + [r['headroom_bytes'] for r in others]))
+            # A fitting shared budget can leave a partial controller margin.
+            grant = max(minimum, capacity - overhead_bytes) if limit_bytes is None else capacity
+            amount = grant - resident if row['phase'] == 'resident' else grant
+            if probe is not None:
+                required = amount + other_reserved + headroom
+                details.update(required_available_bytes=required, headroom_bytes=headroom)
                 if available < required:
                     raise MemoryAdmissionError('insufficient_headroom',
                         'The job memory ceiling does not fit available system headroom.', details)
-            if limit_bytes is None:
-                reduced = max(0, capacity - overhead_bytes)
-                if reduced >= minimum:
-                    capacity = reduced
-                elif capacity < minimum:
-                    raise MemoryAdmissionError('agent_memory_budget_exceeded',
-                        'Unload an idle model before starting this model job.', details)
-            amount = capacity - resident if row['phase'] == 'resident' else capacity
-            details['controller_headroom_bytes'] = overhead_bytes if limit_bytes is None else 0
-            details['effective_grant_bytes'] = capacity
+            details['controller_headroom_bytes'] = capacity - grant
+            details['effective_grant_bytes'] = grant
             if diagnostics is not None:
                 diagnostics.update(details)
-            row['execution_bytes'] = capacity
+            row['execution_bytes'] = grant
             row['reserved_bytes'] = amount
-            return capacity
+            return grant
 
     def shared_execution_enabled(self):
         """Sharing is opt-in through the existing host memory budget."""

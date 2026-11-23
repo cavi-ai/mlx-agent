@@ -1,0 +1,27 @@
+{
+  "schema": "backend/1",
+  "id": "sam2",
+  "version": "5.18.0",
+  "builtin": false,
+  "package": "transformers",
+  "lock": "sam2.lock",
+  "ports": {
+    "image_segmentation": [
+      "segment"
+    ]
+  },
+  "categories": {
+    "image_segmentation": "mlx_agent_ports"
+  },
+  "remap_files": {},
+  "registry": {
+    "image_segmentation": {
+      "model_types": [],
+      "remapping": {
+        "sam2": "segment",
+        "sam2_video": "segment"
+      }
+    }
+  },
+  "convert": ""
+}

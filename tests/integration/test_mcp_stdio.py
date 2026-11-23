@@ -9,6 +9,7 @@ import sys
 from tempfile import TemporaryDirectory
 import time
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,6 +18,11 @@ FRAME_LIMIT = 65536
 
 def ping(request_id):
     return json.dumps({"jsonrpc": "2.0", "id": request_id, "method": "ping"}).encode() + b"\n"
+
+
+def cancel(request_id):
+    return json.dumps({"jsonrpc": "2.0", "method": "notifications/cancelled",
+                       "params": {"requestId": request_id}}).encode() + b"\n"
 
 
 class MCPStdioTests(unittest.TestCase):
@@ -122,8 +128,13 @@ class MCPStdioTests(unittest.TestCase):
 import os, sys
 from mlx_agent import mcp_server as server
 worker = 'import os,sys,time; from pathlib import Path; Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(30)'
-server._execute_cli = lambda argv, cancelled: server._run_process(
-    [sys.executable, '-c', worker, sys.argv[1]], cancelled, float(sys.argv[2]), os.environ)
+execute_cli = server._execute_cli
+def execute(argv, cancelled):
+    if os.path.exists(sys.argv[1]):
+        return execute_cli(argv, cancelled)
+    return server._run_process([sys.executable, '-c', worker, sys.argv[1]],
+                               cancelled, float(sys.argv[2]), os.environ)
+server._execute_cli = execute
 raise SystemExit(server.main())
 """
         marker = Path(directory) / "worker.pid"
@@ -157,12 +168,60 @@ raise SystemExit(server.main())
             process, pid = self.exercise_slow_tool(directory, 15)
             process.stdin.write(ping(2))
             self.assertEqual(self.reply(process), {"jsonrpc": "2.0", "id": 2, "result": {}})
-            process.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}\n')
+            process.stdin.write(cancel(1))
             process.stdin.close()
             self.assertEqual(process.wait(timeout=3), 0, process.stderr.read())
             self.assertEqual(process.stdout.read(), b"")
             with self.assertRaises(ProcessLookupError):
                 os.kill(pid, 0)
+
+    def test_cancelling_queued_tools_frees_slots_while_the_active_tool_runs(self):
+        with TemporaryDirectory() as directory:
+            process, pid = self.exercise_slow_tool(directory, 15)
+            queued = range(2, 9)
+            process.stdin.write(b"".join(self.tool(identifier) for identifier in queued) + self.tool(9))
+            rejected = self.reply(process)
+            self.assertEqual((rejected["id"], rejected["error"]["code"]), (9, -32000))
+
+            process.stdin.write(b"".join(cancel(identifier) for identifier in queued) + self.tool(11) + ping(10))
+            self.assertEqual(self.reply(process), {"jsonrpc": "2.0", "id": 10, "result": {}})
+            os.kill(pid, 0)
+            process.stdin.write(cancel(1))
+            process.stdin.close()
+            result = self.reply(process)
+            self.assertEqual(result["id"], 11)
+            payload = result["result"]["structuredContent"]
+            self.assertEqual(json.loads(payload["stdout"])["operation"], "task.capabilities")
+            self.assertEqual(process.wait(timeout=3), 0, process.stderr.read())
+            self.assertEqual(process.stdout.read(), b"")
+
+    def test_cli_output_written_between_selector_timeout_and_exit_poll_is_captured(self):
+        from mlx_agent import mcp_server
+
+        with TemporaryDirectory() as directory:
+            release = Path(directory) / "release"
+            worker = """
+import sys, time
+from pathlib import Path
+while not Path(sys.argv[1]).exists():
+    time.sleep(.01)
+print('{"result": "ready"}')
+print('final diagnostic', file=sys.stderr)
+"""
+
+            class ExitOnPoll(subprocess.Popen):
+                def poll(self):
+                    release.touch()
+                    return self.wait(timeout=3)
+
+            # The real child writes only after the first empty select wakes the parent.
+            with patch.object(mcp_server.subprocess, "Popen", ExitOnPoll):
+                result = mcp_server._run_process([sys.executable, "-c", worker, str(release)],
+                                                 lambda: False, 5, os.environ)
+            payload = result["structuredContent"]
+            self.assertEqual(payload["exit_code"], 0, payload)
+            self.assertEqual(payload["stdout"], '{"result": "ready"}\n')
+            self.assertEqual(payload["stderr"], "final diagnostic\n")
 
     def test_timed_out_tool_reports_failure_and_session_survives(self):
         with TemporaryDirectory() as directory:

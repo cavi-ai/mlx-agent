@@ -15,7 +15,6 @@ import subprocess
 import sys
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
 
 from . import __version__
@@ -175,13 +174,18 @@ def _run_process(command, cancelled, timeout, env):
         with selectors.DefaultSelector() as selector:
             for index, pipe in enumerate((process.stdout, process.stderr)):
                 selector.register(pipe, selectors.EVENT_READ, index)
+            draining = False
             while True:
                 if cancelled():
                     return _execution_result(130, stdout, stderr, "MCP tool call cancelled.")
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
+                    if draining:
+                        break
                     return _execution_result(124, stdout, stderr, "MCP tool call timed out.")
-                events = selector.select(min(0.1, remaining))
+                events = selector.select(0 if draining else min(0.1, remaining))
+                if draining and not events:
+                    break
                 for key, _ in events:
                     chunk = os.read(key.fd, 65536)
                     if not chunk:
@@ -189,7 +193,12 @@ def _run_process(command, cancelled, timeout, env):
                     index = key.data
                     writers[index].write(decoders[index].decode(chunk))
                 if (not events or not selector.get_map()) and process.poll() is not None:
-                    break
+                    if not selector.get_map():
+                        break
+                    # The child can write after select times out but before poll reaps it.
+                    # Read ready pipes again, with a short cap for inherited writers.
+                    draining = True
+                    deadline = min(deadline, time.monotonic() + 0.1)
         for writer, decoder in zip(writers, decoders):
             writer.write(decoder.decode(b"", final=True))
         return _execution_result(process.returncode, stdout, stderr)
@@ -316,8 +325,6 @@ def _requests():
 
 
 def main():
-    pending = {}
-    pending_lock = threading.Lock()
     reply_lock = threading.Lock()
     output = select.poll()
     try:
@@ -335,32 +342,54 @@ def main():
             try:
                 response = handle_request(request, execute=lambda argv: _execute_cli(
                     argv, lambda: cancelled.is_set() or bool(output.poll(0))))
-            except (OSError, subprocess.SubprocessError):
+            except Exception:
                 response = {"jsonrpc": "2.0", "id": request["id"],
                             "error": {"code": -32603, "message": "Could not complete the MLX-agent command."}}
             if not cancelled.is_set() and not output.poll(0):
                 send(response)
-        except BrokenPipeError:
+        except OSError:
             pass
-        finally:
-            with pending_lock:
-                pending.pop(request["id"], None)
 
     if threading.current_thread() is not threading.main_thread():
-        return _run_session(pending, pending_lock, send, execute)
+        return _run_session(send, execute)
 
     def terminate(signum, _frame):
         raise SystemExit(128 + signum)
 
     previous = signal.signal(signal.SIGTERM, terminate)
     try:
-        return _run_session(pending, pending_lock, send, execute)
+        return _run_session(send, execute)
     finally:
         signal.signal(signal.SIGTERM, previous)
 
 
-def _run_session(pending, pending_lock, send, execute):
-    tools = ThreadPoolExecutor(max_workers=1)
+def _run_session(send, execute):
+    # A single FIFO also tracks admission, so cancelling queued work removes it immediately.
+    pending = {}
+    ready = threading.Condition()
+    active = None
+    closing = False
+
+    def run_tools():
+        nonlocal active
+        while True:
+            with ready:
+                ready.wait_for(lambda: pending or closing)
+                if not pending:
+                    return
+                identifier = next(iter(pending))
+                request, active = pending[identifier]
+            try:
+                execute(request, active)
+            finally:
+                with ready:
+                    pending.pop(identifier, None)
+                    active = None
+                    if not pending:
+                        ready.notify()
+
+    worker = threading.Thread(target=run_tools, daemon=True)
+    worker.start()
     try:
         for request, error in _requests():
             if error is not None:
@@ -371,35 +400,44 @@ def _run_session(pending, pending_lock, send, execute):
                 if method == "notifications/cancelled" and "id" not in request:
                     params = request.get("params")
                     if isinstance(params, dict) and "requestId" in params and _valid_id(params["requestId"]):
-                        with pending_lock:
-                            event = pending.get(params["requestId"])
-                            if event is not None:
-                                event.set()
+                        identifier = params["requestId"]
+                        with ready:
+                            entry = pending.get(identifier)
+                            if entry is not None:
+                                if entry[1] is active:
+                                    active.set()
+                                else:
+                                    del pending[identifier]
                     continue
                 if method == "tools/call" and "id" in request and _valid_id(request["id"]):
                     identifier = request["id"]
-                    with pending_lock:
+                    with ready:
                         if identifier in pending:
                             error = {"code": -32600, "message": "Duplicate request ID"}
                         elif len(pending) >= MAX_PENDING_TOOLS:
                             error = {"code": -32000, "message": "MCP tool queue is full"}
                         else:
-                            event = pending[identifier] = threading.Event()
+                            pending[identifier] = (request, threading.Event())
+                            ready.notify()
                     if error is not None:
                         send({"jsonrpc": "2.0", "id": identifier, "error": error})
-                    else:
-                        tools.submit(execute, request, event)
                     continue
             response = handle_request(request)
             if response is not None:
                 send(response)
-        tools.shutdown()
+        with ready:
+            ready.wait_for(lambda: not pending)
     except BaseException:
-        with pending_lock:
-            for event in pending.values():
-                event.set()
-        tools.shutdown(cancel_futures=True)
+        with ready:
+            if active is not None:
+                active.set()
+            pending.clear()
         raise
+    finally:
+        with ready:
+            closing = True
+            ready.notify()
+        worker.join()
     return 0
 
 

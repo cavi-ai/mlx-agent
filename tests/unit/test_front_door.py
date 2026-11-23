@@ -336,6 +336,39 @@ class FrontDoorRelayTests(unittest.TestCase):
         self.assertIn("chat", front.routes(wait=True))
         self.assertTrue(front.degraded)
 
+    def test_first_request_after_cache_expiry_waits_for_fresh_routes(self):
+        from mlx_agent.front_door import MAX_STALE_SECONDS
+
+        upstream = self.serve(Upstream())
+        services = [self.route(upstream.server_port, "old")]
+        front = self.front(lambda: {"services": services, "errors": []})
+        self.assertIn("old", front.routes())
+        with front.condition:
+            front.loaded_at -= MAX_STALE_SECONDS + 1
+            front.attempted_at = front.loaded_at
+        services[:] = [self.route(upstream.server_port, "fresh")]
+
+        response = self.request(front, "GET", "/v1/models").getresponse()
+        raw = response.read()
+        self.assertEqual(response.status, 200, raw)
+        self.assertEqual([row["id"] for row in json.loads(raw)["data"]], ["fresh"])
+
+    def test_partial_discovery_serves_verified_routes(self):
+        upstream = self.serve(Upstream())
+        front = self.front(lambda: {"services": [self.route(upstream.server_port)],
+                                    "errors": [{"source": "registry", "message": "invalid registration"}]})
+
+        response = self.request(front, "GET", "/v1/models").getresponse()
+        raw = response.read()
+        self.assertEqual(response.status, 200, raw)
+        self.assertEqual([row["id"] for row in json.loads(raw)["data"]], ["chat"])
+        response = self.request(front, body='{"model":"chat"}').getresponse()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(json.loads(response.read())["served_by"], upstream.server_port)
+        response = self.request(front, body='{"model":"unknown"}').getresponse()
+        self.assertEqual(response.status, 503)
+        self.assertEqual(json.loads(response.read())["error"]["code"], "route_discovery_unavailable")
+
 
 class FrontDoorSessionTests(unittest.TestCase):
     """Run the real command: its signal handlers and parent watch need a process of their own."""

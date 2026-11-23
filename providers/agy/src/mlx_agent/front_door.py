@@ -71,18 +71,23 @@ class FrontDoorServer(ThreadingHTTPServer):
             if not self.refreshing and elapsed >= interval:
                 self.refreshing = True
                 threading.Thread(target=self._refresh_routes, daemon=True).start()
-            if self.refreshing and (wait or self.table is None):
+            expired = self.table is None or now - self.loaded_at > MAX_STALE_SECONDS
+            if self.refreshing and (wait or expired):
                 self.condition.wait_for(lambda: not self.refreshing, timeout=REFRESH_WAIT_SECONDS)
-            if self.table is None or time.monotonic() - self.loaded_at > MAX_STALE_SECONDS:
+                now = time.monotonic()
+            if self.table is None or now - self.loaded_at > MAX_STALE_SECONDS:
                 raise GatewayError(503, "route_discovery_unavailable", "Model route discovery is unavailable.")
             return self.table
 
     def _refresh_routes(self):
         table = None
+        degraded = True
         try:
             found = self.discover()
-            if not found.get("errors"):
-                table = route_table(found["services"], self.digest)
+            routes = route_table(found["services"], self.digest)
+            degraded = bool(found.get("errors"))
+            if routes or not degraded:
+                table = routes
         except (OSError, ValueError, TypeError, KeyError):
             pass
         finally:
@@ -91,7 +96,7 @@ class FrontDoorServer(ThreadingHTTPServer):
                 if table is not None:
                     self.table = table
                     self.loaded_at = self.attempted_at
-                self.degraded = table is None
+                self.degraded = degraded
                 self.refreshing = False
                 self.condition.notify_all()
 

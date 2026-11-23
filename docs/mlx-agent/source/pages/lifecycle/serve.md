@@ -404,7 +404,7 @@ default:
 | `--splash-max-cache-disk-writes-gb` | positive decimal GB | Limits daily writes to a named project cache. |
 | `--splash-chat-template` | file | A local Jinja chat template used in place of the model's own. |
 
-A named project cache requires JIT, an API key file or digest, and explicit positive disk and write caps. Use a dedicated keyed endpoint for the project and give its key only to profiles joining that project. Persisted cache state can include conversation data. Splash's native defaults apply to options left unset.
+A named project cache requires JIT, an API key file or digest, and explicit positive disk and write caps. Use a dedicated keyed endpoint for the project and give its key only to profiles joining that project. Persisted cache state can include conversation data. Start the endpoint from a receipts location whose directory path is protected against changes by other users. On macOS, the cache path must also be free of ACL entries that grant access. Splash's native defaults apply to options left unset.
 
 ```bash
 python3 scripts/mlx-agent serve start --path /absolute/mlx/model --runtime splash --splash-verify-rows all --splash-reasoning-effort low --splash-thinking-budget 4096 --splash-persistent-cache --json

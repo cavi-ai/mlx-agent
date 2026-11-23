@@ -482,6 +482,50 @@ class SplashServeTests(unittest.TestCase):
         with self.assertRaises((ValueError, OSError)):
             prepare_project_cache(directory)
 
+    def test_project_cache_rejects_shared_ancestor_before_creation(self):
+        from mlx_agent.splash_runtime import prepare_project_cache
+
+        shared = self.root / "shared"
+        receipts = shared / "private-receipts"
+        receipts.mkdir(parents=True, mode=0o700)
+        cache = receipts / "splash-cache" / "namespace"
+        for mode in (0o770, 0o707):
+            with self.subTest(mode=oct(mode)):
+                shared.chmod(mode)
+                with self.assertRaisesRegex(ValueError, "ancestor"):
+                    prepare_project_cache(cache)
+                self.assertFalse(cache.parent.exists())
+
+    def test_project_cache_allows_sticky_ancestor_with_owned_child(self):
+        from mlx_agent.splash_runtime import prepare_project_cache
+
+        shared = self.root / "sticky"
+        shared.mkdir()
+        shared.chmod(0o1777)
+        cache = shared / "private-receipts" / "splash-cache" / "namespace"
+        prepare_project_cache(cache)
+        self.assertEqual(cache.stat().st_mode & 0o777, 0o700)
+
+    @unittest.skipUnless(os.uname().sysname == "Darwin", "macOS extended ACLs")
+    def test_project_cache_rejects_allow_acls_and_accepts_deny_only(self):
+        import subprocess
+        from mlx_agent.splash_runtime import prepare_project_cache
+
+        receipts = self.root / "private-receipts"
+        receipts.mkdir(mode=0o700)
+        cache = receipts / "splash-cache" / "namespace"
+        subprocess.run(["/bin/chmod", "+a", "everyone allow delete_child", str(receipts)], check=True)
+        with self.assertRaisesRegex(ValueError, "ACL"):
+            prepare_project_cache(cache)
+        self.assertFalse(cache.parent.exists())
+
+        subprocess.run(["/bin/chmod", "-N", str(receipts)], check=True)
+        subprocess.run(["/bin/chmod", "+a", "everyone deny add_file", str(receipts)], check=True)
+        prepare_project_cache(cache)
+        subprocess.run(["/bin/chmod", "+a", "everyone allow list", str(cache)], check=True)
+        with self.assertRaisesRegex(ValueError, "ACL"):
+            prepare_project_cache(cache)
+
     def test_profile_tuning_flows_through_cli_and_workflow_plans(self):
         import sys
         from mlx_agent import workflow_sets

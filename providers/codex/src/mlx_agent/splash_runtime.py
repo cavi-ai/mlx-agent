@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import math
 import os
 import re
 import shutil
+import stat
 import subprocess
+import sys
 from pathlib import Path
 
 from .serving_plan import Contribution
@@ -334,17 +337,69 @@ def project_cache_directory(root, name, digest, fields):
     return str(Path(root).absolute() / "splash-cache" / namespace)
 
 
+def _macos_acl_allows_access(fd):
+    """Check extended ACLs on the opened directory, independent of mode bits."""
+    import ctypes
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.acl_get_fd.argtypes = [ctypes.c_int]
+    libc.acl_get_fd.restype = ctypes.c_void_p
+    libc.acl_get_entry.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)]
+    libc.acl_get_tag_type.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
+    libc.acl_free.argtypes = [ctypes.c_void_p]
+
+    acl = libc.acl_get_fd(fd)
+    if acl is None:
+        error = ctypes.get_errno()
+        if error == errno.ENOENT:  # The opened directory has no ACL.
+            return False
+        raise OSError(error, os.strerror(error))
+    try:
+        entry = ctypes.c_void_p()
+        tag = ctypes.c_int()
+        entry_id = 0  # ACL_FIRST_ENTRY
+        while libc.acl_get_entry(acl, entry_id, ctypes.byref(entry)) == 0:
+            if libc.acl_get_tag_type(entry, ctypes.byref(tag)) != 0:
+                error = ctypes.get_errno()
+                raise OSError(error, os.strerror(error))
+            if tag.value != 2:  # ACL_EXTENDED_DENY
+                return True
+            entry_id = -1  # ACL_NEXT_ENTRY
+        error = ctypes.get_errno()
+        if error != errno.EINVAL:  # Darwin signals the end of the ACL with EINVAL.
+            raise OSError(error, os.strerror(error))
+        return False
+    finally:
+        libc.acl_free(acl)
+
+
 def prepare_project_cache(path):
-    """Create and validate the private cache parent and namespace without following links."""
+    """Create a private cache whose path other users cannot replace."""
     from .transactions import _walk_directory
-    import stat
+
     cache = Path(path)
+    uid = os.geteuid()
+
+    def check_acl(fd):
+        if sys.platform == "darwin" and _macos_acl_allows_access(fd):
+            raise ValueError("Splash cache path must have no allow ACL entries: " + str(cache))
+
+    def check_ancestor(fd, child):
+        info = os.fstat(fd)
+        writable_by_others = info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+        # A trusted sticky directory protects each child owned by root or uid.
+        # The traversal checks that child's ownership before descending again.
+        if info.st_uid not in (0, uid) or (writable_by_others and not info.st_mode & stat.S_ISVTX):
+            raise ValueError(f"Splash cache ancestor before {child!r} must be protected from other users' writes: {cache}")
+        check_acl(fd)
+
     for directory in (cache.parent, cache):
-        _, fd = _walk_directory(directory, create=True)
+        _, fd = _walk_directory(directory, create=True, component_hook=check_ancestor)
         try:
             info = os.fstat(fd)
-            if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
+            if info.st_uid != uid or stat.S_IMODE(info.st_mode) != 0o700:
                 raise ValueError("Splash cache directory must be owned by the current user and mode 0700: " + str(directory))
+            check_acl(fd)
         finally:
             os.close(fd)
 

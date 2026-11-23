@@ -38,9 +38,14 @@ pages instead. Build into a separate staging directory when checking a change.
 
 ## Pull requests
 
-`main` accepts signed commits whose four Test matrix jobs and experiment-engine
-job pass. Describe the behavior changed and the relevant validation. Include a regression
-test for behavior changes. Keep model weights, credentials, local receipts,
-generated research packs, and temporary outputs out of the change. Report bugs
+`main` requires signed commits and the Linux, macOS, experiment, and pin guard
+checks. Pull requests run the full suite on Linux and focused native
+tests on macOS. The experiment check reuses the Linux CLI and workspace tests on
+pull requests. On `main`, macOS coverage must meet the 84% floor and affected
+experiment regressions must pass before the downstream pin is updated. Describe
+the behavior changed and the relevant validation. Include a regression test for
+behavior changes. Keep model weights,
+credentials, local receipts, generated research packs, and temporary outputs out
+of the change. Report bugs
 with the command, package/runtime versions, and a redacted error; inspect logs
 and receipts before attaching them.

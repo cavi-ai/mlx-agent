@@ -100,7 +100,8 @@ class PinGuardTests(unittest.TestCase):
     def test_version_range_and_other_jobs_pass(self):
         def update():
             self.edit("requirements-dev.txt", "coverage>=7.16,<8", "coverage>=7.17,<8")
-            self.edit(".github/workflows/test.yml", "timeout-minutes: 60", "timeout-minutes: 70")
+            self.edit(".github/workflows/test.yml", "    name: Coverage / Python 3.12\n",
+                      "    name: Coverage fixture\n")
         result = self.change(update)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 

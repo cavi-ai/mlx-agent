@@ -39,13 +39,23 @@ def validate(value):
     return value
 
 
-def capture(statistics):
+def capture(statistics, framework='mlx'):
     core=sys.modules.get('mlx.core')
     result={'schema':'worker-memory/1','captured_at':time.time(),**statistics}
-    for field,method in (('active_bytes','get_active_memory'),('cache_bytes','get_cache_memory'),('peak_bytes','get_peak_memory')):
-        function=getattr(core,method,None)
+    if framework == 'torch':
+        torch = sys.modules.get('torch')
+        mps = getattr(torch, 'mps', None)
         try:
-            result[field]=function() if callable(function) else None
-        except (RuntimeError,NotImplementedError):
-            result[field]=None
+            result['active_bytes'] = mps.current_allocated_memory() if mps is not None else None
+        except (RuntimeError, NotImplementedError):
+            result['active_bytes'] = None
+        result['cache_bytes'] = None
+        result['peak_bytes'] = None
+    else:
+        for field,method in (('active_bytes','get_active_memory'),('cache_bytes','get_cache_memory'),('peak_bytes','get_peak_memory')):
+            function=getattr(core,method,None)
+            try:
+                result[field]=function() if callable(function) else None
+            except (RuntimeError,NotImplementedError):
+                result[field]=None
     return validate(result)

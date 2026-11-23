@@ -55,6 +55,71 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 'job_memory_cap_exceeded')
         self.assertEqual(self.registry.reserve_execution('a', 110, lambda: 500), 110)
 
+    def test_auto_execution_uses_available_headroom_for_cold_and_warm(self):
+        from unittest.mock import patch
+        self.reserve('a', resident=80, workspace=10, available=500)
+        budget = {'allocations': {'a': {'resident_bytes': 0, 'pending_bytes': 90}},
+                  'admission_bytes': 1000, 'accounted_bytes': 90}
+        with patch.object(self.registry, '_agent_budget', return_value=budget):
+            diagnostics = {}
+            self.assertEqual(self.registry.reserve_execution('a', None, lambda: 160, diagnostics), 150)
+            self.assertEqual(diagnostics['agent_capacity_bytes'], 1000)
+            self.assertEqual(diagnostics['physical_ceiling_bytes'], 150)
+            self.assertEqual(diagnostics['effective_grant_bytes'], 150)
+        self.registry.settle('a', resident_bytes=80, workspace_bytes=0)
+        self.registry.reserve_workspace('a', 10, lambda: 500)
+        budget['allocations']['a'] = {'resident_bytes': 80, 'pending_bytes': 10}
+        with patch.object(self.registry, '_agent_budget', return_value=budget):
+            self.assertEqual(self.registry.reserve_execution('a', None, lambda: 70, overhead_bytes=20), 120)
+
+    def test_execution_refusals_preserve_reservation(self):
+        from unittest.mock import patch
+        self.reserve('a', resident=80, workspace=10, available=500)
+        budget = {'allocations': {'a': {'resident_bytes': 0, 'pending_bytes': 90}},
+                  'admission_bytes': 1000, 'accounted_bytes': 90}
+        with patch.object(self.registry, '_agent_budget', return_value=budget):
+            before = self.registry.snapshot()
+            for limit, probe, expected in ((None, lambda: 80, 'insufficient_headroom'),
+                                           (200, lambda: 150, 'insufficient_headroom'),
+                                           (None, lambda: None, 'memory_unknown')):
+                with self.subTest(expected=expected), self.assertRaises(self.Error) as caught:
+                    self.registry.reserve_execution('a', limit, probe)
+                self.assertEqual(caught.exception.code, expected)
+                self.assertEqual(self.registry.snapshot(), before)
+
+    def test_auto_grant_leaves_existing_controller_margin(self):
+        from unittest.mock import patch
+
+        from mlx_agent.memory_budget import account
+        self.reserve('a', resident=80, workspace=10, available=1000, headroom=0)
+        budget = {'allocations': {'a': {'resident_bytes': 0, 'pending_bytes': 90}},
+                  'admission_bytes': 80_000_000_000, 'accounted_bytes': 50_000_090}
+        with patch.object(self.registry, '_agent_budget', return_value=budget):
+            diagnostics = {}
+            grant = self.registry.reserve_execution('a', None, lambda: 90_000_000_000,
+                                                    diagnostics, overhead_bytes=512_000_000)
+        self.assertEqual(grant, 79_438_000_000)
+        self.assertEqual(diagnostics['controller_headroom_bytes'], 512_000_000)
+        policy = {'limit_bytes': 88_000_000_000, 'reserve_bytes': 8_000_000_000, 'external': []}
+        entry = {'owner': [1, 'owner'], 'phase': 'reserved', 'reserved_bytes': grant, 'worker': None}
+        def measured(overhead):
+            rows = {1: {'parent': 0, 'group': 1, 'identity': 'owner', 'rss': overhead, 'physical_bytes': overhead}}
+            return account(policy, {'a': entry}, rows, (1, 'owner'))['within_budget']
+        self.assertTrue(measured(50_032_768))
+        self.assertFalse(measured(562_000_001))
+
+    def test_margin_is_auto_only_and_preserves_minimum(self):
+        from unittest.mock import patch
+        self.reserve('a', resident=80, workspace=10, available=500)
+        budget = {'allocations': {'a': {'resident_bytes': 0, 'pending_bytes': 90}},
+                  'admission_bytes': 1000, 'accounted_bytes': 90}
+        with patch.object(self.registry, '_agent_budget', return_value=budget):
+            self.assertEqual(self.registry.reserve_execution('a', 100, lambda: 500, overhead_bytes=50), 100)
+        self.registry.release('a')
+        self.reserve('a', resident=80, workspace=10, available=500)
+        with patch.object(self.registry, '_agent_budget', return_value=budget), self.assertRaises(self.Error):
+            self.registry.reserve_execution('a', None, lambda: 120, overhead_bytes=30)
+
     def test_live_headroom_changes_apply_to_other_endpoints(self):
         self.reserve('a')
         self.registry.settle('a',workspace_bytes=0)
@@ -129,6 +194,18 @@ sys.stdin.readline()
 
 
 class TelemetryTests(unittest.TestCase):
+    def test_torch_allocation_does_not_report_mlx_counters(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from mlx_agent.worker_telemetry import capture
+        torch = SimpleNamespace(mps=SimpleNamespace(current_allocated_memory=lambda: 123))
+        core = SimpleNamespace(get_active_memory=lambda: 999, get_cache_memory=lambda: 888,
+                               get_peak_memory=lambda: 777)
+        with patch.dict(sys.modules, {'torch': torch, 'mlx.core': core}):
+            value = capture({'loads': 0, 'cache_hits': 0, 'load_seconds': 0.0}, 'torch')
+        self.assertEqual((value['active_bytes'], value['cache_bytes'], value['peak_bytes']), (123, None, None))
+
     def test_unavailable_allocator_methods_remain_unknown(self):
         from unittest.mock import patch,Mock
         from types import SimpleNamespace

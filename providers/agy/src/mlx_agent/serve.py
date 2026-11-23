@@ -244,6 +244,9 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
             raise ServeError("invalid_arguments", str(error), "Use a valid SHA-256 verification digest.") from error
         if not jit and runtime != "tasks":
             raise ServeError("jit_required", "Authenticated serving requires a supervised endpoint.", "Use --jit.")
+    if splash_tuning.get("splash_project_cache") is not None and (not jit or api_key_sha256 is None):
+        raise ServeError("invalid_arguments", "A Splash project cache requires a keyed JIT endpoint.",
+                         "Use --jit and an API key file or digest.")
     if runtime == "tasks":
         if adapter_path is not None or training_receipt is not None or m5_prefill or prompt_lookup or vision_cache or strata_decoding is not None or strata_speculation or strata_expert_memory_gb is not None or strata_context_tokens is not None or thinking != "default" or system_prompt is not None or default_temperature is not None or default_top_p is not None:
             raise ServeError("invalid_arguments", "Task endpoints accept local models and their memory policy.", "Remove chat, adapter and Strata options.")
@@ -485,6 +488,15 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
         if "--host" not in worker:
             worker.extend(["--host", "127.0.0.1"])
         root = receipts_root(receipts_dir).absolute()
+        if splash_tuning.get("splash_project_cache") is not None:
+            from .splash_runtime import project_cache_directory
+            binding_keys = ("splash_runtime_fingerprint", "splash_model_fingerprint", "splash_draft_fingerprint",
+                            "splash_chat_template_sha256", "weight_format", "splash_cached_states", "splash_kv_format",
+                            "splash_max_context_tokens")
+            cache_dir = project_cache_directory(root, splash_tuning["splash_project_cache"], api_key_sha256,
+                                                {**{key: plan.get(key) for key in binding_keys}, "port": selected_port})
+            worker.extend(["--cache-dir", cache_dir])
+            plan["splash_project_cache_dir"] = cache_dir
         plan.update(jit=True, local_path=str(local), fingerprint=model_fingerprint(local),
                     worker_argv=worker, control_config=str(root / "{}.jit-config.json".format(selected_port)))
         plan["argv"] = [sys.executable, str(Path(__file__).with_name("jit_serve.py").resolve()),
@@ -703,6 +715,12 @@ def start_serve(plan, receipts_dir=None, confirm=False, preview_hash=None,
                     "Run serve stop --port {0} first.".format(plan["port"]),
                 )
 
+        if plan.get("splash_project_cache_dir"):
+            from .splash_runtime import prepare_project_cache
+            try:
+                prepare_project_cache(plan["splash_project_cache_dir"])
+            except (OSError, ValueError) as error:
+                raise ServeError("unsafe_splash_cache", str(error), "Use a private cache directory and review a fresh plan.") from error
         root.mkdir(parents=True, exist_ok=True)
         if spawn is _default_spawn:
             from .service_registry import register_receipts

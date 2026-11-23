@@ -12,6 +12,39 @@ from mlx_agent.service_registry import MAX_INDEX_FILES, MAX_ROOTS, register_rece
 
 
 class ServiceRegistryTests(unittest.TestCase):
+    def test_routing_discovery_checks_receipt_identity_in_one_batch_without_status(self):
+        birth = "Mon Nov 23 08:00:00 2026"
+        with TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            receipts = root / ".mlx-agent-receipts" / "serve"
+            receipts.mkdir(parents=True)
+            for port, pid in ((8091, 1234), (8092, 1235), (8093, 1236)):
+                config = str(receipts / f"{port}.jit-config.json")
+                argv = ["python", "/repo/mlx_agent/jit_serve.py", "--model", "/models/chat",
+                        "--port", str(port), "--config", config]
+                (receipts / f"{port}.json").write_text(json.dumps(
+                    {"kind": "serve", "pid": pid, "argv": argv, "port": port, "repo": None,
+                     "path": "/models/chat", "runtime": "mlx_lm", "jit": True,
+                     "process_started_at": birth}))
+
+            def observe(pids, **kwargs):
+                self.assertCountEqual(list(pids), [1234, 1235, 1236])
+                return {1234: f'{birth} python /repo/mlx_agent/jit_serve.py --model /models/chat --port 8091'
+                              f' --config {receipts / "8091.jit-config.json"}',
+                        1235: f'Mon Nov 23 09:00:00 2026 python /repo/mlx_agent/jit_serve.py --model /models/chat'
+                              f' --port 8092 --config {receipts / "8092.jit-config.json"}',
+                        1236: f'{birth} python /repo/mlx_agent/jit_serve.py --model /models/chat --port 80930'
+                              f' --config {receipts / "8093.jit-config.json"}'}
+
+            with patch("mlx_agent.serve._pid_alive", return_value=True), \
+                 patch("mlx_agent.process_table.identities", side_effect=observe) as batch, \
+                 patch("mlx_agent.serve._jit_control") as control:
+                found = discover_services([root], registry=root / "index", process_roots=[], routing_only=True)
+            batch.assert_called_once()
+            control.assert_not_called()
+            self.assertEqual(found["errors"], [])
+            self.assertEqual([entry["port"] for entry in found["services"]], [8091])
+
     def test_enumeration_stops_after_bounded_entries_even_for_non_json(self):
         from mlx_agent import service_registry as registry_module
 

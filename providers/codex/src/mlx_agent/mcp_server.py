@@ -2,10 +2,19 @@
 
 from __future__ import annotations
 
+import codecs
 import io
 import json
 import math
+import os
+from pathlib import Path
+import select
+import selectors
+import signal
+import subprocess
 import sys
+import threading
+import time
 from contextlib import redirect_stderr, redirect_stdout
 
 from . import __version__
@@ -15,6 +24,8 @@ from .command_args import CommandArgumentError, parse_command_arguments
 MAX_ARGUMENT_BYTES = 4096
 MAX_OUTPUT_CHARS = 16384
 MAX_REQUEST_BYTES = 65536
+MAX_PENDING_TOOLS = 8
+TOOL_TIMEOUT_SECONDS = 660
 TOOL_NAME = "mlx_agent_execute"
 CAPABILITIES_TOOL_NAME = "mlx_agent_capabilities"
 SUPPORTED_PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26", "2025-06-18")
@@ -33,13 +44,12 @@ class _BoundedWriter(io.TextIOBase):
     def write(self, value):
         text = str(value)
         remaining = max(0, self.limit - self.length)
+        if remaining and text:
+            retained = text[:remaining]
+            self.parts.append(retained)
+            self.length += len(retained)
         if len(text) > remaining:
-            self.parts.append(text[:remaining])
-            self.length += remaining
             self.truncated = True
-        else:
-            self.parts.append(text)
-            self.length += len(text)
         return len(text)
 
     def value(self):
@@ -91,7 +101,7 @@ def _tool_definition():
     }
 
 
-def _tool_result(arguments, core=None):
+def _tool_result(arguments, core=None, execute=None):
     if not isinstance(arguments, dict) or set(arguments) != {"capability", "arguments"}:
         raise CommandArgumentError("tool arguments must contain capability and arguments")
     capability = arguments["capability"]
@@ -105,6 +115,8 @@ def _tool_result(arguments, core=None):
     if len(encoded) > MAX_ARGUMENT_BYTES:
         raise CommandArgumentError("tool arguments exceed the bounded UTF-8 input size")
     argv = parse_command_arguments(capability, raw)
+    if execute is not None:
+        return execute(argv)
     if core is None:
         from .cli import main as core
     stdout = _BoundedWriter()
@@ -124,6 +136,10 @@ def _tool_result(arguments, core=None):
     except Exception:
         exit_code = 1
         execution_error = "MLX-agent execution failed"
+    return _execution_result(exit_code, stdout, stderr, execution_error)
+
+
+def _execution_result(exit_code, stdout, stderr, execution_error=None):
     payload = {
         "status": "ok" if exit_code == 0 else "error",
         "exit_code": exit_code,
@@ -141,6 +157,76 @@ def _tool_result(arguments, core=None):
     }
 
 
+def _run_process(command, cancelled, timeout, env):
+    stdout, stderr = _BoundedWriter(), _BoundedWriter()
+    if cancelled():
+        return _execution_result(130, stdout, stderr, "MCP tool call cancelled.")
+    deadline = time.monotonic() + timeout
+    try:
+        process = subprocess.Popen(command, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, start_new_session=True)
+    except OSError:
+        return _execution_result(1, stdout, stderr, "Could not start the MLX-agent command.")
+
+    writers = (stdout, stderr)
+    decoders = [codecs.getincrementaldecoder("utf-8")(errors="replace") for _ in writers]
+    try:
+        with selectors.DefaultSelector() as selector:
+            for index, pipe in enumerate((process.stdout, process.stderr)):
+                selector.register(pipe, selectors.EVENT_READ, index)
+            draining = False
+            while True:
+                if cancelled():
+                    return _execution_result(130, stdout, stderr, "MCP tool call cancelled.")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    if draining:
+                        break
+                    return _execution_result(124, stdout, stderr, "MCP tool call timed out.")
+                events = selector.select(0 if draining else min(0.1, remaining))
+                if draining and not events:
+                    break
+                for key, _ in events:
+                    chunk = os.read(key.fd, 65536)
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                    index = key.data
+                    writers[index].write(decoders[index].decode(chunk))
+                if (not events or not selector.get_map()) and process.poll() is not None:
+                    if not selector.get_map():
+                        break
+                    # The child can write after select times out but before poll reaps it.
+                    # Read ready pipes again, with a short cap for inherited writers.
+                    draining = True
+                    deadline = min(deadline, time.monotonic() + 0.1)
+        for writer, decoder in zip(writers, decoders):
+            writer.write(decoder.decode(b"", final=True))
+        return _execution_result(process.returncode, stdout, stderr)
+    except OSError:
+        return _execution_result(1, stdout, stderr, "Could not read the MLX-agent command output.")
+    finally:
+        try:
+            if process.returncode is None:
+                # An unreaped direct child still owns this process group ID.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=3)
+        finally:
+            process.stdout.close()
+            process.stderr.close()
+
+
+def _execute_cli(argv, cancelled):
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
+    source = str(Path(__file__).resolve().parents[1])
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, (source, env.get("PYTHONPATH"))))
+    if sys.pycache_prefix is not None:
+        env["PYTHONPYCACHEPREFIX"] = sys.pycache_prefix
+    return _run_process([sys.executable, "-P", "-m", "mlx_agent", *argv], cancelled, TOOL_TIMEOUT_SECONDS, env)
+
+
 def _capabilities_definition():
     return {
         "name": CAPABILITIES_TOOL_NAME,
@@ -156,18 +242,19 @@ def _capabilities_definition():
     }
 
 
-def handle_request(request, core=None):
+def _valid_id(value):
+    return value is None or isinstance(value, str) or (
+        type(value) in (int, float) and (not isinstance(value, float) or math.isfinite(value))
+    )
+
+
+def handle_request(request, core=None, execute=None):
     """Handle one JSON-RPC request. Notifications intentionally return None."""
     if not isinstance(request, dict) or request.get("jsonrpc") != "2.0":
         return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
     request_id = request.get("id")
-    valid_id = request_id is None or isinstance(request_id, str) or (
-        type(request_id) in (int, float) and (
-            not isinstance(request_id, float) or math.isfinite(request_id)
-        )
-    )
     if (
-        not valid_id
+        not _valid_id(request_id)
         or not isinstance(request.get("method"), str)
         or ("params" in request and not isinstance(request["params"], (dict, list)))
     ):
@@ -197,9 +284,10 @@ def handle_request(request, core=None):
             if params.get("name") == CAPABILITIES_TOOL_NAME:
                 if params.get("arguments", {}) != {}:
                     raise CommandArgumentError("capabilities takes no arguments")
-                result = _tool_result({"capability": "task", "arguments": "capabilities --json"}, core=core)
+                result = _tool_result({"capability": "task", "arguments": "capabilities --json"},
+                                      core=core, execute=execute)
             elif params.get("name") == TOOL_NAME:
-                result = _tool_result(params.get("arguments"), core=core)
+                result = _tool_result(params.get("arguments"), core=core, execute=execute)
             else:
                 raise CommandArgumentError("unknown tool")
         else:
@@ -217,26 +305,140 @@ def _finite_number(value):
     return number
 
 
-def main():
+def _requests():
     while True:
         line = sys.stdin.buffer.readline(MAX_REQUEST_BYTES + 1)
         if not line:
-            return 0
+            return
         if len(line) > MAX_REQUEST_BYTES or not line.endswith(b"\n"):
             # Discard the entire rejected frame without buffering its remainder.
             while line and not line.endswith(b"\n"):
                 line = sys.stdin.buffer.readline(MAX_REQUEST_BYTES + 1)
-            response = {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
+            yield None, {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
         else:
             try:
                 request = json.loads(line.decode("utf-8"), parse_float=_finite_number, parse_constant=_finite_number)
             except (ValueError, RecursionError):
-                response = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}}
+                yield None, {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}}
             else:
-                response = handle_request(request)
-        if response is not None:
+                yield request, None
+
+
+def main():
+    reply_lock = threading.Lock()
+    output = select.poll()
+    try:
+        output.register(sys.stdout.fileno(), select.POLLHUP | select.POLLERR)
+    except (AttributeError, OSError):
+        pass
+
+    def send(response):
+        with reply_lock:
             sys.stdout.write(json.dumps(response, separators=(",", ":")) + "\n")
             sys.stdout.flush()
+
+    def execute(request, cancelled):
+        try:
+            try:
+                response = handle_request(request, execute=lambda argv: _execute_cli(
+                    argv, lambda: cancelled.is_set() or bool(output.poll(0))))
+            except Exception:
+                response = {"jsonrpc": "2.0", "id": request["id"],
+                            "error": {"code": -32603, "message": "Could not complete the MLX-agent command."}}
+            if not cancelled.is_set() and not output.poll(0):
+                send(response)
+        except OSError:
+            pass
+
+    if threading.current_thread() is not threading.main_thread():
+        return _run_session(send, execute)
+
+    def terminate(signum, _frame):
+        raise SystemExit(128 + signum)
+
+    previous = signal.signal(signal.SIGTERM, terminate)
+    try:
+        return _run_session(send, execute)
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
+def _run_session(send, execute):
+    # A single FIFO also tracks admission, so cancelling queued work removes it immediately.
+    pending = {}
+    ready = threading.Condition()
+    active = None
+    closing = False
+
+    def run_tools():
+        nonlocal active
+        while True:
+            with ready:
+                ready.wait_for(lambda: pending or closing)
+                if not pending:
+                    return
+                identifier = next(iter(pending))
+                request, active = pending[identifier]
+            try:
+                execute(request, active)
+            finally:
+                with ready:
+                    pending.pop(identifier, None)
+                    active = None
+                    if not pending:
+                        ready.notify()
+
+    worker = threading.Thread(target=run_tools, daemon=True)
+    worker.start()
+    try:
+        for request, error in _requests():
+            if error is not None:
+                send(error)
+                continue
+            if isinstance(request, dict) and request.get("jsonrpc") == "2.0":
+                method = request.get("method")
+                if method == "notifications/cancelled" and "id" not in request:
+                    params = request.get("params")
+                    if isinstance(params, dict) and "requestId" in params and _valid_id(params["requestId"]):
+                        identifier = params["requestId"]
+                        with ready:
+                            entry = pending.get(identifier)
+                            if entry is not None:
+                                if entry[1] is active:
+                                    active.set()
+                                else:
+                                    del pending[identifier]
+                    continue
+                if method == "tools/call" and "id" in request and _valid_id(request["id"]):
+                    identifier = request["id"]
+                    with ready:
+                        if identifier in pending:
+                            error = {"code": -32600, "message": "Duplicate request ID"}
+                        elif len(pending) >= MAX_PENDING_TOOLS:
+                            error = {"code": -32000, "message": "MCP tool queue is full"}
+                        else:
+                            pending[identifier] = (request, threading.Event())
+                            ready.notify()
+                    if error is not None:
+                        send({"jsonrpc": "2.0", "id": identifier, "error": error})
+                    continue
+            response = handle_request(request)
+            if response is not None:
+                send(response)
+        with ready:
+            ready.wait_for(lambda: not pending)
+    except BaseException:
+        with ready:
+            if active is not None:
+                active.set()
+            pending.clear()
+        raise
+    finally:
+        with ready:
+            closing = True
+            ready.notify()
+        worker.join()
+    return 0
 
 
 if __name__ == "__main__":

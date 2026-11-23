@@ -21,6 +21,10 @@ class McpProtocolTests(unittest.TestCase):
         self.assertEqual(4, writer.write("defg"))
         self.assertTrue(writer.truncated)
         self.assertEqual("abcde\n... [output truncated]", writer.value())
+        for _ in range(1000):
+            writer.write("more")
+            writer.write("")
+        self.assertEqual(writer.parts, ["abc", "de"])
 
     def test_invalid_envelopes_are_invalid_requests(self):
         for request in ([], {"jsonrpc": "1.0", "id": 1, "method": "ping"},

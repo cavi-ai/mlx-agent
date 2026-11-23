@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .identity_pass import listed_paths
 from .task_contracts import TaskError, encoded
 
 
@@ -17,7 +18,7 @@ def _model_fingerprint(model):
     entries = []
     if not model.is_dir():
         raise TaskError("model_changed", "The accepted model directory is unavailable.")
-    for path in sorted(model.rglob("*")):
+    for path in listed_paths(model):
         if path.is_symlink() and not path.exists():
             raise TaskError("model_changed", "The model contains a broken link.")
         if path.is_file():

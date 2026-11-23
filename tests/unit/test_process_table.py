@@ -39,8 +39,9 @@ class ProcessTableTests(unittest.TestCase):
         usage = type('Usage', (), {'resident_size': 10, 'phys_footprint': 12})()
         with patch.object(process_table, 'rows', return_value={7: (1, 7)}), \
              patch.object(process_table, 'identities', return_value={}), \
-             patch('mlx_agent.memory_budget._usage', return_value=usage):
-            self.assertEqual(process_snapshot({7}), {7: {'parent': 1, 'group': 7, 'rss': 10, 'physical_bytes': 12}})
+             patch('mlx_agent.memory_budget._usage', return_value=usage) as usage_probe:
+            self.assertEqual(process_snapshot({7}), {7: {'parent': 1, 'group': 7}})
+            usage_probe.assert_not_called()
 
     def test_group_and_rows_list_live_members_without_zombies(self):
         leader, zombie = self.leader_with_zombie()
@@ -64,10 +65,10 @@ class ProcessTableTests(unittest.TestCase):
         self.assertNotIn(zombie, native)
         for pid in (os.getpid(), leader.pid):
             self.assertEqual((native[pid]['parent'], native[pid]['group']), (legacy[pid]['parent'], legacy[pid]['group']))
-            self.assertIsInstance(native[pid]['physical_bytes'], int)
+            self.assertNotIn('physical_bytes', native[pid])
         self.assertEqual(native[leader.pid]['identity'].split(), legacy[leader.pid]['identity'].split())
         self.assertNotIn('identity', native[os.getpid()])
-        self.assertLess(abs(native[leader.pid]['rss'] - legacy[leader.pid]['rss']), 4 * 1024 * 1024)
+        self.assertIsInstance(legacy[leader.pid]['physical_bytes'], int)
 
 
 class DarwinEnumerationTests(unittest.TestCase):

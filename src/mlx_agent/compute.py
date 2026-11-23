@@ -12,6 +12,8 @@ import sys
 import threading
 import time
 
+from .process_table import identities
+
 
 class ComputeBusy(ValueError):
     pass
@@ -215,13 +217,24 @@ class ComputeLease:
         self.execution_group = {"pgid": pid, "leader_identity": identity}
         self._write(dict(self.record, schema=2, execution_group=self.execution_group))
 
+    def _observed(self, pids):
+        """One identity read for this inspection. Injected inspectors stay per PID."""
+        if self.inspector is process_identity:
+            return identities(pids)
+        return {pid: self.inspector(pid) for pid in pids}
+
     def release_idle_process_group(self, pid, members=None):
         """Release only after completion and inspection of the idle private group."""
         expected = {pid: self.execution_group["leader_identity"]} if members is None and self.execution_group else members
-        if (self.descriptor is None or self.execution_group is None or self.execution_group['pgid'] != pid
-                or self.inspector(pid) != self.execution_group['leader_identity']
+        if self.descriptor is None or self.execution_group is None or self.execution_group['pgid'] != pid:
+            raise ComputeBusy("The resident worker has not returned to an inspected idle state.")
+        targets = {pid}
+        if expected:
+            targets.update(expected)
+        observed = self._observed(targets)
+        if (observed.get(pid) != self.execution_group['leader_identity']
                 or not expected or set(self.group_probe(pid)) != set(expected)
-                or any(self.inspector(member) != identity for member, identity in expected.items())):
+                or any(observed.get(member) != identity for member, identity in expected.items())):
             raise ComputeBusy("The resident worker has not returned to an inspected idle state.")
         self.execution_group = None
         self._write({key: value for key, value in self.record.items() if key != 'execution_group'} | {'schema': 1})

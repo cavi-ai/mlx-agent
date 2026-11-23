@@ -56,6 +56,65 @@ def _boolean_mask(self, seq_len, attention_mask, dtype):
     return (causal[None, :, :] & attention_mask.astype(mx.bool_)[:, None, :])[:, None, :, :]
 
 
+def _cache_key(arguments, keywords):
+    return repr((arguments, tuple(sorted(keywords.items()))))
+
+
+def _cached(model, name, key):
+    if not model.retain_weights:
+        return None
+    retained = model.components.get(name)
+    if retained is not None and retained[0] == key:
+        return retained[1]
+    return None
+
+
+def _remember(model, name, key, value):
+    if model.retain_weights:
+        model.components[name] = (key, value)
+
+
+def _wrap_loader(model, name, function):
+    """Return a cached call of a pipeline loader. The original is restored by the caller."""
+
+    def wrapper(*arguments, **keywords):
+        key = _cache_key(arguments, keywords)
+        retained = _cached(model, name, key)
+        if retained is not None:
+            return retained
+        value = function(*arguments, **keywords)
+        _remember(model, name, key, value)
+        return value
+
+    return wrapper
+
+
+def _wrap_text_encoder_load(model, function):
+    """Restore the loaded MLX module state and encoder attributes on a cache hit."""
+
+    def wrapper(self, *arguments, **keywords):
+        key = _cache_key(arguments, keywords)
+        retained = _cached(model, "text_encoder", key)
+        if retained is not None:
+            if retained is not self:
+                dict.clear(self)
+                dict.update(self, retained)
+                self.__dict__.clear()
+                self.__dict__.update(retained.__dict__)
+            return None
+        function(self, *arguments, **keywords)
+        _remember(model, "text_encoder", key, self)
+        return None
+
+    return wrapper
+
+
+def _install(stack, owner, name, wrapper):
+    original = owner.__dict__[name]
+    setattr(owner, name, wrapper)
+    stack.callback(setattr, owner, name, original)
+
+
 def _pixel_std(frames) -> float:
     import numpy as np
 
@@ -75,7 +134,8 @@ def generate(model: Model, prompt: str, out: str, width: int = 768, height: int 
     """Render one video to ``out`` (MP4); returns its dimensions, timing, memory, and pixel spread."""
     import mlx.core as mx
     from mlx_video.models.ltx_2 import generate as ltx
-    from mlx_video.models.ltx_2.text_encoder import LanguageModel
+    from mlx_video.models.ltx_2.audio_vae import AudioEncoder
+    from mlx_video.models.ltx_2.text_encoder import LanguageModel, LTX2TextEncoder
 
     muxed = {}
     mux = ltx.mux_video_audio
@@ -92,6 +152,14 @@ def generate(model: Model, prompt: str, out: str, width: int = 768, height: int 
         stack.enter_context(mock.patch.object(LanguageModel, "_create_causal_mask_with_padding", _boolean_mask))
         stack.enter_context(mock.patch.object(ltx, "mux_video_audio", checked_mux))
         stack.enter_context(contextlib.redirect_stdout(sys.stderr))
+        _install(stack, ltx.LTXModel, "from_pretrained", _wrap_loader(model, "transformer", ltx.LTXModel.from_pretrained))
+        _install(stack, ltx.VideoEncoder, "from_pretrained", _wrap_loader(model, "video_encoder", ltx.VideoEncoder.from_pretrained))
+        _install(stack, ltx.VideoDecoder, "from_pretrained", _wrap_loader(model, "video_decoder", ltx.VideoDecoder.from_pretrained))
+        _install(stack, ltx, "load_upsampler", _wrap_loader(model, "upsampler", ltx.load_upsampler))
+        _install(stack, ltx, "load_audio_decoder", _wrap_loader(model, "audio_decoder", ltx.load_audio_decoder))
+        _install(stack, ltx, "load_vocoder_model", _wrap_loader(model, "vocoder", ltx.load_vocoder_model))
+        _install(stack, AudioEncoder, "from_pretrained", _wrap_loader(model, "audio_encoder", AudioEncoder.from_pretrained))
+        _install(stack, LTX2TextEncoder, "load", _wrap_text_encoder_load(model, LTX2TextEncoder.load))
         result = ltx.generate_video(
             model_repo=str(model.path), text_encoder_repo=str(model.path / "text_encoder"), prompt=prompt,
             pipeline=ltx.PipelineType.DISTILLED, height=height, width=width, num_frames=frames,

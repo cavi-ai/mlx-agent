@@ -15,7 +15,7 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Union
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SUPPORTED_PROVIDERS = ("claude", "codex", "agy", "opencode", "agentskills")
+SUPPORTED_PROVIDERS = ("claude", "codex", "agy", "opencode", "gemini", "agentskills")
 CAPABILITIES = ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "task")
 INVENTORY_NAME = ".mlx-agent-generated-files.json"
 INVENTORY_SCHEMA_VERSION = 3
@@ -333,10 +333,16 @@ def _generic_skill_markdown(manifest: Mapping[str, object], capability: str, plu
     else:
         root = "<skill-dir>"
         resolution = (
-            "Resolve `<skill-dir>` as the absolute directory containing this SKILL.md. "
+            "Resolve `<skill-dir>` (`{baseDir}` in OpenClaw) as the absolute directory containing this SKILL.md. "
             "Never resolve the bundled executable from the shell working directory."
         )
     content = _command_markdown(manifest, capability, root)
+    if not plugin_package:
+        content = content.replace(
+            "---\n\n",
+            'metadata: { "openclaw": { "requires": { "bins": ["python3"] } } }\n---\n\n',
+            1,
+        )
     content = content.replace("$ARGUMENTS", "<arguments>")
     return content.replace(
         "# MLX {0}\n".format(capability.title()),
@@ -358,6 +364,18 @@ def _codex_skill_markdown(manifest: Mapping[str, object], capability: str) -> st
     )
 
 
+def _agy_logo_svg() -> str:
+    """Render a minimal deterministic UTF-8 SVG plugin icon for Antigravity."""
+
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="MLX Agent">\n'
+        '  <rect width="64" height="64" rx="14" fill="#111827"/>\n'
+        '  <path d="M16 44V20l16 14 16-14v24" fill="none" stroke="#38BDF8" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>\n'
+        '  <circle cx="32" cy="44" r="3.5" fill="#F8FAFC"/>\n'
+        '</svg>\n'
+    )
+
+
 def _agy_plugin_metadata(manifest: Mapping[str, object]) -> str:
     """Render Antigravity's native, convention-discovered plugin marker.
 
@@ -372,6 +390,18 @@ def _agy_plugin_metadata(manifest: Mapping[str, object]) -> str:
         "version": manifest["version"],
         "description": "Structured local MLX discovery, adoption, and confirmation-gated wiring for Apple Silicon agents.",
         "author": _publisher(manifest),
+        "logo": "assets/logo.svg",
+    }
+    return json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+
+
+def _gemini_extension_metadata(manifest: Mapping[str, object]) -> str:
+    """Render Gemini CLI's native extension manifest without duplicating runtime files."""
+
+    payload = {
+        "name": manifest["identity"],
+        "version": manifest["version"],
+        "description": "Structured local MLX discovery, adoption, and confirmation-gated wiring for Apple Silicon agents.",
     }
     return json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
 
@@ -822,6 +852,8 @@ def _surface(path: Path) -> Optional[Path]:
         return Path("providers/agy")
     if path.parts[:2] == ("providers", "opencode"):
         return Path("providers/opencode")
+    if path.parts[:2] == ("providers", "gemini"):
+        return Path("providers/gemini")
     if path.parts[:2] == ("providers", "agentskills"):
         return Path("providers/agentskills")
     return None
@@ -840,6 +872,8 @@ def _surface_id(surface: Optional[Path]) -> str:
         return "agy-plugin"
     if surface == Path("providers/opencode"):
         return "opencode-package"
+    if surface == Path("providers/gemini"):
+        return "gemini-extension"
     if surface == Path("providers/agentskills"):
         return "agentskills-package"
     raise ValueError("unknown generated surface: {0}".format(surface))
@@ -875,7 +909,7 @@ def _allowed_surface_paths(surface: Optional[Path]) -> set:
             allowed.update(skill / path for path in former_runtime)
         return allowed
     if surface == Path("providers/agy"):
-        allowed = {Path("plugin.json")} | runtime | legacy_gemini_runtime
+        allowed = {Path("plugin.json"), Path("assets/logo.svg")} | runtime | legacy_gemini_runtime
         for capability in CAPABILITIES:
             skill = Path("skills/mlx-{0}".format(capability))
             allowed.add(skill / "SKILL.md")
@@ -890,6 +924,11 @@ def _allowed_surface_paths(surface: Optional[Path]) -> set:
             allowed.add(skill / "SKILL.md")
             allowed.update(skill / path for path in former_runtime)
         allowed.add(Path("opencode.json"))
+        return allowed
+    if surface == Path("providers/gemini"):
+        allowed = {Path("gemini-extension.json")}
+        for capability in CAPABILITIES:
+            allowed.add(Path("skills/mlx-{0}/SKILL.md".format(capability)))
         return allowed
     if surface == Path("providers/agentskills"):
         allowed = set()
@@ -960,6 +999,7 @@ def _render(manifest: Mapping[str, object], provider_ids: Sequence[str]) -> Dict
     if "agy" in selected:
         agy_root = Path("providers/agy")
         rendered[agy_root / "plugin.json"] = _agy_plugin_metadata(manifest)
+        rendered[agy_root / "assets" / "logo.svg"] = _agy_logo_svg()
         rendered.update(_runtime_bundle(agy_root))
         for capability in CAPABILITIES:
             skill_root = agy_root / "skills" / "mlx-{0}".format(capability)
@@ -973,6 +1013,12 @@ def _render(manifest: Mapping[str, object], provider_ids: Sequence[str]) -> Dict
             skill_root = opencode_root / "skills" / "mlx-{0}".format(capability)
             rendered[opencode_root / "commands" / "mlx-{0}.md".format(capability)] = _opencode_command_markdown(manifest, capability)
             rendered[skill_root / "SKILL.md"] = _opencode_skill_markdown(manifest, capability)
+    if "gemini" in selected:
+        gemini_root = Path("providers/gemini")
+        rendered[gemini_root / "gemini-extension.json"] = _gemini_extension_metadata(manifest)
+        for capability in CAPABILITIES:
+            skill_root = gemini_root / "skills" / "mlx-{0}".format(capability)
+            rendered[skill_root / "SKILL.md"] = _generic_skill_markdown(manifest, capability, plugin_package=True)
     if "agentskills" in selected:
         for capability in CAPABILITIES:
             skill_root = Path("providers/agentskills/mlx-{0}".format(capability))
@@ -1026,14 +1072,25 @@ def _assert_safe_generated_path(root: Path, relative: Path, surface: Optional[Pa
     return target
 
 
+_MACOS_ROOT_ALIASES = (
+    ("/var", "private/var"),
+    ("/tmp", "private/tmp"),
+    ("/etc", "private/etc"),
+)
+
+
 def _physical_generated_root(root: Path) -> Path:
-    """Return the descriptor-safe root, recognizing only macOS's fixed /var alias."""
+    """Return the descriptor-safe root, normalizing verified macOS root aliases."""
 
     logical = Path(os.path.abspath(str(root)))
-    if str(logical) == "/var" or str(logical).startswith("/var/"):
-        if not os.path.islink("/var") or os.readlink("/var") != "private/var":
-            raise ValueError("untrusted /var compatibility alias")
-        return Path("/private/var") / logical.relative_to("/var")
+    text = str(logical)
+    for alias, target in _MACOS_ROOT_ALIASES:
+        if text == alias or text.startswith(alias + "/"):
+            if os.path.islink(alias):
+                if os.readlink(alias) != target:
+                    raise ValueError("untrusted {0} compatibility alias".format(alias))
+                return Path("/" + target) / logical.relative_to(alias)
+            break
     return logical
 
 

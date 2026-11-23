@@ -61,6 +61,7 @@ def collect(version=None):
         "plugin.json": _json("plugin.json").get("version"),
         ".claude-plugin/plugin.json": _json(".claude-plugin/plugin.json").get("version"),
         ".claude-plugin/marketplace.json": _marketplace_plugin_version(),
+        "providers/gemini/gemini-extension.json": _json("providers/gemini/gemini-extension.json").get("version"),
         "compatibility/providers.json": _json("compatibility/providers.json").get("plugin_version"),
         "compatibility/release-evidence.json": _json("compatibility/release-evidence.json").get("plugin_version"),
         "site/catalog.json": (_json("site/catalog.json").get("release") or {}).get("version"),

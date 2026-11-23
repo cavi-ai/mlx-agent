@@ -395,8 +395,8 @@ class JITServingTests(unittest.TestCase):
 
     def test_inference_key_is_checked_before_loading_and_control_stays_separate(self):
         import hashlib
-        token = 'client-' + 'a' * 40
-        self.config['api_key_sha256'] = hashlib.sha256(token.encode()).hexdigest()
+        bearer_probe = 'client-' + 'a' * 40
+        self.config['api_key_sha256'] = hashlib.sha256(bearer_probe.encode()).hexdigest()
         for method, path in [('GET', '/v1/models'), ('POST', '/v1/chat/completions'),
                              ('POST', '/v1/messages'), ('POST', '/v1/messages?beta=true'),
                              ('POST', '/v1/responses'), ('GET', '/v1/responses/unknown')]:
@@ -407,7 +407,7 @@ class JITServingTests(unittest.TestCase):
                     self.assertEqual((body['type'], body['error']['type']), ('error', 'authentication_error'))
         self.assertFalse(self.trace.exists())
         self.assertEqual(self.request('GET', '/v1/models', headers={'Authorization': 'Bearer wrong'})[0], 401)
-        authorized = {'Authorization': 'Bearer ' + token}
+        authorized = {'Authorization': 'Bearer ' + bearer_probe}
         self.assertEqual(self.request('GET', '/v1/models', headers=authorized)[0], 200)
         self.assertEqual(self.request('GET', '/_mlx/status', headers=authorized)[0], 403)
         self.assertEqual(self.request('GET', '/_mlx/status', headers={'Authorization': 'Bearer test-control-token'})[0], 200)
@@ -415,14 +415,14 @@ class JITServingTests(unittest.TestCase):
     def test_protected_gateway_worker_cannot_be_used_directly(self):
         import hashlib
         from mlx_agent.inference_auth import runtime_fingerprint
-        token = 'client-' + 'b' * 40
-        self.config['api_key_sha256'] = hashlib.sha256(token.encode()).hexdigest()
+        bearer_probe = 'client-' + 'b' * 40
+        self.config['api_key_sha256'] = hashlib.sha256(bearer_probe.encode()).hexdigest()
         self.config['auth_runtime_sha256'] = runtime_fingerprint()
         self.config['jit'] = True
-        headers = {'Authorization': 'Bearer ' + token}
+        headers = {'Authorization': 'Bearer ' + bearer_probe}
         self.assertEqual(self.request('POST', '/v1/chat/completions', {'messages': []}, headers)[0], 200)
         worker_port = self.server.controller.worker_port
-        for supplied in (None, 'wrong', token):
+        for supplied in (None, 'wrong', bearer_probe):
             client = http.client.HTTPConnection('127.0.0.1', worker_port, timeout=5)
             try:
                 client.request('GET', '/v1/models', headers={} if supplied is None else {'Authorization': 'Bearer ' + supplied})
@@ -434,17 +434,17 @@ class JITServingTests(unittest.TestCase):
 
     def test_missing_authentication_runtime_identity_fails_before_worker_start(self):
         import hashlib
-        token = 'client-' + 'e' * 40
-        self.config['api_key_sha256'] = hashlib.sha256(token.encode()).hexdigest()
-        result = self.request('POST', '/v1/chat/completions', {'messages': []}, {'Authorization': 'Bearer ' + token})
+        bearer_probe = 'client-' + 'e' * 40
+        self.config['api_key_sha256'] = hashlib.sha256(bearer_probe.encode()).hexdigest()
+        result = self.request('POST', '/v1/chat/completions', {'messages': []}, {'Authorization': 'Bearer ' + bearer_probe})
         self.assertEqual(result[0], 503)
         self.assertFalse(self.trace.exists())
 
     def test_protected_launch_readiness_and_receipt_do_not_require_plaintext_key(self):
         import hashlib
         import socket
-        token = 'client-' + 'd' * 40
-        digest = hashlib.sha256(token.encode()).hexdigest()
+        bearer_probe = 'client-' + 'd' * 40
+        digest = hashlib.sha256(bearer_probe.encode()).hexdigest()
         recipes = load_recipes()
         recipes['mlx_lm'] = dict(recipes['mlx_lm'], executable=sys.executable,
             argv=[sys.executable, str(self.worker), '--model', '{repo}', '--port', '{port}', '--trace', str(self.trace)])
@@ -466,12 +466,12 @@ class JITServingTests(unittest.TestCase):
         self.addCleanup(processes[0].wait, 5)
         self.addCleanup(lambda: stop_serve(port, str(self.root), pid_alive=lambda _: processes[0].poll() is None))
         self.assertEqual(result['receipt']['api_key_sha256'], digest)
-        self.assertNotIn(token, json.dumps(result))
+        self.assertNotIn(bearer_probe, json.dumps(result))
         self.assertEqual(status_serve(str(self.root))[0]['api_key_sha256'], digest)
         previous, self.port = self.port, port
         try:
             self.assertEqual(self.request('GET', '/v1/models')[0], 401)
-            self.assertEqual(self.request('GET', '/v1/models', headers={'Authorization': 'Bearer ' + token})[0], 200)
+            self.assertEqual(self.request('GET', '/v1/models', headers={'Authorization': 'Bearer ' + bearer_probe})[0], 200)
         finally:
             self.port = previous
 

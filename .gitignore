@@ -16,3 +16,6 @@ data/
 .run/
 .run-*.log
 .mlx-agent-receipts/
+.specs/
+.tmp/
+.openclaw/

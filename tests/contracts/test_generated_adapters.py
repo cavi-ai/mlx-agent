@@ -458,7 +458,10 @@ class GeneratedAdapterTests(unittest.TestCase):
             output_root = Path(directory)
             generator.generate(generator.SUPPORTED_PROVIDERS, output_root)
             providers = output_root / "providers"
-            self.assertEqual(["agentskills", "agy", "codex", "opencode"], sorted(path.name for path in providers.iterdir()))
+            self.assertEqual(["agentskills", "agy", "codex", "gemini", "opencode"], sorted(path.name for path in providers.iterdir()))
+            gemini_files = sorted(path for path in (providers / "gemini").rglob("*") if path.is_file())
+            self.assertEqual(10, len(gemini_files))
+            self.assertFalse((providers / "gemini" / "src").exists())
             source_files = sorted(
                 path.relative_to(ROOT / "src" / "mlx_agent")
                 for path in (ROOT / "src" / "mlx_agent").rglob("*")

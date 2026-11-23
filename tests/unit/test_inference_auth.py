@@ -18,7 +18,7 @@ from mlx_agent.protected_worker import command, WORKER_DIGEST
 
 
 class InferenceAuthenticationTests(unittest.TestCase):
-    token = 'client-' + 'c' * 40
+    auth_probe = 'client-' + 'c' * 40
 
     def test_empty_or_ambiguous_key_configuration_never_disables_authentication(self):
         self.assertIsNone(configuration_digest())
@@ -27,12 +27,12 @@ class InferenceAuthenticationTests(unittest.TestCase):
         with self.assertRaises(ValueError): configuration_digest(key_file='key', key_sha256='a' * 64)
 
     def test_credentials_reject_duplicates_and_ambiguous_headers(self):
-        digest = hashlib.sha256(self.token.encode()).hexdigest()
-        for values, expected in [([('Authorization', 'Bearer ' + self.token)], True),
-                ([('x-api-key', self.token)], True), ([], False),
+        digest = hashlib.sha256(self.auth_probe.encode()).hexdigest()
+        for values, expected in [([('Authorization', 'Bearer ' + self.auth_probe)], True),
+                ([('x-api-key', self.auth_probe)], True), ([], False),
                 ([('Authorization', 'Bearer wrong')], False),
-                ([('Authorization', 'Bearer ' + self.token)] * 2, False),
-                ([('Authorization', 'Bearer ' + self.token), ('x-api-key', self.token)], False)]:
+                ([('Authorization', 'Bearer ' + self.auth_probe)] * 2, False),
+                ([('Authorization', 'Bearer ' + self.auth_probe), ('x-api-key', self.auth_probe)], False)]:
             headers = Message()
             for name, value in values: headers[name] = value
             self.assertEqual(authorized_headers(headers, digest), expected)
@@ -42,8 +42,8 @@ class InferenceAuthenticationTests(unittest.TestCase):
     def test_private_key_file_is_bounded_and_never_follows_a_link(self):
         with tempfile.TemporaryDirectory() as folder:
             key = Path(folder) / 'key'
-            key.write_text(self.token + '\n'); key.chmod(0o600)
-            self.assertEqual(key_file_digest(key), hashlib.sha256(self.token.encode()).hexdigest())
+            key.write_text(self.auth_probe + '\n'); key.chmod(0o600)
+            self.assertEqual(key_file_digest(key), hashlib.sha256(self.auth_probe.encode()).hexdigest())
             link = key.with_name('link'); link.symlink_to(key)
             with self.assertRaises(OSError): key_file_digest(link)
             key.chmod(0o644)
@@ -58,13 +58,13 @@ class InferenceAuthenticationTests(unittest.TestCase):
         async def app(scope, receive, send): calls.append(scope['type'])
         async def receive(): return {}
         async def send(message): sent.append(message)
-        protected = AuthenticatedASGI(app, hashlib.sha256(self.token.encode()).hexdigest())
+        protected = AuthenticatedASGI(app, hashlib.sha256(self.auth_probe.encode()).hexdigest())
         for kind in ('http', 'websocket'):
             asyncio.run(protected({'type': kind, 'headers': []}, receive, send))
         self.assertEqual(calls, [])
         self.assertEqual(sent[0]['status'], 401)
         self.assertEqual(sent[-1]['code'], 4401)
-        asyncio.run(protected({'type': 'http', 'headers': [(b'authorization', ('Bearer ' + self.token).encode())]}, receive, send))
+        asyncio.run(protected({'type': 'http', 'headers': [(b'authorization', ('Bearer ' + self.auth_probe).encode())]}, receive, send))
         asyncio.run(protected({'type': 'lifespan'}, receive, send))
         self.assertEqual(calls, ['http', 'lifespan'])
 
@@ -73,14 +73,14 @@ class InferenceAuthenticationTests(unittest.TestCase):
             model = Path(folder) / 'model'; model.mkdir()
             (model / 'config.json').write_text('{}')
             (model / 'model.safetensors').write_bytes(b'fixture')
-            digest = hashlib.sha256(self.token.encode()).hexdigest()
+            digest = hashlib.sha256(self.auth_probe.encode()).hexdigest()
             with self.assertRaises(ServeError) as error:
                 plan_start(None, 'mlx_lm', load_recipes(), path=str(model), api_key_sha256=digest)
             self.assertEqual(error.exception.code, 'jit_required')
             plan = plan_start(None, 'mlx_lm', load_recipes(), path=str(model), jit=True, api_key_sha256=digest)
             self.assertEqual(plan['api_key_sha256'], digest)
             self.assertIn('/_mlx/status', plan['readiness'])
-            self.assertNotIn(self.token, json.dumps(plan))
+            self.assertNotIn(self.auth_probe, json.dumps(plan))
             self.assertNotEqual(plan['preview_hash'], plan_start(None, 'mlx_lm', load_recipes(), path=str(model), jit=True)['preview_hash'])
 
     @unittest.skipUnless(os.environ.get('MLX_AGENT_AUTH_UVICORN_PYTHON'), 'Explicit installed Uvicorn runtime check')
@@ -97,7 +97,7 @@ uvicorn.run(app,host='127.0.0.1',port=int(sys.argv[1]),lifespan='off',log_level=
             with socket.socket() as reservation:
                 reservation.bind(('127.0.0.1', 0)); port = reservation.getsockname()[1]
             argv = command([os.environ['MLX_AGENT_AUTH_UVICORN_PYTHON'], str(entry), str(port)], 'mlx-vlm')
-            environment = dict(os.environ, **{WORKER_DIGEST: hashlib.sha256(self.token.encode()).hexdigest()})
+            environment = dict(os.environ, **{WORKER_DIGEST: hashlib.sha256(self.auth_probe.encode()).hexdigest()})
             process = subprocess.Popen(argv, env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             try:
                 for _ in range(100):
@@ -107,7 +107,7 @@ uvicorn.run(app,host='127.0.0.1',port=int(sys.argv[1]),lifespan='off',log_level=
                         if process.poll() is not None: self.fail(process.stderr.read().decode())
                         time.sleep(.05)
                 for headers, expected in [({}, 401), ({'Authorization':'Bearer wrong'}, 401),
-                        ({'Authorization':'Bearer '+self.token}, 200), ({'x-api-key':self.token}, 200)]:
+                        ({'Authorization':'Bearer '+self.auth_probe}, 200), ({'x-api-key':self.auth_probe}, 200)]:
                     client = http.client.HTTPConnection('127.0.0.1', port, timeout=5)
                     try:
                         client.request('GET', '/v1/models', headers=headers)

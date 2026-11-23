@@ -1,6 +1,6 @@
 ---
 name: mlx-converter
-description: "Inventory local GGUF weights on this Mac — what is already converted to MLX, what is still pending, and which copies are redundant — then run confirmation-gated GGUF to MLX conversions."
+description: "Inventory local GGUF weights on this Mac, spot duplicates, and run confirmation-gated GGUF to MLX conversions."
 homepage: https://github.com/cavi-ai/mlx-agent
 license: MIT
 metadata:
@@ -26,13 +26,15 @@ deletes.
 
 ## Run
 
-- Inventory the well-known roots: `python3 scripts/mlx_converter.py scan`
-- Specific directories: `python3 scripts/mlx_converter.py scan --gguf-root ~/models --mlx-root ~/mlx`
-- Only what still needs converting: `python3 scripts/mlx_converter.py scan --pending-only`
-- Machine-readable: `python3 scripts/mlx_converter.py scan --json`
-- Preview a conversion: `python3 scripts/mlx_converter.py start --gguf ~/models/model-Q4_K_M.gguf --q-bits 4`
-- Run the reviewed plan: `... start --gguf PATH --q-bits 4 --confirm --preview-hash HASH`
-- Poll jobs: `python3 scripts/mlx_converter.py status`
+Resolve `{baseDir}` (`<skill-dir>`) as the absolute directory containing this `SKILL.md`. Never invoke the bundled script relative to an unrelated shell working directory.
+
+- Inventory the well-known roots: `python3 {baseDir}/scripts/mlx_converter.py scan`
+- Specific directories: `python3 {baseDir}/scripts/mlx_converter.py scan --gguf-root ~/models --mlx-root ~/mlx`
+- Only what still needs converting: `python3 {baseDir}/scripts/mlx_converter.py scan --pending-only`
+- Machine-readable: `python3 {baseDir}/scripts/mlx_converter.py scan --json`
+- Preview a conversion: `python3 {baseDir}/scripts/mlx_converter.py start --gguf ~/models/model-Q4_K_M.gguf --q-bits 4`
+- Run the reviewed plan: `python3 {baseDir}/scripts/mlx_converter.py start --gguf PATH --q-bits 4 --confirm --preview-hash HASH`
+- Poll jobs: `python3 {baseDir}/scripts/mlx_converter.py status`
 
 `scan` needs nothing but Python. Conversion needs `mlx-lm` on PATH plus
 `torch`, `transformers`, and `gguf` importable by the same interpreter, or

@@ -64,8 +64,8 @@ class InstallerRoundTripTests(unittest.TestCase):
 
     def test_cli_registry_routes_opencode_and_receipts_to_xdg_roots(self):
         native_home = self.root / "native-home"
-        xdg_config = self.root / "mirza-config"
-        xdg_state = self.root / "mirza-state"
+        xdg_config = self.root / "custom-xdg-config"
+        xdg_state = self.root / "custom-xdg-state"
         with patch.dict(os.environ, {
             "MLX_AGENT_HOME": str(native_home),
             "XDG_CONFIG_HOME": str(xdg_config),
@@ -460,7 +460,7 @@ class InstallerRoundTripTests(unittest.TestCase):
         runtime = sorted(
             str(path.relative_to(ROOT / "src" / "mlx_agent"))
             for path in (ROOT / "src" / "mlx_agent").rglob("*")
-            if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
+            if path.is_file() and "__pycache__" not in path.parts and "_lab" not in path.relative_to(ROOT / "src" / "mlx_agent").parts[:1] and path.suffix != ".pyc"
         )
         for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
             skill = skills / "mlx-{0}".format(capability)

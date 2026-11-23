@@ -296,3 +296,11 @@ class GGUFRunnerScriptTests(unittest.TestCase):
             text=True,
             check=False,
         )
+
+    def test_quantize_raises_runtime_error_on_timeout(self):
+        from unittest.mock import patch
+        from mlx_agent import gguf_runner
+
+        with patch("mlx_agent.gguf_runner.shutil.which", return_value="/usr/bin/mlx_lm.convert"),              patch("mlx_agent.gguf_runner.subprocess.run", side_effect=subprocess.TimeoutExpired(["mlx_lm.convert"], 0.1)):
+            with self.assertRaisesRegex(RuntimeError, "timed out"):
+                gguf_runner.quantize(Path("/tmp/w"), Path("/tmp/o"), 4, timeout=0.1)

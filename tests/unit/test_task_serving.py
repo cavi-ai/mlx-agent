@@ -155,14 +155,14 @@ def load(path): return Loaded((Model(), None))""", 1)
 
     def test_authentication_covers_jobs_results_artifacts_and_cancellation(self):
         import hashlib
-        token = 'client-' + 'a' * 40
-        self.server.config['api_key_sha256'] = hashlib.sha256(token.encode()).hexdigest()
+        bearer_probe = 'client-' + 'a' * 40
+        self.server.config['api_key_sha256'] = hashlib.sha256(bearer_probe.encode()).hexdigest()
         for method, path in [('GET', '/v1/models'), ('POST', '/v1/tasks'), ('GET', '/v1/tasks/unknown'),
                              ('GET', '/v1/tasks/unknown/result'), ('GET', '/v1/tasks/unknown/artifacts/output'),
                              ('POST', '/v1/tasks/unknown/cancel')]:
             with self.subTest(path=path):
                 self.assertEqual(self.request(method, path, {} if method == 'POST' else None)[0], 401)
-        self.assertEqual(self.request('GET', '/v1/models', headers={'Authorization': 'Bearer ' + token})[0], 200)
+        self.assertEqual(self.request('GET', '/v1/models', headers={'Authorization': 'Bearer ' + bearer_probe})[0], 200)
         self.assertIsNone(self.server.controller.resident.process)
 
     def setUp(self):
@@ -1167,12 +1167,12 @@ def generate(model, tokenizer, texts, max_length):
 
     def test_requires_the_api_key(self):
         import hashlib
-        token = 'client-' + 'b' * 40
-        self.server.config['api_key_sha256'] = hashlib.sha256(token.encode()).hexdigest()
+        bearer_probe = 'client-' + 'b' * 40
+        self.server.config['api_key_sha256'] = hashlib.sha256(bearer_probe.encode()).hexdigest()
         self.server.config['auth_runtime_sha256'] = runtime_fingerprint()
         self.server.config['jit'] = True
         self.assertEqual(self.embed({'input': 'a'})[0], 401)
-        self.assertEqual(self.embed({'input': 'a'}, {'Authorization': 'Bearer ' + token})[0], 200)
+        self.assertEqual(self.embed({'input': 'a'}, {'Authorization': 'Bearer ' + bearer_probe})[0], 200)
 
 
 class SystemOneHTTPTests(unittest.TestCase):

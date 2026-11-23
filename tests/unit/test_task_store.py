@@ -4,6 +4,7 @@ import os
 import sqlite3
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -83,7 +84,7 @@ class TaskStoreTests(unittest.TestCase):
     def test_unknown_schema_and_corrupt_database_are_not_reset(self):
         self.create()
         database = self.root / "tasks.sqlite3"
-        with sqlite3.connect(database) as connection:
+        with closing(sqlite3.connect(database)) as connection, connection:
             connection.execute("PRAGMA user_version = 99")
         before = database.read_bytes()
         with self.assertRaises(TaskError):

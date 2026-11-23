@@ -111,5 +111,14 @@ class AgyAdapterContractTests(unittest.TestCase):
                     parse_command_arguments(capability, raw)
 
 
+    def test_agy_package_includes_deterministic_svg_logo(self):
+        plugin_meta = json.loads((ROOT / "providers" / "agy" / "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual("assets/logo.svg", plugin_meta.get("logo"))
+        logo = ROOT / "providers" / "agy" / "assets" / "logo.svg"
+        self.assertTrue(logo.is_file())
+        content = logo.read_text(encoding="utf-8")
+        self.assertTrue(content.startswith("<svg ") and content.strip().endswith("</svg>"))
+
+
 if __name__ == "__main__":
     unittest.main()

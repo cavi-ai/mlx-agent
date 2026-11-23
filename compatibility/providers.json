@@ -64,7 +64,7 @@
       "display_name": "Agy",
       "documentation": "docs/install/agy.md",
       "minimum_version": "1.1.14",
-      "last_tested_version": "1.1.14",
+      "last_tested_version": "1.5.14",
       "scopes": ["user", "project"],
       "config_paths": ["~/.gemini/config/plugins/mlx-agent", "<project>/.agents/plugins/mlx-agent"],
       "capabilities": {
@@ -77,12 +77,12 @@
         "fleet": {"command": "mlx-fleet", "invocation": "mlx-fleet skill"},
         "task": {"command": "mlx-task", "invocation": "mlx-task skill"}
       },
-      "last_smoke_test": {"status": "fixture", "date": "2026-08-25", "summary": "Plugin validation, seven-skill discovery and user/project installation lifecycle checked with Agy 1.1.14. Scout output checked with fixtures; model invocation not verified."},
-      "release_evidence": {"id": "rc-2026-08-25-agy", "status": "fixture", "date": "2026-08-25", "environment": "macOS arm64", "cli_version": "1.1.14", "scopes_tested": ["user", "project"], "native_discovery": "Agy registered all seven packaged skills", "fixture_bundle": "passed", "uninstall": "passed"},
+      "last_smoke_test": {"status": "fixture", "date": "2026-11-22", "summary": "Strict plugin validation, eight-skill discovery and user/project installation lifecycle checked with Agy 1.5.14. Scout output checked with fixtures; model invocation not verified."},
+      "release_evidence": {"id": "rc-2026-11-22-agy", "status": "fixture", "date": "2026-11-22", "environment": "macOS arm64", "cli_version": "1.5.14", "scopes_tested": ["user", "project"], "native_discovery": "Agy registered all eight packaged skills", "fixture_bundle": "passed", "uninstall": "passed"},
       "evidence": {
-        "schema": {"status": "supported", "summary": "Generated Agy package and native plugin-root validation are covered by adapter tests."},
+        "schema": {"status": "supported", "summary": "Generated Agy package, SVG logo, and strict plugin-root validation are covered by adapter tests."},
         "install_round_trip": {"status": "supported", "summary": "Receipt-owned user and project package lifecycle is covered by adapter tests."},
-        "native_discovery": {"status": "supported", "summary": "Agy processed and registered all seven packaged skills during the isolated lifecycle."},
+        "native_discovery": {"status": "supported", "summary": "Agy 1.5.14 processed and registered all eight packaged skills during the isolated lifecycle."},
         "bundle_execution": {"status": "fixture", "summary": "The installed Agy Scout skill launcher is covered with fixture-backed output."},
         "model_backed_invocation": {"status": "blocked", "summary": "No successful model-backed invocation recorded."}
       }
@@ -120,9 +120,9 @@
       "display_name": "OpenClaw",
       "documentation": "docs/install/openclaw.md",
       "minimum_version": "2026.10.3",
-      "last_tested_version": "2026.10.5",
+      "last_tested_version": "2026.11.5",
       "scopes": ["user", "project"],
-      "config_paths": ["$OPENCLAW_STATE_DIR/skills", "<workspace>/skills"],
+      "config_paths": ["$OPENCLAW_STATE_DIR/skills", "~/.openclaw/skills", "<workspace>/skills"],
       "capabilities": {
         "scout": {"command": "mlx-scout", "invocation": "/mlx-scout"},
         "adopt": {"command": "mlx-adopt", "invocation": "/mlx-adopt"},
@@ -133,12 +133,12 @@
         "fleet": {"command": "mlx-fleet", "invocation": "/mlx-fleet"},
         "task": {"command": "mlx-task", "invocation": "/mlx-task"}
       },
-      "last_smoke_test": {"status": "fixture", "date": "2026-10-15", "summary": "Seven-skill discovery and removal checked in user and project scopes with OpenClaw 2026.10.3. Scout output checked with fixtures."},
-      "release_evidence": {"id": "rc-2026-10-15-openclaw", "status": "fixture", "date": "2026-10-15", "environment": "macOS arm64", "cli_version": "2026.10.3", "scopes_tested": ["user", "project"], "native_discovery": "openclaw skills list reported all seven skills in both scopes", "fixture_bundle": "passed", "uninstall": "passed"},
+      "last_smoke_test": {"status": "fixture", "date": "2026-11-22", "summary": "Eight-skill discovery and removal checked in user and project scopes with OpenClaw 2026.11.5. Scout output checked with fixtures."},
+      "release_evidence": {"id": "rc-2026-11-22-openclaw", "status": "fixture", "date": "2026-11-22", "environment": "macOS arm64", "cli_version": "2026.11.5", "scopes_tested": ["user", "project"], "native_discovery": "openclaw skills list reported all eight skills in both scopes", "fixture_bundle": "passed", "uninstall": "passed"},
       "evidence": {
         "schema": {"status": "supported", "summary": "OpenClaw skill-root layout validation is covered by provider and installer tests."},
-        "install_round_trip": {"status": "supported", "summary": "OpenClaw 2026.10.3 listed the skills after user and project installs and none after receipt-owned uninstall."},
-        "native_discovery": {"status": "supported", "summary": "openclaw skills list reported all seven skills as eligible and user-invocable from the managed and workspace roots."},
+        "install_round_trip": {"status": "supported", "summary": "OpenClaw 2026.11.5 listed all eight skills after user and project installs and none after receipt-owned uninstall."},
+        "native_discovery": {"status": "supported", "summary": "openclaw skills list reported all eight skills as eligible and user-invocable from the managed and workspace roots."},
         "bundle_execution": {"status": "fixture", "summary": "The installed OpenClaw mlx-scout launcher returned fixture-backed Scout output."},
         "model_backed_invocation": {"status": "not-run", "summary": "No successful model-backed invocation recorded."}
       }
@@ -168,6 +168,34 @@
         "install_round_trip": {"status": "supported", "summary": "Hermes Agent 0.19.1 listed the user-scope skills after install and none after receipt-owned uninstall."},
         "native_discovery": {"status": "supported", "summary": "hermes skills list reported all seven user-scope skills; project skill directories need a Hermes release with project skill discovery."},
         "bundle_execution": {"status": "fixture", "summary": "The installed Hermes mlx-scout launcher returned fixture-backed Scout output."},
+        "model_backed_invocation": {"status": "not-run", "summary": "No successful model-backed invocation recorded."}
+      }
+    },
+    "gemini": {
+      "id": "gemini",
+      "display_name": "Gemini CLI",
+      "documentation": "docs/install/gemini.md",
+      "minimum_version": "0.34.0",
+      "last_tested_version": "0.34.0",
+      "scopes": ["user", "project"],
+      "config_paths": ["~/.gemini/extensions/mlx-agent", "<project>/.gemini/extensions/mlx-agent"],
+      "capabilities": {
+        "scout": {"command": "mlx-scout", "invocation": "mlx-scout skill"},
+        "adopt": {"command": "mlx-adopt", "invocation": "mlx-adopt skill"},
+        "wire": {"command": "mlx-wire", "invocation": "mlx-wire skill"},
+        "bench": {"command": "mlx-bench", "invocation": "mlx-bench skill"},
+        "doctor": {"command": "mlx-doctor", "invocation": "mlx-doctor skill"},
+        "watch": {"command": "mlx-watch", "invocation": "mlx-watch skill"},
+        "fleet": {"command": "mlx-fleet", "invocation": "mlx-fleet skill"},
+        "task": {"command": "mlx-task", "invocation": "mlx-task skill"}
+      },
+      "last_smoke_test": {"status": "fixture", "date": "2026-11-22", "summary": "Zero-bloat extension layout and user/project installation lifecycle checked with fixtures; live Gemini CLI discovery not run on this host."},
+      "release_evidence": {"id": "rc-2026-11-22-gemini", "status": "fixture", "date": "2026-11-22", "environment": "macOS arm64", "cli_version": "0.34.0", "scopes_tested": ["user", "project"], "native_discovery": "not run (gemini CLI not installed on test host)", "fixture_bundle": "passed", "uninstall": "passed"},
+      "evidence": {
+        "schema": {"status": "supported", "summary": "Generated Gemini CLI extension manifest and eight-skill layout are covered by adapter tests."},
+        "install_round_trip": {"status": "supported", "summary": "Receipt-owned user and project extension install, update, and uninstall lifecycle is covered by adapter tests."},
+        "native_discovery": {"status": "not-run", "summary": "Live Gemini CLI discovery has not been run on this host."},
+        "bundle_execution": {"status": "fixture", "summary": "The installed Gemini extension launcher returned fixture-backed Scout output from an unrelated working directory."},
         "model_backed_invocation": {"status": "not-run", "summary": "No successful model-backed invocation recorded."}
       }
     },

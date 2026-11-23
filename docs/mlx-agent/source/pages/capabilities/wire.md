@@ -11,7 +11,7 @@ python3 scripts/mlx-agent wire status  <receipt>
 
 ## Targets
 
-`ollama` (exact Modelfile), `lmstudio` / `mlx_lm` / `mlx-vlm` (JSON provider blocks), and `litellm` (bounded YAML subset). Model IDs are constrained to safe `publisher/model` form; resolved secrets are rejected before any write.
+`ollama` (exact Modelfile), `lmstudio` / `mlx_lm` / `mlx-vlm` (JSON provider blocks), `openclaw` (`openclaw.json` `models.providers["mlx-agent"]` block), and `litellm` (bounded YAML subset). Model IDs are constrained to safe `publisher/model` form; resolved secrets are rejected before any write.
 
 ## The transaction
 

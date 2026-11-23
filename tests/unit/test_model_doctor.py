@@ -285,5 +285,20 @@ class RunModelDoctorTests(unittest.TestCase):
             self.assertEqual(report["endpoints"][0]["status"], "down")
 
 
+    def test_scan_wired_configs_discovers_openclaw_provider_block(self):
+        from mlx_agent.model_doctor import scan_wired_configs
+        from mlx_agent.wiring import ConfigAdapter
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            rendered = ConfigAdapter.detect("openclaw.json").render("mlx-community/Qwen3-8B-4bit")
+            (root / "openclaw.json").write_text(rendered, encoding="utf-8")
+            found = scan_wired_configs([root])
+            self.assertEqual(1, len(found))
+            self.assertEqual("openclaw", found[0]["runtime"])
+            self.assertEqual("mlx-community/Qwen3-8B-4bit", found[0]["model"])
+            self.assertEqual("http://127.0.0.1:8090/v1", found[0]["endpoint"])
+
+
 if __name__ == "__main__":
     unittest.main()

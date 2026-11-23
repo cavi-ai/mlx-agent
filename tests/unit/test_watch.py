@@ -307,6 +307,56 @@ class DiffTests(unittest.TestCase):
         codes = [finding["code"] for finding in diff_snapshots(self._baseline(), current)]
         self.assertNotIn("owned_missing", codes)
 
+    def test_watch_enforces_o_nofollow_permissions_and_size_bounds(self):
+        import os
+        import stat
+        import tempfile
+        from pathlib import Path
+        from mlx_agent.watch import MAX_STATE_BYTES, WatchError, read_baseline, write_snapshot
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            # Missing baseline under nonexistent watch/ dir -> missing_baseline
+            with self.assertRaises(WatchError) as missing:
+                read_baseline(root / "fresh")
+            self.assertEqual(missing.exception.code, "missing_baseline")
+
+            # Normal snapshot creates 0o700 watch dir and 0o600 state file
+            dest = write_snapshot(root / "fresh", build_snapshot(OWNED, {}, now="t1"))
+            self.assertEqual(stat.S_IMODE(os.stat(dest.parent).st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(os.stat(dest).st_mode), 0o600)
+
+            # Oversized state file -> invalid_state
+            dest.write_bytes(b"x" * (MAX_STATE_BYTES + 1))
+            with self.assertRaises(WatchError) as oversized:
+                read_baseline(root / "fresh")
+            self.assertEqual(oversized.exception.code, "invalid_state")
+
+            # Symlinked leaf -> invalid_state on both read and write
+            real_target = root / "outside.json"
+            real_target.write_text("{}", encoding="utf-8")
+            dest.unlink()
+            dest.symlink_to(real_target)
+            with self.assertRaises(WatchError) as leaf_read:
+                read_baseline(root / "fresh")
+            self.assertEqual(leaf_read.exception.code, "invalid_state")
+            with self.assertRaises(WatchError) as leaf_write:
+                write_snapshot(root / "fresh", build_snapshot(OWNED, {}, now="t2"))
+            self.assertEqual(leaf_write.exception.code, "invalid_state")
+
+            # Symlinked watch/ ancestor -> invalid_state
+            linked_state = root / "linked"
+            linked_state.mkdir()
+            outside_dir = root / "outside_dir"
+            outside_dir.mkdir()
+            (linked_state / "watch").symlink_to(outside_dir, target_is_directory=True)
+            with self.assertRaises(WatchError) as dir_read:
+                read_baseline(linked_state)
+            self.assertEqual(dir_read.exception.code, "invalid_state")
+            with self.assertRaises(WatchError) as dir_write:
+                write_snapshot(linked_state, build_snapshot(OWNED, {}, now="t3"))
+            self.assertEqual(dir_write.exception.code, "invalid_state")
+
 
 if __name__ == "__main__":
     unittest.main()

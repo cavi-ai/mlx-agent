@@ -22,7 +22,7 @@ class ProviderRegistryTests(unittest.TestCase):
             definitions = registry.definitions()
 
             self.assertEqual(
-                {"claude", "codex", "agy", "opencode", "openclaw", "hermes", "agentskills"},
+                {"claude", "codex", "agy", "opencode", "openclaw", "hermes", "gemini", "agentskills"},
                 set(definitions),
             )
             for provider_id, definition in definitions.items():
@@ -37,7 +37,7 @@ class ProviderRegistryTests(unittest.TestCase):
                         expected_root = root / "home/.openclaw"
                     elif provider_id == "hermes":
                         expected_root = root / "home/.hermes"
-                    elif provider_id in {"agy", "opencode"}:
+                    elif provider_id in {"agy", "opencode", "gemini"}:
                         expected_root = root / "home"
                     else:
                         expected_root = root / "config"
@@ -167,10 +167,39 @@ class ProviderRegistryTests(unittest.TestCase):
             definitions = registry.definitions()
 
             self.assertEqual(
-                {"claude", "codex", "agy", "opencode", "openclaw", "hermes", "agentskills"},
+                {"claude", "codex", "agy", "opencode", "openclaw", "hermes", "gemini", "agentskills"},
                 set(definitions),
             )
             self.assertEqual(elsewhere.resolve(), definitions["opencode"].user_root)
+
+    def test_whitespace_only_roots_fall_back_to_home_defaults(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            registry = ProviderRegistry(
+                ROOT / "plugin.json",
+                home=root / "home",
+                config_root="   ",
+                xdg_config_home="\t ",
+                openclaw_state_dir="   ",
+                hermes_home="",
+            )
+            self.assertEqual((root / "home" / ".local" / "state").resolve(), registry.config_root)
+            self.assertEqual((root / "home" / ".config").resolve(), registry.xdg_config_home)
+            self.assertEqual((root / "home" / ".openclaw").resolve(), registry.openclaw_state_dir)
+            self.assertEqual((root / "home" / ".hermes").resolve(), registry.hermes_home)
+
+    def test_per_skill_providers_exclude_lab_while_plugin_roots_keep_lab(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            definitions = ProviderRegistry(
+                ROOT / "plugin.json", home=root / "home", config_root=root / "config"
+            ).definitions()
+            for provider_id in ("openclaw", "hermes", "agentskills"):
+                destinations = [str(item.destination) for item in definitions[provider_id].artifacts]
+                self.assertFalse(any("/_lab/" in dest for dest in destinations), provider_id)
+            for provider_id in ("claude", "codex", "agy", "opencode", "gemini"):
+                destinations = [str(item.destination) for item in definitions[provider_id].artifacts]
+                self.assertTrue(any("_lab/" in dest for dest in destinations), provider_id)
 
     def test_openclaw_and_hermes_skill_roots_follow_injected_state_directories(self):
         with tempfile.TemporaryDirectory() as directory:

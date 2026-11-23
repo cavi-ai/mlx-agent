@@ -1,0 +1,15 @@
+{
+  "files": [
+    "gemini-extension.json",
+    "skills/mlx-adopt/SKILL.md",
+    "skills/mlx-bench/SKILL.md",
+    "skills/mlx-doctor/SKILL.md",
+    "skills/mlx-fleet/SKILL.md",
+    "skills/mlx-scout/SKILL.md",
+    "skills/mlx-task/SKILL.md",
+    "skills/mlx-watch/SKILL.md",
+    "skills/mlx-wire/SKILL.md"
+  ],
+  "schema_version": 3,
+  "surface": "gemini-extension"
+}

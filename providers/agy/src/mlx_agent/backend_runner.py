@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 MARKER = ".mlx-agent-backend.json"
+STEP_TIMEOUT_SECONDS = 1800
 
 
 def _stamp():
@@ -76,7 +77,12 @@ def main(argv=None):
         steps[3] = [venv_python, "-c", "from mlx_video.models.ltx_2.generate import generate_video"]
     for step in steps:
         print("$ " + " ".join(step), flush=True)
-        completed = subprocess.run(step, stdin=subprocess.DEVNULL, check=False)
+        try:
+            completed = subprocess.run(step, stdin=subprocess.DEVNULL, check=False, timeout=STEP_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            print("step timed out after {0}s".format(STEP_TIMEOUT_SECONDS), flush=True)
+            _discard(target, Path(arguments.trash), arguments.id)
+            return 124
         if completed.returncode != 0:
             print("step failed with exit status {0}".format(completed.returncode), flush=True)
             _discard(target, Path(arguments.trash), arguments.id)

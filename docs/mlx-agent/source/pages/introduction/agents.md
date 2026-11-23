@@ -20,7 +20,7 @@ Each host gets eight capabilities:
 | `mlx-task` | Run, track and collect durable local inference tasks. |
 
 Claude Code, OpenCode, OpenClaw and Hermes Agent invoke them as `/mlx-*`
-commands. Codex uses `$mlx-agent:mlx-*` skills. Agy and portable AgentSkills
+commands. Codex uses `$mlx-agent:mlx-*` skills. Agy, Gemini CLI and portable AgentSkills
 hosts load the named `mlx-*` skills. [Installation](installation.md) covers each
 host.
 

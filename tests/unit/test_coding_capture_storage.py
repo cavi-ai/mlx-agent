@@ -6,6 +6,7 @@ import importlib
 import json
 import os
 from pathlib import Path
+import contextlib
 import sqlite3
 import sys
 from tempfile import TemporaryDirectory
@@ -64,7 +65,7 @@ class CodingCaptureStorageTests(unittest.TestCase):
     def test_wal_tmp_and_many_files_share_one_budget(self):
         with self.storage.active() as root:
             database = root / "profile/client.sqlite3"
-            with sqlite3.connect(database) as connection:
+            with contextlib.closing(sqlite3.connect(database)) as connection, connection:
                 connection.execute("PRAGMA journal_mode=WAL")
                 connection.execute("CREATE TABLE data (value BLOB)")
                 connection.execute("INSERT INTO data VALUES (?)", (b"x" * (1024 * 1024),))
@@ -115,7 +116,7 @@ class CodingCaptureStorageTests(unittest.TestCase):
     def test_repeated_transitions_do_not_grow_external_history(self):
         for _ in range(25):
             self.store.request_cancel(self.identifier)
-        with sqlite3.connect(self.store.database) as connection:
+        with contextlib.closing(sqlite3.connect(self.store.database)) as connection, connection:
             self.assertEqual(connection.execute("SELECT count(*) FROM tasks").fetchone()[0], 1)
             self.assertLessEqual(connection.execute("SELECT length(record) FROM tasks").fetchone()[0], 8192)
         self.assertEqual(set(path.name for path in self.store.root.iterdir()), {"tasks.sqlite3", "captures"})

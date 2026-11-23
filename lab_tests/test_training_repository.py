@@ -2822,7 +2822,7 @@ def test_dataset_lineage_shared_connection_cas_reopen_and_terminal_seal(
     changed = frozen.model_copy(
         update={
             "samples": (
-                frozen.samples[0].model_copy(update={"caption": "<mirza> human revised caption"}),
+                frozen.samples[0].model_copy(update={"caption": "<alpha> human revised caption"}),
             )
             + frozen.samples[1:]
         }
@@ -2890,7 +2890,7 @@ def test_shared_connection_failure_rolls_back_snapshot_and_head(
     changed = frozen.model_copy(
         update={
             "samples": (
-                frozen.samples[0].model_copy(update={"caption": "<mirza> rollback caption"}),
+                frozen.samples[0].model_copy(update={"caption": "<alpha> rollback caption"}),
             )
             + frozen.samples[1:]
         }
@@ -3175,7 +3175,7 @@ def test_import_action_cannot_change_curated_samples(repository: TrainingReposit
     repository.create_dataset_for_lineage("lineage-import-delta", frozen.character_id, initial)
     imported = _imported(lineage_id="lineage-import-delta", character_id="character_1")
     changed_samples = (
-        initial.samples[0].model_copy(update={"caption": "<mirza> unrelated replacement"}),
+        initial.samples[0].model_copy(update={"caption": "<alpha> unrelated replacement"}),
     ) + initial.samples[1:]
     invalid = initial.model_copy(
         update={
@@ -3526,7 +3526,7 @@ def test_two_open_connections_same_expected_head_only_first_wins(
     changed = repository._draft_from(
         frozen.model_copy(
             update={
-                "samples": (frozen.samples[0].model_copy(update={"caption": "<mirza> race"}),)
+                "samples": (frozen.samples[0].model_copy(update={"caption": "<alpha> race"}),)
                 + frozen.samples[1:]
             }
         )
@@ -3566,7 +3566,7 @@ def test_overlapping_connections_race_one_cas_commit_and_one_stable_conflict(
             frozen.model_copy(
                 update={
                     "samples": (
-                        frozen.samples[0].model_copy(update={"caption": f"<mirza> {label}"}),
+                        frozen.samples[0].model_copy(update={"caption": f"<alpha> {label}"}),
                     )
                     + frozen.samples[1:]
                 }
@@ -3733,7 +3733,7 @@ def test_replace_draft_sample_is_atomic_and_rekeys_alias(repository: TrainingRep
     frozen = _frozen()
     created = repository.create_dataset(frozen.character_id, frozen)
     replacement = frozen.samples[0].model_copy(
-        update={"caption": "<mirza> wearing the canonical jacket, replacement"}
+        update={"caption": "<alpha> wearing the canonical jacket, replacement"}
     )
     changed = repository.replace_draft_sample(created.dataset_id, replacement)
     assert changed.dataset_id != created.dataset_id

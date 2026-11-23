@@ -1,11 +1,12 @@
 ---
 name: "mlx-wire"
 description: "Preview and confirm wiring a chosen MLX model."
+metadata: { "openclaw": { "requires": { "bins": ["python3"] } } }
 ---
 
 # MLX Wire
 
-Resolve `<skill-dir>` as the absolute directory containing this SKILL.md. Never resolve the bundled executable from the shell working directory.
+Resolve `<skill-dir>` (`{baseDir}` in OpenClaw) as the absolute directory containing this SKILL.md. Never resolve the bundled executable from the shell working directory.
 
 canonical capability ID: mlx-agent.wire
 

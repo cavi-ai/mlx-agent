@@ -523,8 +523,8 @@ class SplashServeTests(unittest.TestCase):
         launcher.parent.mkdir(parents=True)
         launcher.write_text(SPLASH_LAUNCHER)
         launcher.with_name("server.py").write_text(SPLASH_SERVER)
-        token = "client-" + "s" * 40
-        plan = self.plan(profile, jit=True, api_key_sha256=hashlib.sha256(token.encode()).hexdigest(),
+        bearer_probe = "client-" + "s" * 40
+        plan = self.plan(profile, jit=True, api_key_sha256=hashlib.sha256(bearer_probe.encode()).hexdigest(),
                          splash_max_memory_gb=3)
         served = "local/Qwen3.8-Flash-Next-Q2_0"
         worker = plan["worker_argv"]
@@ -547,7 +547,7 @@ class SplashServeTests(unittest.TestCase):
         for cleanup in (lambda: thread.join(2), server.server_close, server.controller.close, server.shutdown):
             self.addCleanup(cleanup)
 
-        def request(method, path, body=None, key=token):
+        def request(method, path, body=None, key=bearer_probe):
             connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=30)
             try:
                 connection.request(method, path, json.dumps(body) if body is not None else None,

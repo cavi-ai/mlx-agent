@@ -4,7 +4,7 @@ import sqlite3
 import subprocess
 import sys
 import unittest
-from contextlib import redirect_stdout
+from contextlib import closing, redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -124,7 +124,7 @@ class TaskCliTests(unittest.TestCase):
 
     def test_corrupt_nested_record_returns_bounded_cli_errors_without_writing_store(self):
         record = self.create()
-        with sqlite3.connect(self.store.database) as connection:
+        with closing(sqlite3.connect(self.store.database)) as connection, connection:
             raw = connection.execute("SELECT record FROM tasks WHERE id = ?", (record["id"],)).fetchone()[0]
             value = json.loads(raw)
             value["supervisor"] = {"pid": "bad"}

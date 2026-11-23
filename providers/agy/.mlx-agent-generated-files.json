@@ -237,6 +237,7 @@
     "src/mlx_agent/resources/backends/mlx-lm.json",
     "src/mlx_agent/resources/backends/mlx-video.json",
     "src/mlx_agent/resources/backends/mlx-video.lock",
+    "src/mlx_agent/resources/backends/mlx-vlm-build.lock",
     "src/mlx_agent/resources/backends/mlx-vlm.json",
     "src/mlx_agent/resources/backends/mlx-vlm.lock",
     "src/mlx_agent/resources/bench-community.json",

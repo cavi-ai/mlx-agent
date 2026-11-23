@@ -193,7 +193,9 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual(payload["task"]["type"], "classification")
         self.assertEqual(client.raw_requests, [])
         self.assertEqual(client.header_requests, ["model.safetensors"])
-        self.assertEqual([m["module"] for m in payload["components"][0]["matches"]], ["mlx_embeddings.classifiers.laya"])
+        self.assertEqual([m["module"] for m in payload["components"][0]["matches"]], [
+            "mlx_embeddings.classifiers.laya", "mlx_vlm.models.laya",
+        ])
 
     def test_trellis2_download_counts_its_port_files_and_the_files_it_reads_elsewhere(self):
         from .test_backends import TRELLIS2_FILES

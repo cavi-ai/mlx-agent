@@ -96,6 +96,35 @@ against live processes; an accepted launch is not proof the model finished loadi
 Stop verifies process ownership against the receipt before signaling it.
 If you supplied `--receipts-dir`, use the same base for status and stop.
 
+### Serving Inkling 2 Mini
+
+Install the [`mlx-vlm` backend](backends.md) using mlx-agent under Python 3.12.
+Review the first command's plan and use its hash to confirm.
+
+```bash
+mlx-agent backend install mlx-vlm --json
+mlx-agent backend install mlx-vlm --confirm --preview-hash <hash> --json
+mlx-agent backend list --json
+```
+
+After the backend is installed, download
+[`thinkingmachines/Inkling-2-Mini`](https://huggingface.co/thinkingmachines/Inkling-2-Mini)
+with [Intake](intake.md) or use its existing local snapshot. The original
+checkpoint takes about 20 GB on disk and serves text and image inputs without
+conversion. The model card recommends at least 32 GB of unified memory.
+
+```bash
+mlx-agent serve start --repo thinkingmachines/Inkling-2-Mini --runtime auto --jit --port 8083 --json
+mlx-agent serve start --repo thinkingmachines/Inkling-2-Mini --runtime auto --jit --port 8083 --confirm --preview-hash <hash> --json
+```
+
+Use the serving plan's hash for the second command. Send requests to
+`http://127.0.0.1:8083/v1/chat/completions`. The first request waits for the
+model to load. Use `--path` instead of `--repo` for a snapshot outside the
+default Hugging Face cache.
+
+### Serving options
+
 For text LoRA serving, add `--adapter-path /absolute/local/adapter` to both
 preview and confirmation. The directory must contain valid `adapter_config.json`
 and `adapters.safetensors` files without symbolic links. The preview binds both
@@ -261,7 +290,7 @@ Add `--vision-cache` to both preview and confirmation to reuse Qwen2.5-VL and
 Qwen3-VL image features across questions about the same image, including dense
 and MoE Qwen3-VL models.
 It preserves all DeepStack features and uses the installed MLX-VLM
-0.7.4 backend with MLX/MLX-metal 0.32.3, MLX-LM 0.32.2, NumPy 2.5.3 and
+0.8.0+111ac66 backend with MLX/MLX-metal 0.32.4, MLX-LM 0.32.2, NumPy 2.5.3 and
 Transformers 5.18.0.
 The image encoder and model processor keep their native calculations and
 resolution; text embeddings, position data, KV caches and generation remain

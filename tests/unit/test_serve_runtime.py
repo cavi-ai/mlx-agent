@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from mlx_agent.backends import load_manifests
 from mlx_agent.serve import ServeError, load_recipes, plan_start, resolve_serve_runtime
 from .backend_fixtures import synthetic_manifests, synthetic_registries
 
@@ -66,6 +67,16 @@ class ServeRuntimeTests(unittest.TestCase):
         with self.assertRaises(ServeError) as caught:
             self.resolve()
         self.assertEqual(caught.exception.code, "runtime_not_installed")
+
+    def test_inkling_uses_the_standard_managed_vision_backend(self):
+        self.config({"model_type": "inkling2_loop", "vision_config": {}})
+        self.manifests["mlx-vlm"] = load_manifests()["mlx-vlm"]
+        self.registries = synthetic_registries(self.manifests, ("mlx-vlm",))
+        for requested in ("auto", "mlx-vlm"):
+            with self.subTest(requested=requested):
+                self.assertEqual(self.resolve(requested), (
+                    "mlx-vlm", str(self.root / "backends/mlx-vlm/bin/mlx_vlm.server"),
+                ))
 
     def test_resolved_executable_is_bound_in_eager_and_jit_preview(self):
         self.config({"model_type": "prism_hadamard_qwen35"})

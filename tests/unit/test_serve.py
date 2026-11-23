@@ -104,6 +104,21 @@ class PlanStartTests(unittest.TestCase):
         self.assertEqual(plan["port"], 8083)
         self.assertEqual(plan["argv"][0], "mlx_vlm.server")
 
+    def test_eager_vlm_passes_a_pinned_snapshot_to_the_offline_server(self):
+        with TemporaryDirectory() as folder:
+            snapshot = Path(folder) / "models--pub--model" / "snapshots" / ("a" * 40)
+            snapshot.mkdir(parents=True)
+            (snapshot / "config.json").write_text("{}")
+            (snapshot / "model.safetensors").write_bytes(b"weights")
+            plan = _plan(runtime="mlx-vlm", hf_cache=folder)
+            argv = plan["argv"]
+            self.assertEqual(argv[argv.index("--model") + 1], str(snapshot))
+            self.assertEqual(plan["repo"], "pub/model")
+            jit = _plan(runtime="mlx-vlm", hf_cache=folder, jit=True)
+            self.assertEqual(jit["argv"][jit["argv"].index("--model") + 1], "pub/model")
+            self.assertEqual(jit["worker_argv"][jit["worker_argv"].index("--model") + 1],
+                             str(snapshot.resolve()))
+
     def test_adapter_path_appends_adapter_argv(self):
         with TemporaryDirectory() as folder:
             adapter = _adapter(Path(folder) / "adapter")

@@ -11,6 +11,12 @@
           "category": "classification",
           "match": "exact",
           "module": "mlx_embeddings.classifiers.laya"
+        },
+        {
+          "backend": "mlx-vlm",
+          "category": "vision_language",
+          "match": "exact",
+          "module": "mlx_vlm.models.laya"
         }
       ],
       "model_type": "laya",

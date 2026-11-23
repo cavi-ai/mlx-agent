@@ -29,7 +29,8 @@ def response(kind, choice, usage=None):
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args): pass
     def do_GET(self):
-        self.send_response(200); self.end_headers(); self.wfile.write(b'{}')
+        self.send_response(200); self.end_headers()
+        self.wfile.write(json.dumps({'model_ready': True, 'loaded_model': a.model}).encode())
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         with open(a.trace, 'a') as f: f.write(json.dumps(body) + '\\n')

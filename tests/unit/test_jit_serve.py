@@ -29,18 +29,30 @@ p.add_argument('--reply-delay', type=float, default=0); p.add_argument('--keepal
 p.add_argument('--stream-release')
 p.add_argument('--usage', action='store_true')
 p.add_argument('--reported-context', type=int)
+p.add_argument('--vlm-preload', action='store_true')
 a = p.parse_args()
 with open(a.trace, 'a') as f: f.write('start\\n')
 if a.mutate_adapter:
     from pathlib import Path
     (Path(a.adapter_path) / 'adapter_config.json').write_text('{"changed":true}')
 class Handler(BaseHTTPRequestHandler):
+    health_checks = 0
     def log_message(self, *args): pass
     def do_GET(self):
+        if a.vlm_preload and self.path == '/health':
+            type(self).health_checks += 1
+            ready = self.health_checks > 1
+            self.send_response(200); self.end_headers()
+            self.wfile.write(json.dumps({'model_ready': ready, 'loaded_model': a.model if ready else None}).encode())
+            return
         self.send_response(200); self.end_headers()
         self.wfile.write(json.dumps({'data': [{'context_length': a.reported_context}]} if a.reported_context is not None else {}).encode())
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+        if a.vlm_preload and self.health_checks < 2:
+            self.send_response(503); self.end_headers()
+            self.wfile.write(b'{"error":"model_loading"}')
+            return
         # Like MLX-LM, write nothing until the reply starts.
         time.sleep(a.reply_delay)
         self.send_response(200); self.end_headers()
@@ -1225,6 +1237,15 @@ class JITServingTests(unittest.TestCase):
         self.assertEqual(status, 503)
         self.assertEqual(body['error'], {'code': 'model_load_failed',
                                          'message': 'Model worker did not become ready in 2 seconds.'})
+
+    def test_vlm_first_request_waits_for_the_preloaded_model(self):
+        self.config['runtime'] = 'mlx-vlm'
+        self.config['worker_argv'].append('--vlm-preload')
+        status, body = self.request('POST', '/v1/chat/completions', {
+            'messages': [{'role': 'user', 'content': 'hello'}],
+        })
+        self.assertEqual(status, 200, body)
+        self.assertEqual(self.server.controller.status()['model_state'], 'loaded')
 
     def test_bench_cold_workload_measures_one_load_of_an_unloaded_gateway(self):
         import io

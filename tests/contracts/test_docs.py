@@ -206,7 +206,12 @@ class DocumentationContractTests(unittest.TestCase):
 
     def test_pull_requests_use_the_hosted_apple_silicon_runner(self):
         tests = TEST_WORKFLOW_PATH.read_text(encoding="utf-8")
-        self.assertIn("- os: macos-latest", tests)
+        lifecycle = tests.split("\n  contracts-and-install-lifecycle:\n", 1)[1].split("\n  coverage:\n", 1)[0]
+        runners = re.search(r"fromJSON\(github\.event_name == 'pull_request' && '([^']+)' \|\| '([^']+)'\)", lifecycle)
+        self.assertIsNotNone(runners, "expected separate pull request and main runner selections")
+        self.assertIn("macos-latest", json.loads(runners[1]))
+        self.assertNotIn("macos-latest", json.loads(runners[2]))
+        self.assertIn("runs-on: ${{ matrix.os }}", lifecycle)
         self.assertIn('test "$(uname -m)" = "arm64"', tests)
         self.assertIn("MLX_AGENT_FIXTURE=tests/fixtures/scout_responses.json", tests)
         self.assertNotIn("self-hosted", tests)

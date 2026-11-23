@@ -400,7 +400,11 @@ default:
 | `--splash-thinking-budget` | 0–1,010,000 tokens | Caps the thinking of a request that sets no budget of its own. |
 | `--splash-persistent-cache` | flag | Keeps the SSD prompt cache across restarts, so follow-up turns skip prefill after a restart. |
 | `--splash-max-cache-disk-gb` | 0–4096 decimal GB | SSD prompt cache quota; `0` turns the cache off. |
+| `--splash-project-cache` | lowercase project name | Names the persistent SSD cache for a keyed project endpoint. |
+| `--splash-max-cache-disk-writes-gb` | positive decimal GB | Limits daily writes to a named project cache. |
 | `--splash-chat-template` | file | A local Jinja chat template used in place of the model's own. |
+
+A named project cache requires JIT, an API key file or digest, and explicit positive disk and write caps. Use a dedicated keyed endpoint for the project and give its key only to profiles joining that project. Persisted cache state can include conversation data. Start the endpoint from a receipts location whose directory path is protected against changes by other users. On macOS, the cache path must also be free of ACL entries that grant access. Splash's native defaults apply to options left unset.
 
 ```bash
 python3 scripts/mlx-agent serve start --path /absolute/mlx/model --runtime splash --splash-verify-rows all --splash-reasoning-effort low --splash-thinking-budget 4096 --splash-persistent-cache --json

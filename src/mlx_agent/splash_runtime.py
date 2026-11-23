@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import math
 import os
 import re
 import shutil
+import stat
 import subprocess
+import sys
 from pathlib import Path
 
 from .serving_plan import Contribution
@@ -32,6 +35,8 @@ TUNING = {
     "splash_thinking_token_budget": ("--thinking-token-budget", None),
     "splash_persistent_cache": ("--persistent-cache", None),
     "splash_max_cache_disk_gb": ("--max-cache-disk", None),
+    "splash_project_cache": ("--cache-dir", None),
+    "splash_max_cache_disk_writes_gb": ("--max-cache-disk-writes", None),
 }
 _TEMPLATE_BYTES = 1 << 20
 
@@ -284,10 +289,23 @@ def tuning_arguments(tuning):
     unknown = sorted(set(tuning) - set(TUNING))
     if unknown:
         raise SplashError("invalid_arguments", "Unknown Splash settings: " + ", ".join(unknown), "Remove them.")
+    name = tuning.get("splash_project_cache")
+    writes = tuning.get("splash_max_cache_disk_writes_gb")
+    if name is not None:
+        if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", name):
+            raise _invalid("Splash project cache name must be a lowercase slug of at most 64 characters.", "--splash-project-cache")
+        if tuning.get("splash_persistent_cache") is False:
+            raise _invalid("A Splash project cache requires persistent caching.", "--splash-persistent-cache")
+        for key in ("splash_max_cache_disk_gb", "splash_max_cache_disk_writes_gb"):
+            value = tuning.get(key)
+            if type(value) not in (int, float) or not math.isfinite(value) or not 1 <= value * 1e9 <= 4096e9:
+                raise _invalid("A Splash project cache requires positive disk and write caps of at least one byte.", "--" + key.replace("_", "-"))
+    elif writes is not None:
+        raise _invalid("A Splash write cap requires a named project cache.", "--splash-project-cache")
     args = []
     for key, (flag, choices) in TUNING.items():
         value = tuning.get(key)
-        if value is None:
+        if value is None or key == "splash_project_cache":
             continue
         cli = "--splash-" + flag[2:]
         if choices is not None:
@@ -307,7 +325,83 @@ def tuning_arguments(tuning):
             raise _invalid("Splash SSD cache size must be a finite value from 0 to 4096 GB; 0 turns it off.", cli + "-gb")
         else:
             args += [flag, str(math.floor(value * 1e9))]
+    if name is not None and not tuning.get("splash_persistent_cache"):
+        args.append("--persistent-cache")
     return args
+
+
+def project_cache_directory(root, name, digest, fields):
+    """Derive a project cache namespace without creating it."""
+    binding = {"project": name, "auth": digest, **fields}
+    namespace = hashlib.sha256(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return str(Path(root).absolute() / "splash-cache" / namespace)
+
+
+def _macos_acl_allows_access(fd):
+    """Check extended ACLs on the opened directory, independent of mode bits."""
+    import ctypes
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.acl_get_fd.argtypes = [ctypes.c_int]
+    libc.acl_get_fd.restype = ctypes.c_void_p
+    libc.acl_get_entry.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)]
+    libc.acl_get_tag_type.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
+    libc.acl_free.argtypes = [ctypes.c_void_p]
+
+    acl = libc.acl_get_fd(fd)
+    if acl is None:
+        error = ctypes.get_errno()
+        if error == errno.ENOENT:  # The opened directory has no ACL.
+            return False
+        raise OSError(error, os.strerror(error))
+    try:
+        entry = ctypes.c_void_p()
+        tag = ctypes.c_int()
+        entry_id = 0  # ACL_FIRST_ENTRY
+        while libc.acl_get_entry(acl, entry_id, ctypes.byref(entry)) == 0:
+            if libc.acl_get_tag_type(entry, ctypes.byref(tag)) != 0:
+                error = ctypes.get_errno()
+                raise OSError(error, os.strerror(error))
+            if tag.value != 2:  # ACL_EXTENDED_DENY
+                return True
+            entry_id = -1  # ACL_NEXT_ENTRY
+        error = ctypes.get_errno()
+        if error != errno.EINVAL:  # Darwin signals the end of the ACL with EINVAL.
+            raise OSError(error, os.strerror(error))
+        return False
+    finally:
+        libc.acl_free(acl)
+
+
+def prepare_project_cache(path):
+    """Create a private cache whose path other users cannot replace."""
+    from .transactions import _walk_directory
+
+    cache = Path(path)
+    uid = os.geteuid()
+
+    def check_acl(fd):
+        if sys.platform == "darwin" and _macos_acl_allows_access(fd):
+            raise ValueError("Splash cache path must have no allow ACL entries: " + str(cache))
+
+    def check_ancestor(fd, child):
+        info = os.fstat(fd)
+        writable_by_others = info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+        # A trusted sticky directory protects each child owned by root or uid.
+        # The traversal checks that child's ownership before descending again.
+        if info.st_uid not in (0, uid) or (writable_by_others and not info.st_mode & stat.S_ISVTX):
+            raise ValueError(f"Splash cache ancestor before {child!r} must be protected from other users' writes: {cache}")
+        check_acl(fd)
+
+    for directory in (cache.parent, cache):
+        _, fd = _walk_directory(directory, create=True, component_hook=check_ancestor)
+        try:
+            info = os.fstat(fd)
+            if info.st_uid != uid or stat.S_IMODE(info.st_mode) != 0o700:
+                raise ValueError("Splash cache directory must be owned by the current user and mode 0700: " + str(directory))
+            check_acl(fd)
+        finally:
+            os.close(fd)
 
 
 def reported_context_tokens(payload):
@@ -379,7 +473,8 @@ def plan_contribution(local_path, has_repo, repo, hf_cache, adapter_path, jit, r
               "splash_source": target["source"], "splash_draft_model": draft["path"] if draft else None,
               "splash_draft_fingerprint": draft["fingerprint"] if draft else None,
               "splash_max_memory_gb": max_memory_gb, "splash_max_context_tokens": max_context_tokens,
-              **{key: (tuning or {}).get(key) for key in TUNING},
+              **{key: (tuning or {}).get(key) for key in TUNING
+                 if key not in ("splash_project_cache", "splash_max_cache_disk_writes_gb") or key in (tuning or {})},
               "splash_chat_template": template["path"] if template else None,
               "splash_chat_template_sha256": template["sha256"] if template else None,
               "weight_format": target["format"], "weight_bytes": target["weight_bytes"],

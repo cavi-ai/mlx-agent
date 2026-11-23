@@ -339,7 +339,9 @@ def run_runtime(model, descriptor, forwarded, shared_prefix_mib=None, shared_pre
         try:
             restore()
         finally:
-            server_class.close_adopted_listener()
+            close_listener = getattr(server_class, "close_adopted_listener", None)
+            if callable(close_listener):
+                close_listener()
 
 
 def main(argv=None):

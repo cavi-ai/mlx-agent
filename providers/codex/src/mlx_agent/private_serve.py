@@ -99,12 +99,24 @@ def private_server_class(descriptor):
     class PrivateServer(ThreadingHTTPServer):
         daemon_threads = True
         block_on_close = False
+        _adopted_listener = listener
+
+        @classmethod
+        def close_adopted_listener(cls):
+            if cls._adopted_listener is not None:
+                cls._adopted_listener.close()
+                cls._adopted_listener = None
 
         def __init__(self, address, handler):
             # Upstream may set address_family after resolving its dummy address.
             # BaseServer creates no socket; adopt only the validated Unix FD.
-            BaseServer.__init__(self, listener.getsockname(), handler)
+            try:
+                BaseServer.__init__(self, listener.getsockname(), handler)
+            except BaseException:
+                self.close_adopted_listener()
+                raise
             self.socket = listener
+            type(self)._adopted_listener = None
             self.server_name, self.server_port = "private", 0
 
         def get_request(self):

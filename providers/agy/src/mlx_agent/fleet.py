@@ -6,9 +6,11 @@ import json
 import re
 from pathlib import Path
 
+from .transactions import _read_bounded_target
 from .wiring import _MODEL, require_secret_free_config
 
 
+MAX_STATE_BYTES = 1_048_576
 FLEET_RUNTIMES = ("mlx_lm", "mlx-vlm")
 ROLE_DEFAULT_RUNTIME = {
     "general": "mlx_lm",
@@ -84,11 +86,20 @@ def parse_assignments(values):
 def assignments_from_adoption(state_path):
     """Read role -> repo recommendations from a completed adopt handoff."""
     try:
-        value = json.loads(Path(state_path).read_text(encoding="utf-8"))
-    except (OSError, ValueError, json.JSONDecodeError) as error:
+        raw, exists = _read_bounded_target(Path(state_path).expanduser(), max_bytes=MAX_STATE_BYTES)
+        if not exists:
+            raise FileNotFoundError(str(state_path))
+        value = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise FleetError(
             "invalid_state",
             "The adoption handoff could not be read: {0}".format(error),
+            "Pass a readable adopt state file produced by adopt start/resume.",
+        ) from error
+    if not isinstance(value, dict):
+        raise FleetError(
+            "invalid_state",
+            "The adoption handoff must be a JSON object.",
             "Pass a readable adopt state file produced by adopt start/resume.",
         )
     recommendations = value.get("recommendations")

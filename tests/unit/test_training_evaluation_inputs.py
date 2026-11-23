@@ -14,6 +14,9 @@ class _Database:
     def connect(self):
         yield self.connection
 
+    def close(self):
+        self.connection.close()
+
 
 def _suite(**changes):
     value = {"id": "suite-1", "name": "Smoke", "prompts": [{"id": "p1", "text": "Say hi.", "max_tokens": 16}]}
@@ -67,6 +70,7 @@ class EvaluationInputTests(unittest.TestCase):
 
     def test_history_and_reviews_are_empty_before_any_evaluation(self):
         database = _Database()
+        self.addCleanup(database.close)
         self.assertEqual([], evaluation.history(database))
         self.assertEqual([], evaluation.latest_reviews(database, "e1", "a" * 64))
         with self.assertRaisesRegex(ValueError, "Evaluation was not found in this workspace."):
@@ -74,6 +78,7 @@ class EvaluationInputTests(unittest.TestCase):
 
     def test_history_is_newest_first_and_reviews_keep_the_latest_per_prompt(self):
         database = _Database()
+        self.addCleanup(database.close)
         connection = database.connection
         connection.execute("CREATE TABLE text_training_evaluations (id TEXT, created_at TEXT)")
         connection.executemany("INSERT INTO text_training_evaluations VALUES (?, ?)",

@@ -214,12 +214,13 @@ class NamedInputTests(unittest.TestCase):
             self.assertEqual(needs_named({'kind': kind, 'parameters': parameters}), expected)
 
     def test_inventory_rejects_invalid_task_ids(self):
+        import contextlib
         import sqlite3
         from mlx_agent import task_storage
         with tempfile.TemporaryDirectory() as temporary:
             store = TaskStore(Path(temporary).resolve() / 'store')
             task_storage.set_budget(store, 1000)
-            with sqlite3.connect(store.database) as connection:
+            with contextlib.closing(sqlite3.connect(store.database)) as connection, connection:
                 connection.execute('INSERT INTO tasks VALUES (?, ?, ?)', ('../outside', 'now', '{}'))
             with self.assertRaises(TaskError) as failure:
                 task_storage.status(store)

@@ -67,14 +67,27 @@ def _absolute(path):
     return Path(os.path.abspath(str(value)))
 
 
+_MACOS_ROOT_ALIASES = (
+    ("/var", "private/var"),
+    ("/tmp", "private/tmp"),
+    ("/etc", "private/etc"),
+)
+
+
 def _physical_absolute(path):
     result = _absolute(path)
-    # /var is a fixed macOS compatibility alias. Normalize before descriptor
-    # traversal rather than following a user-controlled symlink component.
-    if str(result) == "/var" or str(result).startswith("/var/"):
-        if not os.path.islink("/var") or os.readlink("/var") != "private/var":
-            raise ValueError("untrusted /var compatibility alias")
-        result = Path("/private/var") / result.relative_to("/var")
+    # /var, /tmp, and /etc are fixed macOS compatibility aliases. Normalize
+    # before descriptor traversal rather than following a user-controlled
+    # symlink component, while letting real non-symlink directories (e.g. on
+    # Linux) pass through unchanged.
+    text = str(result)
+    for alias, target in _MACOS_ROOT_ALIASES:
+        if text == alias or text.startswith(alias + "/"):
+            if os.path.islink(alias):
+                if os.readlink(alias) != target:
+                    raise ValueError("untrusted {0} compatibility alias".format(alias))
+                return Path("/" + target) / result.relative_to(alias)
+            break
     return result
 
 
@@ -106,7 +119,7 @@ def _walk_directory(path, create=False, component_hook=None):
                 os.fsync(descriptor)
                 child = os.open(component, flags, dir_fd=descriptor)
             except OSError as error:
-                raise ValueError("refusing unsafe directory component {0}: {1}".format(component, error))
+                raise ValueError("refusing unsafe directory component {0}: {1}".format(component, error)) from error
             os.close(descriptor)
             descriptor = child
         return logical, descriptor
@@ -726,6 +739,42 @@ def _atomic_in_directory(directory, name, content, mode, validator=None):
         raise
     finally:
         os.close(dir_fd)
+
+
+def _read_bounded_target(path, max_bytes=1_048_576, component_hook=None):
+    """Read a regular leaf up to max_bytes through its opened parent directory fd."""
+    value = _absolute(path)
+    _parent, directory = _walk_directory(value.parent, component_hook=component_hook)
+    try:
+        flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+        try:
+            descriptor = os.open(value.name, flags, dir_fd=directory)
+        except FileNotFoundError:
+            return b"", False
+        except OSError as error:
+            raise ValueError("refusing unsafe target {0}: {1}".format(value, error)) from error
+        try:
+            item = os.fstat(descriptor)
+            if not stat.S_ISREG(item.st_mode):
+                raise ValueError("target is not a regular file: {0}".format(value))
+            if item.st_size > max_bytes:
+                raise ValueError("target exceeds maximum size of {0} bytes: {1}".format(max_bytes, value))
+            parts = []
+            total = 0
+            while True:
+                remaining = max_bytes - total + 1
+                chunk = os.read(descriptor, min(65536, remaining))
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ValueError("target exceeds maximum size of {0} bytes: {1}".format(max_bytes, value))
+                parts.append(chunk)
+            return b"".join(parts), True
+        finally:
+            os.close(descriptor)
+    finally:
+        os.close(directory)
 
 
 def _read_target(path, component_hook=None):

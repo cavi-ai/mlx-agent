@@ -179,6 +179,27 @@ class FleetAdapterTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             adapter.render({"coding": "pub/coder"}, existing='{"api_key": "sk-live"}')
 
+    def test_assignments_from_adoption_refuses_symlinks_and_oversized_files(self):
+        import tempfile
+        from pathlib import Path
+        from mlx_agent.fleet import MAX_STATE_BYTES, assignments_from_adoption
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            real = root / "adopt.json"
+            real.write_text('{"recommendations":[{"role":"coding","repo":"pub/coder"}]}', encoding="utf-8")
+            link = root / "adopt-link.json"
+            link.symlink_to(real)
+            with self.assertRaises(FleetError) as linked:
+                assignments_from_adoption(link)
+            self.assertEqual(linked.exception.code, "invalid_state")
+
+            huge = root / "huge.json"
+            huge.write_bytes(b" " * (MAX_STATE_BYTES + 1))
+            with self.assertRaises(FleetError) as oversized:
+                assignments_from_adoption(huge)
+            self.assertEqual(oversized.exception.code, "invalid_state")
+
 
 if __name__ == "__main__":
     unittest.main()

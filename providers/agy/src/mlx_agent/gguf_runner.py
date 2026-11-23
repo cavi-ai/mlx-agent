@@ -70,6 +70,7 @@ sys.path[:] = _paths_without_script_dir(sys.path, Path(__file__).resolve().paren
 PROVENANCE_NAME = "mlx-converter.json"
 SIGNATURE_CHUNK_BYTES = 1024 * 1024
 EXECUTABLE = "mlx_lm.convert"
+QUANTIZE_TIMEOUT_SECONDS = 3600
 REQUIRED_MODULES = ("torch", "transformers", "gguf")
 PORT_REQUIRED_MODULES = ("gguf", "mlx")
 PORTS_DIR = Path(__file__).resolve().parent / "resources" / "ports"
@@ -123,7 +124,7 @@ def dequantize(gguf_path, work_dir, q_bits=4):
     _log("dequantized to {0}".format(work_dir))
 
 
-def quantize(work_dir, out_dir, q_bits):
+def quantize(work_dir, out_dir, q_bits, timeout=QUANTIZE_TIMEOUT_SECONDS):
     """Hand the dequantized checkpoint to mlx_lm.convert."""
     executable = shutil.which(EXECUTABLE)
     if executable is None:
@@ -138,7 +139,10 @@ def quantize(work_dir, out_dir, q_bits):
     argv += (["--dtype", "float%d" % q_bits, "--dequantize"] if q_bits in (16, 32)
              else ["-q", "--q-bits", str(q_bits)])
     _log("running {0}".format(" ".join(argv)))
-    completed = subprocess.run(argv, stdin=subprocess.DEVNULL, check=False)
+    try:
+        completed = subprocess.run(argv, stdin=subprocess.DEVNULL, check=False, timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("{0} timed out after {1}s".format(EXECUTABLE, timeout)) from error
     if completed.returncode != 0:
         raise RuntimeError("{0} exited {1}".format(EXECUTABLE, completed.returncode))
 

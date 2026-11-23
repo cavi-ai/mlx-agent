@@ -1026,14 +1026,25 @@ def _assert_safe_generated_path(root: Path, relative: Path, surface: Optional[Pa
     return target
 
 
+_MACOS_ROOT_ALIASES = (
+    ("/var", "private/var"),
+    ("/tmp", "private/tmp"),
+    ("/etc", "private/etc"),
+)
+
+
 def _physical_generated_root(root: Path) -> Path:
-    """Return the descriptor-safe root, recognizing only macOS's fixed /var alias."""
+    """Return the descriptor-safe root, normalizing verified macOS root aliases."""
 
     logical = Path(os.path.abspath(str(root)))
-    if str(logical) == "/var" or str(logical).startswith("/var/"):
-        if not os.path.islink("/var") or os.readlink("/var") != "private/var":
-            raise ValueError("untrusted /var compatibility alias")
-        return Path("/private/var") / logical.relative_to("/var")
+    text = str(logical)
+    for alias, target in _MACOS_ROOT_ALIASES:
+        if text == alias or text.startswith(alias + "/"):
+            if os.path.islink(alias):
+                if os.readlink(alias) != target:
+                    raise ValueError("untrusted {0} compatibility alias".format(alias))
+                return Path("/" + target) / logical.relative_to(alias)
+            break
     return logical
 
 

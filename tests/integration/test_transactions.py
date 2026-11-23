@@ -1357,6 +1357,26 @@ class TransactionTests(unittest.TestCase):
                 self.assertEqual(2, main(["wire", "status", receipt.receipt_path, "--json"]))
             self.assertEqual("wire_failed", json.loads(output.getvalue())["error"]["code"])
 
+    def test_physical_absolute_normalizes_verified_macos_root_aliases_and_passes_real_dirs(self):
+        from unittest.mock import patch
+        from mlx_agent.transactions import _physical_absolute
+
+        with patch("os.path.islink", return_value=False):
+            self.assertEqual(Path("/tmp/demo"), _physical_absolute("/tmp/demo"))
+            self.assertEqual(Path("/etc/hosts"), _physical_absolute("/etc/hosts"))
+            self.assertEqual(Path("/var/folders/x"), _physical_absolute("/var/folders/x"))
+
+        with patch("os.path.islink", side_effect=lambda p: p in {"/tmp", "/etc", "/var"}),              patch("os.readlink", side_effect=lambda p: "private/" + p.lstrip("/")):
+            self.assertEqual(Path("/private/tmp/demo"), _physical_absolute("/tmp/demo"))
+            self.assertEqual(Path("/private/etc/hosts"), _physical_absolute("/etc/hosts"))
+            self.assertEqual(Path("/private/var/folders/x"), _physical_absolute("/var/folders/x"))
+
+        with patch("os.path.islink", return_value=True), patch("os.readlink", return_value="/elsewhere"):
+            with self.assertRaises(ValueError):
+                _physical_absolute("/tmp/demo")
+            with self.assertRaises(ValueError):
+                _physical_absolute("/etc/hosts")
+
 
 if __name__ == "__main__":
     unittest.main()

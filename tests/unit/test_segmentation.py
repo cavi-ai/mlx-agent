@@ -28,6 +28,7 @@ class SegmentationTests(unittest.TestCase):
         output = Output()
         cache = SimpleNamespace(desired={'cache_reclaim': 'none'}, configure=lambda *x: None,
                                 apply_limit=lambda **x: None, snapshot=dict)
+        model_cache = SimpleNamespace(loaded=lambda: True, statistics=dict)
         frameworks = []
         def capture(stats, framework):
             frameworks.append(framework)
@@ -36,7 +37,7 @@ class SegmentationTests(unittest.TestCase):
               patch.object(sys, 'stdin', input_stream), patch.object(resident_worker.os, 'fdopen', return_value=output),
               patch.object(resident_worker.threading.Thread, 'start'),
               patch.object(resident_worker, 'AllocatorCache', return_value=cache),
-              patch.object(resident_worker.runner_model_cache, 'loaded', return_value=True),
+              patch.object(resident_worker, 'runner_model_cache', model_cache),
               patch.object(resident_worker.importlib, 'import_module', return_value=SimpleNamespace(main=lambda args: 0)),
               patch.object(resident_worker.worker_telemetry, 'capture', side_effect=capture)):
             resident_worker.main()

@@ -197,7 +197,7 @@ class ProviderRegistryTests(unittest.TestCase):
             for provider_id in ("openclaw", "hermes", "agentskills"):
                 destinations = [str(item.destination) for item in definitions[provider_id].artifacts]
                 self.assertFalse(any("/_lab/" in dest for dest in destinations), provider_id)
-            for provider_id in ("claude", "opencode", "gemini"):
+            for provider_id in ("claude", "codex", "agy", "opencode", "gemini"):
                 destinations = [str(item.destination) for item in definitions[provider_id].artifacts]
                 self.assertTrue(any("_lab/" in dest for dest in destinations), provider_id)
 

@@ -87,6 +87,23 @@ class CommandExecutorTests(unittest.TestCase):
         with self.assertRaises(CommandExecutorError):
             read_command_arguments(io.BytesIO(b"x" * 4097))
 
+    def test_scout_wire_openclaw_executes_through_command_executor(self):
+        import contextlib
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = execute_command(
+                "opencode",
+                "scout",
+                io.BytesIO(b"--wire mlx-community/Qwen3-8B-4bit --target openclaw"),
+            )
+        self.assertEqual({"status": "ok", "provider": "opencode", "capability": "scout", "exit_code": 0}, result)
+        output = buf.getvalue()
+        self.assertIn("http://127.0.0.1:8090/v1", output)
+        self.assertIn("openai-completions", output)
+        self.assertIn("${MLX_AGENT_API_KEY}", output)
+        self.assertIn("# agent ref: mlx-agent/mlx-community/Qwen3-8B-4bit", output)
+
 
 if __name__ == "__main__":
     unittest.main()

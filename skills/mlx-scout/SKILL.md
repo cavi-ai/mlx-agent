@@ -50,6 +50,7 @@ Use `--wire <repo> --target <t>` to emit the exact pull/serve command **and** a 
 - `mlx_lm` → native headless server + an OpenAI-compatible provider, ref `mlxlm/<model>`
 - `mlx-vlm` → native vision server (required for VLMs), ref `mlxvlm/<model>`
 - `litellm` → a `model_list` entry for a LiteLLM proxy
+- `openclaw` → `models.providers["mlx-agent"]` entry for `openclaw.json`, ref `mlx-agent/<repo>`
 
 See `{baseDir}/references/runtimes.md` for runtime setup and the native-vs-Ollama speed trade-off.
 

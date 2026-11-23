@@ -197,10 +197,19 @@ class WireRenderingTests(unittest.TestCase):
         from mlx_agent.wiring import contains_resolved_secrets
 
         self.assertFalse(contains_resolved_secrets(json.dumps({"gateway": {"auth": {"mode": "token"}}})))
+        self.assertFalse(contains_resolved_secrets(json.dumps({"apiKey": {"source": "env", "id": "MLX_AGENT_API_KEY"}})))
         self.assertFalse(contains_resolved_secrets(json.dumps({"apiKey": {"source": "env", "provider": "default", "id": "MLX_AGENT_API_KEY"}})))
         self.assertFalse(contains_resolved_secrets(json.dumps({"auth": None, "token": False})))
         self.assertTrue(contains_resolved_secrets(json.dumps({"gateway": {"auth": {"token": "plaintext-value"}}})))
         self.assertTrue(contains_resolved_secrets(json.dumps({"note": "sk-123456789012345678901234"})))
+        for bypass_payload in (
+            {"token": ["inline-val"]},
+            {"credentials": ["inline-val"]},
+            {"apiKey": {"source": "file", "value": "inline-val"}},
+            {"apiKey": {"source": "env", "id": "lowercase_bad_123"}},
+        ):
+            with self.subTest(payload=bypass_payload):
+                self.assertTrue(contains_resolved_secrets(json.dumps(bypass_payload)))
 
     def test_mlx_vlm_uses_port_8083_and_openclaw_renders_provider_block(self):
         vlm = json.loads(ConfigAdapter("mlx-vlm").render("mlx-community/Qwen2.5-VL-7B-4bit"))
@@ -219,6 +228,21 @@ class WireRenderingTests(unittest.TestCase):
         self.assertEqual("openai-completions", provider["api"])
         self.assertEqual("${MLX_AGENT_API_KEY}", provider["apiKey"])
         self.assertEqual([{"id": "mlx-community/Qwen3-8B-4bit", "name": "mlx-community/Qwen3-8B-4bit"}], provider["models"])
+
+    def test_cli_discover_wire_openclaw_emits_provider_snippet(self):
+        import contextlib
+        import io
+        from mlx_agent import cli
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = cli.main(["discover", "--wire", "mlx-community/Qwen3-8B-4bit", "--target", "openclaw"])
+        self.assertEqual(0, code)
+        output = buf.getvalue()
+        self.assertIn("http://127.0.0.1:8090/v1", output)
+        self.assertIn("openai-completions", output)
+        self.assertIn("${MLX_AGENT_API_KEY}", output)
+        self.assertIn("# agent ref: mlx-agent/mlx-community/Qwen3-8B-4bit", output)
 
 
 if __name__ == "__main__":

@@ -126,8 +126,8 @@ def _add_discovery_arguments(parser):
     parser.add_argument("--fast", action="store_true", help="skip per-model enrichment (name heuristics only)")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--wire", metavar="REPO", help="emit setup + config for a model, instead of discovering")
-    parser.add_argument("--target", choices=["ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm"], default="mlx_lm")
-    parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--target", choices=["ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm", "openclaw"], default="mlx_lm")
+    parser.add_argument("--port", type=int, default=None)
 
 
 def _run_discovery(arguments, legacy):
@@ -135,7 +135,8 @@ def _run_discovery(arguments, legacy):
     from .host import HostInventory
     from .models import render_md, wire
     if arguments.wire:
-        print(wire(arguments.wire, arguments.target, arguments.port))
+        port = arguments.port if arguments.port is not None else (8090 if arguments.target == "openclaw" else 8083 if arguments.target == "mlx-vlm" else 8080)
+        print(wire(arguments.wire, arguments.target, port))
         return 0
     if arguments.context_tokens is not None and not 1024 <= arguments.context_tokens <= 1048576:
         result = ResultEnvelope.fail(

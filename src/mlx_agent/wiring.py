@@ -97,12 +97,33 @@ def _json_contains_resolved_secret(value):
             return False
         for key, item in value.items():
             if _secret_name(key):
-                if item is None or isinstance(item, bool) or _environment_reference(item) or _env_secret_ref(item):
+                if item is None or isinstance(item, bool):
                     continue
-                if isinstance(item, (dict, list)):
-                    if _json_contains_resolved_secret(item):
+                if isinstance(item, str):
+                    if not _environment_reference(item):
                         return True
                     continue
+                if isinstance(item, list):
+                    if not all(
+                        elem is None
+                        or isinstance(elem, bool)
+                        or _environment_reference(elem)
+                        or _env_secret_ref(elem)
+                        for elem in item
+                    ):
+                        return True
+                    continue
+                if isinstance(item, dict):
+                    if _env_secret_ref(item):
+                        continue
+                    if (
+                        re.sub(r"[^a-z0-9]", "", str(key).lower()) == "auth"
+                        and "source" not in item
+                        and not any(k in item for k in ("value", "key", "pass", "raw"))
+                        and not _json_contains_resolved_secret(item)
+                    ):
+                        continue
+                    return True
                 return True
             if _json_contains_resolved_secret(item):
                 return True
@@ -354,7 +375,7 @@ class ConfigAdapter:
             raise ValueError("existing openclaw.json models.providers field must be an object")
         existing_provider = providers.get("mlx-agent")
         base_url = "http://127.0.0.1:8090/v1"
-        api_key = "${MLX_AGENT_API_KEY}"
+        key_ref = "${MLX_AGENT_API_KEY}"
         if isinstance(existing_provider, dict):
             candidate_url = existing_provider.get("baseUrl")
             if isinstance(candidate_url, str) and candidate_url.strip():
@@ -362,13 +383,13 @@ class ConfigAdapter:
                     base_url = validate_health_endpoint(candidate_url.strip())
                 except ValueError:
                     base_url = "http://127.0.0.1:8090/v1"
-            candidate_key = existing_provider.get("apiKey")
-            if _environment_reference(candidate_key) or _env_secret_ref(candidate_key):
-                api_key = candidate_key
+            candidate_ref = existing_provider.get("apiKey")
+            if _environment_reference(candidate_ref) or _env_secret_ref(candidate_ref):
+                key_ref = candidate_ref
         providers["mlx-agent"] = {
             "baseUrl": base_url,
             "api": "openai-completions",
-            "apiKey": api_key,
+            "apiKey": key_ref,
             "models": [{"id": model, "name": model}],
         }
         return json.dumps(document, indent=2, sort_keys=True) + "\n"

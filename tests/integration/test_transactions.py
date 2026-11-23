@@ -68,8 +68,8 @@ class TransactionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             target = root / "providers.json"
-            secret = "terminal-json-receipt-backup-secret"
-            target.write_text(json.dumps({"api_key": secret, "providers": []}) + "\n")
+            redaction_probe = "terminal-json-receipt-backup-probe"
+            target.write_text(json.dumps({"api_key": redaction_probe, "providers": []}) + "\n")
             receipts = root / "receipts"
             output = StringIO()
             with redirect_stdout(output):
@@ -77,13 +77,13 @@ class TransactionTests(unittest.TestCase):
                     "wire", "render", "mlx-community/Test-4bit", "--target", "mlx_lm",
                     "--path", str(target), "--json",
                 ]))
-            self.assertNotIn(secret, output.getvalue())
+            self.assertNotIn(redaction_probe, output.getvalue())
             self.assertFalse(receipts.exists())
 
             transaction = Transaction(receipts_dir=receipts)
             with self.assertRaisesRegex(ValueError, "resolved secret-bearing fields") as captured:
                 transaction.preview([self._change(target, '{"providers": []}\n')])
-            self.assertNotIn(secret, str(captured.exception))
+            self.assertNotIn(redaction_probe, str(captured.exception))
             self.assertFalse(receipts.exists())
             self.assertEqual([], list(root.glob("**/backup-*.bin")))
 

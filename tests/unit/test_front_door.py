@@ -17,8 +17,8 @@ import unittest
 
 from mlx_agent.cli import main
 
-TOKEN = 'front-' + 'k' * 40
-DIGEST = hashlib.sha256(TOKEN.encode()).hexdigest()
+AUTH_PROBE_VALUE = 'front-' + 'k' * 40
+DIGEST = hashlib.sha256(AUTH_PROBE_VALUE.encode()).hexdigest()
 
 
 class Upstream(ThreadingHTTPServer):
@@ -90,7 +90,7 @@ class FrontDoorTests(unittest.TestCase):
         self.addCleanup(self.server.shutdown)
 
     def request(self, method, path, value=None, headers=None, key='bearer'):
-        credentials = {'bearer': {'Authorization': 'Bearer ' + TOKEN}, 'x-api-key': {'x-api-key': TOKEN},
+        credentials = {'bearer': {'Authorization': 'Bearer ' + AUTH_PROBE_VALUE}, 'x-api-key': {'x-api-key': AUTH_PROBE_VALUE},
                        'wrong': {'Authorization': 'Bearer ' + 'w' * 46}, None: {}}[key]
         client = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=5)
         try:
@@ -119,12 +119,12 @@ class FrontDoorTests(unittest.TestCase):
         seen = self.upstreams['embed'].seen[-1]
         self.assertEqual(seen['body'], json.dumps(body).encode())
         self.assertEqual(seen['host'], '127.0.0.1:{}'.format(self.upstreams['embed'].server_port))
-        self.assertEqual((seen['authorization'], seen['x-api-key']), ('Bearer ' + TOKEN, None))
+        self.assertEqual((seen['authorization'], seen['x-api-key']), ('Bearer ' + AUTH_PROBE_VALUE, None))
         status, raw = self.request('POST', '/v1/chat/completions', {'model': 'Chat-9B-4bit', 'messages': []},
                                    headers={'Origin': 'http://127.0.0.1:{}'.format(self.server.server_port)}, key='x-api-key')
         self.assertEqual(json.loads(raw)['served_by'], self.upstreams['chat'].server_port)
         seen = self.upstreams['chat'].seen[-1]
-        self.assertEqual((seen['authorization'], seen['x-api-key'], seen['origin']), (None, TOKEN, None))
+        self.assertEqual((seen['authorization'], seen['x-api-key'], seen['origin']), (None, AUTH_PROBE_VALUE, None))
 
     def test_routes_decisions_only_to_classification_routes(self):
         self.services.append(dict(self.services[1], path='/models/Kev-4B-MLX-8bit', task_kinds=['classification'],

@@ -64,8 +64,8 @@ class InstallerRoundTripTests(unittest.TestCase):
 
     def test_cli_registry_routes_opencode_and_receipts_to_xdg_roots(self):
         native_home = self.root / "native-home"
-        xdg_config = self.root / "mirza-config"
-        xdg_state = self.root / "mirza-state"
+        xdg_config = self.root / "custom-xdg-config"
+        xdg_state = self.root / "custom-xdg-state"
         with patch.dict(os.environ, {
             "MLX_AGENT_HOME": str(native_home),
             "XDG_CONFIG_HOME": str(xdg_config),

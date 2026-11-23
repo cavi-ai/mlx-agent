@@ -452,7 +452,7 @@ def test_conflicting_populated_v25_history_fails_before_partial_migration(
         ).model_copy(
             update={
                 "samples": (
-                    frozen.samples[0].model_copy(update={"caption": "<mirza> v25 successor"}),
+                    frozen.samples[0].model_copy(update={"caption": "<alpha> v25 successor"}),
                 )
                 + frozen.samples[1:]
             }

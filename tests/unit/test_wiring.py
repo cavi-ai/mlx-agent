@@ -193,5 +193,33 @@ class WireRenderingTests(unittest.TestCase):
             adapter.validate("# MLX_AGENT_WIRE BEGIN\nFROM mlx-community/Qwen3-8B-4bit\nSYSTEM injected\n")
 
 
+    def test_secret_scan_allows_structural_auth_and_env_secret_refs_while_blocking_plaintext(self):
+        from mlx_agent.wiring import contains_resolved_secrets
+
+        self.assertFalse(contains_resolved_secrets(json.dumps({"gateway": {"auth": {"mode": "token"}}})))
+        self.assertFalse(contains_resolved_secrets(json.dumps({"apiKey": {"source": "env", "provider": "default", "id": "MLX_AGENT_API_KEY"}})))
+        self.assertFalse(contains_resolved_secrets(json.dumps({"auth": None, "token": False})))
+        self.assertTrue(contains_resolved_secrets(json.dumps({"gateway": {"auth": {"token": "plaintext-value"}}})))
+        self.assertTrue(contains_resolved_secrets(json.dumps({"note": "sk-123456789012345678901234"})))
+
+    def test_mlx_vlm_uses_port_8083_and_openclaw_renders_provider_block(self):
+        vlm = json.loads(ConfigAdapter("mlx-vlm").render("mlx-community/Qwen2.5-VL-7B-4bit"))
+        self.assertEqual("http://127.0.0.1:8083/v1", vlm["mlx_agent_wire"]["provider"]["base_url"])
+
+        adapter = ConfigAdapter.detect("openclaw.json")
+        self.assertEqual("openclaw", adapter.runtime)
+        existing = json.dumps({"gateway": {"auth": {"mode": "token"}}, "agents": {"defaults": {}}})
+        rendered = adapter.render("mlx-community/Qwen3-8B-4bit", existing=existing)
+        self.assertTrue(adapter.validate(rendered))
+        doc = json.loads(rendered)
+        self.assertNotIn("mlx_agent_wire", doc)
+        self.assertEqual({"mode": "token"}, doc["gateway"]["auth"])
+        provider = doc["models"]["providers"]["mlx-agent"]
+        self.assertEqual("http://127.0.0.1:8090/v1", provider["baseUrl"])
+        self.assertEqual("openai-completions", provider["api"])
+        self.assertEqual("${MLX_AGENT_API_KEY}", provider["apiKey"])
+        self.assertEqual([{"id": "mlx-community/Qwen3-8B-4bit", "name": "mlx-community/Qwen3-8B-4bit"}], provider["models"])
+
+
 if __name__ == "__main__":
     unittest.main()

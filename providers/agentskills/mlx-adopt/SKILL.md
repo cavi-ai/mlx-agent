@@ -1,11 +1,12 @@
 ---
 name: "mlx-adopt"
 description: "Verify and recommend an MLX model for a requested role."
+metadata: { "openclaw": { "requires": { "bins": ["python3"] } } }
 ---
 
 # MLX Adopt
 
-Resolve `<skill-dir>` as the absolute directory containing this SKILL.md. Never resolve the bundled executable from the shell working directory.
+Resolve `<skill-dir>` (`{baseDir}` in OpenClaw) as the absolute directory containing this SKILL.md. Never resolve the bundled executable from the shell working directory.
 
 canonical capability ID: mlx-agent.adopt
 

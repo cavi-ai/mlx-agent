@@ -460,7 +460,7 @@ class InstallerRoundTripTests(unittest.TestCase):
         runtime = sorted(
             str(path.relative_to(ROOT / "src" / "mlx_agent"))
             for path in (ROOT / "src" / "mlx_agent").rglob("*")
-            if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
+            if path.is_file() and "__pycache__" not in path.parts and "_lab" not in path.relative_to(ROOT / "src" / "mlx_agent").parts[:1] and path.suffix != ".pyc"
         )
         for capability in ("scout", "adopt", "wire", "bench", "doctor", "watch", "fleet"):
             skill = skills / "mlx-{0}".format(capability)

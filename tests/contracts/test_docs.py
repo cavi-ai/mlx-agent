@@ -28,8 +28,8 @@ TOOL_USE_DOC_PATHS = (
     ROOT / "docs" / "guides" / "adopt.md",
     ROOT / "docs" / "security.md",
 )
-PROVIDERS = ("claude", "codex", "agy", "opencode", "openclaw", "hermes", "agentskills")
-NATIVE_PROVIDERS = ("claude", "codex", "agy", "opencode", "openclaw", "hermes")
+PROVIDERS = ("claude", "codex", "agy", "opencode", "openclaw", "hermes", "gemini", "agentskills")
+NATIVE_PROVIDERS = ("claude", "codex", "agy", "opencode", "openclaw", "hermes", "gemini")
 COMMANDS = ("mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task")
 EVIDENCE_FIELDS = ("schema", "install_round_trip", "native_discovery", "bundle_execution", "model_backed_invocation")
 # Three dotted numbers inside a longer run, such as a loopback address, are not a version.

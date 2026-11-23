@@ -181,7 +181,7 @@ def scan_wired_configs(roots):
             if len(wired) >= MAX_ENDPOINTS:
                 return wired
             content = _read_bounded(location)
-            if content is None or _WIRE_MARKER not in content:
+            if content is None or (_WIRE_MARKER not in content and '"mlx-agent"' not in content):
                 continue
             try:
                 adapter = ConfigAdapter.detect(location)
@@ -253,6 +253,23 @@ def adapter_references(adapter, content):
         return None
     if not isinstance(document, dict):
         return None
+    if adapter.runtime == "openclaw":
+        models_block = document.get("models")
+        providers = models_block.get("providers") if isinstance(models_block, dict) else None
+        provider = providers.get("mlx-agent") if isinstance(providers, dict) else None
+        if not isinstance(provider, dict):
+            return None
+        entries = provider.get("models")
+        first = entries[0] if isinstance(entries, list) and entries and isinstance(entries[0], dict) else {}
+        model_id = first.get("id")
+        base_url = provider.get("baseUrl")
+        if not isinstance(model_id, str) or not model_id:
+            return None
+        return {
+            "model": model_id,
+            "endpoint": base_url if isinstance(base_url, str) else None,
+            "runtime": "openclaw",
+        }
     marker = document.get("mlx_agent_wire")
     if not isinstance(marker, dict):
         return None

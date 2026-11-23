@@ -38,7 +38,7 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(set(manifest["capabilities"]), {"scout", "adopt", "wire", "bench", "doctor", "watch", "fleet", "task"})
         self.assertEqual(
             set(manifest["providers"]),
-            {"claude", "codex", "agy", "opencode", "openclaw", "hermes", "agentskills"},
+            {"claude", "codex", "agy", "opencode", "openclaw", "hermes", "gemini", "agentskills"},
         )
         self.assertEqual(validate_manifest(ROOT / "plugin.json"), [])
         self.assertEqual(manifest["schema_version"], "1.1")
@@ -64,7 +64,7 @@ class ManifestTests(unittest.TestCase):
         self.assertTrue(
             all(role["recommendation_minimum"] == "any" for role in primary_roles)
         )
-        for provider in ("claude", "agy", "opencode", "openclaw", "hermes"):
+        for provider in ("claude", "agy", "opencode", "openclaw", "hermes", "gemini"):
             self.assertEqual(
                 manifest["providers"][provider]["commands"],
                 ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task"],

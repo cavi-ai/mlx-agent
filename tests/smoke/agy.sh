@@ -19,7 +19,7 @@ export XDG_CONFIG_HOME="$SMOKE_ROOT/xdg-config"
 export XDG_STATE_HOME="$SMOKE_ROOT/xdg-state"
 mkdir -p "$HOME"
 
-agy plugin validate "$ROOT/providers/agy"
+agy plugin validate --strict "$ROOT/providers/agy"
 agy plugin install "$ROOT/providers/agy"
 AGY_PLUGINS="$(agy plugin list 2>&1)"
 printf '%s\n' "$AGY_PLUGINS" | grep -F "mlx-agent" >/dev/null
@@ -32,6 +32,7 @@ PROJECT_PLAN="$(python3 "$ROOT/scripts/mlx-agent" install agy --scope project --
 PROJECT_HASH="$(printf '%s' "$PROJECT_PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["preview"]["preview_hash"])')"
 python3 "$ROOT/scripts/mlx-agent" install agy --scope project --project "$PROJECT" --confirm --preview-hash "$PROJECT_HASH" --json >/dev/null
 test -f "$PROJECT/.agents/plugins/mlx-agent/plugin.json"
+test -f "$PROJECT/.agents/plugins/mlx-agent/assets/logo.svg"
 
 MLX_AGENT_FIXTURE="$ROOT/tests/fixtures/scout_responses.json" \
   python3 "$PROJECT/.agents/plugins/mlx-agent/scripts/mlx-agent" discover --limit 1 --json >/dev/null

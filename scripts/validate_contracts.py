@@ -31,7 +31,7 @@ CAPABILITY_ACTIONS = {
     "fleet": ("render", "apply"),
     "task": ("capabilities", "start", "status", "list", "result", "cancel", "verify-model"),
 }
-NATIVE_PROVIDERS = ("claude", "codex", "agy", "opencode", "openclaw", "hermes")
+NATIVE_PROVIDERS = ("claude", "codex", "agy", "opencode", "openclaw", "hermes", "gemini")
 PROVIDERS = NATIVE_PROVIDERS + ("agentskills",)
 PROVIDER_INVOCATIONS = {
     "claude": {"kind": "command", "prefix": "/"},
@@ -40,6 +40,7 @@ PROVIDER_INVOCATIONS = {
     "opencode": {"kind": "command", "prefix": "/"},
     "openclaw": {"kind": "command", "prefix": "/"},
     "hermes": {"kind": "command", "prefix": "/"},
+    "gemini": {"kind": "skill", "prefix": ""},
     "agentskills": {"kind": "skill", "prefix": ""},
 }
 PROVIDER_COMMANDS = {
@@ -49,6 +50,7 @@ PROVIDER_COMMANDS = {
     "opencode": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task"],
     "openclaw": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task"],
     "hermes": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task"],
+    "gemini": ["mlx-scout", "mlx-adopt", "mlx-wire", "mlx-bench", "mlx-doctor", "mlx-watch", "mlx-fleet", "mlx-task"],
     "agentskills": [],
 }
 DATE_TIME_PATTERN = re.compile(

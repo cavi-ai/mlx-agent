@@ -11,7 +11,7 @@ import urllib.request
 from pathlib import Path
 
 
-_RUNTIMES = {"ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm"}
+_RUNTIMES = {"ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm", "openclaw"}
 _MODEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,191}$")
 _SECRET_NAMES = {
     "accesskey", "accesstoken", "apikey", "auth", "authorization", "clientsecret", "credential",
@@ -32,6 +32,7 @@ _PREFIXED_TOKEN = re.compile(
 )
 _URL_USERINFO = re.compile(r"(https?://)([^/@\s]+@)", re.I)
 _OLLAMA = re.compile(r"\A# MLX_AGENT_WIRE v1\nFROM (" + _MODEL.pattern[1:-1] + r")\n\Z")
+_ENV_VAR_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 _ENV_REFERENCE = re.compile(
     r"^(?:os\.environ(?:\[[\"'][A-Z][A-Z0-9_]{0,127}[\"']\]|/[A-Z][A-Z0-9_]{0,127})|"
     r"\$\{[A-Z][A-Z0-9_]{0,127}\}|\$[A-Z][A-Z0-9_]{0,127}|env:[A-Z][A-Z0-9_]{0,127})$"
@@ -62,10 +63,46 @@ def _environment_reference(value):
     return isinstance(value, str) and _ENV_REFERENCE.fullmatch(value.strip()) is not None
 
 
+def _env_secret_ref(value):
+    if not isinstance(value, dict):
+        return False
+    if value.get("source") != "env":
+        return False
+    if not set(value).issubset({"source", "id", "provider"}):
+        return False
+    env_id = value.get("id")
+    if not isinstance(env_id, str) or _ENV_VAR_NAME.fullmatch(env_id) is None:
+        return False
+    provider = value.get("provider")
+    if provider is not None and (not isinstance(provider, str) or not provider.strip()):
+        return False
+    return True
+
+
+def _text_contains_resolved_secret(text):
+    if _URL_USERINFO.search(text) or _PREFIXED_TOKEN.search(text):
+        return True
+    for match in _ASSIGNMENT_SECRET.finditer(text):
+        raw = match.group(3).strip()
+        if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {"\"", "'"}:
+            raw = raw[1:-1]
+        if not _environment_reference(raw):
+            return True
+    return False
+
+
 def _json_contains_resolved_secret(value):
     if isinstance(value, dict):
+        if _env_secret_ref(value):
+            return False
         for key, item in value.items():
-            if _secret_name(key) and not _environment_reference(item):
+            if _secret_name(key):
+                if item is None or isinstance(item, bool) or _environment_reference(item) or _env_secret_ref(item):
+                    continue
+                if isinstance(item, (dict, list)):
+                    if _json_contains_resolved_secret(item):
+                        return True
+                    continue
                 return True
             if _json_contains_resolved_secret(item):
                 return True
@@ -73,6 +110,8 @@ def _json_contains_resolved_secret(value):
     if isinstance(value, list):
         return any(_json_contains_resolved_secret(item) for item in value)
     if isinstance(value, str):
+        if _text_contains_resolved_secret(value):
+            return True
         try:
             parsed = urllib.parse.urlsplit(value)
         except ValueError:
@@ -96,17 +135,9 @@ def contains_resolved_secrets(content):
         parsed = json.loads(content)
     except (TypeError, ValueError, json.JSONDecodeError):
         parsed = None
-    if parsed is not None and _json_contains_resolved_secret(parsed):
-        return True
-    if _URL_USERINFO.search(content):
-        return True
-    for match in _ASSIGNMENT_SECRET.finditer(content):
-        raw = match.group(3).strip()
-        if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {"\"", "'"}:
-            raw = raw[1:-1]
-        if not _environment_reference(raw):
-            return True
-    return False
+    if parsed is not None:
+        return _json_contains_resolved_secret(parsed)
+    return _text_contains_resolved_secret(content)
 
 
 def require_secret_free_config(content):
@@ -240,6 +271,8 @@ class ConfigAdapter:
                 selected = "ollama"
             elif location.suffix.lower() in {".yaml", ".yml"}:
                 selected = "litellm"
+            elif name == "openclaw.json":
+                selected = "openclaw"
             elif "lmstudio" in name:
                 selected = "lmstudio"
             else:
@@ -262,6 +295,8 @@ class ConfigAdapter:
             if existing:
                 self._validate_litellm(existing)
             return self._render_litellm(model)
+        if selected == "openclaw":
+            return self._render_openclaw(model, existing)
         return self._render_json(model, existing)
 
     @staticmethod
@@ -279,7 +314,7 @@ class ConfigAdapter:
                 raise ValueError("existing JSON configuration must be an object")
         else:
             document = {}
-        port = 8081 if self.runtime == "mlx-vlm" else 8080
+        port = 8083 if self.runtime == "mlx-vlm" else 8080
         provider_id = "mlxvlm" if self.runtime == "mlx-vlm" else self.runtime.replace("_", "")
         document["mlx_agent_wire"] = {
             "marker": "MLX_AGENT_WIRE",
@@ -292,6 +327,49 @@ class ConfigAdapter:
                 "base_url": "http://127.0.0.1:{0}/v1".format(port),
                 "api_key_env": "MLX_AGENT_LOCAL_API_KEY",
             },
+        }
+        return json.dumps(document, indent=2, sort_keys=True) + "\n"
+
+    def _render_openclaw(self, model, existing):
+        if existing.strip():
+            try:
+                document = json.loads(existing)
+            except json.JSONDecodeError as error:
+                raise ValueError("existing JSON configuration is invalid: {0}".format(error))
+            if not isinstance(document, dict):
+                raise ValueError("existing JSON configuration must be an object")
+        else:
+            document = {}
+        models = document.get("models")
+        if models is None:
+            models = {}
+            document["models"] = models
+        elif not isinstance(models, dict):
+            raise ValueError("existing openclaw.json models field must be an object")
+        providers = models.get("providers")
+        if providers is None:
+            providers = {}
+            models["providers"] = providers
+        elif not isinstance(providers, dict):
+            raise ValueError("existing openclaw.json models.providers field must be an object")
+        existing_provider = providers.get("mlx-agent")
+        base_url = "http://127.0.0.1:8090/v1"
+        api_key = "${MLX_AGENT_API_KEY}"
+        if isinstance(existing_provider, dict):
+            candidate_url = existing_provider.get("baseUrl")
+            if isinstance(candidate_url, str) and candidate_url.strip():
+                try:
+                    base_url = validate_health_endpoint(candidate_url.strip())
+                except ValueError:
+                    base_url = "http://127.0.0.1:8090/v1"
+            candidate_key = existing_provider.get("apiKey")
+            if _environment_reference(candidate_key) or _env_secret_ref(candidate_key):
+                api_key = candidate_key
+        providers["mlx-agent"] = {
+            "baseUrl": base_url,
+            "api": "openai-completions",
+            "apiKey": api_key,
+            "models": [{"id": model, "name": model}],
         }
         return json.dumps(document, indent=2, sort_keys=True) + "\n"
 
@@ -316,10 +394,12 @@ class ConfigAdapter:
         if not isinstance(content, str):
             raise TypeError("configuration content must be text")
         require_secret_free_config(content)
-        if self.runtime in {"lmstudio", "mlx_lm", "mlx-vlm"}:
+        if self.runtime in {"lmstudio", "mlx_lm", "mlx-vlm", "openclaw"}:
             value = json.loads(content)
             if not isinstance(value, dict):
                 raise ValueError("JSON configuration must be an object")
+            if self.runtime == "openclaw" and "mlx_agent_wire" in value:
+                raise ValueError("openclaw.json must not contain a top-level mlx_agent_wire key")
             return True
         if self.runtime == "ollama":
             match = _OLLAMA.fullmatch(content)

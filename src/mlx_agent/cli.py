@@ -2772,7 +2772,7 @@ def _add_wire_arguments(parser):
     for name in ("render", "apply"):
         action = actions.add_parser(name, help="{0} a deterministic runtime configuration ({1})".format(name, "advisory lock protects cooperative writers" if name == "apply" else "safe render"))
         action.add_argument("model", help="Hugging Face model repository")
-        action.add_argument("--target", choices=["ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm"], default="mlx_lm")
+        action.add_argument("--target", choices=["ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm", "openclaw"], default="mlx_lm")
         action.add_argument("--path", required=True, help="target configuration file")
         action.add_argument("--json", action="store_true")
         if name == "apply":
@@ -2795,16 +2795,24 @@ def _plugin_manifest():
     return Path(__file__).resolve().parents[2] / "plugin.json"
 
 
+def _env_path(name):
+    value = os.environ.get(name)
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
 def _installer_registry():
     from .providers import ProviderRegistry
-    home = os.environ.get("MLX_AGENT_HOME")
-    config_root = os.environ.get("MLX_AGENT_CONFIG_ROOT") or os.environ.get("XDG_STATE_HOME")
-    xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
+    home = _env_path("MLX_AGENT_HOME")
+    config_root = _env_path("MLX_AGENT_CONFIG_ROOT") or _env_path("XDG_STATE_HOME")
+    xdg_config_home = _env_path("XDG_CONFIG_HOME")
     return ProviderRegistry(
         _plugin_manifest(), home=home, config_root=config_root,
         xdg_config_home=xdg_config_home,
-        openclaw_state_dir=os.environ.get("OPENCLAW_STATE_DIR"),
-        hermes_home=os.environ.get("HERMES_HOME"),
+        openclaw_state_dir=_env_path("OPENCLAW_STATE_DIR"),
+        hermes_home=_env_path("HERMES_HOME"),
     )
 
 

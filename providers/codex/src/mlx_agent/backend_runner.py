@@ -67,14 +67,18 @@ def main(argv=None):
             "from acestep.inference import GenerationConfig, GenerationParams, generate_music; "
             "from acestep.llm_inference import LLMHandler"
         )]
-    elif arguments.id == "ltx-video":
-        # mlx-video installs from its pinned, hashed source archive, built with hashed
-        # setuptools and build isolation disabled; its dependencies stay binary-only.
-        build_lock = arguments.build_lock or str(Path(arguments.lock).with_name("ltx-video-build.lock"))
+    elif arguments.id in ("ltx-video", "mlx-vlm"):
+        # Build only the pinned source package. Dependencies stay binary-only.
+        build_lock = arguments.build_lock or str(Path(arguments.lock).with_name(f"{arguments.id}-build.lock"))
+        source_package = arguments.package.replace("_", "-")
         steps.insert(1, [venv_python, "-m", "pip", "install", "--disable-pip-version-check", "--no-input",
                          "--require-hashes", "--no-deps", "--only-binary=:all:", "-r", build_lock])
-        steps[2] += ["--no-binary=mlx-video", "--no-build-isolation"]
-        steps[3] = [venv_python, "-c", "from mlx_video.models.ltx_2.generate import generate_video"]
+        steps[2] += [f"--no-binary={source_package}", "--no-build-isolation"]
+        probe = {
+            "ltx-video": "from mlx_video.models.ltx_2.generate import generate_video",
+            "mlx-vlm": "from mlx_vlm.models.inkling2 import Model; from mlx_vlm.server import main",
+        }[arguments.id]
+        steps[3] = [venv_python, "-c", probe]
     for step in steps:
         print("$ " + " ".join(step), flush=True)
         try:

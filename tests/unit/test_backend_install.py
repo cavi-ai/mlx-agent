@@ -73,9 +73,18 @@ class BackendInstallTests(unittest.TestCase):
         self.assertEqual(plan["build_lock_sha256"], hashlib.sha256(build_lock.read_bytes()).hexdigest())
         self.assertIn("github.com", plan["network"])
         self.assertIn("release-assets.githubusercontent.com", plan["network"])
-        other = self.plan("mlx-vlm")
+        other = self.plan("mflux")
         self.assertNotIn("--build-lock", other["argv"])
         self.assertNotIn("github.com", other["network"])
+
+    def test_mlx_vlm_preview_covers_the_upstream_source_and_build_tools(self):
+        plan = self.plan("mlx-vlm")
+        build_lock = Path(plan["argv"][plan["argv"].index("--build-lock") + 1])
+        self.assertEqual(build_lock.name, "mlx-vlm-build.lock")
+        self.assertEqual(plan["build_lock_sha256"], hashlib.sha256(build_lock.read_bytes()).hexdigest())
+        self.assertIn("codeload.github.com", plan["network"])
+        self.assertIn("Neywa-Labs/mlx-vlm/archive/111ac668078e017c9db1eb3936f4d7a6e0a88f89.tar.gz",
+                      Path(plan["lock"]).read_text())
 
     def test_ace_step_preview_covers_its_source_archive_and_build_tools(self):
         plan = self.plan("ace-step")

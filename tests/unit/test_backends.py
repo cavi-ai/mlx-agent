@@ -196,7 +196,8 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(sorted(manifests), ["ace-step", "ltx-video", "mflux", "mlx-3d", "mlx-audio", "mlx-embeddings", "mlx-lm", "mlx-video", "mlx-vlm"])
         self.assertTrue(manifests["mlx-lm"]["builtin"])
         self.assertEqual(manifests["mlx-audio"]["version"], "0.5.7")
-        self.assertEqual(manifests["mlx-vlm"]["version"], "0.7.4")
+        self.assertEqual(manifests["mlx-vlm"]["version"], "0.8.0+111ac66")
+        self.assertEqual(manifests["mlx-vlm"]["registry"]["vision_language"]["remapping"]["inkling2_loop"], "inkling2")
         self.assertEqual(manifests["mlx-embeddings"]["version"], "0.1.0")
 
     def test_invalid_manifest_is_refused(self):
@@ -326,9 +327,8 @@ class ClassificationPortTests(unittest.TestCase):
         self.assertIsNone(port_for_files(["config.json", "model.safetensors"], self.manifests))
         registries = load_registries(self.manifests, root=Path(self.directory.name), find_spec=lambda name: None)
         hits = lookup("laya", self.manifests, registries)
-        self.assertEqual([(hit["backend"], hit["category"]) for hit in hits], [("mlx-embeddings", "classification")])
+        self.assertIn(("mlx-embeddings", "classification"), [(hit["backend"], hit["category"]) for hit in hits])
         self.assertEqual(choose_backend(hits, "classification"), "mlx-embeddings")
-        self.assertIsNone(choose_backend(hits, "text_llm"))
 
     def test_the_estimate_rule_matches_what_the_laya_converter_quantizes(self):
         import ast

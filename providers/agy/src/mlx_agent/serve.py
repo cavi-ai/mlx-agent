@@ -350,6 +350,11 @@ def plan_start(repo, runtime, recipes, port=None, max_tokens=MAX_TOKENS_DEFAULT,
     if adapter_path is not None:
         adapter_path, adapter_identity = _adapter_evidence(adapter_path)
     model_value = repo.strip() if has_repo else local_path
+    if runtime == "mlx-vlm" and has_repo and not jit:
+        from .convert import cached_snapshot
+        snapshot = cached_snapshot(model_value, hf_cache)
+        if snapshot is not None:
+            model_value = str(snapshot.absolute())
     values = {
         "executable": runtime_executable or recipe["executable"],
         "repo": model_value,

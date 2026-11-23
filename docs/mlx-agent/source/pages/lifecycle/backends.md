@@ -14,6 +14,12 @@ runtime of any of these models. Install it with the same preview and confirmatio
 an MLX DiT and planner and a PyTorch VAE and text encoder. It installs ACE-Step
 from a pinned, hashed GitHub source archive and converts nothing.
 
+`mlx-vlm` installs a pinned, hashed upstream MLX-VLM source build that serves
+Inkling 2 Mini and other vision-language models. To update an older install,
+stop its endpoints, remove the old `mlx-vlm` environment, then install the
+backend under Python 3.12. The model cache is stored separately.
+See [Serving Inkling 2 Mini](serve.md#serving-inkling-2-mini) for the launch steps.
+
 A manifest's `port_requires` lists the files a port's converter reads from other
 Hugging Face repositories, and `port_downloads` lists the files it reads from
 elsewhere, each as an `https` `url` with its `sha256` and `size`. `intake fetch`
@@ -46,7 +52,9 @@ Confirmation starts an installation job using the shipped lock. Check installed
 state and its log before converting or running inference; a returned PID alone
 does not establish successful installation.
 
-These installs download dependencies from PyPI. The audio backend also installs
+These installs download dependencies from PyPI. The MLX-VLM and ACE-Step
+backends also download their pinned upstream source archives from GitHub.
+The audio backend installs
 the hash-pinned English spaCy pipeline from its official GitHub release; those
 hosts and the build-tool lock digest appear in its preview. It includes Misaki's
 English phonemizer and checks that it produces phonemes before marking the

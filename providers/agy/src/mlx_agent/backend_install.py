@@ -29,7 +29,7 @@ BACKEND_RUNNER = Path(__file__).resolve().with_name("backend_runner.py")
 REQUIRED_PYTHON = (3, 12)
 INSTALL_HOSTS = ("pypi.org", "files.pythonhosted.org")
 # Backends built from a pinned, hashed GitHub source archive with a hashed build lock.
-SOURCE_BUILDS = {"ace-step": "ACE-Step", "ltx-video": "mlx-video"}
+SOURCE_BUILDS = {"ace-step": "ACE-Step", "ltx-video": "mlx-video", "mlx-vlm": "MLX-VLM"}
 
 
 def _utc_now():

@@ -610,6 +610,8 @@ class ModelWorker:
             opener = loopback_opener()
             readiness_seconds = self.config.get("worker_readiness_seconds", 60)
             deadline = time.monotonic() + readiness_seconds
+            vlm = self.config.get("runtime") == "mlx-vlm"
+            readiness_path = "/health" if vlm else "/v1/models"
             splash_context_tokens = None
             while time.monotonic() < deadline:
                 if process.poll() is not None or self.closed:
@@ -628,21 +630,28 @@ class ModelWorker:
                         if ready:
                             break
                     else:
-                        request = urllib.request.Request("http://127.0.0.1:{}/v1/models".format(port),
+                        request = urllib.request.Request("http://127.0.0.1:{}{}".format(port, readiness_path),
                             headers={"Authorization": "Bearer " + self.worker_key} if self.config.get("api_key_sha256") is not None else {})
                         with opener.open(request, timeout=1) as response:
                             if response.status == 200:
-                                if splash:
-                                    try:
-                                        from mlx_agent.splash_runtime import reported_context_tokens
-                                        body = response.read(65537)
-                                        if len(body) <= 65536:
-                                            splash_context_tokens = reported_context_tokens(json.loads(body))
-                                    except (ValueError, OSError, http.client.HTTPException):
-                                        pass
-                                break
-                except OSError:
-                    time.sleep(0.1)
+                                if not vlm:
+                                    if splash:
+                                        try:
+                                            from mlx_agent.splash_runtime import reported_context_tokens
+                                            body = response.read(65537)
+                                            if len(body) <= 65536:
+                                                splash_context_tokens = reported_context_tokens(json.loads(body))
+                                        except (ValueError, OSError, http.client.HTTPException):
+                                            pass
+                                    break
+                                # MLX-VLM answers /v1/models before its startup preload is ready.
+                                health = json.loads(response.read(65537))
+                                if (isinstance(health, dict) and health.get("model_ready") is True
+                                        and health.get("loaded_model") == self.config["local_path"]):
+                                    break
+                except (OSError, ValueError, http.client.HTTPException):
+                    pass
+                time.sleep(0.1)
             else:
                 raise GatewayError(503, "model_load_failed",
                                    "Model worker did not become ready in {} seconds.".format(readiness_seconds))

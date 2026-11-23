@@ -288,6 +288,7 @@
         "opencode",
         "openclaw",
         "hermes",
+        "gemini",
         "agentskills"
       ],
       "properties": {
@@ -307,6 +308,9 @@
           "$ref": "#/$defs/provider"
         },
         "hermes": {
+          "$ref": "#/$defs/provider"
+        },
+        "gemini": {
           "$ref": "#/$defs/provider"
         },
         "agentskills": {

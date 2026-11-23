@@ -75,6 +75,7 @@ First-class adapters are included for each provider below. The universal install
 | [OpenCode](docs/install/opencode.md) | Native plugin | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire`<br>`/mlx-bench`<br>`/mlx-doctor`<br>`/mlx-watch`<br>`/mlx-fleet`<br>`/mlx-task` |
 | [OpenClaw](docs/install/openclaw.md) | Native skills | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire`<br>`/mlx-bench`<br>`/mlx-doctor`<br>`/mlx-watch`<br>`/mlx-fleet`<br>`/mlx-task` |
 | [Hermes Agent](docs/install/hermes.md) | Native skills | `/mlx-scout`<br>`/mlx-adopt`<br>`/mlx-wire`<br>`/mlx-bench`<br>`/mlx-doctor`<br>`/mlx-watch`<br>`/mlx-fleet`<br>`/mlx-task` |
+| [Gemini CLI](docs/install/gemini.md) | Native extension | `mlx-scout skill`<br>`mlx-adopt skill`<br>`mlx-wire skill`<br>`mlx-bench skill`<br>`mlx-doctor skill`<br>`mlx-watch skill`<br>`mlx-fleet skill`<br>`mlx-task skill` |
 | [AgentSkills-compatible hosts](docs/install/index.md) | Portable skills | `mlx-scout skill`<br>`mlx-adopt skill`<br>`mlx-wire skill`<br>`mlx-bench skill`<br>`mlx-doctor skill`<br>`mlx-watch skill`<br>`mlx-fleet skill`<br>`mlx-task skill` |
 <!-- compatibility:end -->
 

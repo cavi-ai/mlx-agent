@@ -169,7 +169,9 @@ def render_md(report):
     return "\n".join(out)
 
 
-def wire(repo, target, port):
+def wire(repo, target, port=None):
+    if port is None:
+        port = 8090 if target == "openclaw" else 8083 if target == "mlx-vlm" else 8080
     short = repo.split("/")[-1]
     if target == "ollama":
         return "\n".join(["# Ollama runs curated tags / HF GGUF repos (not arbitrary mlx-community weights).", "ollama pull hf.co/{0}    # GGUF repos; else use the matching library tag".format(repo), "# agent ref: ollama/<tag>"])
@@ -181,4 +183,21 @@ def wire(repo, target, port):
         return "\n".join(["pip install mlx-vlm", "mlx_vlm.server --model {0} --port {1}".format(repo, port), json.dumps({"id": "mlxvlm", "type": "openai", "baseURL": "http://127.0.0.1:{0}/v1".format(port), "apiKey": "local"}, indent=2), "# agent ref: mlxvlm/{0}".format(short)])
     if target == "litellm":
         return "\n".join(["# litellm config.yaml (run a native server first, e.g. mlx_lm.server):", "model_list:", "  - model_name: {0}".format(short.lower()), "    litellm_params:", "      model: openai/{0}".format(repo), "      api_base: http://127.0.0.1:{0}/v1".format(port), "      api_key: local"])
+    if target == "openclaw":
+        return "\n".join([
+            "# openclaw.json models.providers entry:",
+            json.dumps({
+                "models": {
+                    "providers": {
+                        "mlx-agent": {
+                            "baseUrl": "http://127.0.0.1:{0}/v1".format(port),
+                            "api": "openai-completions",
+                            "apiKey": "${MLX_AGENT_API_KEY}",
+                            "models": [{"id": repo, "name": repo}],
+                        }
+                    }
+                }
+            }, indent=2),
+            "# agent ref: mlx-agent/{0}".format(repo),
+        ])
     return "unknown target: {0}".format(target)

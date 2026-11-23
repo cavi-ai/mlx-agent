@@ -244,6 +244,27 @@ class BackendRunnerTests(unittest.TestCase):
             ])
         self.assertEqual(code, 3)
 
+    def test_runner_discards_partial_target_on_timeout(self):
+        import subprocess
+        from unittest.mock import patch
+        from mlx_agent import backend_runner
+
+        with TemporaryDirectory() as directory:
+            target = Path(directory, "mlx-demo")
+            trash = Path(directory, "Trash")
+            def fake_run(step, **_kwargs):
+                target.mkdir(parents=True, exist_ok=True)
+                raise subprocess.TimeoutExpired(step, backend_runner.STEP_TIMEOUT_SECONDS)
+            with patch("mlx_agent.backend_runner.subprocess.run", side_effect=fake_run):
+                code = backend_runner.main([
+                    "--id", "mlx-demo", "--version", "1.0.0", "--package", "mlx_demo",
+                    "--lock", "/nonexistent.lock", "--target", str(target), "--python", sys.executable,
+                    "--trash", str(trash), "--preview-hash", "h",
+                ])
+            self.assertEqual(code, 124)
+            self.assertFalse(target.exists())
+            self.assertEqual(len(list(trash.glob("mlx-demo-failed-*"))), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

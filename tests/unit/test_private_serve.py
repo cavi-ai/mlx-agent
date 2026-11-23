@@ -235,3 +235,18 @@ class RuntimeHookTests(unittest.TestCase):
                     run_runtime(directory, os.dup(listener.fileno()), [])
         self.assertEqual(seen, [(socket.AF_UNIX, True)])
         self.assertIs(runtime.run, run)
+
+    def test_private_server_class_closes_adopted_listener_on_init_failure(self):
+        from unittest.mock import patch
+        from mlx_agent.private_serve import private_server_class
+
+        with TemporaryDirectory(prefix='mlx-private-close-', dir='/tmp') as directory:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+                listener.bind(str(Path(directory) / 'sock'))
+                listener.listen()
+                server_cls = private_server_class(os.dup(listener.fileno()))
+                self.assertIsNotNone(server_cls._adopted_listener)
+                with patch('mlx_agent.private_serve.BaseServer.__init__', side_effect=RuntimeError('boom')):
+                    with self.assertRaises(RuntimeError):
+                        server_cls(('127.0.0.1', 0), BaseHTTPRequestHandler)
+                self.assertIsNone(server_cls._adopted_listener)

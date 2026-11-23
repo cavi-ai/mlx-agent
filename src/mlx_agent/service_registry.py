@@ -1,8 +1,9 @@
 """Bounded discovery of engine-owned services across receipt locations."""
 from __future__ import annotations
 
-import hashlib
 import ctypes
+import errno
+import hashlib
 import json
 import os
 import shlex
@@ -12,11 +13,44 @@ import sys
 import time
 from pathlib import Path
 
-from .transactions import _assert_safe_directory, _atomic_in_directory, _target_locks, _walk_directory
+from .transactions import (
+    _assert_safe_directory,
+    _atomic_in_directory,
+    _physical_absolute,
+    _target_locks,
+    _walk_directory,
+)
 
 MAX_ROOTS = 32
 MAX_INDEX_FILES = 256
 MAX_RECORD_BYTES = 16_384
+_LIVE_GATEWAY_SCRIPTS = ('/mlx_agent/jit_serve.py', '/mlx_agent/task_serve.py')
+
+
+def _is_stale_root_error(error, target_path):
+    message = str(error)
+    if message.startswith('path component does not exist:'):
+        return True
+    cause = getattr(error, '__cause__', None)
+    if isinstance(cause, OSError) and cause.errno == errno.ENOTDIR:
+        try:
+            physical = _physical_absolute(Path(target_path).expanduser().absolute())
+        except ValueError:
+            return False
+        current = Path('/')
+        for part in physical.parts[1:]:
+            current = current / part
+            try:
+                st = os.lstat(current)
+            except FileNotFoundError:
+                return True
+            except OSError:
+                return False
+            if stat.S_ISLNK(st.st_mode):
+                return False
+            if not stat.S_ISDIR(st.st_mode):
+                return True
+    return False
 
 
 def registry_root():
@@ -58,6 +92,7 @@ def _index_names(directory):
 def _prune_stale_registrations(index, keep_name=None):
     """Remove only unchanged owned records whose receipt roots have disappeared."""
     _, directory = _walk_directory(index)
+    unlinked = False
     try:
         names, _overflow = _index_names(directory)
         for name in names:
@@ -69,15 +104,21 @@ def _prune_stale_registrations(index, keep_name=None):
                     _safe_root(record['receipts_dir'])
                     continue
                 except ValueError as error:
-                    if not str(error).startswith('path component does not exist:'):
+                    if not _is_stale_root_error(error, record['receipts_dir']):
                         continue
                 current = os.stat(name, dir_fd=directory, follow_symlinks=False)
                 if (not stat.S_ISREG(current.st_mode) or current.st_uid != os.getuid()
                         or (current.st_dev, current.st_ino) != (metadata.st_dev, metadata.st_ino)):
                     continue
                 os.unlink(name, dir_fd=directory)
+                unlinked = True
             except (OSError, ValueError, TypeError):
                 continue
+        if unlinked:
+            try:
+                os.fsync(directory)
+            except OSError:
+                pass
     finally:
         os.close(directory)
 
@@ -123,7 +164,7 @@ def _read_roots(registry, errors):
                 try:
                     resolved = str(_safe_root(record['receipts_dir']))
                 except ValueError as error:
-                    if not str(error).startswith('path component does not exist:'):
+                    if not _is_stale_root_error(error, record['receipts_dir']):
                         raise
                     continue
                 if resolved in seen:
@@ -192,7 +233,7 @@ def live_receipt_roots(process_rows=None, errors=None):
         fields = row.strip().split(None, 2)
         if len(fields) != 3 or fields[1] != str(os.getuid()):
             continue
-        if '/mlx_agent/jit_serve.py' not in fields[2]:
+        if not any(script in fields[2] for script in _LIVE_GATEWAY_SCRIPTS):
             continue
         try:
             args = _process_arguments(int(fields[0])) if live else shlex.split(fields[2])
@@ -200,7 +241,7 @@ def live_receipt_roots(process_rows=None, errors=None):
                 if errors is not None:
                     errors.append({'source': 'local processes', 'message': 'A gateway argument list could not be read.'})
                 continue
-            if not any(value.endswith('/mlx_agent/jit_serve.py') for value in args[:4]) or '--config' not in args:
+            if not any(value.endswith(_LIVE_GATEWAY_SCRIPTS) for value in args[:4]) or '--config' not in args:
                 continue
             config = Path(args[args.index('--config') + 1])
             if not config.is_absolute() or config.parent.name != 'serve' or config.parent.parent.name != '.mlx-agent-receipts':

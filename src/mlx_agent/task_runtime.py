@@ -7,6 +7,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import wave
 from datetime import datetime, timezone
@@ -46,9 +47,12 @@ def _spawn(role, identifier, store, launcher=subprocess.Popen):
     environment["PYTHONPATH"] = source + (os.pathsep + environment["PYTHONPATH"] if environment.get("PYTHONPATH") else "")
     try:
         with os.fdopen(descriptor, "wb") as output:
-            return launcher([sys.executable, "-m", "mlx_agent.task_worker", "--role", role, "--id", identifier,
-                             "--state-dir", str(store.root)], stdin=subprocess.DEVNULL, stdout=output,
-                            stderr=subprocess.STDOUT, start_new_session=True, env=environment, umask=0o077)
+            process = launcher([sys.executable, "-m", "mlx_agent.task_worker", "--role", role, "--id", identifier,
+                                "--state-dir", str(store.root)], stdin=subprocess.DEVNULL, stdout=output,
+                               stderr=subprocess.STDOUT, start_new_session=True, env=environment, umask=0o077)
+        if isinstance(process, subprocess.Popen):
+            threading.Thread(target=process.wait, name="mlx-task-reaper", daemon=True).start()
+        return process
     except OSError as error:
         raise TaskError("task_launch_failed", "Cannot launch the task worker: {0}".format(error)) from error
 

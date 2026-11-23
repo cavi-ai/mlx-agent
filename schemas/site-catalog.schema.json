@@ -92,7 +92,7 @@
     "providers": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["claude", "codex", "agy", "opencode", "openclaw", "hermes", "agentskills"],
+      "required": ["claude", "codex", "agy", "opencode", "openclaw", "hermes", "gemini", "agentskills"],
       "properties": {
         "claude": {"$ref": "#/$defs/provider"},
         "codex": {"$ref": "#/$defs/provider"},
@@ -100,6 +100,7 @@
         "opencode": {"$ref": "#/$defs/provider"},
         "openclaw": {"$ref": "#/$defs/provider"},
         "hermes": {"$ref": "#/$defs/provider"},
+        "gemini": {"$ref": "#/$defs/provider"},
         "agentskills": {"$ref": "#/$defs/provider"}
       }
     },
@@ -129,7 +130,7 @@
         "provider_contracts": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["claude", "codex", "agy", "opencode", "openclaw", "hermes", "agentskills"],
+          "required": ["claude", "codex", "agy", "opencode", "openclaw", "hermes", "gemini", "agentskills"],
           "properties": {
             "claude": {"$ref": "#/$defs/providerEvidence"},
             "codex": {"$ref": "#/$defs/providerEvidence"},
@@ -137,6 +138,7 @@
             "opencode": {"$ref": "#/$defs/providerEvidence"},
             "openclaw": {"$ref": "#/$defs/providerEvidence"},
             "hermes": {"$ref": "#/$defs/providerEvidence"},
+            "gemini": {"$ref": "#/$defs/providerEvidence"},
             "agentskills": {"$ref": "#/$defs/providerEvidence"}
           }
         }

@@ -3,6 +3,7 @@
 import importlib
 import json
 from pathlib import Path
+import contextlib
 import sqlite3
 import tempfile
 import unittest
@@ -25,7 +26,7 @@ class ReadOnlyPolicyTests(unittest.TestCase):
         self.database = self.root / "opencode.db"
 
     def create_database(self, credential=None, sources=None):
-        with sqlite3.connect(str(self.database)) as connection:
+        with contextlib.closing(sqlite3.connect(str(self.database))) as connection, connection:
             connection.execute("CREATE TABLE credential (id TEXT, integration_id TEXT, label TEXT, value TEXT, "
                                "connector_id TEXT, method_id TEXT, active INTEGER, time_created INTEGER, time_updated INTEGER)")
             connection.execute("CREATE TABLE kv (key TEXT, value TEXT, time_created INTEGER, time_updated INTEGER)")
@@ -70,7 +71,7 @@ class ReadOnlyPolicyTests(unittest.TestCase):
                 self.database.unlink(missing_ok=True)
                 self.create_database(credential=active if active is not None else 0)
                 if active is None:
-                    with sqlite3.connect(str(self.database)) as connection:
+                    with contextlib.closing(sqlite3.connect(str(self.database))) as connection, connection:
                         connection.execute("UPDATE credential SET active=NULL")
                 with self.assertRaises(TaskError) as failure:
                     self.inspect()
@@ -100,7 +101,7 @@ class ReadOnlyPolicyTests(unittest.TestCase):
         with self.assertRaises(TaskError):
             self.inspect()
         journal.unlink()
-        with sqlite3.connect(str(self.database)) as connection:
+        with contextlib.closing(sqlite3.connect(str(self.database))) as connection, connection:
             connection.execute("DROP TABLE credential")
         with self.assertRaises(TaskError):
             self.inspect()

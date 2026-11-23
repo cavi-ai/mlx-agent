@@ -22,6 +22,7 @@ class CommandArgumentError(ValueError):
 
 
 _RUNTIMES = {"ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm"}
+_WIRE_TARGETS = _RUNTIMES | {"openclaw"}
 _BENCH_RUNTIMES = _RUNTIMES | {"strata", "splash"}
 _BENCH_WORKLOADS = {"chat", "prefix", "prefill", "concurrent", "cold"}
 _ROLES = {role for role, _keywords, _label in ROLES}
@@ -121,7 +122,7 @@ def _parse_scout(tokens):
         "--context": (lambda value: _integer(value, "context", 1024, 1048576), "context"),
         "--state-dir": (lambda value: _path(value, "state-dir"), "state-dir"),
         "--wire": (lambda value: _model(value), "wire"),
-        "--target": (lambda value: value if value in _RUNTIMES else None, "target"),
+        "--target": (lambda value: value if value in _WIRE_TARGETS else None, "target"),
         "--port": (lambda value: _integer(value, "port", 1, 65535), "port"),
     }
     repeatable = {"--license", "--publisher"}
@@ -230,7 +231,7 @@ def _parse_wire(tokens):
         else:
             value = _value(tokens, index, flag)
             if flag == "--target":
-                if value not in _RUNTIMES:
+                if value not in _WIRE_TARGETS:
                     raise CommandArgumentError("unsupported Wire target")
             elif flag in {"--path", "--receipts-dir"}:
                 value = _path(value, flag[2:])

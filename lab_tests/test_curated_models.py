@@ -37,11 +37,11 @@ def sequence(
 ) -> CuratedSequenceV1:
     return CuratedSequenceV1(
         sequence_id="sequence_001",
-        identity_id="mirza_char",
+        identity_id="alpha_char",
         source_lineage="capture_001",
         split=split,
         caption=StructuredCaptionV1(
-            character_token="mirza_char",
+            character_token="alpha_char",
             immutable_attributes=("blue eyes", "black hair"),
             action="walking",
         ),
@@ -79,7 +79,7 @@ def invalid_duplicate_manifest() -> dict[str, object]:
     first = sequence(frames=(frame(),))
     second = CuratedSequenceV1(
         sequence_id="sequence_002",
-        identity_id="mirza_char",
+        identity_id="alpha_char",
         source_lineage="capture_002",
         split="validation",
         caption=first.caption,
@@ -90,19 +90,19 @@ def invalid_duplicate_manifest() -> dict[str, object]:
 
 def test_caption_rendering_is_order_independent_and_identity_explicit() -> None:
     left = StructuredCaptionV1(
-        character_token="mirza_char",
+        character_token="alpha_char",
         immutable_attributes=("blue eyes", "black hair"),
         action="walking",
     )
     right = StructuredCaptionV1(
-        character_token="mirza_char",
+        character_token="alpha_char",
         immutable_attributes=("black hair", "blue eyes"),
         action="walking",
     )
 
     assert render_caption_v1(left) == render_caption_v1(right)
     assert structured_caption_digest(left) == structured_caption_digest(right)
-    assert "token: mirza_char" in render_caption_v1(left)
+    assert "token: alpha_char" in render_caption_v1(left)
     assert left.immutable_attributes == ("black hair", "blue eyes")
 
 
@@ -115,7 +115,7 @@ def test_models_reject_extra_keys_and_invalid_content() -> None:
     with pytest.raises(ValidationError):
         StructuredCaptionV1.model_validate(
             {
-                "character_token": "mirza_char",
+                "character_token": "alpha_char",
                 "immutable_attributes": ("blue eyes",),
                 "action": "walking",
                 "unknown": "nope",
@@ -131,7 +131,7 @@ def test_models_reject_extra_keys_and_invalid_content() -> None:
 
 def test_caption_normalizes_unicode_and_duplicate_set_like_fields() -> None:
     caption = StructuredCaptionV1(
-        character_token="mirza_char",
+        character_token="alpha_char",
         immutable_attributes=("caf\u00e9", "cafe\u0301", "blue eyes"),
         clothing=("coat", "coat"),
         action="walking",
@@ -152,7 +152,7 @@ def test_manifest_digest_rejects_permutation_conflicts() -> None:
     first = sequence()
     second = CuratedSequenceV1(
         sequence_id="sequence_002",
-        identity_id="mirza_char",
+        identity_id="alpha_char",
         source_lineage="capture_002",
         split="validation",
         caption=first.caption,
@@ -189,7 +189,7 @@ def test_sequence_rejects_caption_token_that_differs_from_identity() -> None:
     with pytest.raises(ValidationError):
         CuratedSequenceV1(
             sequence_id="sequence_001",
-            identity_id="mirza_char",
+            identity_id="alpha_char",
             source_lineage="capture_001",
             split="train",
             caption=StructuredCaptionV1(
@@ -216,7 +216,7 @@ def test_models_reject_non_strict_input_types(field: str, value: object) -> None
 
 def test_caption_renderer_uses_all_declared_sections_in_fixed_order() -> None:
     caption = StructuredCaptionV1(
-        character_token="mirza_char",
+        character_token="alpha_char",
         immutable_attributes=("blue eyes",),
         clothing=("black coat", "silver ring"),
         action="walking",
@@ -230,7 +230,7 @@ def test_caption_renderer_uses_all_declared_sections_in_fixed_order() -> None:
     )
 
     assert render_caption_v1(caption) == (
-        "token: mirza_char; immutable identity: blue eyes; "
+        "token: alpha_char; immutable identity: blue eyes; "
         "clothing: black coat, silver ring; action/pose: walking; full body; "
         "expression: focused; environment: city street; lighting: soft daylight; "
         "camera: medium shot; style: cinematic; omissions: hat"
@@ -239,19 +239,19 @@ def test_caption_renderer_uses_all_declared_sections_in_fixed_order() -> None:
 
 def test_caption_renderer_omits_explicitly_empty_optional_sections() -> None:
     caption = StructuredCaptionV1(
-        character_token="mirza_char",
+        character_token="alpha_char",
         immutable_attributes=("blue eyes",),
         action="walking",
     )
 
     assert render_caption_v1(caption) == (
-        "token: mirza_char; immutable identity: blue eyes; action/pose: walking"
+        "token: alpha_char; immutable identity: blue eyes; action/pose: walking"
     )
 
 
 def test_caption_rejects_unknown_accessories_field_without_ambiguous_rendering() -> None:
     payload = StructuredCaptionV1(
-        character_token="mirza_char",
+        character_token="alpha_char",
         immutable_attributes=("blue eyes",),
         clothing=("black coat", "silver ring"),
         action="walking",
@@ -263,7 +263,7 @@ def test_caption_rejects_unknown_accessories_field_without_ambiguous_rendering()
 
 def test_clothing_normalizes_duplicate_accessory_descriptors_once() -> None:
     caption = StructuredCaptionV1(
-        character_token="mirza_char",
+        character_token="alpha_char",
         immutable_attributes=("blue eyes",),
         clothing=("silver ring", "black coat", "silver ring"),
         action="walking",
@@ -271,7 +271,7 @@ def test_clothing_normalizes_duplicate_accessory_descriptors_once() -> None:
 
     assert caption.clothing == ("black coat", "silver ring")
     assert render_caption_v1(caption) == (
-        "token: mirza_char; immutable identity: blue eyes; "
+        "token: alpha_char; immutable identity: blue eyes; "
         "clothing: black coat, silver ring; action/pose: walking"
     )
 

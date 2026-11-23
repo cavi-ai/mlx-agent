@@ -1241,7 +1241,7 @@
         "prefix": ""
       },
       "minimum_version": "1.1.14",
-      "last_tested_version": "1.1.14",
+      "last_tested_version": "1.5.14",
       "version_probe": {
         "args": [
           "--version"
@@ -1381,7 +1381,7 @@
         "prefix": "/"
       },
       "minimum_version": "2026.10.3",
-      "last_tested_version": "2026.10.5",
+      "last_tested_version": "2026.11.5",
       "version_probe": {
         "args": [
           "--version"
@@ -1694,6 +1694,70 @@
         {
           "source": "scripts/mlx-agent-mcp",
           "destination": "skills/mlx-task/scripts/mlx-agent-mcp"
+        }
+      ],
+      "config_paths": []
+    },
+    "gemini": {
+      "native": true,
+      "capabilities": [
+        "scout",
+        "adopt",
+        "wire",
+        "bench",
+        "doctor",
+        "watch",
+        "fleet",
+        "task"
+      ],
+      "commands": [
+        "mlx-scout",
+        "mlx-adopt",
+        "mlx-wire",
+        "mlx-bench",
+        "mlx-doctor",
+        "mlx-watch",
+        "mlx-fleet",
+        "mlx-task"
+      ],
+      "invocation": {
+        "kind": "skill",
+        "prefix": ""
+      },
+      "minimum_version": "0.34.0",
+      "last_tested_version": "0.34.0",
+      "version_probe": {
+        "args": [
+          "--version"
+        ],
+        "timeout_seconds": 5
+      },
+      "install_mode": "direct",
+      "detect_commands": [
+        "gemini"
+      ],
+      "user_root": "{home}/.gemini/extensions/mlx-agent",
+      "project_root": "{project}/.gemini/extensions/mlx-agent",
+      "artifacts": [
+        {
+          "source": "providers/gemini/gemini-extension.json",
+          "destination": "gemini-extension.json"
+        },
+        {
+          "source": "providers/gemini/skills",
+          "destination": "skills"
+        },
+        {
+          "source": "scripts/mlx-agent",
+          "destination": "scripts/mlx-agent"
+        },
+        {
+          "source": "scripts/mlx-agent-mcp",
+          "destination": "scripts/mlx-agent-mcp"
+        },
+        {
+          "source": "src/mlx_agent",
+          "destination": "src/mlx_agent"
         }
       ],
       "config_paths": []

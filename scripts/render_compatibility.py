@@ -24,6 +24,7 @@ PACKAGE_TYPES = {
     "opencode": "Native plugin",
     "openclaw": "Native skills",
     "hermes": "Native skills",
+    "gemini": "Native extension",
     "agentskills": "Portable skills",
 }
 

@@ -1,6 +1,6 @@
 # Install mlx-agent
 
-Choose the host that owns your coding-agent surface: [Claude Code](claude.md), [Codex CLI](codex.md), [Agy](agy.md), [OpenCode](opencode.md), [OpenClaw](openclaw.md), or [Hermes Agent](hermes.md). For any AgentSkills-compatible host, use the universal installer: it copies each skill's `SKILL.md` together with the launcher and runtime from the repository root, so every installed skill folder is self-contained.
+Choose the host that owns your coding-agent surface: [Claude Code](claude.md), [Codex CLI](codex.md), [Agy](agy.md), [OpenCode](opencode.md), [OpenClaw](openclaw.md), [Hermes Agent](hermes.md), or [Gemini CLI](gemini.md). For any AgentSkills-compatible host, use the universal installer: it copies each skill's `SKILL.md` together with the launcher and runtime from the repository root, so every installed skill folder is self-contained.
 
 For a user-scoped portable install, install all eight skills into the host's AgentSkills directory:
 
@@ -36,10 +36,10 @@ python3 scripts/mlx-agent doctor agy --scope user --json
 The website catalog specializes these safe lifecycle previews for each provider and scope from the following canonical templates:
 
 ```bash
-python3 scripts/mlx-agent install claude codex agy opencode openclaw hermes agentskills --scope user --dry-run --json
-python3 scripts/mlx-agent doctor claude codex agy opencode openclaw hermes agentskills --scope user --json
-python3 scripts/mlx-agent update claude codex agy opencode openclaw hermes agentskills --scope user --dry-run --json
-python3 scripts/mlx-agent uninstall claude codex agy opencode openclaw hermes agentskills --scope user --dry-run --json
+python3 scripts/mlx-agent install claude codex agy opencode openclaw hermes gemini agentskills --scope user --dry-run --json
+python3 scripts/mlx-agent doctor claude codex agy opencode openclaw hermes gemini agentskills --scope user --json
+python3 scripts/mlx-agent update claude codex agy opencode openclaw hermes gemini agentskills --scope user --dry-run --json
+python3 scripts/mlx-agent uninstall claude codex agy opencode openclaw hermes gemini agentskills --scope user --dry-run --json
 ```
 
 For a mutating action, inspect the returned preview and rerun the specialized command with `--confirm --preview-hash <preview-hash> --json`.

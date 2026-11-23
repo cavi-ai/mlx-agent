@@ -114,10 +114,10 @@ def test_detail_projects_canonical_diff_retry_evidence_and_path_free_errors(
                 jobs[0].id,
                 json.dumps(
                     {
-                        "message": "failed loading /Users/franco/secret/model.safetensors",
+                        "message": "failed loading /Users/alice/private/model.safetensors",
                         "nested": [
                             {"path": "/private/weights/secret.bin", "ok": False},
-                            ["prefix /Volumes/MIRZA/private/data.json suffix"],
+                            ["prefix /Volumes/ExternalSSD/private/data.json suffix"],
                         ],
                     }
                 ),

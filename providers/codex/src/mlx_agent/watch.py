@@ -14,11 +14,12 @@ from .model_doctor import (
 )
 from .intake_source import IntakeSourceError, parse_hf_source
 from .models import base_name
-from .transactions import _atomic_in_directory
+from .transactions import _assert_safe_directory, _atomic_in_directory, _read_bounded_target
 
 
 WATCH_SCHEMA_VERSION = "1.0"
 STATE_FILENAME = "watch-state.json"
+MAX_STATE_BYTES = 1_048_576
 MAX_OWNED = 500
 MAX_CANDIDATES = 2000
 MAX_FINDINGS = 100
@@ -177,12 +178,27 @@ def build_snapshot(owned, candidates, now=None, scope=None, ownership_checks=Non
 def write_snapshot(state_dir, snapshot):
     """Persist the snapshot, rotating any existing one into `previous`."""
     destination = state_file(state_dir)
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        _assert_safe_directory(destination.parent, create=True)
+    except (OSError, ValueError) as error:
+        raise WatchError(
+            "invalid_state",
+            "The watch state directory is unsafe: {0}".format(error),
+            "Use a non-symlinked state directory owned by the current user.",
+        ) from error
     existing = None
-    if destination.is_file():
+    try:
+        raw, exists = _read_bounded_target(destination, max_bytes=MAX_STATE_BYTES)
+    except (OSError, ValueError) as error:
+        raise WatchError(
+            "invalid_state",
+            "The watch state file could not be read safely: {0}".format(error),
+            "Remove the unsafe or oversized watch state file and run watch snapshot again.",
+        ) from error
+    if exists:
         try:
-            existing = json.loads(destination.read_text(encoding="utf-8"))
-        except (OSError, ValueError, json.JSONDecodeError):
+            existing = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError, json.JSONDecodeError):
             existing = None
     if isinstance(existing, dict) and existing.get("schema_version") == WATCH_SCHEMA_VERSION:
         snapshot["previous"] = {
@@ -198,20 +214,40 @@ def write_snapshot(state_dir, snapshot):
 
 def read_baseline(state_dir):
     destination = state_file(state_dir)
-    if not destination.is_file():
+    try:
+        raw, exists = _read_bounded_target(destination, max_bytes=MAX_STATE_BYTES)
+    except ValueError as error:
+        if str(error).startswith("path component does not exist:"):
+            raise WatchError(
+                "missing_baseline",
+                "No watch snapshot exists yet.",
+                "Run mlx-agent watch snapshot first to record a baseline.",
+            ) from error
+        raise WatchError(
+            "invalid_state",
+            "The watch state file could not be read: {0}".format(error),
+            "Remove the corrupted file and run watch snapshot again.",
+        ) from error
+    except OSError as error:
+        raise WatchError(
+            "invalid_state",
+            "The watch state file could not be read: {0}".format(error),
+            "Remove the corrupted file and run watch snapshot again.",
+        ) from error
+    if not exists:
         raise WatchError(
             "missing_baseline",
             "No watch snapshot exists yet.",
             "Run mlx-agent watch snapshot first to record a baseline.",
         )
     try:
-        value = json.loads(destination.read_text(encoding="utf-8"))
-    except (OSError, ValueError, json.JSONDecodeError) as error:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
         raise WatchError(
             "invalid_state",
             "The watch state file could not be read: {0}".format(error),
             "Remove the corrupted file and run watch snapshot again.",
-        )
+        ) from error
     if not isinstance(value, dict) or value.get("schema_version") != WATCH_SCHEMA_VERSION:
         raise WatchError(
             "invalid_state",

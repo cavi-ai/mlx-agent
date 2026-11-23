@@ -61,7 +61,7 @@ def test_dataset_ledger_identity_is_order_independent_and_preserved() -> None:
         character_id="character_1",
         character_pack_digest=_digest("pack"),
         canonical_outfit_id="jacket-v1",
-        reserved_token="<mirza>",
+        reserved_token="<alpha>",
         samples=(),
         imported_sample_ids=imports,
         curation_confirmation_ids=confirmations,
@@ -89,7 +89,7 @@ def test_dataset_ledgers_reject_malformed_or_duplicate_ids(
             character_id="character_1",
             character_pack_digest=_digest("pack"),
             canonical_outfit_id="jacket-v1",
-            reserved_token="<mirza>",
+            reserved_token="<alpha>",
             samples=(),
             **{field: value},
         )
@@ -682,7 +682,7 @@ def _sample(sample_id: str, *, split: DatasetSplit = DatasetSplit.TRAIN) -> Trai
         source_tier=TrainingSourceTier.GOLD_STILL,
         sample_digest=digest,
         source_lineage=f"lineage-{sample_id}",
-        caption="<mirza> in the canonical jacket",
+        caption="<alpha> in the canonical jacket",
         split=split,
         media=TrainingMedia(
             sha256=digest,
@@ -871,10 +871,10 @@ def test_content_digest_fields_require_exact_lowercase_sha256_format(
         payload["media"]["sha256"] = value
     elif model is TrainingDatasetDraft:
         payload = {
-            "character_id": "mirza",
+            "character_id": "alpha",
             "character_pack_digest": _digest("pack"),
             "canonical_outfit_id": "jacket-v1",
-            "reserved_token": "<mirza>",
+            "reserved_token": "<alpha>",
             "samples": (),
         }
     else:

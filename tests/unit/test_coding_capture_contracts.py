@@ -3,6 +3,7 @@
 import importlib
 import json
 from pathlib import Path
+import contextlib
 import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
@@ -125,7 +126,7 @@ class CodingCaptureStoreTests(unittest.TestCase):
         self.assertEqual(record["client_outcome"], "pending")
         self.assertEqual(record["attribution"], "pending")
         self.assertEqual(record["processes"], {})
-        with sqlite3.connect(self.store.database) as connection:
+        with contextlib.closing(sqlite3.connect(self.store.database)) as connection, connection:
             self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 1)
             self.assertEqual(connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall(), [("tasks",)])
         with self.assertRaises(TaskError):
@@ -160,7 +161,7 @@ class CodingCaptureStoreTests(unittest.TestCase):
     def test_unknown_schema_does_not_execute(self):
         record = self.create()
         record["schema"] = "coding-capture-run/99"
-        with sqlite3.connect(self.store.database) as connection:
+        with contextlib.closing(sqlite3.connect(self.store.database)) as connection, connection:
             connection.execute("UPDATE tasks SET record=? WHERE id=?", (json.dumps(record), record["id"]))
         before = self.store.database.read_bytes()
         with self.assertRaises(TaskError):

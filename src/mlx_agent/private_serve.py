@@ -99,12 +99,24 @@ def private_server_class(descriptor):
     class PrivateServer(ThreadingHTTPServer):
         daemon_threads = True
         block_on_close = False
+        _adopted_listener = listener
+
+        @classmethod
+        def close_adopted_listener(cls):
+            if cls._adopted_listener is not None:
+                cls._adopted_listener.close()
+                cls._adopted_listener = None
 
         def __init__(self, address, handler):
             # Upstream may set address_family after resolving its dummy address.
             # BaseServer creates no socket; adopt only the validated Unix FD.
-            BaseServer.__init__(self, listener.getsockname(), handler)
+            try:
+                BaseServer.__init__(self, listener.getsockname(), handler)
+            except BaseException:
+                self.close_adopted_listener()
+                raise
             self.socket = listener
+            type(self)._adopted_listener = None
             self.server_name, self.server_port = "private", 0
 
         def get_request(self):
@@ -246,19 +258,19 @@ def run_runtime(model, descriptor, forwarded, shared_prefix_mib=None, shared_pre
         protect_worker(digest)
     # Adopt the listener before importing a runtime that could load weights.
     server_class = private_server_class(descriptor)
-    os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_DATASETS_OFFLINE="1")
     restore = lambda: None
-    if shared_prefix_mib is not None:
-        from mlx_agent.shared_prefix_cache import identity_here, supported
-        actual = identity_here()
-        if (not 16 <= shared_prefix_mib <= 2048 or not supported(actual)
-                or actual['fingerprint'] != shared_prefix_fingerprint):
-            raise ValueError("Shared prefix runtime identity changed.")
-    from mlx_lm import server
-    if shared_prefix_mib is not None:
-        from mlx_agent.shared_prefix_cache import install
-        restore = install(server, shared_prefix_mib * (1 << 20))
     try:
+        os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_DATASETS_OFFLINE="1")
+        if shared_prefix_mib is not None:
+            from mlx_agent.shared_prefix_cache import identity_here, supported
+            actual = identity_here()
+            if (not 16 <= shared_prefix_mib <= 2048 or not supported(actual)
+                    or actual['fingerprint'] != shared_prefix_fingerprint):
+                raise ValueError("Shared prefix runtime identity changed.")
+        from mlx_lm import server
+        if shared_prefix_mib is not None:
+            from mlx_agent.shared_prefix_cache import install
+            restore = install(server, shared_prefix_mib * (1 << 20))
         original_run = server.run
         absent = object()
         original_factory = getattr(server, "_run_http_server", absent)
@@ -324,7 +336,12 @@ def run_runtime(model, descriptor, forwarded, shared_prefix_mib=None, shared_pre
                 server._run_http_server = original_factory
             sys.argv = previous
     finally:
-        restore()
+        try:
+            restore()
+        finally:
+            close_listener = getattr(server_class, "close_adopted_listener", None)
+            if callable(close_listener):
+                close_listener()
 
 
 def main(argv=None):

@@ -304,3 +304,53 @@ class ServiceRegistryTests(unittest.TestCase):
                 if not item.is_symlink() and item.name != 'corrupt.json'
             ]
             self.assertEqual(set(remaining_records), {str(live_a.resolve()), str(live_b.resolve())})
+
+    def test_live_receipt_roots_discovers_task_serve_processes(self):
+        uid = os.getuid()
+        rows = (
+            f"101 {uid} python3 /opt/mlx_agent/jit_serve.py --config /a/.mlx-agent-receipts/serve/x.jit-config.json\n"
+            f"102 {uid} python3 /opt/mlx_agent/task_serve.py --config /b/.mlx-agent-receipts/serve/y.jit-config.json\n"
+        )
+        self.assertEqual(live_receipt_roots(process_rows=rows), ['/a', '/b'])
+
+    def test_prune_stale_registrations_fsyncs_only_on_unlink_and_prunes_enotdir(self):
+        import tempfile
+        from unittest.mock import patch
+        from mlx_agent.service_registry import _prune_stale_registrations, discover_services
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            registry = root / 'registry'
+            live = root / 'live'
+            replaced = root / 'replaced' / 'nested'
+            live.mkdir()
+            replaced.mkdir(parents=True)
+            register_receipts(live, registry)
+            register_receipts(replaced, registry)
+
+            # No-op prune should not call fsync.
+            with patch('mlx_agent.service_registry.os.fsync', wraps=os.fsync) as fsync_spy:
+                _prune_stale_registrations(registry)
+                self.assertEqual(fsync_spy.call_count, 0)
+
+            # Replace ancestor directory with a regular file (ENOTDIR) -> pruned with fsync.
+            replaced.rmdir()
+            (root / 'replaced').rmdir()
+            (root / 'replaced').write_text('now-a-file', encoding='utf-8')
+
+            with patch('mlx_agent.service_registry.os.fsync', wraps=os.fsync) as fsync_spy:
+                _prune_stale_registrations(registry)
+                self.assertEqual(fsync_spy.call_count, 1)
+
+            self.assertEqual(registered_roots(registry), [str(live.resolve())])
+
+            # Symlinked registration root must still surface an error in discover_services.
+            symlink_root = root / 'sym'
+            target_dir = root / 'target'
+            target_dir.mkdir()
+            symlink_root.mkdir()
+            register_receipts(symlink_root, registry)
+            symlink_root.rmdir()
+            symlink_root.symlink_to(target_dir, target_is_directory=True)
+            result = discover_services(registry=registry, process_roots=[], inspect=lambda _r: [])
+            self.assertTrue(any('refusing unsafe directory component' in err['message'] for err in result['errors']))

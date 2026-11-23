@@ -16,9 +16,19 @@ from pathlib import Path
 
 _AGY_USER_PLUGIN_SUFFIX = Path(".gemini") / "config" / "plugins" / "mlx-agent"
 _AGY_PROJECT_PLUGIN_SUFFIX = Path(".agents") / "plugins" / "mlx-agent"
+_GEMINI_EXTENSION_SUFFIX = Path(".gemini") / "extensions" / "mlx-agent"
 
 
-def _tree_files(location):
+def _clean_root(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped or None
+    return value
+
+
+def _tree_files(location, exclude_names=()):
     """Regular files under a resolved directory, relative and in path order; any symbolic link is refused."""
     found, pending = [], [()]
     while pending:
@@ -31,6 +41,8 @@ def _tree_files(location):
                         "provider artifact source must not contain symlinks: {0}".format(location.joinpath(*child))
                     )
                 if entry.is_dir(follow_symlinks=False):
+                    if parts == () and entry.name in exclude_names:
+                        continue
                     pending.append(child)
                 elif ("__pycache__" not in child and os.path.splitext(entry.name)[1] != ".pyc"
                       and entry.is_file(follow_symlinks=False)):
@@ -170,6 +182,11 @@ class ProviderRegistry:
         self, manifest_path, home=None, config_root=None, xdg_config_home=None,
         openclaw_state_dir=None, hermes_home=None,
     ):
+        home = _clean_root(home)
+        config_root = _clean_root(config_root)
+        xdg_config_home = _clean_root(xdg_config_home)
+        openclaw_state_dir = _clean_root(openclaw_state_dir)
+        hermes_home = _clean_root(hermes_home)
         self.manifest_path = Path(manifest_path).resolve()
         self.home = Path(home).expanduser().resolve() if home else Path.home().resolve()
         # Receipts are state, not configuration, and belong in the XDG state
@@ -300,7 +317,10 @@ class ProviderRegistry:
             if location.is_file():
                 artifacts.append(ProviderArtifact(location, destination, project_destination, scopes))
             else:
-                for relative in _tree_files(location):
+                exclude_names = (
+                    ("_lab",) if destination.parts[:1] == ("skills",) and source == Path("src/mlx_agent") else ()
+                )
+                for relative in _tree_files(location, exclude_names=exclude_names):
                     project_child = project_destination / relative if project_destination else None
                     artifacts.append(ProviderArtifact(location / relative, destination / relative, project_child, scopes))
         config_paths = value["config_paths"]
@@ -314,6 +334,8 @@ class ProviderRegistry:
             self._validate_openclaw_layout(user_root, project_root, artifacts)
         if provider_id == "hermes":
             self._validate_hermes_layout(user_root, project_root, artifacts)
+        if provider_id == "gemini":
+            self._validate_gemini_layout(user_root, project_root, artifacts)
         return ProviderDefinition(
             id=provider_id,
             detect_commands=tuple(commands),
@@ -385,6 +407,21 @@ class ProviderRegistry:
             raise ValueError("provider hermes must install native skills")
         if not any(item.destination == Path("skills/mlx-scout/scripts/mlx-agent") for item in artifacts):
             raise ValueError("provider hermes must install each skill's bundled launcher")
+
+    def _validate_gemini_layout(self, user_root, project_root, artifacts):
+        """Keep Gemini CLI's extension roots and canonical runtime artifacts exact."""
+        if user_root != _physical(_logical(self.home / _GEMINI_EXTENSION_SUFFIX)):
+            raise ValueError("provider gemini.user_root must target home/.gemini/extensions/mlx-agent")
+        if project_root != _GEMINI_EXTENSION_SUFFIX:
+            raise ValueError("provider gemini.project_root must target .gemini/extensions/mlx-agent")
+        if not any(item.destination == Path("gemini-extension.json") for item in artifacts):
+            raise ValueError("provider gemini must install its gemini-extension.json manifest")
+        if not any(item.destination == Path("skills/mlx-scout/SKILL.md") for item in artifacts):
+            raise ValueError("provider gemini must install native skills")
+        if not any(item.destination == Path("scripts/mlx-agent") for item in artifacts):
+            raise ValueError("provider gemini must install its bundled launcher")
+        if not any(item.destination == Path("src/mlx_agent/cli.py") for item in artifacts):
+            raise ValueError("provider gemini must install its runtime package")
 
     def _user_root(self, template, provider_id):
         if not isinstance(template, str) or "{project}" in template:

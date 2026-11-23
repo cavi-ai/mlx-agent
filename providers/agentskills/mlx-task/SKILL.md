@@ -1,11 +1,12 @@
 ---
 name: "mlx-task"
 description: "Run, track and collect durable local inference tasks."
+metadata: { "openclaw": { "requires": { "bins": ["python3"] } } }
 ---
 
 # MLX Task
 
-Resolve `<skill-dir>` as the absolute directory containing this SKILL.md. Never resolve the bundled executable from the shell working directory.
+Resolve `<skill-dir>` (`{baseDir}` in OpenClaw) as the absolute directory containing this SKILL.md. Never resolve the bundled executable from the shell working directory.
 
 canonical capability ID: mlx-agent.task
 

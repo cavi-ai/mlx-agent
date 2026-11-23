@@ -23,12 +23,14 @@ Find local MLX models worth running on this Mac. Queries the HuggingFace Hub for
 
 ## Run
 
-- All roles: `python3 scripts/scout.py`
-- One role: `python3 scripts/scout.py --role coding`
-- What changed recently: `python3 scripts/scout.py --new`
-- Fast (skip HF enrichment, name heuristics only): `python3 scripts/scout.py --fast`
-- Machine-readable: `python3 scripts/scout.py --json`
-- Emit setup + config for a model: `python3 scripts/scout.py --wire <repo> --target ollama|lmstudio|mlx_lm|mlx-vlm|litellm [--port N]`
+Resolve `{baseDir}` (`<skill-dir>`) as the absolute directory containing this `SKILL.md`. Never invoke the bundled script relative to an unrelated shell working directory.
+
+- All roles: `python3 {baseDir}/scripts/scout.py`
+- One role: `python3 {baseDir}/scripts/scout.py --role coding`
+- What changed recently: `python3 {baseDir}/scripts/scout.py --new`
+- Fast (skip HF enrichment, name heuristics only): `python3 {baseDir}/scripts/scout.py --fast`
+- Machine-readable: `python3 {baseDir}/scripts/scout.py --json`
+- Emit setup + config for a model: `python3 {baseDir}/scripts/scout.py --wire <repo> --target ollama|lmstudio|mlx_lm|mlx-vlm|litellm|openclaw [--port N]`
 
 Stdlib-only, no install. `--limit N` sets results per role. Enrichment makes ~2 HF calls per shown model; use `--fast` to skip it.
 
@@ -48,13 +50,14 @@ Use `--wire <repo> --target <t>` to emit the exact pull/serve command **and** a 
 - `mlx_lm` → native headless server + an OpenAI-compatible provider, ref `mlxlm/<model>`
 - `mlx-vlm` → native vision server (required for VLMs), ref `mlxvlm/<model>`
 - `litellm` → a `model_list` entry for a LiteLLM proxy
+- `openclaw` → `models.providers["mlx-agent"]` entry for `openclaw.json`, ref `mlx-agent/<repo>`
 
-See `references/runtimes.md` for runtime setup and the native-vs-Ollama speed trade-off.
+See `{baseDir}/references/runtimes.md` for runtime setup and the native-vs-Ollama speed trade-off.
 
 ## Recurring scan
 
 Run `--new` on a schedule and deliver the diff (new reputable MLX releases for your roles). Example cron command:
 
 ```
-python3 scripts/scout.py --new --limit 5
+python3 {baseDir}/scripts/scout.py --new --limit 5
 ```

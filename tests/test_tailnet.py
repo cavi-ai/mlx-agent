@@ -82,9 +82,9 @@ class TailnetTests(unittest.TestCase):
                 self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Connection", "close")
                 self.end_headers()
-                self.wfile.write(b'data: {"model":"/Users/franco/private","choices":[{"delta":{"content":"first"}}]}\n\n')
+                self.wfile.write(b'data: {"model":"/Users/alice/private","choices":[{"delta":{"content":"first"}}]}\n\n')
                 self.wfile.flush()
-                self.wfile.write(b'data: {"model":"/Users/franco/private","choices":[{"delta":{"content":"second"}}]}\n\n')
+                self.wfile.write(b'data: {"model":"/Users/alice/private","choices":[{"delta":{"content":"second"}}]}\n\n')
                 self.wfile.flush()
                 self.close_connection = True
 
@@ -358,25 +358,25 @@ class TailnetTests(unittest.TestCase):
                     self.send_response(503)
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()
-                    self.wfile.write(b'{"error":{"message":"failed at /Users/franco/private"}}')
+                    self.wfile.write(b'{"error":{"message":"failed at /Users/alice/private"}}')
                     return
                 self.send_response(200)
                 self.send_header('Connection', 'close')
                 if case in ('stream', 'bad-frame', 'stream-error'):
                     self.send_header('Content-Type', 'text/event-stream')
                     self.end_headers()
-                    frame = {'model': '/Users/franco/private/snapshot', 'choices': [{'delta': {'content': 'hello'}}]}
+                    frame = {'model': '/Users/alice/private/snapshot', 'choices': [{'delta': {'content': 'hello'}}]}
                     self.wfile.write(b'data: ' + json.dumps(frame).encode() + b'\n\n')
                     if case == 'bad-frame':
-                        self.wfile.write(b'data: broken /Users/franco/private\n\n')
+                        self.wfile.write(b'data: broken /Users/alice/private\n\n')
                     elif case == 'stream-error':
-                        self.wfile.write(b'data: {"error":{"message":"/Users/franco/private"}}\n\n')
+                        self.wfile.write(b'data: {"error":{"message":"/Users/alice/private"}}\n\n')
                     else:
                         self.wfile.write(b'data: [DONE]\n\n')
                 else:
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()
-                    self.wfile.write(json.dumps({'model': '/Users/franco/private/snapshot', 'choices': [{'message': {'content': 'hello'}}]}).encode())
+                    self.wfile.write(json.dumps({'model': '/Users/alice/private/snapshot', 'choices': [{'message': {'content': 'hello'}}]}).encode())
                 self.close_connection = True
 
         upstream = HTTPServer(('127.0.0.1', 0), Upstream)
@@ -392,7 +392,7 @@ class TailnetTests(unittest.TestCase):
                 for case in ('json', 'stream', 'bad-frame', 'stream-error', 'error'):
                     status, raw = request(server, 'POST', '/v1/chat/completions', headers,
                                           json.dumps({'model': 'model', 'case': case, 'stream': case in ('stream', 'bad-frame', 'stream-error')}))
-                    assert b'/Users/franco' not in raw
+                    assert b'/Users/alice' not in raw
                     if case == 'error':
                         assert status == 503
                         assert b'failed at' not in raw

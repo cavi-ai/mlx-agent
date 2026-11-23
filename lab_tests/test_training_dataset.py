@@ -64,7 +64,7 @@ def _sample(
         source_tier=tier,
         sample_digest=sha256,
         source_lineage=lineage or f"lineage-{index}",
-        caption="<mirza> wearing the canonical jacket",
+        caption="<alpha> wearing the canonical jacket",
         split=split,
         media=TrainingMedia(
             sha256=sha256,
@@ -82,10 +82,10 @@ def _sample(
 
 def _draft(samples: Iterable[TrainingSample]) -> TrainingDatasetDraft:
     return TrainingDatasetDraft(
-        character_id="mirza",
+        character_id="alpha",
         character_pack_digest=_digest("pack"),
         canonical_outfit_id="jacket-v1",
-        reserved_token="<mirza>",
+        reserved_token="<alpha>",
         samples=tuple(samples),
     )
 
@@ -162,7 +162,7 @@ def _mutate_dataset_identity_field(
         "source_tier": TrainingSourceTier.GOLD_CLIP,
         "sample_digest": _digest("changed-sample"),
         "source_lineage": "changed-lineage",
-        "caption": "<mirza> changed caption",
+        "caption": "<alpha> changed caption",
         "split": DatasetSplit.VALIDATION,
         "accepted": False,
     }
@@ -222,7 +222,7 @@ def test_freeze_is_order_independent_and_binds_each_sample_contract_field() -> N
     samples = _ready_samples()
     frozen = freeze_training_dataset(_draft(samples))
     reordered = freeze_training_dataset(_draft(reversed(samples)))
-    changed = samples[0].model_copy(update={"caption": "<mirza> changed caption"})
+    changed = samples[0].model_copy(update={"caption": "<alpha> changed caption"})
     changed_frozen = freeze_training_dataset(_draft((changed,) + samples[1:]))
 
     assert frozen.dataset_digest == reordered.dataset_digest

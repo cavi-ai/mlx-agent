@@ -1999,8 +1999,8 @@ def test_v2_capacity_unavailable_and_receipt_reject_container_coercion(tmp_path)
 
 
 def test_v2_validation_errors_hide_private_input_values() -> None:
-    secret = "/private/models/customer-secret"
+    redaction_probe = "/private/models/customer-path"
     with pytest.raises(ValidationError) as raised:
-        _request().model_copy(update={"unexpected_private_path": secret})
+        _request().model_copy(update={"unexpected_private_path": redaction_probe})
 
-    assert secret not in str(raised.value)
+    assert redaction_probe not in str(raised.value)

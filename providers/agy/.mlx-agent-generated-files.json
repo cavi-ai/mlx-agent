@@ -1,5 +1,6 @@
 {
   "files": [
+    "assets/logo.svg",
     "plugin.json",
     "requirements-lab-inference.txt",
     "requirements-lab.txt",

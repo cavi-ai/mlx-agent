@@ -177,6 +177,20 @@ advertises `classification`. The request body and the client's
 credential are forwarded unchanged and the route checks the key again.
 Responses, including event streams, are relayed as they arrive.
 
+Route discovery refreshes at most once per cache interval during normal traffic.
+The front door serves the last complete table during a refresh or brief discovery
+failure. If a route refuses a connection, the front door can refresh and connect
+to its replacement before sending the request. A request already sent is never
+replayed.
+
+The front door closes the upstream connection when the client disconnects. Set
+`MLX_AGENT_RELAY_HEADERS_SECONDS` (default 600),
+`MLX_AGENT_RELAY_IDLE_SECONDS` (default 120), or
+`MLX_AGENT_RELAY_TOTAL_SECONDS` (default 3600) in the front door or gateway
+process environment to change its response deadlines. Each accepts a positive
+value up to 86,400 seconds. A timeout before response
+headers returns HTTP 504. A timed-out stream closes without a completion event.
+
 The front door applies the same key, Host and Origin checks as a gateway;
 `GET /health` stays open. It runs in the foreground and loads no model; the
 routes keep their own loading, memory admission and lifecycle. Stored
@@ -192,7 +206,8 @@ mlx-agent serve front-door --port 8090 --api-key-sha256 DIGEST --json --watch-pa
 `--json` prints one `serve-front-door` result line once the port is
 listening, with `state`, `port`, `api_base` and `pid`. A startup failure
 prints an error result and exits with status 2: `front_door_port_unavailable`,
-`front_door_key_unavailable` or `front_door_parent_unavailable`.
+`front_door_key_unavailable`, `front_door_parent_unavailable` or
+`front_door_invalid_limits`.
 `--watch-parent` stops the front door when the launching process exits.
 SIGINT and SIGTERM stop it with exit status 0.
 

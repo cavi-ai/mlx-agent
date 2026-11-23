@@ -92,13 +92,13 @@ def group(pgid):
     return sorted(pid for pid, (_, member_group) in candidates.items() if member_group == pgid)
 
 
-def identities(pids):
+def identities(pids, *, timeout=5, env=None):
     """{pid: 'start command'} for the live PIDs asked, in the form ``compute.process_identity`` returns."""
     pids = sorted(set(pids))
     if not pids:
         return {}
     run = subprocess.run(['/bin/ps', '-ww', '-o', 'pid=,lstart=,command=', '-p', ','.join(map(str, pids))],
-                         capture_output=True, text=True, timeout=5)
+                         capture_output=True, text=True, timeout=timeout, env=env)
     # ps exits 1 when a listed PID is gone and still prints the live ones.
     if run.returncode not in (0, 1) or run.returncode == 1 and run.stderr.strip():
         raise OSError('The process table is unavailable.')

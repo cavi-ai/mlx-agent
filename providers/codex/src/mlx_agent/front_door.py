@@ -12,6 +12,7 @@ import threading
 import time
 
 from .jit_serve import GatewayError, GatewayHandler, MAX_BODY, MAX_REQUESTS, public_model_name
+from .http_relay import ClientDisconnected, RelayLimits, Reply
 
 CHAT_PATHS = ("/v1/chat/completions", "/v1/completions", "/v1/messages", "/v1/responses")
 EMBEDDINGS_PATH = "/v1/embeddings"
@@ -19,6 +20,9 @@ SYSTEMONE_PATH = "/v1/systemone"
 # Typed-route endpoints and the task kind a route must serve to answer them.
 TASK_PATHS = {EMBEDDINGS_PATH: "embedding", SYSTEMONE_PATH: "classification"}
 REFRESH_SECONDS = 5
+REFRESH_WAIT_SECONDS = 12
+REFRESH_RETRY_SECONDS = 1
+MAX_STALE_SECONDS = 30
 OPERATION = "serve-front-door"
 
 
@@ -34,8 +38,9 @@ def route_table(services, digest):
     """Stable name to route for live routes verifying `digest`; a name served twice maps to None."""
     table = {}
     for entry in services:
+        port = entry.get("port")
         if not (entry.get("alive") and entry.get("argv_match") and entry.get("api_key_sha256") == digest
-                and (entry.get("jit") or entry.get("runtime") == "tasks") and isinstance(entry.get("port"), int)):
+                and (entry.get("jit") or entry.get("runtime") == "tasks") and type(port) is int and 1 <= port <= 65535):
             continue
         name = public_model_name(entry["path"]) if entry.get("path") else entry.get("repo")
         if isinstance(name, str) and name:
@@ -48,23 +53,52 @@ class FrontDoorServer(ThreadingHTTPServer):
     block_on_close = False
 
     def __init__(self, address, config, discover):
+        self.relay_limits = RelayLimits.from_environment()
         super().__init__(address, FrontDoorHandler)
         self.config, self.discover = config, discover
         self.digest = config.get("api_key_sha256") or config["access_key_sha256"]
         self.slots = threading.BoundedSemaphore(MAX_REQUESTS + 4)
-        self.lock = threading.Lock()
-        self.table, self.loaded_at = {}, None
+        self.condition = threading.Condition()
+        self.table, self.loaded_at = None, None
+        self.attempted_at = float("-inf")
+        self.refreshing = self.degraded = False
 
-    def routes(self, refresh=False):
-        with self.lock:
-            if refresh or self.loaded_at is None or time.monotonic() - self.loaded_at >= REFRESH_SECONDS:
-                self.table = route_table(self.discover().get("services", []), self.digest)
-                self.loaded_at = time.monotonic()
+    def routes(self, *, wait=False, refresh=False):
+        with self.condition:
+            now = time.monotonic()
+            elapsed = now - self.attempted_at
+            interval = REFRESH_RETRY_SECONDS if refresh else REFRESH_SECONDS
+            if not self.refreshing and elapsed >= interval:
+                self.refreshing = True
+                threading.Thread(target=self._refresh_routes, daemon=True).start()
+            expired = self.table is None or now - self.loaded_at > MAX_STALE_SECONDS
+            if self.refreshing and (wait or expired):
+                self.condition.wait_for(lambda: not self.refreshing, timeout=REFRESH_WAIT_SECONDS)
+                now = time.monotonic()
+            if self.table is None or now - self.loaded_at > MAX_STALE_SECONDS:
+                raise GatewayError(503, "route_discovery_unavailable", "Model route discovery is unavailable.")
             return self.table
 
-    def forget(self):
-        with self.lock:
-            self.loaded_at = None
+    def _refresh_routes(self):
+        table = None
+        degraded = True
+        try:
+            found = self.discover()
+            routes = route_table(found["services"], self.digest)
+            degraded = bool(found.get("errors"))
+            if routes or not degraded:
+                table = routes
+        except (OSError, ValueError, TypeError, KeyError):
+            pass
+        finally:
+            with self.condition:
+                self.attempted_at = time.monotonic()
+                if table is not None:
+                    self.table = table
+                    self.loaded_at = self.attempted_at
+                self.degraded = degraded
+                self.refreshing = False
+                self.condition.notify_all()
 
     def process_request(self, request, client_address):
         if not self.slots.acquire(blocking=False):
@@ -95,11 +129,12 @@ class FrontDoorHandler(GatewayHandler):
                 self._json(200, {"object": "list", "data": [
                     dict({"id": name, "object": "model", "owned_by": "mlx-agent"},
                          **({"task_kinds": route["task_kinds"]} if route.get("task_kinds") else {}))
-                    for name, route in sorted(self.server.routes(refresh=True).items()) if route is not None]})
+                    for name, route in sorted(self.server.routes().items()) if route is not None]})
             else:
                 raise GatewayError(404, "not_found", "Unknown endpoint.")
         except GatewayError as error:
-            self._error(error)
+            if not self._client_gone():
+                self._error(error)
 
     def do_POST(self):
         try:
@@ -119,17 +154,20 @@ class FrontDoorHandler(GatewayHandler):
                 model = json.loads(payload).get("model")
             except (ValueError, UnicodeError, AttributeError):
                 raise GatewayError(400, "invalid_body", "Expected a JSON object.") from None
-            self._forward(self._route(model)["port"], payload)
+            self._forward(model, payload)
         except GatewayError as error:
-            self._error(error)
+            if not self._client_gone():
+                self._error(error)
 
-    def _route(self, model):
+    def _route(self, model, *, refresh=False):
         if not isinstance(model, str):
             raise GatewayError(400, "invalid_body", "Name a model listed at /v1/models.")
-        table = self.server.routes()
+        table = self.server.routes(wait=refresh, refresh=refresh)
+        if model not in table and not refresh:
+            table = self.server.routes(wait=True)
         if model not in table:
-            table = self.server.routes(refresh=True)
-        if model not in table:
+            if self.server.degraded or self.server.refreshing:
+                raise GatewayError(503, "route_discovery_unavailable", "Model route discovery is incomplete.")
             raise GatewayError(404, "model_not_found", "No route with this key serves that model.")
         route = table[model]
         if route is None:
@@ -139,18 +177,38 @@ class FrontDoorHandler(GatewayHandler):
             raise GatewayError(400, "unsupported_endpoint", "That model's route does not serve this endpoint.")
         return route
 
-    def _forward(self, port, payload):
+    def _connect(self, model):
+        port = self._route(model)["port"]
+        for attempt in range(2):
+            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            try:
+                connection.connect()
+                return connection
+            except OSError:
+                connection.close()
+                if attempt == 0 and not self._client_gone():
+                    next_port = self._route(model, refresh=True)["port"]
+                    if next_port != port:
+                        port = next_port
+                        continue
+                break
+        raise GatewayError(503, "route_unavailable", "The model route is unavailable.")
+
+    def _forward(self, model, payload):
         # The guard admitted exactly one credential; the route verifies the same key digest.
         headers = {"Content-Type": "application/json"}
         for name in ("Authorization", "x-api-key"):
             if self.headers.get(name) is not None:
                 headers[name] = self.headers[name]
-        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        connection = None
+        response = None
         started = False
         try:
+            connection = self._connect(model)
+            if self._client_gone():
+                return
             connection.request("POST", self.path, payload, headers)
-            connection.sock.settimeout(None)
-            response = connection.getresponse()
+            response = Reply(connection, self.server.relay_limits, client=self.connection).getresponse()
             self.send_response(response.status)
             self.send_header("Content-Type", response.getheader("Content-Type", "application/json"))
             if response.status == 401:
@@ -162,12 +220,19 @@ class FrontDoorHandler(GatewayHandler):
             while chunk := response.read1(65536):
                 self.wfile.write(chunk)
                 self.wfile.flush()
+        except ClientDisconnected:
+            pass
+        except TimeoutError:
+            if not started and not self._client_gone():
+                raise GatewayError(504, "route_timeout", "The model route reply timed out.") from None
         except (OSError, http.client.HTTPException):
-            if not started:
-                self.server.forget()
+            if not started and not self._client_gone():
                 raise GatewayError(503, "route_unavailable", "The model route is unavailable.") from None
         finally:
-            connection.close()
+            if response is not None:
+                response.close()
+            if connection is not None:
+                connection.close()
 
 
 def _listen(args, parent):
@@ -188,7 +253,10 @@ def _listen(args, parent):
                              "Pass an owned private key file or a lowercase SHA-256 key digest.") from None
     receipts = [str(Path(value).absolute()) for value in args.receipts_dir]
     try:
-        return FrontDoorServer(("127.0.0.1", args.port), config, lambda: discover_services(receipts))
+        return FrontDoorServer(("127.0.0.1", args.port), config,
+                               lambda: discover_services(receipts, routing_only=True))
+    except ValueError as error:
+        raise FrontDoorError("front_door_invalid_limits", str(error), "Correct the relay timeout settings.") from None
     except OSError:
         raise FrontDoorError("front_door_port_unavailable", "Port {} is unavailable on 127.0.0.1.".format(args.port),
                              "Choose another port or stop the process using it.") from None

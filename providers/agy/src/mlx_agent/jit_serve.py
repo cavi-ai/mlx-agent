@@ -30,6 +30,7 @@ from pathlib import Path
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from mlx_agent import chat_completions, responses_api
+from mlx_agent.http_relay import ClientDisconnected, RelayLimits, Reply, client_closed
 from mlx_agent.messages_api import (MessagesRequestError, StreamTranslator, WorkerResponseError, error_body,
                                     from_chat_response, to_chat_request)
 from mlx_agent.transactions import _atomic_in_directory
@@ -962,6 +963,7 @@ class GatewayServer(ThreadingHTTPServer):
     block_on_close = False
 
     def __init__(self, address, config):
+        self.relay_limits = RelayLimits.from_environment()
         if config.get("api_key_sha256") is not None:
             from mlx_agent.inference_auth import validate_digest
             validate_digest(config["api_key_sha256"])
@@ -1103,25 +1105,9 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 selector.register(self.connection, selectors.EVENT_READ)
                 if not selector.select(0):
                     return False
-            return not self.connection.recv(1, socket.MSG_PEEK)
+            return client_closed(self.connection)
         except OSError:
             return True
-
-    def _worker_replied(self, worker):
-        """Wait without a deadline for the worker's first reply byte; False once the client disconnects."""
-        with selectors.DefaultSelector() as selector:
-            selector.register(worker, selectors.EVENT_READ)
-            selector.register(self.connection, selectors.EVENT_READ)
-            while True:
-                for key, _ in selector.select():
-                    if key.fileobj is worker:
-                        return True
-                    try:
-                        if not self.connection.recv(1, socket.MSG_PEEK):
-                            return False
-                    except OSError:
-                        return False
-                    selector.unregister(self.connection)
 
     def _memory_output(self, payload):
         measurement = getattr(self, '_measurement', None)
@@ -1251,8 +1237,9 @@ class GatewayHandler(BaseHTTPRequestHandler):
         connection = None
         leased = False
         response_started = False
-        response = upstream = None
+        response = reply = None
         submitted = False
+        reply_failed = False
         try:
             self._guard(control=self.path in ("/_mlx/unload", "/_mlx/policy", "/_mlx/cache", "/_mlx/idle-stop"))
             if self.headers.get("Transfer-Encoding"):
@@ -1321,20 +1308,21 @@ class GatewayHandler(BaseHTTPRequestHandler):
             port = self.server.controller.acquire(cancelled=self._client_gone)
             leased = True
             connection = self.server.controller.connection(timeout=120)
+            connection.connect()
+            submitted = True
             connection.request("POST", "/v1/chat/completions" if translated else self.path, json.dumps(body),
                                dict({"Content-Type": "application/json"}, **({"Authorization": "Bearer " + self.server.controller.worker_key}
                                    if self.server.config.get("private_worker") or self.server.config.get("api_key_sha256") is not None else {})))
-            submitted = True
-            upstream = connection.sock
-            upstream.settimeout(None)
+            reply = Reply(connection, self.server.relay_limits)
             # MLX-LM writes nothing until an unstreamed answer is complete or a queued request starts.
-            if not self._worker_replied(upstream):
-                return
-            response = connection.getresponse()
+            reply.wait_for_headers(self.connection)
+            response = reply.getresponse()
             if self.server.config.get("private_worker"):
                 from mlx_agent.private_serve import PRIVATE_PROTOCOL
                 if response.getheader("X-MLX-Agent-Transport") != PRIVATE_PROTOCOL:
                     raise GatewayError(503, "private_protocol_missing", "The private model worker protocol is unavailable.")
+            if translated and response.status != 200:
+                raise self._worker_failure(response)
 
             def trimmed(value):
                 chat_completions.trim_end(value, self.server.end_text)
@@ -1391,6 +1379,12 @@ class GatewayHandler(BaseHTTPRequestHandler):
         except GatewayError as error:
             if not self._client_gone():
                 self._error(error)
+        except ClientDisconnected:
+            pass
+        except TimeoutError:
+            reply_failed = True
+            if not response_started and not self._client_gone():
+                self._error(GatewayError(504, "worker_timeout", "The model worker reply timed out."))
         except (OSError, http.client.HTTPException):
             if not response_started and not self._client_gone():
                 self._error(GatewayError(503, "worker_unavailable", "Model worker connection failed."))
@@ -1400,16 +1394,12 @@ class GatewayHandler(BaseHTTPRequestHandler):
             try:
                 if leased and submitted and (response is None or not response.isclosed()):
                     try:
-                        deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
-                        if upstream is not None:
-                            upstream.settimeout(DRAIN_TIMEOUT_SECONDS)
+                        if reply is None or reply_failed:
+                            raise OSError("The worker reply could not be drained safely.")
+                        reply.drain(DRAIN_TIMEOUT_SECONDS)
                         if response is None:
-                            response = connection.getresponse()
+                            response = reply.getresponse()
                         while not response.isclosed():
-                            if upstream is not None:
-                                upstream.settimeout(max(.001, deadline - time.monotonic()))
-                            if time.monotonic() >= deadline:
-                                raise TimeoutError("Model reply did not drain.")
                             if not response.read1(65536):
                                 break
                     except (OSError, http.client.HTTPException):
@@ -1421,6 +1411,8 @@ class GatewayHandler(BaseHTTPRequestHandler):
                                 self.server.controller.model_state = "failed" if self.server.controller.process else "unloaded"
                                 self.server.controller._persist()
             finally:
+                if response is not None:
+                    response.close()
                 if connection:
                     connection.close()
                 if leased:

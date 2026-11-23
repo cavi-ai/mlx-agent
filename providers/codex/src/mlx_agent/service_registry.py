@@ -258,10 +258,11 @@ def live_receipt_roots(process_rows=None, errors=None):
     return roots
 
 
-def discover_services(receipts_dirs=(), registry=None, process_roots=None, inspect=None):
+def discover_services(receipts_dirs=(), registry=None, process_roots=None, inspect=None, *, routing_only=False):
     """Read authoritative receipts without adopting or changing any service."""
-    from .serve import status_serve
+    from .serve import routing_receipts, status_serve
     errors = []
+    deadline = time.monotonic() + 8
     try:
         indexed = _read_roots(registry, errors)
     except (OSError, ValueError) as error:
@@ -273,7 +274,6 @@ def discover_services(receipts_dirs=(), registry=None, process_roots=None, inspe
         errors.append({'source': 'discovery', 'message': 'Service location limit reached; narrow registered locations.'})
     services = []
     seen = set()
-    deadline = time.monotonic() + 8
     for value in roots[:MAX_ROOTS]:
         try:
             root = str(_safe_root(value))
@@ -286,6 +286,9 @@ def discover_services(receipts_dirs=(), registry=None, process_roots=None, inspe
                 receipts = Path(root) / '.mlx-agent-receipts/serve'
                 if receipts.exists() or receipts.is_symlink():
                     _assert_safe_directory(receipts)
+            if routing_only:
+                services.extend(routing_receipts(root, deadline))
+                continue
             entries = inspect(root) if inspect else status_serve(root, deadline=deadline, errors=errors)
             for entry in entries:
                 receipt = Path(entry['receipt'])

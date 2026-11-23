@@ -137,6 +137,21 @@
       "state": "absent",
       "target": "/backends/mlx-vlm",
       "version": "0.8.0+111ac66"
+    },
+    {
+      "builtin": false,
+      "categories": [
+        "image_segmentation"
+      ],
+      "completed_at": null,
+      "id": "sam2",
+      "log_path": null,
+      "model_types": 1,
+      "registry_source": "snapshot",
+      "started_at": null,
+      "state": "absent",
+      "target": "/backends/sam2",
+      "version": "5.18.0"
     }
   ],
   "root": "/backends",

@@ -842,9 +842,9 @@ def predict(*args):
         def reclaim(*args, **kwargs):
             controller.configure({'model_memory_budget_gb':None})
             return original_control(*args, **kwargs)
-        def reserve(key, limit=None, probe=None):
+        def reserve(key, limit=None, probe=None, *args, **kwargs):
             caps.append(limit)
-            return original_execution(key, limit, probe)
+            return original_execution(key, limit, probe, *args, **kwargs)
         def enter(lease):
             modes.append(lease.shared)
             return original_enter(lease)

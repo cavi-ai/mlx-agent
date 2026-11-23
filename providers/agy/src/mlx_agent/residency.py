@@ -357,8 +357,9 @@ class MemoryRegistry:
                 physical = (resident if row['phase'] == 'resident' else 0) + max(0, available - other_reserved - headroom)
                 details.update(agent_capacity_bytes=agent_capacity, physical_ceiling_bytes=physical)
                 if limit_bytes is None:
+                    bounded_by_physical = physical < capacity
                     capacity = min(capacity, physical)
-                    if max(0, capacity - overhead_bytes) < minimum:
+                    if bounded_by_physical and max(0, capacity - overhead_bytes) < minimum:
                         raise MemoryAdmissionError('insufficient_headroom',
                             'The minimum job memory does not fit available system headroom.', details)
                 checked_capacity = max(0, capacity - overhead_bytes) if limit_bytes is None else capacity
@@ -371,8 +372,10 @@ class MemoryRegistry:
                     raise MemoryAdmissionError('insufficient_headroom',
                         'The job memory ceiling does not fit available system headroom.', details)
             if limit_bytes is None:
-                capacity = max(0, capacity - overhead_bytes)
-                if capacity < minimum:
+                reduced = max(0, capacity - overhead_bytes)
+                if reduced >= minimum:
+                    capacity = reduced
+                elif capacity < minimum:
                     raise MemoryAdmissionError('agent_memory_budget_exceeded',
                         'Unload an idle model before starting this model job.', details)
             amount = capacity - resident if row['phase'] == 'resident' else capacity

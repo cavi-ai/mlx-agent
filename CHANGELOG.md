@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.16.0
+
+- Add a Gemini CLI extension with all eight MLX Agent skills, a shared runtime, and reviewable user- and project-scope installs, updates, and removals.
+- Add `wire --target openclaw` and `discover --wire --target openclaw` to preview and apply a local model provider in OpenClaw. Wiring an MLX-VLM endpoint now uses port 8083 by default.
+- Bound response header and streaming waits in the JIT gateway and authenticated front door. Client disconnects close the upstream connection, and route changes can be retried before forwarding the request.
+- The front door refreshes expired routes before answering and keeps verified routes available during partial discovery failures. Route discovery checks live process identity without polling each model endpoint.
+- Keep MCP protocol requests responsive while commands run. Cap execution time, queued calls, and captured output. Cancelling a queued call frees its slot immediately, and completed calls retain their final CLI output.
+- Reduce repeated process and model identity checks during serving and task execution. Scope macOS memory accounting to the charged process families and reuse loaded LTX-2 components when weights are retained.
+- Harden local state reads and subprocess cleanup, improve stale receipt detection, and recognize macOS system directory aliases when verifying paths.
+- Validate the Agy plugin with its bundled logo and omit optional experiment files from per-skill installs on OpenClaw, Hermes, and portable AgentSkills hosts.
+
 ## 0.15.0 - 2026-11-21
 
 - Splash JIT workers recheck custom chat templates before each load.

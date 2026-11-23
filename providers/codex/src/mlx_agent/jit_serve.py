@@ -38,7 +38,8 @@ from mlx_agent import allocator_cache
 from mlx_agent.inference_telemetry import InferenceTelemetry
 from mlx_agent import inference_defaults
 from mlx_agent.compute import ComputeBusy, ComputeLease, ExecutionAdmission, group_members, process_identity, process_birth_identity
-from mlx_agent.identity_pass import recheck_bound_identity
+from mlx_agent.process_table import identities
+from mlx_agent.identity_pass import listed_paths, recheck_bound_identity
 from mlx_agent.memory_policy import (PolicyRejected, enforce_configure, execution_wait_seconds, reject_cache_outside_tasks,
                                      release_reason, releases_after_request, reservation, validate as validate_memory_policy)
 
@@ -88,7 +89,7 @@ def model_fingerprint(path):
     """File identity manifest, deliberately not a model-quality assessment."""
     root = Path(path)
     rows = []
-    for item in sorted(root.rglob("*")):
+    for item in listed_paths(root):
         if any(part.startswith(".") for part in item.relative_to(root).parts):
             continue
         if item.is_file():
@@ -686,8 +687,9 @@ class ModelWorker:
                 raise ComputeBusy("The upstream execution did not complete.")
             if process.poll() is not None:
                 raise ComputeBusy("The model worker exited.")
-            members = {pid: process_identity(pid) for pid in group_members(process.pid)}
-            if not all(members.values()):
+            pids = group_members(process.pid)
+            members = identities(pids)
+            if set(members) != set(pids) or not all(members.values()):
                 raise ComputeBusy("The idle backend group cannot be inspected.")
             lease.release_idle_process_group(process.pid, members)
         except (ComputeBusy, OSError, ValueError, subprocess.SubprocessError):

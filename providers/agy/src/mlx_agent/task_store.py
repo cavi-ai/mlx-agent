@@ -264,6 +264,20 @@ class TaskStore:
         with self._connection() as connection:
             return self._load(connection, identifier)
 
+    def cancel_requested(self, identifier):
+        """Whether this task was cancelled, without loading or revalidating its record."""
+        task_id(identifier)
+        with self._connection() as connection:
+            if connection is None:
+                raise TaskError("task_not_found", "No task with that ID.", "Use mlx-agent task list with the same --state-dir.")
+            row = connection.execute(
+                "SELECT json_extract(record, '$.cancel_requested') FROM tasks WHERE id = ?", (identifier,)).fetchone()
+            if row is None:
+                raise TaskError("task_not_found", "No task with that ID.", "Use mlx-agent task list with the same --state-dir.")
+            if row[0] not in (0, 1):
+                raise TaskError("invalid_task_record", "The stored task record is not readable JSON.")
+            return bool(row[0])
+
     def list(self, limit=20):
         return self.list_page(limit)["tasks"]
 

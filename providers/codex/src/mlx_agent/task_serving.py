@@ -25,6 +25,15 @@ from .task_identity import capture_identity, check_identity
 from .task_runtime import _artifact_reference, _error, _finish, task_result, task_status
 from .task_store import TaskStore
 
+_TASK_IDENTITY_KEYS = ("model_path", "model_fingerprint", "executable", "executable_identity", "backend_manifest_hash")
+
+
+def same_task_identity(left, right):
+    """True when both records name the same checked model, executable and backend."""
+    return isinstance(left, dict) and isinstance(right, dict) and all(
+        left.get(key) == right.get(key) for key in _TASK_IDENTITY_KEYS)
+
+
 def runtime_fingerprint(backend):
     source = Path(__file__).parent
     from .resident_worker import RUNNERS
@@ -159,6 +168,15 @@ class TaskModelWorker(ModelWorker):
             recheck_bound_identity(self.config)
         except ServeError as error:
             raise TaskError(error.code, str(error), error.remediation) from error
+
+    def _task_cancelled(self, identifier):
+        return self.closed or self.store.cancel_requested(identifier)
+
+    def _confirm_identity(self, record=None):
+        """One identity pass for this boundary. A matching task record is not walked again."""
+        self._recheck_identity()
+        if record is not None and not same_task_identity(record.get("identity"), self.config.get("task_identity")):
+            check_identity(record["identity"])
 
     def _allocator_cache_status(self):
         desired = allocator_cache.from_memory(self.memory_policy)
@@ -313,7 +331,7 @@ class TaskModelWorker(ModelWorker):
         staged = None
         record = None
         try:
-            self._recheck_identity()
+            self._confirm_identity()
             from .task_inputs import needs_named
             if needs_named(request):
                 staged = self.store.stage_inputs(request)
@@ -393,7 +411,7 @@ class TaskModelWorker(ModelWorker):
                     if not settled:
                         raise GatewayError(503, 'memory_registry_busy', 'Memory reservation remains pending after cache reclaim.')
                     check_cancelled()
-                    self._recheck_identity()
+                    self._confirm_identity()
                 finally:
                     with self.condition:
                         self.cache_control_active = False
@@ -411,14 +429,13 @@ class TaskModelWorker(ModelWorker):
             lease = ComputeLease("task:" + identifier, self.config.get('compute_state_dir'),
                 shared=budget_gb is not None and self.memory_registry.shared_execution_enabled())
             lease.enter_wait(execution_wait_seconds(self.memory_policy),
-                cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'])
+                cancelled=lambda: self._task_cancelled(identifier))
             leased = True
             record = self.store.get(identifier)
             if record['cancel_requested'] or self.closed:
                 cancelled_before_dispatch = True
                 raise InterruptedError('Inference cancelled.')
-            self._recheck_identity()
-            check_identity(record['identity'])
+            self._confirm_identity(record)
             request = self.store.read_request(identifier)
             kind = task_kinds.get(request['kind'])
             directory = self.store.artifact_path(identifier, 'result.json').parent
@@ -431,7 +448,7 @@ class TaskModelWorker(ModelWorker):
                 raise TaskError('identity_changed', 'The model task backend changed.')
             def check_cancelled():
                 nonlocal cancelled_before_dispatch
-                if self.closed or self.store.get(identifier)['cancel_requested']:
+                if self._task_cancelled(identifier):
                     cancelled_before_dispatch = True
                     raise InterruptedError('Inference cancelled.')
             capacity = self._admit_task_memory(request, plan, budget_gb, lease, check_cancelled)
@@ -446,7 +463,7 @@ class TaskModelWorker(ModelWorker):
                 with self.condition:
                     self.worker_launch_pending = True
                     self._persist()
-                self.resident._start(cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'])
+                self.resident._start(cancelled=lambda: self._task_cancelled(identifier))
             with self.condition:
                 if self.closed:
                     raise InterruptedError('Endpoint stopping.')
@@ -464,11 +481,10 @@ class TaskModelWorker(ModelWorker):
             dispatched = True
             from functools import partial
             runner = partial(self.resident.run,
-                cancelled=lambda: self.closed or self.store.get(identifier)['cancel_requested'],
+                cancelled=lambda: self._task_cancelled(identifier),
                 cache_policy=allocator_cache.from_memory(self.memory_policy), memory_limit_bytes=worker_limit)
             result = kind.run(plan, runner=runner)
-            self._recheck_identity()
-            check_identity(record['identity'])
+            self._confirm_identity(record)
             self.store.read_request(identifier)
             if record['schema'] == 'task-run/3':
                 result['input_artifacts'] = record['input_artifacts']
@@ -478,7 +494,7 @@ class TaskModelWorker(ModelWorker):
                 output = self.store.artifact_path(identifier, kind.output)
                 kind.check_output(output, plan)
                 result['output_artifact'] = _artifact_reference(output)
-            if self.store.get(identifier)['cancel_requested']:
+            if self._task_cancelled(identifier):
                 raise InterruptedError('Inference cancelled.')
             reference = self.store.write_result(identifier, result)
             desired = allocator_cache.from_memory(self.memory_policy)
@@ -523,7 +539,7 @@ class TaskModelWorker(ModelWorker):
                 error = TaskError('task_stop_unconfirmed', 'The owned model worker has not stopped safely.', 'Inspect the worker and retry the owned endpoint stop; its identity is retained.')
             if not unresolved and self.memory_guard_error is not None:
                 error = GatewayError(503, *self.memory_guard_error)
-            cancelled = self.store.get(identifier)['cancel_requested']
+            cancelled = self.store.cancel_requested(identifier)
             if isinstance(error, InterruptedError) and not cancelled:
                 error = TaskError('endpoint_stopped', 'The model endpoint stopped during inference.',
                     'Inspect its status, then restart the endpoint before starting a new job.')

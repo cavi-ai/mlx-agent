@@ -59,18 +59,14 @@ def identified_pids(policy, entries, external_pids=()):
 
 
 def process_snapshot(identities=None):
-    """Live processes and their memory; identity for the PIDs asked, or for every process when None."""
+    """Live processes. Identity for the PIDs asked, or for every process when None.
+
+    A macOS snapshot taken for a known PID set does not read footprint. ``account``
+    reads that for the process family it charges.
+    """
     if identities is not None and sys.platform == 'darwin':
         from .process_table import identities as observe, rows as table
-        rows = {}
-        for pid, (parent, group) in table().items():
-            try:
-                usage = _usage(pid)
-            except ProcessLookupError:
-                continue  # Short-lived processes can exit after the table was read.
-            rows[pid] = {'parent': parent, 'group': group,
-                         'rss': None if usage is None else usage.resident_size,
-                         'physical_bytes': None if usage is None else usage.phys_footprint}
+        rows = {pid: {'parent': parent, 'group': group} for pid, (parent, group) in table().items()}
         for pid, identity in observe(pid for pid in identities if pid in rows).items():
             rows[pid]['identity'] = identity
         # A missing identity can also be a permissions failure; retain the observed row.
@@ -179,9 +175,46 @@ def family(rows, roots, groups=()):
         found.update(children)
 
 
+def _charged_pids(policy, entries, rows, owner):
+    """PIDs ``account`` can charge: external families, managed workers, and the owner."""
+    watched = set()
+    for binding in policy['external']:
+        observed = rows.get(binding['pid'])
+        if observed is not None and same_identity(binding['identity'], observed.get('identity')):
+            watched.update(family(rows, {binding['pid']}))
+        else:
+            watched.update(family(rows, set(), {binding['group']}))
+    for entry in entries.values():
+        worker = entry.get('worker')
+        if worker is not None:
+            watched.update(family(rows, {worker['pid']}, {worker['pgid']}))
+    if owner[0] in rows:
+        watched.add(owner[0])
+    return watched
+
+
+def _fill_footprint(rows, pids):
+    """Read resident and physical size for ``pids`` that do not already have it."""
+    if sys.platform != 'darwin':
+        return
+    for pid in list(pids):
+        row = rows.get(pid)
+        if row is None or 'rss' in row or 'physical_bytes' in row:
+            continue
+        try:
+            usage = _usage(pid)
+        except ProcessLookupError:
+            del rows[pid]  # Exited after the table was read.
+            continue
+        row['rss'] = None if usage is None else usage.resident_size
+        row['physical_bytes'] = None if usage is None else usage.phys_footprint
+
+
 def account(policy, entries, rows, owner, replacement=None):
     """Count physical process observations once; pending allocations are additional."""
     from .residency import MemoryAdmissionError
+
+    _fill_footprint(rows, _charged_pids(policy, entries, rows, owner))
 
     def rss(pids):
         values = []

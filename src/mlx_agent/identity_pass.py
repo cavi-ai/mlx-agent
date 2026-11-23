@@ -3,8 +3,25 @@
 serve and jit_serve import this module. The checks import those modules back,
 so those imports stay inside the checks.
 """
+import contextvars
 from pathlib import Path
 import subprocess
+
+# One directory listing for every fingerprint inside a single recheck. Unset outside that call.
+_model_listing = contextvars.ContextVar("mlx_agent_model_listing", default=None)
+
+
+def listed_paths(root):
+    """Sorted entries under ``root``. Reused until the current identity recheck returns."""
+    root = Path(root)
+    cache = _model_listing.get()
+    key = str(root)
+    if cache is not None and key in cache:
+        return cache[key]
+    paths = sorted(root.rglob("*"))
+    if cache is not None:
+        cache[key] = paths
+    return paths
 
 
 def _rejected(code, message, remediation):
@@ -210,17 +227,21 @@ def _require_model_identity(plan):
 
 def recheck_bound_identity(plan):
     """One pass over every identity bound into a reviewed serving plan."""
-    for check in (
-        _require_auth_identity,
-        _require_task_identity,
-        _require_training_binding,
-        _require_adapter_identity,
-        _require_prefill_identity,
-        _require_decode_identity,
-        _require_vision_identity,
-        _require_splash_identity,
-        _require_access_identity,
-        _require_shared_prefix_identity,
-        _require_model_identity,
-    ):
-        check(plan)
+    token = _model_listing.set({})
+    try:
+        for check in (
+            _require_auth_identity,
+            _require_task_identity,
+            _require_training_binding,
+            _require_adapter_identity,
+            _require_prefill_identity,
+            _require_decode_identity,
+            _require_vision_identity,
+            _require_splash_identity,
+            _require_access_identity,
+            _require_shared_prefix_identity,
+            _require_model_identity,
+        ):
+            check(plan)
+    finally:
+        _model_listing.reset(token)

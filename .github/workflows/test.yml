@@ -151,7 +151,7 @@ jobs:
       - name: Check native model ports and macOS process and capture behavior
         if: runner.os == 'macOS' && needs.merged-pr.outputs.tested != 'true'
         run: |
-          PYTHONPATH=src python -m unittest discover -s tests/unit -p 'test_port_*.py' -v
+          PYTHONPATH=src python -m unittest discover -s tests/unit -t . -p 'test_port_*.py' -v
           PYTHONPATH=src python -m unittest -v \
             tests.unit.test_music_speed tests.unit.test_triposg_denoiser_cache \
             tests.unit.test_process_table tests.unit.test_coding_capture tests.unit.test_coding_capture_storage \

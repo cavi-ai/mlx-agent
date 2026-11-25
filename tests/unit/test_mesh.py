@@ -172,6 +172,30 @@ class MeshPlanningTests(unittest.TestCase):
                 self.plan(**options)
             self.assertEqual(caught.exception.code, 'invalid_arguments')
 
+    def test_trellis2_runs_fitted_to_a_bbox(self):
+        with self.assertRaisesRegex(MeshError, 'TRELLIS.2'):
+            self.plan(bbox=[0.6, 0.6, 1.2])
+        code, output = self.cli('--bbox', '0.6', '0.6', '1.2')
+        self.assertEqual(code, 2)
+        self.assertIn('TRELLIS.2', json.loads(output)['error']['message'])
+        self.use_trellis2()
+        args = self.plan(bbox=[0.6, 0.6, 1.2])['argv']
+        self.assertEqual(args[args.index('--bbox') + 1:args.index('--bbox') + 4], ['0.6', '0.6', '1.2'])
+        self.assertNotIn('--bbox', self.plan()['argv'])
+        guide = self.root / 'guide.glb'
+        guide.touch()
+        for options in ({'bbox': [1, 1]}, {'bbox': [1, 0, 1]}, {'bbox': [1, 1, 17]}, {'bbox': [True, 1, 1]},
+                        {'bbox': [1, float('inf'), 1]}, {'bbox': [1, 1, 1], 'guide': str(guide)}):
+            with self.subTest(options=options), self.assertRaises(MeshError) as caught:
+                self.plan(**options)
+            self.assertEqual(caught.exception.code, 'invalid_arguments')
+
+    def test_bbox_planning_rejects_dimensions_outside_float32_output_range(self):
+        self.use_trellis2()
+        for size in (1e-50, 1e40, 10**400):
+            with self.subTest(size=size), self.assertRaisesRegex(MeshError, 'float32'):
+                self.plan(bbox=[size, size, size])
+
     def test_a_model_with_unreadable_mesh_resolutions_is_refused(self):
         for resolutions in ([], [8], 'all', [512.0], [True]):
             self.use_trellis2(resolutions=resolutions)

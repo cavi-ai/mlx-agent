@@ -1,8 +1,10 @@
 """Offline image-to-mesh generation for TRELLIS.2; model evaluation runs entirely on MLX."""
 
 import json
+import os
 import time
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import NamedTuple
 
 import mlx.core as mx
@@ -10,7 +12,7 @@ import numpy as np
 from PIL import Image
 
 from . import closed, components, dinov3, dual_grid, flow, sparse, structure
-from .guide import place, surface_coords
+from .guide import fit, fit_size, place, surface_coords
 from ..triposg.geometry import decimate, write_glb
 from ..triposg.weights import Weights
 
@@ -160,13 +162,31 @@ def cascade_coords(coords, low, high, max_tokens=MAX_TOKENS):
         high -= 128
 
 
+def _write_mesh(out, vertices, faces, colors, materials, bbox):
+    if bbox is None:
+        write_glb(out, vertices, faces, colors, materials)
+        return
+    with TemporaryDirectory(prefix=".trellis2-", dir=Path(out).parent) as directory:
+        staged = Path(directory) / "mesh.glb"
+        write_glb(staged, vertices, faces, colors, materials)
+        # TRELLIS (x, y, z) extents become glTF (x, z, y) extents.
+        fit(staged, (bbox[0], bbox[2], bbox[1]))
+        # Publish the complete file without replacing an output claimed by another job.
+        os.link(staged, out, follow_symlinks=False)
+
+
 def generate(model, image, out, steps=12, seed=42, resolution=1024, guidance=7.5, max_faces=500_000, views=(),
-             guide=None):
+             guide=None, bbox=None):
     """``views`` are more images of the object, one per sampler step in turn; a ``guide`` GLB's surface voxels
-    replace the sampled sparse structure."""
+    replace the sampled sparse structure. ``bbox`` sizes (x, y, z, z up) fit the sampled sparse structure to their
+    proportions and the mesh bounds to those sizes, centered on the origin."""
     config, weights = model
     if resolution not in RESOLUTIONS:
         raise ValueError("TRELLIS.2 resolution must be 512, 1024 or 1536.")
+    if bbox is not None:
+        if guide is not None:
+            raise ValueError("TRELLIS.2 bbox takes three positive sizes and no guide.")
+        bbox = fit_size(bbox).tolist()
     prepare(model, resolution)
     settings = config["pipeline"]
     started = time.perf_counter()
@@ -197,7 +217,7 @@ def generate(model, image, out, steps=12, seed=42, resolution=1024, guidance=7.5
                              **_sampler(settings["sparse_structure_sampler"], steps, guidance))
         logits = structure.decode(weights["ss_decoder"], config["components"]["ss_decoder"],
                                   latent.reshape(1, grid, grid, grid, -1))
-        coords = structure.occupied(logits, LOW_RESOLUTION // 16)
+        coords = structure.occupied(logits, LOW_RESOLUTION // 16, box=bbox)
     else:
         coords, guide_center, guide_extent = surface_coords(guide, LOW_RESOLUTION // 16)
     previous, cursor = cursor, time.perf_counter()
@@ -262,13 +282,13 @@ def generate(model, image, out, steps=12, seed=42, resolution=1024, guidance=7.5
     if paint:
         upright = np.stack([vertices[:, 0], -vertices[:, 2], vertices[:, 1]], axis=1)
         colors, materials = vertex_materials(voxel_colors(upright, voxels, attributes[:, :5], level_resolution))
-    write_glb(out, vertices, faces, colors, materials)
+    _write_mesh(out, vertices, faces, colors, materials, bbox)
     stages["export"] = time.perf_counter() - cursor
     if guide is not None:
         # The guided mesh replaces the guide in place, ready to bake onto it.
         place(out, guide_center, guide_extent)
     return {"path": str(out), "seconds": round(time.perf_counter() - started, 3), "steps": steps,
-            "views": len(pictures), "guided": guide is not None,
+            "views": len(pictures), "guided": guide is not None, "bbox": bbox,
             "seed": seed, "resolution": level_resolution, "vertices": len(vertices), "faces": len(faces),
             "voxels": len(voxels), "vertex_colors": paint, "pbr": paint,
             "stage_seconds": {name: round(value, 3) for name, value in stages.items()},

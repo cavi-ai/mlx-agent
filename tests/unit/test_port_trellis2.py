@@ -428,6 +428,80 @@ class Trellis2NativeTests(unittest.TestCase):
         self.assertEqual((center.tolist(), extent), ([0.0, 2.0, 0.0], 4.0))
         np.testing.assert_allclose(placed, corners, atol=1e-6)
 
+    def test_box_fit_stretches_the_occupied_bounds_to_the_box_without_cutting_parts_off(self):
+        import numpy as np
+        structure = port('structure')
+        grid = np.zeros((8, 8, 8), dtype=bool)
+        grid[1, 1, 1] = grid[2, 2, 2] = True
+        fitted = structure.fit(grid, (1.0, 1.0, 2.0))
+        # The 2-voxel diagonal fills a centered 4 x 4 x 8 box, each source voxel taking its proportional block.
+        expected = {(x, y, z) for x in (2, 3) for y in (2, 3) for z in range(4)}
+        expected |= {(x, y, z) for x in (4, 5) for y in (4, 5) for z in range(4, 8)}
+        self.assertEqual({tuple(cell) for cell in np.argwhere(fitted).tolist()}, expected)
+        self.assertFalse(structure.fit(np.zeros((8, 8, 8), dtype=bool), (1.0, 2.0, 3.0)).any())
+
+    def test_box_fit_preserves_thin_planes_when_the_occupied_axis_shrinks(self):
+        import numpy as np
+        structure = port('structure')
+        for size in (32, 64):
+            with self.subTest(size=size):
+                logits = np.zeros((1, size, size, size), dtype=np.float32)
+                logits[0, [0, size - 1], :, :] = 1
+                coords = structure.occupied(logits, 32, box=(1, 16, 16))
+                self.assertEqual(coords.shape, (2048, 3))
+                self.assertEqual(np.unique(coords[:, 0]).tolist(), [15, 16])
+
+    def test_box_fit_sets_the_generated_bounds_to_the_box_sizes(self):
+        import numpy as np
+        guide = port('guide')
+        write_glb = importlib.import_module(SHELL + '.triposg.geometry').write_glb
+        corners = np.array([[-0.25, -0.5, -0.1], [0.25, 0.5, 0.1], [0.25, -0.5, 0.1]], dtype=np.float32)
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'generated.glb'
+            write_glb(path, corners, np.array([[0, 1, 2]], dtype=np.uint32))
+            guide.fit(path, (0.6, 1.2, 0.3))
+            placed, _ = guide.read(path)
+            flat = Path(directory) / 'flat.glb'
+            write_glb(flat, corners * np.array([1, 1, 0], dtype=np.float32), np.array([[0, 1, 2]], dtype=np.uint32))
+            with self.assertRaisesRegex(ValueError, 'flat'):
+                guide.fit(flat, (1.0, 1.0, 1.0))
+        np.testing.assert_allclose(placed.min(axis=0), [-0.3, -0.6, -0.15], atol=1e-6)
+        np.testing.assert_allclose(placed.max(axis=0), [0.3, 0.6, 0.15], atol=1e-6)
+
+    def test_box_fit_rejects_unrepresentable_bounds_without_rewriting_source(self):
+        import numpy as np
+        guide = port('guide')
+        write_glb = importlib.import_module(SHELL + '.triposg.geometry').write_glb
+        vertices = np.array([[0, 0, 0], [1, 1, 1], [1, 0, 1]], dtype=np.float32)
+        with TemporaryDirectory() as directory:
+            for size in (1e-50, 1e40):
+                with self.subTest(size=size):
+                    path = Path(directory) / f'mesh-{size}.glb'
+                    write_glb(path, vertices, np.array([[0, 1, 2]], dtype=np.uint32))
+                    original = path.read_bytes()
+                    with self.assertRaisesRegex(ValueError, 'float32'):
+                        guide.fit(path, (size,) * 3)
+                    self.assertEqual(path.read_bytes(), original)
+
+    def test_failed_box_fit_leaves_the_output_path_available_for_retry(self):
+        import numpy as np
+        pipeline = port('pipeline')
+        vertices = np.array([[0, 0, 0], [1, 1, 1], [1, 0, 1]], dtype=np.float32)
+        faces = np.array([[0, 1, 2]], dtype=np.uint32)
+        with TemporaryDirectory() as directory:
+            out = Path(directory) / 'mesh.glb'
+            with self.assertRaisesRegex(ValueError, 'flat'):
+                pipeline._write_mesh(out, vertices * [1, 1, 0], faces, None, None, (1, 2, 4))
+            self.assertEqual(list(out.parent.iterdir()), [])
+            pipeline._write_mesh(out, vertices, faces, None, None, (1, 2, 4))
+            placed, _ = port('guide').read(out)
+            np.testing.assert_array_equal(np.ptp(placed, axis=0), [1, 4, 2])
+            original = out.read_bytes()
+            with self.assertRaises(FileExistsError):
+                pipeline._write_mesh(out, vertices, faces, None, None, (2, 2, 2))
+            self.assertEqual(out.read_bytes(), original)
+            self.assertEqual(list(out.parent.iterdir()), [out])
+
     def test_pixel_shuffle_moves_channel_blocks_to_voxel_offsets(self):
         import mlx.core as mx
         import numpy as np
@@ -723,6 +797,9 @@ class Trellis2NativeTests(unittest.TestCase):
                 pipeline.load(folder)
             with self.assertRaisesRegex(ValueError, '512, 1024 or 1536'):
                 pipeline.generate(({}, {}), Path(folder) / 'in.png', Path(folder) / 'out.glb', resolution=256)
+            for options in ({'bbox': (1, 0, 1)}, {'bbox': (1, 1)}, {'bbox': (1, 1, 1), 'guide': 'guide.glb'}):
+                with self.subTest(options=options), self.assertRaisesRegex(ValueError, 'bbox'):
+                    pipeline.generate(({}, {}), Path(folder) / 'in.png', Path(folder) / 'out.glb', **options)
             self.assertFalse((Path(folder) / 'out.glb').exists())
 
     def test_crop_centers_the_opaque_object_and_premultiplies_alpha(self):

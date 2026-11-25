@@ -17,7 +17,7 @@ from .describe import plan_describe, run_describe
 from .generate import plan_generate, run_generate
 from .inference_runner import InferenceError
 from .music import plan_music, run_music, validate_parameters as validate_music
-from .mesh import MeshError, plan_mesh, run_mesh, validate_glb
+from .mesh import MeshError, plan_mesh, run_mesh, validate_bbox, validate_glb
 from .segment import plan_segment, run_segment
 from .speak import plan_speak, run_speak
 from .task_contracts import (MEDIA_REQUEST_SCHEMA, MEDIA_RUN_SCHEMA, REQUEST_SCHEMA, RUN_SCHEMA, TaskError,
@@ -222,7 +222,7 @@ def _validate_video_understanding(parameters):
 
 
 def _validate_mesh(parameters):
-    _require_keys(parameters, ("image_path",), ("steps", "seed", "resolution", "guidance", "max_faces", "denoiser_cache", "cache_memory_mib", "views", "guide"),
+    _require_keys(parameters, ("image_path",), ("steps", "seed", "resolution", "guidance", "max_faces", "denoiser_cache", "cache_memory_mib", "views", "guide", "bbox"),
                   "Mesh-generation parameters need image_path and supported generation settings.")
     _require_absolute(parameters, "image_path")
     _require_integer(parameters, "steps", "seed", "resolution", "max_faces", "cache_memory_mib")
@@ -235,6 +235,13 @@ def _validate_mesh(parameters):
     _require_finite(parameters, "guidance")
     if "guide" in parameters:
         _require_absolute(parameters, "guide")
+    if "bbox" in parameters:
+        if not isinstance(parameters["bbox"], list):
+            raise _invalid("bbox must be a list of three sizes.")
+        try:
+            validate_bbox(parameters["bbox"], parameters.get("guide"))
+        except ValueError as error:
+            raise _invalid(str(error)) from error
     if "views" in parameters and (not isinstance(parameters["views"], list)
                                   or any(not absolute_path(path) for path in parameters["views"])):
         raise _invalid("views must be an ordered list of absolute local paths.")
@@ -291,7 +298,7 @@ def _plan_video_understanding(model, parameters, output, media, directory):
 
 
 def _plan_mesh(model, parameters, output, media, directory):
-    return plan_mesh(model, media, output, **_options(parameters, ("steps", "seed", "resolution", "guidance", "max_faces", "denoiser_cache", "cache_memory_mib", "views", "guide")))
+    return plan_mesh(model, media, output, **_options(parameters, ("steps", "seed", "resolution", "guidance", "max_faces", "denoiser_cache", "cache_memory_mib", "views", "guide", "bbox")))
 
 
 def _check_mesh_output(path, plan):

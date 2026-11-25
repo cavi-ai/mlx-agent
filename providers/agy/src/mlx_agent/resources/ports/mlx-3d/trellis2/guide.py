@@ -143,6 +143,43 @@ def surface_coords(path, resolution):
 
 def place(path, center, extent):
     """Rewrite a generated unit-cube GLB's positions as ``position * extent + center``, the guide's frame."""
+    _rewrite(path, lambda positions: positions * extent + center)
+
+
+def fit_size(size):
+    """Validate extents in the standalone backend before sampling or writing a GLB."""
+    message = "TRELLIS.2 bbox sizes must fit centered float32 GLB coordinates."
+    try:
+        size = np.asarray(tuple(size), dtype=np.float64)
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError(message) from error
+    limits = np.finfo(np.float32)
+    minimum = 2 * float(limits.smallest_subnormal)
+    maximum = 2 * float(limits.max)
+    if size.shape != (3,) or not np.all((minimum <= size) & (size <= maximum)):
+        raise ValueError(message)
+    return size
+
+
+def fit(path, size):
+    """Rewrite a generated GLB's positions so their bounds span ``size`` (glTF x, y, z), centered on the origin."""
+    size = fit_size(size)
+
+    def stretch(positions):
+        if not np.isfinite(positions).all():
+            raise ValueError("Generated positions must be finite before bbox fitting.")
+        low, high = positions.min(axis=0), positions.max(axis=0)
+        if not (high > low).all():
+            raise ValueError("The generated mesh is flat along an axis.")
+        placed = (((positions - low) / (high - low) - 0.5) * size).astype("<f4")
+        if not np.isfinite(placed).all() or not (placed.max(axis=0) > placed.min(axis=0)).all():
+            raise ValueError("The fitted mesh must have finite float32 positions spanning all three axes.")
+        return placed
+    _rewrite(path, stretch)
+
+
+def _rewrite(path, transform):
+    """Rewrite a generated GLB's packed float32 positions as ``transform(positions)``."""
     document, binary = _chunks(path)
     binary = bytearray(binary)
     accessor = document["accessors"][document["meshes"][0]["primitives"][0]["attributes"]["POSITION"]]
@@ -151,7 +188,7 @@ def place(path, center, extent):
         raise ValueError("Generated positions must be packed float32 triples.")
     start = view.get("byteOffset", 0) + accessor.get("byteOffset", 0)
     positions = np.frombuffer(bytes(binary), dtype="<f4", count=accessor["count"] * 3, offset=start)
-    placed = (positions.reshape(-1, 3).astype(np.float64) * extent + center).astype("<f4")
+    placed = np.asarray(transform(positions.reshape(-1, 3).astype(np.float64)), dtype="<f4")
     binary[start:start + placed.nbytes] = placed.tobytes()
     accessor["min"], accessor["max"] = placed.min(axis=0).tolist(), placed.max(axis=0).tolist()
     encoded = json.dumps(document, separators=(",", ":")).encode()

@@ -53,6 +53,8 @@ def request(verb, arguments):
             parameters["views"] = [str(Path(path).expanduser().absolute()) for path in arguments.view]
         if arguments.guide is not None:
             parameters["guide"] = str(Path(arguments.guide).expanduser().absolute())
+        if arguments.bbox is not None:
+            parameters["bbox"] = list(arguments.bbox)
     else:
         kind, names = VERBS[verb]
         parameters = {name: getattr(arguments, name) for name in names}

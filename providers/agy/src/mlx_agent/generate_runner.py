@@ -22,16 +22,26 @@ def main(argv=None):
     parser.add_argument("--height", type=int, required=True)
     parser.add_argument("--steps", type=int, required=True)
     parser.add_argument("--seed", type=int, required=True)
+    parser.add_argument("--image", action="append", default=[])
     arguments = parser.parse_args(argv)
 
     port = importlib.import_module(arguments.module)
+    options = {}
+    if arguments.image:
+        try:
+            options["images"] = port.prepare_references(arguments.image)
+        except ValueError as error:
+            print(json.dumps({"error": "invalid_arguments", "detail": str(error)}), flush=True)
+            return 3
     started = time.time()
     model = load_model(port.load, arguments.model)
     load_seconds = time.time() - started
     result = port.generate(
         model, arguments.prompt, arguments.out, width=arguments.width, height=arguments.height,
-        steps=arguments.steps, seed=arguments.seed,
+        steps=arguments.steps, seed=arguments.seed, **options,
     )
+    if arguments.image:
+        result["images"] = arguments.image
     result["load_seconds"] = round(load_seconds, 3)
     print(json.dumps(result), flush=True)
     return 0

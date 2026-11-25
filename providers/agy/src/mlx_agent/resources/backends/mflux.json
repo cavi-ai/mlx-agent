@@ -1,7 +1,7 @@
 {
   "schema": "backend/1",
   "id": "mflux",
-  "version": "0.20.0",
+  "version": "0.24.0",
   "builtin": false,
   "package": "mflux",
   "convert": "mflux.models.common.cli.save",

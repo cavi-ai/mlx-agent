@@ -43,7 +43,7 @@
       "started_at": null,
       "state": "absent",
       "target": "/backends/mflux",
-      "version": "0.20.0"
+      "version": "0.24.0"
     },
     {
       "builtin": false,

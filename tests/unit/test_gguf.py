@@ -288,22 +288,29 @@ class ScanTests(unittest.TestCase):
         self.assertEqual(scan_mlx_outputs([self.root]), [])
 
     def test_component_layout_outputs_need_weights_in_every_listed_component(self):
-        def write(name, components, weights):
+        def write(name, components, weights, **config):
             directory = self.root / name
             directory.mkdir()
             (directory / "config.json").write_text(json.dumps(
-                {"model_type": "qwen_image_21", "components": components, "quantization": {"bits": 8}}), encoding="utf-8")
+                dict(config, model_type="qwen_image_21", components=components, quantization={"bits": 8})), encoding="utf-8")
             for component in weights:
                 (directory / component).mkdir()
                 (directory / component / "0.safetensors").write_bytes(b"x")
             (directory / "transformer" / "config.json").write_text("{}", encoding="utf-8") if "transformer" in weights else None
+            return directory
 
         write("image-MLX-8bit", ["transformer", "text_encoder", "vae"], ["transformer", "text_encoder", "vae"])
         write("missing-vae-MLX-8bit", ["transformer", "vae"], ["transformer"])
         write("escape-MLX-8bit", ["../x"], [])
+        for name, components in (("reference-MLX-8bit", ["transformer", "text_encoder", "vae"]),
+                                 ("reference-legacy-MLX-8bit", ["transformer", "text_encoder", "vae", "processor"])):
+            directory = write(name, components, ["transformer", "text_encoder", "vae"], max_references=10)
+            (directory / "processor").mkdir()
+            (directory / "processor" / "preprocessor_config.json").write_text("{}", encoding="utf-8")
         outputs = scan_mlx_outputs([self.root])
-        self.assertEqual([(item["name"], item["quantization"]["model_type"]) for item in outputs],
-                         [("image-MLX-8bit", "qwen_image_21")])
+        self.assertEqual([item["name"] for item in outputs],
+                         ["image-MLX-8bit", "reference-MLX-8bit", "reference-legacy-MLX-8bit"])
+        self.assertTrue(all(item["quantization"]["model_type"] == "qwen_image_21" for item in outputs))
 
     def test_mlx_output_provenance_is_read(self):
         write_mlx_output(

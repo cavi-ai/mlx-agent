@@ -273,7 +273,7 @@ class BackendConvertTests(unittest.TestCase):
         (venv / "lib" / "python3.12" / "site-packages" / "mflux").mkdir(parents=True)
         (venv / "bin").mkdir()
         (venv / "bin" / "python").write_text("", encoding="utf-8")
-        (venv / ".mlx-agent-backend.json").write_text(json.dumps({"id": "mflux", "version": "0.20.0"}), encoding="utf-8")
+        (venv / ".mlx-agent-backend.json").write_text(json.dumps({"id": "mflux", "version": "0.24.0"}), encoding="utf-8")
         outcome = start_convert(plan, receipts_dir=str(self.root), confirm=True, preview_hash=plan["preview_hash"],
                                 spawn=lambda argv, log: 99, model_present=lambda repo: True)
         RECEIPT_SCHEMA.validate(outcome["receipt"])

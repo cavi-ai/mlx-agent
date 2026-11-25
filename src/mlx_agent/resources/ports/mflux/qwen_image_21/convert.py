@@ -1,5 +1,7 @@
 """Convert Qwen-Image 2.1 (diffusers layout, already in the cache) to an mflux MLX directory.
 
+The output keeps the Qwen3-VL vision tower and processor, so it renders from
+text or from up to ten reference images.
 ``--lora`` merges a PEFT LoRA into the transformer first (``--lora-scale``).
 Nothing is downloaded: ``--hf-path`` and ``--lora`` are local paths.
 """
@@ -17,12 +19,12 @@ PIPELINE = "QwenImage21Pipeline"
 def convert(hf_path: str, mlx_path: str, quantize: bool = False, q_bits: int = 8, lora: str = None,
             lora_scale: float = 1.0) -> Path:
     import mlx.core as mx
-    from mlx import nn
     from mflux.models.common.config import ModelConfig
-    from mflux.models.qwen21.qwen21_initializer import Qwen21Initializer
-    from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
+    from mflux.models.common.weights.loading.weight_applier import WeightApplier
+    from mflux.models.qwen21.variants.edit.qwen_image_21_edit import QwenImage21Edit
+    from mflux.models.qwen21.weights.qwen_image21_weight_definition import QwenImage21WeightDefinition
 
-    from .qwen_image_21 import MFLUX_MODEL, merge_lora
+    from .qwen_image_21 import MAX_REFERENCES, MFLUX_MODEL, merge_lora
 
     base, out = Path(hf_path).expanduser(), Path(mlx_path).expanduser()
     if not base.is_dir():
@@ -38,24 +40,24 @@ def convert(hf_path: str, mlx_path: str, quantize: bool = False, q_bits: int = 8
     if index.get("_class_name") != PIPELINE:
         raise SystemExit("{0} is a {1}, not a {2}.".format(base, index.get("_class_name"), PIPELINE))
     print("[INFO] Loading {0}".format(base), flush=True)
-    model = QwenImage21.__new__(QwenImage21)
-    nn.Module.__init__(model)
-    Qwen21Initializer._init_config(model, ModelConfig.qwen_image_21())
-    weights = Qwen21Initializer._load_weights(str(base))
+    model = QwenImage21Edit(model_path=str(base), model_config=ModelConfig.qwen_image_21())
     if lora:
-        count = merge_lora(weights.components["transformer"], mx.load(str(Path(lora).expanduser())), lora_scale)
+        weights = model.transformer.parameters()
+        count = merge_lora(weights, mx.load(str(Path(lora).expanduser())), lora_scale)
+        model.transformer.update(weights)
         print("[INFO] Merged {0} LoRA layers at scale {1}".format(count, lora_scale), flush=True)
-    Qwen21Initializer._init_tokenizers(model, str(base))
-    Qwen21Initializer._init_models(model)
     bits = q_bits if quantize else None
     if bits:
         print("[INFO] Quantizing to {0} bits".format(bits), flush=True)
-    Qwen21Initializer._apply_weights(model, weights, bits)
+        components = {component.name: component for component in QwenImage21WeightDefinition.get_components()}
+        WeightApplier._quantize({name: getattr(model, name) for name in components}, bits, components,
+                                QwenImage21WeightDefinition)
+        model.bits = bits
     print("[INFO] Writing {0}".format(out), flush=True)
     model.save_model(str(out))
     config = {
         "model_type": "qwen_image_21", "mflux_model": MFLUX_MODEL,
-        "components": ["transformer", "text_encoder", "vae"],
+        "components": ["transformer", "text_encoder", "vae"], "max_references": MAX_REFERENCES,
         "quantization": {"bits": bits} if bits else None,
         "lora": {"file": Path(lora).name, "scale": lora_scale} if lora else None,
     }

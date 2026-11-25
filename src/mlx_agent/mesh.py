@@ -23,6 +23,8 @@ RESOLUTIONS = (32, 64, 128, 256, 512)
 DEFAULTS = {"steps": 50, "resolution": 512, "guidance": 7.0}
 MAX_FACES_RANGE = (1000, 10_000_000)
 RESOLUTION_RANGE = (16, 4096)
+# The smallest bbox side keeps at least two voxels of the 32³ sparse structure.
+MAX_BOX_RATIO = 16
 
 
 def _settings(config):
@@ -43,9 +45,9 @@ def _choices(values):
 
 def plan_mesh(model_path, image, out, steps=None, seed=42, resolution=None, guidance=None, max_faces=500_000,
               manifests=None, registries=None, root=None, denoiser_cache='off', cache_memory_mib=256, views=(),
-              guide=None):
-    """The backend run for one image, plus TRELLIS.2's extra ``views`` and ``guide`` mesh; unset steps, resolution
-    and guidance take the model's own defaults."""
+              guide=None, bbox=None):
+    """The backend run for one image, plus TRELLIS.2's extra ``views``, ``guide`` mesh and ``bbox`` sizes; unset
+    steps, resolution and guidance take the model's own defaults."""
     model, image, target = (Path(value).expanduser().absolute() for value in (model_path, image, out))
     views = [Path(value).expanduser().absolute() for value in views]
     guide = None if guide is None else Path(guide).expanduser().absolute()
@@ -61,8 +63,16 @@ def plan_mesh(model_path, image, out, steps=None, seed=42, resolution=None, guid
     guidance = defaults["guidance"] if guidance is None else guidance
     if not image.is_file() or image.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
         raise MeshError("invalid_arguments", "--image must be an existing PNG, JPEG or WebP file.", "Select an input image.")
-    if (views or guide is not None) and config.get("model_type") != "trellis2":
-        raise MeshError("invalid_arguments", "--view and --guide require a TRELLIS.2 model.", "Drop them for this model.")
+    if (views or guide is not None or bbox is not None) and config.get("model_type") != "trellis2":
+        raise MeshError("invalid_arguments", "--view, --guide and --bbox require a TRELLIS.2 model.",
+                        "Drop them for this model.")
+    if bbox is not None and (guide is not None or not isinstance(bbox, (list, tuple)) or len(bbox) != 3
+                             or any(type(size) not in (int, float) or not math.isfinite(size) or size <= 0
+                                    for size in bbox)
+                             or max(bbox) > MAX_BOX_RATIO * min(bbox)):
+        raise MeshError("invalid_arguments",
+                        "--bbox takes three sizes above 0, at most {0} times apart, without --guide.".format(MAX_BOX_RATIO),
+                        "Use --bbox 0.6 0.6 1.2.")
     if any(not view.is_file() or view.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp") for view in views):
         raise MeshError("invalid_arguments", "--view must be an existing PNG, JPEG or WebP file.", "Select the view images.")
     if guide is not None and (not guide.is_file() or guide.suffix.lower() != ".glb"):
@@ -105,6 +115,8 @@ def plan_mesh(model_path, image, out, steps=None, seed=42, resolution=None, guid
         argv += ["--view", str(view)]
     if guide is not None:
         argv += ["--guide", str(guide)]
+    if bbox is not None:
+        argv += ["--bbox", *(str(float(size)) for size in bbox)]
     return {"backend": manifest["id"], "model": str(model), "out": str(target), "argv": argv}
 
 

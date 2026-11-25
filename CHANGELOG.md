@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- TRELLIS.2 `convert mesh --bbox X Y Z` fits the sampled shape to the box proportions and the mesh bounds to its sizes.
+
 ## 0.16.0
 
 - Add a Gemini CLI extension with all eight MLX Agent skills, a shared runtime, and reviewable user- and project-scope installs, updates, and removals.

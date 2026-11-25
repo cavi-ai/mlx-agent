@@ -2246,6 +2246,9 @@ def _add_convert_arguments(parser):
                       help="TRELLIS.2: another image of the object, conditioning sampler steps in turn; repeatable")
     mesh.add_argument("--guide", default=None,
                       help="TRELLIS.2: a GLB whose surface voxels replace the sampled sparse structure")
+    mesh.add_argument("--bbox", type=float, nargs=3, default=None, metavar=("X", "Y", "Z"),
+                      help="TRELLIS.2: sizes with z up; the sampled shape takes their proportions and the mesh "
+                           "their size")
     mesh.add_argument("--timeout", type=int, default=3600)
     mesh.add_argument("--json", action="store_true")
     video = actions.add_parser(
@@ -2361,7 +2364,7 @@ def _run_convert(arguments):
                              seed=arguments.seed, resolution=arguments.resolution, guidance=arguments.guidance,
                              max_faces=arguments.max_faces, denoiser_cache=arguments.denoiser_cache,
                              cache_memory_mib=arguments.cache_memory_mib, views=arguments.view,
-                             guide=arguments.guide)
+                             guide=arguments.guide, bbox=arguments.bbox)
             result = served_or_local("mesh", run_mesh, plan, arguments.out)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
         if arguments.convert_command == "video":

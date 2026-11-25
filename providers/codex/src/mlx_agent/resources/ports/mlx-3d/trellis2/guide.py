@@ -143,6 +143,21 @@ def surface_coords(path, resolution):
 
 def place(path, center, extent):
     """Rewrite a generated unit-cube GLB's positions as ``position * extent + center``, the guide's frame."""
+    _rewrite(path, lambda positions: positions * extent + center)
+
+
+def fit(path, size):
+    """Rewrite a generated GLB's positions so their bounds span ``size`` (glTF x, y, z), centered on the origin."""
+    def stretch(positions):
+        low, high = positions.min(axis=0), positions.max(axis=0)
+        if not (high > low).all():
+            raise ValueError("The generated mesh is flat along an axis.")
+        return (positions - (low + high) / 2) / (high - low) * np.asarray(size, dtype=np.float64)
+    _rewrite(path, stretch)
+
+
+def _rewrite(path, transform):
+    """Rewrite a generated GLB's packed float32 positions as ``transform(positions)``."""
     document, binary = _chunks(path)
     binary = bytearray(binary)
     accessor = document["accessors"][document["meshes"][0]["primitives"][0]["attributes"]["POSITION"]]
@@ -151,7 +166,7 @@ def place(path, center, extent):
         raise ValueError("Generated positions must be packed float32 triples.")
     start = view.get("byteOffset", 0) + accessor.get("byteOffset", 0)
     positions = np.frombuffer(bytes(binary), dtype="<f4", count=accessor["count"] * 3, offset=start)
-    placed = (positions.reshape(-1, 3).astype(np.float64) * extent + center).astype("<f4")
+    placed = transform(positions.reshape(-1, 3).astype(np.float64)).astype("<f4")
     binary[start:start + placed.nbytes] = placed.tobytes()
     accessor["min"], accessor["max"] = placed.min(axis=0).tolist(), placed.max(axis=0).tolist()
     encoded = json.dumps(document, separators=(",", ":")).encode()

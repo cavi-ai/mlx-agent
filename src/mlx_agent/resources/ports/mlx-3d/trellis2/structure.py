@@ -47,9 +47,30 @@ def decode(w, config, latent):
     return h[..., 0]
 
 
-def occupied(logits, resolution):
-    """Integer (x, y, z) coordinates of occupied voxels at ``resolution``, pooled from the decoder grid."""
+def fit(grid, box):
+    """``grid`` resampled per axis so its occupied bounds fill a centered box with ``box``'s (x, y, z) proportions,
+    the largest spanning the grid; each box voxel takes the nearest source voxel, so no part is cut off."""
+    found = np.argwhere(grid)
+    if not len(found):
+        return grid
+    low, high = found.min(axis=0), found.max(axis=0) + 1
+    size = grid.shape[0]
+    box = np.asarray(box, dtype=np.float64)
+    spans = np.maximum(np.rint(box / box.max() * size), 1).astype(np.int64)
+    starts = (size - spans) // 2
+    picks = [low[axis] + ((np.arange(spans[axis]) + 0.5) * (high[axis] - low[axis]) / spans[axis]).astype(np.int64)
+             for axis in range(3)]
+    fitted = np.zeros_like(grid)
+    fitted[tuple(slice(start, start + span) for start, span in zip(starts, spans))] = grid[np.ix_(*picks)]
+    return fitted
+
+
+def occupied(logits, resolution, box=None):
+    """Integer (x, y, z) coordinates of occupied voxels at ``resolution``, pooled from the decoder grid after
+    fitting it to ``box`` proportions when given."""
     grid = np.array(logits[0] > 0)
+    if box is not None:
+        grid = fit(grid, box)
     ratio = grid.shape[0] // resolution
     if ratio > 1:
         grid = grid.reshape(resolution, ratio, resolution, ratio, resolution, ratio).any(axis=(1, 3, 5))

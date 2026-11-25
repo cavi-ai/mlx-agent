@@ -222,7 +222,7 @@ def _validate_video_understanding(parameters):
 
 
 def _validate_mesh(parameters):
-    _require_keys(parameters, ("image_path",), ("steps", "seed", "resolution", "guidance", "max_faces", "denoiser_cache", "cache_memory_mib", "views", "guide"),
+    _require_keys(parameters, ("image_path",), ("steps", "seed", "resolution", "guidance", "max_faces", "denoiser_cache", "cache_memory_mib", "views", "guide", "bbox"),
                   "Mesh-generation parameters need image_path and supported generation settings.")
     _require_absolute(parameters, "image_path")
     _require_integer(parameters, "steps", "seed", "resolution", "max_faces", "cache_memory_mib")
@@ -235,6 +235,9 @@ def _validate_mesh(parameters):
     _require_finite(parameters, "guidance")
     if "guide" in parameters:
         _require_absolute(parameters, "guide")
+    if "bbox" in parameters and (not isinstance(parameters["bbox"], list) or len(parameters["bbox"]) != 3
+                                 or not all(finite_number(size) for size in parameters["bbox"])):
+        raise _invalid("bbox must be a list of three finite sizes.")
     if "views" in parameters and (not isinstance(parameters["views"], list)
                                   or any(not absolute_path(path) for path in parameters["views"])):
         raise _invalid("views must be an ordered list of absolute local paths.")
@@ -291,7 +294,7 @@ def _plan_video_understanding(model, parameters, output, media, directory):
 
 
 def _plan_mesh(model, parameters, output, media, directory):
-    return plan_mesh(model, media, output, **_options(parameters, ("steps", "seed", "resolution", "guidance", "max_faces", "denoiser_cache", "cache_memory_mib", "views", "guide")))
+    return plan_mesh(model, media, output, **_options(parameters, ("steps", "seed", "resolution", "guidance", "max_faces", "denoiser_cache", "cache_memory_mib", "views", "guide", "bbox")))
 
 
 def _check_mesh_output(path, plan):

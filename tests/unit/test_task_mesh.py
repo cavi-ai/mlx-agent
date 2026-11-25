@@ -1,6 +1,7 @@
 """Durable 3D task contracts using tiny synthetic artifacts, without model weights."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import struct
 import tempfile
@@ -9,6 +10,7 @@ from unittest.mock import patch
 
 from jsonschema import Draft202012Validator
 
+from mlx_agent.backends import INSTALL_MARKER, load_manifests
 from mlx_agent.task_contracts import TaskError, capabilities, validate_request
 from mlx_agent.task_kinds import get
 from mlx_agent.task_runtime import task_result
@@ -81,6 +83,33 @@ class MeshTaskTests(unittest.TestCase):
                 else:
                     with self.assertRaises(TaskError):
                         validate_request(request)
+
+    def test_bbox_matches_the_schema_and_reaches_the_backend_argv(self):
+        schema = Draft202012Validator(json.loads((ROOT / "schemas/task-request.schema.json").read_text()))
+        request = dict(self.request, parameters=dict(self.request["parameters"], bbox=[0.6, 0.6, 1.2]))
+        self.assertTrue(schema.is_valid(request))
+        self.assertEqual(validate_request(request), request)
+        for bbox in ([1, 1], [1, "1", 1], [1, 1, 1, 1]):
+            bad = dict(request, parameters=dict(request["parameters"], bbox=bbox))
+            with self.subTest(bbox=bbox):
+                self.assertFalse(schema.is_valid(bad))
+                with self.assertRaises(TaskError):
+                    validate_request(bad)
+        data = self.root / "data"
+        backend = data / "mlx-workbench" / "backends" / "mlx-3d"
+        (backend / "bin").mkdir(parents=True)
+        (backend / "bin" / "python").touch()
+        (backend / INSTALL_MARKER).write_text(json.dumps({"id": "mlx-3d",
+                                                          "version": load_manifests()["mlx-3d"]["version"]}))
+        model = Path(request["model_path"])
+        model.mkdir()
+        (model / "config.json").write_text(json.dumps({"model_type": "trellis2", "mesh": {
+            "resolutions": [512, 1024, 1536], "resolution": 1024, "steps": 12, "guidance": 7.5}}))
+        staged = self.root / "owned-input.png"
+        staged.touch()
+        with patch.dict(os.environ, {"XDG_DATA_HOME": str(data)}):
+            argv = get("mesh_generation").plan(request, self.root, str(staged))["argv"]
+        self.assertEqual(argv[argv.index("--bbox") + 1:argv.index("--bbox") + 4], ["0.6", "0.6", "1.2"])
 
     def test_mesh_output_refuses_truncation_and_links(self):
         kind = get("mesh_generation")

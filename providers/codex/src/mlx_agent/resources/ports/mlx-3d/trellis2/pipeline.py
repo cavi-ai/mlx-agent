@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image
 
 from . import closed, components, dinov3, dual_grid, flow, sparse, structure
-from .guide import place, surface_coords
+from .guide import fit, place, surface_coords
 from ..triposg.geometry import decimate, write_glb
 from ..triposg.weights import Weights
 
@@ -161,12 +161,17 @@ def cascade_coords(coords, low, high, max_tokens=MAX_TOKENS):
 
 
 def generate(model, image, out, steps=12, seed=42, resolution=1024, guidance=7.5, max_faces=500_000, views=(),
-             guide=None):
+             guide=None, bbox=None):
     """``views`` are more images of the object, one per sampler step in turn; a ``guide`` GLB's surface voxels
-    replace the sampled sparse structure."""
+    replace the sampled sparse structure. ``bbox`` sizes (x, y, z, z up) fit the sampled sparse structure to their
+    proportions and the mesh bounds to those sizes, centered on the origin."""
     config, weights = model
     if resolution not in RESOLUTIONS:
         raise ValueError("TRELLIS.2 resolution must be 512, 1024 or 1536.")
+    if bbox is not None:
+        bbox = tuple(float(size) for size in bbox)
+        if guide is not None or len(bbox) != 3 or not all(np.isfinite(bbox)) or min(bbox) <= 0:
+            raise ValueError("TRELLIS.2 bbox takes three positive sizes and no guide.")
     prepare(model, resolution)
     settings = config["pipeline"]
     started = time.perf_counter()
@@ -197,7 +202,7 @@ def generate(model, image, out, steps=12, seed=42, resolution=1024, guidance=7.5
                              **_sampler(settings["sparse_structure_sampler"], steps, guidance))
         logits = structure.decode(weights["ss_decoder"], config["components"]["ss_decoder"],
                                   latent.reshape(1, grid, grid, grid, -1))
-        coords = structure.occupied(logits, LOW_RESOLUTION // 16)
+        coords = structure.occupied(logits, LOW_RESOLUTION // 16, box=bbox)
     else:
         coords, guide_center, guide_extent = surface_coords(guide, LOW_RESOLUTION // 16)
     previous, cursor = cursor, time.perf_counter()
@@ -267,8 +272,11 @@ def generate(model, image, out, steps=12, seed=42, resolution=1024, guidance=7.5
     if guide is not None:
         # The guided mesh replaces the guide in place, ready to bake onto it.
         place(out, guide_center, guide_extent)
+    if bbox is not None:
+        # glTF is y-up with -z in front: TRELLIS (x, y, z) sizes are glTF (x, z, y).
+        fit(out, (bbox[0], bbox[2], bbox[1]))
     return {"path": str(out), "seconds": round(time.perf_counter() - started, 3), "steps": steps,
-            "views": len(pictures), "guided": guide is not None,
+            "views": len(pictures), "guided": guide is not None, "bbox": None if bbox is None else list(bbox),
             "seed": seed, "resolution": level_resolution, "vertices": len(vertices), "faces": len(faces),
             "voxels": len(voxels), "vertex_colors": paint, "pbr": paint,
             "stage_seconds": {name: round(value, 3) for name, value in stages.items()},

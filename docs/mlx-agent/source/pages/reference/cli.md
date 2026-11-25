@@ -110,12 +110,14 @@ Most commands support `--json` with the versioned result envelope:
 `remediation`, and `retryable`.
 
 Python tools run one convert verb with `mlx_agent.client.convert(verb,
-arguments, timeout, cli=None)`. It runs `convert <verb> ... --timeout N --json`,
-returns the envelope's `data`, and raises `ConvertError` with `code`,
-`message`, and `remediation` when the exit status is non-zero or `status` is not
-`ok`. `cli` is an executable, a script run with the current interpreter, or an
-argv list; the default is `mlx-agent` on `PATH`. Output is bounded, and
-non-JSON output raises `no_json` with the tail of stderr.
+arguments, timeout, cli=None)`. It runs `convert <verb> ... --json` and passes
+`--timeout N` to inference verbs. The client deadline is `timeout + grace`,
+with a default `grace` of 60 seconds. The client returns the envelope's `data`,
+including the confirmation preview from `convert start`. Failures raise
+`ConvertError` with `code`, `message`, and `remediation`. `cli` is an executable,
+a script run with the current interpreter, or an argv list. The default is
+`mlx-agent` on `PATH`. Output is bounded, and non-JSON output raises `no_json`
+with the tail of stderr.
 
 Exit 0 indicates a successful command. Several mutation previews exit 2 with
 `status: "ok"` and `data.requires_confirmation: true`; failures also exit 2

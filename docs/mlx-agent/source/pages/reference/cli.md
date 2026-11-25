@@ -109,6 +109,14 @@ Most commands support `--json` with the versioned result envelope:
 `generated_at`. Errors add an `error` object with `code`, `message`,
 `remediation`, and `retryable`.
 
+Python tools run one convert verb with `mlx_agent.client.convert(verb,
+arguments, timeout, cli=None)`. It runs `convert <verb> ... --timeout N --json`,
+returns the envelope's `data`, and raises `ConvertError` with `code`,
+`message`, and `remediation` when the exit status is non-zero or `status` is not
+`ok`. `cli` is an executable, a script run with the current interpreter, or an
+argv list; the default is `mlx-agent` on `PATH`. Output is bounded, and
+non-JSON output raises `no_json` with the tail of stderr.
+
 Exit 0 indicates a successful command. Several mutation previews exit 2 with
 `status: "ok"` and `data.requires_confirmation: true`; failures also exit 2
 but have `status: "error"`. Argument-parser errors exit 2 and may not emit a

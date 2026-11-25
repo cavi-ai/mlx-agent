@@ -3,6 +3,7 @@
 ## Unreleased
 
 - TRELLIS.2 `convert mesh --bbox X Y Z` fits the sampled shape to the box proportions and the mesh bounds to its sizes.
+- Add `mlx_agent.client.convert` for Python tools to run one `convert` verb and receive its JSON `data` or a `ConvertError` carrying the envelope's `code`, `message` and `remediation`.
 
 ## 0.16.0
 

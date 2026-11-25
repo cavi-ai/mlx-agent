@@ -64,13 +64,14 @@
       "builtin": false,
       "categories": [
         "music_generation",
+        "source_separation",
         "speech_to_text",
         "text_to_speech"
       ],
       "completed_at": null,
       "id": "mlx-audio",
       "log_path": null,
-      "model_types": 70,
+      "model_types": 71,
       "registry_source": "snapshot",
       "started_at": null,
       "state": "absent",

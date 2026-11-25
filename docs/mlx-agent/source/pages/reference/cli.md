@@ -36,7 +36,7 @@ python3 scripts/mlx-agent intake fetch --help
 | `backend list/install/remove` | Inspect or manage optional dependencies. |
 | `convert scan` | Inventory GGUF files and candidate duplicates without deletion. |
 | `convert start/status` | Quantize local checkpoints; inspect conversion jobs. |
-| `convert transcribe/decide/generate/speak/music/describe/video/mesh` | Execute supported local inference tasks. |
+| `convert transcribe/separate/decide/generate/speak/music/describe/video/mesh` | Execute supported local inference tasks. |
 | `task capabilities/start/status/list/result/cancel/verify-model` | Manage durable local classification and media tasks. See [Durable inference tasks](../lifecycle/tasks.md). |
 | `serve start/status/stop` | Launch and inspect receipt-owned local servers. |
 | `serve tailnet start/status/stop` | Review and supervise an authenticated Tailnet share. |

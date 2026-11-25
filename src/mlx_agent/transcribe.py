@@ -26,7 +26,7 @@ class TranscribeError(InferenceError):
     """Classified transcription failure safe to surface in a result envelope."""
 
 
-def plan_transcribe(model_path, audio_path, language=None, manifests=None, registries=None, root=None):
+def plan_transcribe(model_path, audio_path, language=None, manifests=None, registries=None, root=None, words=False):
     """Pick the speech backend for a converted model directory; pure apart from reading config.json."""
     model = Path(model_path).expanduser().resolve()
     try:
@@ -59,20 +59,30 @@ def plan_transcribe(model_path, audio_path, language=None, manifests=None, regis
     argv = [str(backend_python(manifest, root)), str(TRANSCRIBE_RUNNER), "--model", str(model), "--audio", str(audio)]
     if language:
         argv += ["--language", language]
-    return {"backend": manifest["id"], "model": str(model), "audio": str(audio), "language": language, "argv": argv}
+    if words:
+        argv.append("--words")
+    return {"backend": manifest["id"], "model": str(model), "audio": str(audio), "language": language,
+            "words": bool(words), "argv": argv}
 
 
 CONTRACT = RunnerContract(
-    verb="transcribe", error=TranscribeError, accept=lambda value, plan: isinstance(value.get("text"), str),
+    verb="transcribe", error=TranscribeError,
+    accept=lambda value, plan: isinstance(value.get("text"), str) and (
+        not plan.get("words") or isinstance(value.get("words"), list)),
     action="transcribe the clip", remediation="Check that the directory is a complete converted speech model.",
     activity="Transcription", timeout_remediation="Use a shorter clip or a larger --timeout.",
+    refusals={"words_unsupported": lambda plan, detail: (
+        "{0} gives no word times.".format(detail), "Use a Whisper model for --words.")},
 )
 
 
 def run_transcribe(plan, manifests=None, root=None, timeout=DEFAULT_TIMEOUT_SECONDS, runner=subprocess.run):
     result = invoke(plan, CONTRACT, manifests, root, timeout, runner)
-    return {
+    transcript = {
         "schema": TRANSCRIBE_SCHEMA, "backend": plan["backend"], "model": plan["model"], "audio": plan["audio"],
         "language": plan["language"], "text": result["text"],
         "seconds": result.get("seconds"), "audio_seconds": result.get("audio_seconds"),
     }
+    if plan.get("words"):
+        transcript["words"] = result["words"]
+    return transcript

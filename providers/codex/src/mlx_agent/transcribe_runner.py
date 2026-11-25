@@ -46,6 +46,7 @@ def main(argv=None):
     parser.add_argument("--model", required=True)
     parser.add_argument("--audio", required=True)
     parser.add_argument("--language", default=None)
+    parser.add_argument("--words", action="store_true")
     arguments = parser.parse_args(argv)
 
     from mlx_audio.stt.utils import load_audio, load_model
@@ -55,15 +56,27 @@ def main(argv=None):
     _restore_whisper_end_token(model)
     samples = load_audio(arguments.audio)
     kwargs = {}
-    if arguments.language and "language" in inspect.signature(model.generate).parameters:
+    parameters = inspect.signature(model.generate).parameters
+    if arguments.language and "language" in parameters:
         kwargs["language"] = arguments.language
+    if arguments.words:
+        if "word_timestamps" not in parameters:
+            print(json.dumps({"error": "words_unsupported", "detail": type(model).__name__}), flush=True)
+            return 2
+        kwargs["word_timestamps"] = True
     output = model.generate(arguments.audio, **kwargs)
     text = getattr(output, "text", output if isinstance(output, str) else "")
-    print(json.dumps({
+    result = {
         "text": str(text).strip(),
         "seconds": round(time.time() - started, 3),
         "audio_seconds": round(int(samples.shape[0]) / 16000, 3),
-    }), flush=True)
+    }
+    if arguments.words:
+        result["words"] = [
+            {"word": str(word["word"]).strip(), "start": round(float(word["start"]), 3), "end": round(float(word["end"]), 3)}
+            for segment in getattr(output, "segments", None) or [] for word in segment.get("words") or []
+        ]
+    print(json.dumps(result), flush=True)
     return 0
 
 

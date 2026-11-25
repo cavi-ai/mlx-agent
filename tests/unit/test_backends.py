@@ -227,7 +227,8 @@ class PortTests(unittest.TestCase):
         return directory
 
     def test_manifest_ports_must_name_modules_in_declared_categories(self):
-        self.assertEqual(self.manifest["ports"], {"speech_to_text": ["audio8_asr_infinite"]})
+        self.assertEqual(self.manifest["ports"], {"source_separation": ["mel_band_roformer"],
+                                                  "speech_to_text": ["audio8_asr_infinite"]})
         for bad in ({"text_llm": ["x"]}, {"speech_to_text": "x"}, {"speech_to_text": ["../x"]}):
             with self.assertRaises(BackendError) as caught:
                 load_manifests(self.write_manifest(bad))
@@ -261,10 +262,15 @@ class PortTests(unittest.TestCase):
             "module": "mlx_audio.stt.models.audio8_asr_infinite",
         }])
         self.assertEqual(lookup("audio8_asr_infinite", manifests, {}), hits)
+        self.assertEqual(lookup("mel_band_roformer", manifests, registries), [{
+            "backend": "mlx-audio", "category": "source_separation", "match": "exact",
+            "module": "mlx_audio.mlx_agent_ports.mel_band_roformer",
+        }])
 
     def test_sync_copies_once_marks_and_replaces_a_stale_copy(self):
         self.install()
-        self.assertEqual(sync_ports(self.manifest, self.root), ["audio8_asr_infinite"])
+        self.assertEqual(sync_ports(self.manifest, self.root), ["mel_band_roformer", "audio8_asr_infinite"])
+        self.assertTrue((self.models.parents[1] / "mlx_agent_ports" / "mel_band_roformer" / "__init__.py").is_file())
         target = self.models / "audio8_asr_infinite"
         sources = sorted(path.name for path in (PORTS_DIR / "mlx-audio" / "audio8_asr_infinite").glob("*.py"))
         self.assertEqual(sorted(path.name for path in target.glob("*.py")), sources)

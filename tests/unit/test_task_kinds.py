@@ -3,7 +3,8 @@ import wave
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from mlx_agent.task_contracts import MEDIA_REQUEST_SCHEMA, MEDIA_SUFFIXES, REQUEST_SCHEMA, TaskError, capabilities
+from mlx_agent.task_contracts import (MEDIA_REQUEST_SCHEMA, MEDIA_SUFFIXES, REQUEST_SCHEMA, TaskError, capabilities,
+                                      validate_request)
 from mlx_agent.task_kinds import KINDS, find, get
 
 
@@ -43,6 +44,18 @@ class TaskKindTests(unittest.TestCase):
                 with self.assertRaises(TaskError) as caught:
                     get(name)
                 self.assertEqual(caught.exception.code, "unsupported_task")
+
+    def test_mesh_request_rejects_invalid_box_before_planning(self):
+        parameters = {"image_path": str(self.root / "image.png"), "bbox": [1, 16, 16]}
+        request = {"schema": MEDIA_REQUEST_SCHEMA, "kind": "mesh_generation", "model_path": str(self.root / "model"),
+                   "parameters": parameters}
+        self.assertEqual(validate_request(request), request)
+        for options in ({"bbox": [1, 0, 1]}, {"bbox": [1, 17, 1]}, {"bbox": [1e40] * 3},
+                        {"bbox": [1e-50] * 3}, {"guide": str(self.root / "guide.glb")}):
+            with self.subTest(options=options):
+                with self.assertRaisesRegex(TaskError, 'bbox') as caught:
+                    validate_request(dict(request, parameters={**parameters, **options}))
+                self.assertEqual(caught.exception.code, "invalid_request")
 
     def test_music_and_speech_reject_truncated_wav_output(self):
         path = self.root / "output.wav"

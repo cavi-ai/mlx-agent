@@ -190,6 +190,12 @@ class MeshPlanningTests(unittest.TestCase):
                 self.plan(**options)
             self.assertEqual(caught.exception.code, 'invalid_arguments')
 
+    def test_bbox_planning_rejects_dimensions_outside_float32_output_range(self):
+        self.use_trellis2()
+        for size in (1e-50, 1e40, 10**400):
+            with self.subTest(size=size), self.assertRaisesRegex(MeshError, 'float32'):
+                self.plan(bbox=[size, size, size])
+
     def test_a_model_with_unreadable_mesh_resolutions_is_refused(self):
         for resolutions in ([], [8], 'all', [512.0], [True]):
             self.use_trellis2(resolutions=resolutions)

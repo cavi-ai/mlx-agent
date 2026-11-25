@@ -48,8 +48,7 @@ def decode(w, config, latent):
 
 
 def fit(grid, box):
-    """``grid`` resampled per axis so its occupied bounds fill a centered box with ``box``'s (x, y, z) proportions,
-    the largest spanning the grid; each box voxel takes the nearest source voxel, so no part is cut off."""
+    """Fit occupied bounds to a centered box, pooling on shrinking axes to retain thin geometry."""
     found = np.argwhere(grid)
     if not len(found):
         return grid
@@ -58,10 +57,18 @@ def fit(grid, box):
     box = np.asarray(box, dtype=np.float64)
     spans = np.maximum(np.rint(box / box.max() * size), 1).astype(np.int64)
     starts = (size - spans) // 2
-    picks = [low[axis] + ((np.arange(spans[axis]) + 0.5) * (high[axis] - low[axis]) / spans[axis]).astype(np.int64)
-             for axis in range(3)]
+    occupied = grid[tuple(slice(start, stop) for start, stop in zip(low, high))]
+    for axis, span in enumerate(spans):
+        width = occupied.shape[axis]
+        if span < width:
+            # Partition the full source axis into nonempty bins, including both ends.
+            edges = (np.arange(span) * width + span // 2) // span
+            occupied = np.logical_or.reduceat(occupied, edges, axis=axis)
+        elif span > width:
+            picks = ((np.arange(span) + 0.5) * width / span).astype(np.intp)
+            occupied = np.take(occupied, picks, axis=axis)
     fitted = np.zeros_like(grid)
-    fitted[tuple(slice(start, start + span) for start, span in zip(starts, spans))] = grid[np.ix_(*picks)]
+    fitted[tuple(slice(start, start + span) for start, span in zip(starts, spans))] = occupied
     return fitted
 
 

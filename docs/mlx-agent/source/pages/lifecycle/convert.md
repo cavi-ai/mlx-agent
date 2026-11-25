@@ -98,11 +98,12 @@ result reports `views` and `guided`. Other models refuse both options.
 
 `--bbox X Y Z` gives sizes with z up and the front facing -y. The sampled
 sparse structure is resampled per axis so its occupied bounds fill a centered
-box with those proportions, the largest side spanning the grid; each box voxel
-takes the nearest sampled voxel, so no part is cut off. The written mesh's
-bounds are then set to those sizes, centered on the origin. Sides may differ
-by at most 16 times, and `--bbox` cannot be combined with `--guide`. The
-result reports `bbox`. Other models refuse it.
+box with those proportions, with the largest side spanning the grid. Shrinking
+an axis keeps a box voxel occupied if any sampled voxel in its interval was
+occupied. The exported mesh has the requested bounds, centered on the origin.
+Sides may differ by at most 16 times and must fit centered float32 GLB
+coordinates. `--bbox` cannot be combined with `--guide`. The result reports
+`bbox`. Other models refuse it.
 
 After the shape, the texture flow at the mesh's level (512, else 1024) samples a
 texture latent from the image and the shape latent, with the checkpoint's own

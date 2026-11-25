@@ -25,6 +25,19 @@ MAX_FACES_RANGE = (1000, 10_000_000)
 RESOLUTION_RANGE = (16, 4096)
 # The smallest bbox side keeps at least two voxels of the 32³ sparse structure.
 MAX_BOX_RATIO = 16
+# A centered GLB stores half of each extent as a float32 coordinate.
+MIN_BOX_SIZE = 2**-148
+MAX_BOX_SIZE = 2 * float.fromhex("0x1.fffffep127")
+
+
+def validate_bbox(bbox, guide=None):
+    """Check bounding-box constraints that do not depend on the selected model."""
+    if (guide is not None or not isinstance(bbox, (list, tuple)) or len(bbox) != 3
+            or any(type(size) not in (int, float) or not size > 0 for size in bbox)
+            or max(bbox) > MAX_BOX_RATIO * min(bbox)):
+        raise ValueError("--bbox takes three positive sizes, at most {0} times apart, without --guide.".format(MAX_BOX_RATIO))
+    if not MIN_BOX_SIZE <= min(bbox) <= max(bbox) <= MAX_BOX_SIZE:
+        raise ValueError("--bbox sizes must fit centered float32 GLB coordinates.")
 
 
 def _settings(config):
@@ -66,13 +79,11 @@ def plan_mesh(model_path, image, out, steps=None, seed=42, resolution=None, guid
     if (views or guide is not None or bbox is not None) and config.get("model_type") != "trellis2":
         raise MeshError("invalid_arguments", "--view, --guide and --bbox require a TRELLIS.2 model.",
                         "Drop them for this model.")
-    if bbox is not None and (guide is not None or not isinstance(bbox, (list, tuple)) or len(bbox) != 3
-                             or any(type(size) not in (int, float) or not math.isfinite(size) or size <= 0
-                                    for size in bbox)
-                             or max(bbox) > MAX_BOX_RATIO * min(bbox)):
-        raise MeshError("invalid_arguments",
-                        "--bbox takes three sizes above 0, at most {0} times apart, without --guide.".format(MAX_BOX_RATIO),
-                        "Use --bbox 0.6 0.6 1.2.")
+    if bbox is not None:
+        try:
+            validate_bbox(bbox, guide)
+        except ValueError as error:
+            raise MeshError("invalid_arguments", str(error), "Use --bbox 0.6 0.6 1.2.") from error
     if any(not view.is_file() or view.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp") for view in views):
         raise MeshError("invalid_arguments", "--view must be an existing PNG, JPEG or WebP file.", "Select the view images.")
     if guide is not None and (not guide.is_file() or guide.suffix.lower() != ".glb"):

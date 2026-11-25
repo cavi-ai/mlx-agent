@@ -17,7 +17,7 @@ from .describe import plan_describe, run_describe
 from .generate import plan_generate, run_generate
 from .inference_runner import InferenceError
 from .music import plan_music, run_music, validate_parameters as validate_music
-from .mesh import MeshError, plan_mesh, run_mesh, validate_glb
+from .mesh import MeshError, plan_mesh, run_mesh, validate_bbox, validate_glb
 from .segment import plan_segment, run_segment
 from .speak import plan_speak, run_speak
 from .task_contracts import (MEDIA_REQUEST_SCHEMA, MEDIA_RUN_SCHEMA, REQUEST_SCHEMA, RUN_SCHEMA, TaskError,
@@ -235,9 +235,13 @@ def _validate_mesh(parameters):
     _require_finite(parameters, "guidance")
     if "guide" in parameters:
         _require_absolute(parameters, "guide")
-    if "bbox" in parameters and (not isinstance(parameters["bbox"], list) or len(parameters["bbox"]) != 3
-                                 or not all(finite_number(size) for size in parameters["bbox"])):
-        raise _invalid("bbox must be a list of three finite sizes.")
+    if "bbox" in parameters:
+        if not isinstance(parameters["bbox"], list):
+            raise _invalid("bbox must be a list of three sizes.")
+        try:
+            validate_bbox(parameters["bbox"], parameters.get("guide"))
+        except ValueError as error:
+            raise _invalid(str(error)) from error
     if "views" in parameters and (not isinstance(parameters["views"], list)
                                   or any(not absolute_path(path) for path in parameters["views"])):
         raise _invalid("views must be an ordered list of absolute local paths.")

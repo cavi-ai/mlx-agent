@@ -22,6 +22,7 @@ def main(argv=None):
     parser.add_argument("--height", type=int, required=True)
     parser.add_argument("--steps", type=int, required=True)
     parser.add_argument("--seed", type=int, required=True)
+    parser.add_argument("--image", action="append", default=[])
     arguments = parser.parse_args(argv)
 
     port = importlib.import_module(arguments.module)
@@ -30,7 +31,7 @@ def main(argv=None):
     load_seconds = time.time() - started
     result = port.generate(
         model, arguments.prompt, arguments.out, width=arguments.width, height=arguments.height,
-        steps=arguments.steps, seed=arguments.seed,
+        steps=arguments.steps, seed=arguments.seed, **({"images": arguments.image} if arguments.image else {}),
     )
     result["load_seconds"] = round(load_seconds, 3)
     print(json.dumps(result), flush=True)

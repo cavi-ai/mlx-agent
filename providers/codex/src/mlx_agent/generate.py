@@ -20,6 +20,7 @@ GENERATE_RUNNER = Path(__file__).resolve().with_name("generate_runner.py")
 DEFAULT_TIMEOUT_SECONDS = 1800
 MAX_PROMPT_CHARS = 2000
 SIDES = range(256, 2049)
+IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
 
 
 class GenerateError(InferenceError):
@@ -30,9 +31,9 @@ def _invalid(message, remediation):
     return GenerateError("invalid_arguments", message, remediation)
 
 
-def plan_generate(model_path, prompt, out, width=1024, height=1024, steps=40, seed=42,
+def plan_generate(model_path, prompt, out, width=1024, height=1024, steps=40, seed=42, images=(),
                   manifests=None, registries=None, root=None):
-    """Pick the image backend for a converted model directory; pure apart from reading config.json."""
+    """Pick the image backend for a converted model directory; ``images`` are reference stills the render keeps consistent with."""
     model = Path(model_path).expanduser()
     try:
         config = json.loads((model / "config.json").read_text(encoding="utf-8"))
@@ -55,6 +56,18 @@ def plan_generate(model_path, prompt, out, width=1024, height=1024, steps=40, se
         raise _invalid("--steps must be 1..100.", "Pass --steps 40, for example.")
     if not isinstance(seed, int) or isinstance(seed, bool) or not 0 <= seed < 2 ** 32:
         raise _invalid("--seed must be 0..4294967295.", "Pass --seed 42, for example.")
+    references = [Path(path).expanduser() for path in images]
+    for reference in references:
+        if not reference.is_absolute() or reference.suffix.lower() not in IMAGE_SUFFIXES or not reference.is_file():
+            raise _invalid("--image {0} is not an existing absolute PNG, JPEG or WebP file.".format(reference),
+                           "Pass the reference still's absolute path.")
+    limit = config.get("max_references", 0) if isinstance(config, dict) else 0
+    if references and not (isinstance(limit, int) and len(references) <= limit):
+        raise GenerateError(
+            "references_unsupported",
+            "{0} takes {1} reference images; {2} were passed.".format(model, limit if isinstance(limit, int) else 0, len(references)),
+            "Convert the model again with the current backend to keep its vision encoder, or pass fewer --image.",
+        )
     model_type = config.get("model_type") if isinstance(config, dict) else None
     manifests = load_manifests() if manifests is None else manifests
     registries = load_registries(manifests, root) if registries is None else registries
@@ -78,6 +91,8 @@ def plan_generate(model_path, prompt, out, width=1024, height=1024, steps=40, se
         "--prompt", prompt, "--out", str(target), "--width", str(width), "--height", str(height),
         "--steps", str(steps), "--seed", str(seed),
     ]
+    for reference in references:
+        argv += ["--image", str(reference)]
     return {"backend": manifest["id"], "model": str(model), "out": str(target), "argv": argv}
 
 
@@ -90,6 +105,6 @@ CONTRACT = RunnerContract(
 
 def run_generate(plan, manifests=None, root=None, timeout=DEFAULT_TIMEOUT_SECONDS, runner=subprocess.run):
     result = invoke(plan, CONTRACT, manifests, root, timeout, runner)
-    keys = ("path", "width", "height", "steps", "seed", "seconds", "load_seconds", "pixel_std")
+    keys = ("path", "width", "height", "steps", "seed", "seconds", "load_seconds", "pixel_std", "images")
     return dict({"schema": GENERATE_SCHEMA, "backend": plan["backend"], "model": plan["model"]},
                 **{key: result.get(key) for key in keys})

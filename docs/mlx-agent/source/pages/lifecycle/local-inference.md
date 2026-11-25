@@ -152,6 +152,18 @@ python3 scripts/mlx-agent convert video --help
 python3 scripts/mlx-agent convert describe --help
 ```
 
+`convert generate --image /absolute/reference.png` (repeatable) conditions the
+render on reference stills, so one character keeps its look across renders.
+Qwen-Image 2.1 takes up to 10 references when the checkpoint keeps its vision
+encoder: a conversion through the mflux backend writes `max_references` to
+`config.json`. A text-only checkpoint refuses references with
+`references_unsupported`. A referenced render runs in its own process, not on a
+served endpoint.
+
+```bash
+python3 scripts/mlx-agent convert generate --path /absolute/local/image-model --prompt "The same figure on a stage" --image /absolute/input/figure.png --out /absolute/output/stage.png --json
+```
+
 Use `--timeout` to bound execution. Keep sensitive inputs and generated media
 private. Synthetic adoption probes do not describe the privacy properties of
 user-supplied inference inputs or their logs.

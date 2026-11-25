@@ -36,11 +36,16 @@ class GenerateTests(unittest.TestCase):
             entry["registry"] = with_ports(entry["registry"], self.manifests[backend_id])
         return registries
 
-    def model(self, model_type):
+    def model(self, model_type, **config):
         directory = self.root / "model-{0}".format(len(list(self.root.glob("model-*"))))
         directory.mkdir()
-        (directory / "config.json").write_text(json.dumps({"model_type": model_type}), encoding="utf-8")
+        (directory / "config.json").write_text(json.dumps(dict(config, model_type=model_type)), encoding="utf-8")
         return directory
+
+    def still(self, name):
+        path = self.root / name
+        path.write_bytes(b"\x89PNG\r\n\x1a\n")
+        return str(path)
 
     def plan(self, path, **kwargs):
         return plan_generate(path, kwargs.pop("prompt", "a red apple"), kwargs.pop("out", self.out),
@@ -53,6 +58,41 @@ class GenerateTests(unittest.TestCase):
         argv = plan["argv"]
         self.assertEqual(argv[argv.index("--prompt") + 1], "a red apple; rm -rf /")
         self.assertEqual([argv[argv.index(flag) + 1] for flag in ("--width", "--height", "--steps", "--seed")], ["512", "768", "12", "7"])
+        self.assertNotIn("--image", argv)
+
+    def test_reference_stills_reach_the_runner_in_order(self):
+        stills = [self.still("sheet.png"), self.still("pose.jpg")]
+        argv = self.plan(self.model("qwen_image_21", max_references=10), images=stills)["argv"]
+        self.assertEqual([argv[index + 1] for index, flag in enumerate(argv) if flag == "--image"], stills)
+
+    def test_reference_refusals(self):
+        vision = self.model("qwen_image_21", max_references=1)
+        sheet = self.still("sheet.png")
+        cases = [
+            (lambda: self.plan(self.model("qwen_image_21"), images=[sheet]), "references_unsupported"),
+            (lambda: self.plan(vision, images=[sheet, sheet]), "references_unsupported"),
+            (lambda: self.plan(vision, images=["sheet.png"]), "invalid_arguments"),
+            (lambda: self.plan(vision, images=[str(self.root / "missing.png")]), "invalid_arguments"),
+            (lambda: self.plan(vision, images=[str(vision / "config.json")]), "invalid_arguments"),
+        ]
+        for call, code in cases:
+            with self.subTest(code=code):
+                with self.assertRaises(GenerateError) as caught:
+                    call()
+                self.assertEqual(caught.exception.code, code)
+
+    def test_cli_refuses_a_reference_for_a_text_only_checkpoint(self):
+        import contextlib
+        import io
+
+        from mlx_agent.cli import main
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = main(["convert", "generate", "--path", str(self.model("qwen_image_21")), "--prompt", "the same figure",
+                         "--out", self.out, "--image", self.still("sheet.png"), "--json"])
+        self.assertNotEqual(code, 0)
+        self.assertEqual(json.loads(output.getvalue())["error"]["code"], "references_unsupported")
 
     def test_plan_refusals(self):
         model = self.model("qwen_image_21")

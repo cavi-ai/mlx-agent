@@ -1,12 +1,17 @@
 """Qwen-Image 2.1 (Qwen/Qwen-Image-2.1 diffusers layout) through mflux's implementation.
 
-mflux 0.20 loads no LoRA for this model, so a LoRA is merged into the loaded
-transformer weights before quantization: W + scale * B @ A in float32, rounded
-to the weight's dtype, which reproduces a checkpoint that ships the merge.
+A checkpoint whose config.json sets ``max_references`` keeps the Qwen3-VL vision
+tower and loads as mflux's ``QwenImage21Edit``, which renders from text alone or
+from up to ten reference images. An older text-only checkpoint loads as ``QwenImage21``.
+
+A LoRA is merged into the loaded transformer weights before quantization:
+W + scale * B @ A in float32, rounded to the weight's dtype, which reproduces a
+checkpoint that ships the merge.
 """
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
@@ -14,6 +19,7 @@ import mlx.core as mx
 import numpy as np
 
 MFLUX_MODEL = "qwen-image-2.1"
+MAX_REFERENCES = 10
 
 
 def _node(blocks, module: str):
@@ -51,17 +57,27 @@ def merge_lora(transformer: dict, lora: dict, scale: float) -> int:
 
 def load(path):
     from mflux.models.common.config import ModelConfig
+
+    config = json.loads((Path(path) / "config.json").read_text(encoding="utf-8"))
+    if config.get("max_references"):
+        from mflux.models.qwen21.variants.edit.qwen_image_21_edit import QwenImage21Edit
+
+        return QwenImage21Edit(model_path=str(path), model_config=ModelConfig.qwen_image_21())
     from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
 
     return QwenImage21(model_path=str(path), model_config=ModelConfig.qwen_image_21())
 
 
 def generate(model, prompt: str, out: str, width: int = 1024, height: int = 1024, steps: int = 40, seed: int = 42,
-             guidance: float = 1.0) -> dict:
-    """Render one image to ``out`` (PNG); returns its dimensions, timing, and pixel spread."""
+             guidance: float = 1.0, images=()) -> dict:
+    """Render one image to ``out`` (PNG), conditioned on ``images`` when given; returns its dimensions, timing, and pixel spread."""
+    images = [str(path) for path in images]
+    if len(images) > MAX_REFERENCES:
+        raise ValueError("Qwen-Image 2.1 takes at most {0} reference images.".format(MAX_REFERENCES))
     started = time.time()
     image = model.generate_image(
         seed=seed, prompt=prompt, num_inference_steps=steps, width=width, height=height, guidance=guidance,
+        **({"image_paths": images} if images else {}),
     )
     seconds = time.time() - started
     Path(out).parent.mkdir(parents=True, exist_ok=True)
@@ -69,5 +85,5 @@ def generate(model, prompt: str, out: str, width: int = 1024, height: int = 1024
     pixels = np.asarray(image.image).astype(np.float32)
     return {
         "path": str(out), "width": int(pixels.shape[1]), "height": int(pixels.shape[0]), "steps": steps, "seed": seed,
-        "seconds": round(seconds, 3), "pixel_std": round(float(pixels.std()), 3),
+        "seconds": round(seconds, 3), "pixel_std": round(float(pixels.std()), 3), "images": images,
     }

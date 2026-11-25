@@ -2197,6 +2197,8 @@ def _add_convert_arguments(parser):
     generate.add_argument("--height", type=int, default=1024)
     generate.add_argument("--steps", type=int, default=40)
     generate.add_argument("--seed", type=int, default=42)
+    generate.add_argument("--image", action="append", default=[],
+                          help="absolute reference still the render keeps consistent with (repeatable, up to the model's limit)")
     generate.add_argument("--timeout", type=int, default=1800, help="seconds before the backend run is stopped")
     generate.add_argument("--json", action="store_true")
     music = actions.add_parser("music", help="generate music from an existing local music model")
@@ -2356,8 +2358,14 @@ def _run_convert(arguments):
             if not 1 <= arguments.timeout <= 7200:
                 raise ValueError("--timeout must be 1..7200 seconds")
             plan = plan_generate(arguments.path, arguments.prompt, arguments.out, width=arguments.width,
-                                 height=arguments.height, steps=arguments.steps, seed=arguments.seed)
-            result = served_or_local("generate", run_generate, plan, arguments.out)
+                                 height=arguments.height, steps=arguments.steps, seed=arguments.seed,
+                                 images=arguments.image)
+            if arguments.image:
+                # Served endpoints take no reference images, so a referenced render runs in its own process.
+                from .compute import guarded_start
+                result = guarded_start("generate", run_generate, plan, timeout=arguments.timeout)
+            else:
+                result = served_or_local("generate", run_generate, plan, arguments.out)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
         if arguments.convert_command == "music":
             if not 1 <= arguments.timeout <= 14400:

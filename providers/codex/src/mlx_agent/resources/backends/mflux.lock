@@ -5,7 +5,9 @@ annotated-doc==0.0.5 \
 anyio==4.15.1 \
     --hash=sha256:6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101 \
     --hash=sha256:9f28306018cbd6d329e64a36d58256edff76dd996fe423bc957326e578b82a94
-    # via httpx
+    # via
+    #   httpx
+    #   mflux
 certifi==2026.10.19 \
     --hash=sha256:42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b \
     --hash=sha256:035c1e85572b141bf1c3a3eff0e33a8eb74917522f2559075ff8d2fea780a1ae
@@ -341,6 +343,7 @@ fsspec==2026.9.0 \
     --hash=sha256:8dd6e646e99ea382bd85f97a45e6b526a442d79423a7dc673f1e2756d05fcb5f
     # via
     #   huggingface-hub
+    #   mflux
     #   torch
 h11==0.16.0 \
     --hash=sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1 \
@@ -777,10 +780,10 @@ mdurl==0.1.2 \
     --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8 \
     --hash=sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba
     # via markdown-it-py
-mflux==0.20.0 \
-    --hash=sha256:5d60a278d67289be0da2e4ba0e8dcf938dd3c676a01c9064f64e3fb10e30767d \
-    --hash=sha256:8fec3407bbc821cfba9cebd8ae55e35450b9429ec9b5445c9557aaeb78087de0
-    # via -r req.in
+mflux==0.24.0 \
+    --hash=sha256:682368f04a1b2b0871144a8d57b7f7866e84dd0fd2bc3a765d1d57918e21237e \
+    --hash=sha256:febb16b91a7f0aa2eb5f0d715d320ebed4d0c12f2a7eba9ad724d5180aede671
+    # via -r .tmp/mflux-requirements.in
 mlx==0.32.3 \
     --hash=sha256:0512049c81fded99aa6af2d039ae1fccf113ff1a5f2df937a596578aabd46869 \
     --hash=sha256:097856504e6cf5944b9aaa7c2e1d5be0693428abd9175429cae3893e7ec2f681 \

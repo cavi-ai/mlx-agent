@@ -68,22 +68,52 @@ def load(path):
     return QwenImage21(model_path=str(path), model_config=ModelConfig.qwen_image_21())
 
 
+def prepare_references(images):
+    """Decode references before model loading and keep source paths out of mflux metadata."""
+    from PIL import Image
+
+    if len(images) > MAX_REFERENCES:
+        raise ValueError("Qwen-Image 2.1 takes at most {0} reference images.".format(MAX_REFERENCES))
+    references = []
+    for reference in images:
+        if isinstance(reference, Image.Image):
+            references.append(reference)
+            continue
+        try:
+            with Image.open(reference, formats=("PNG", "JPEG", "WEBP")) as image:
+                references.append(image.copy())
+        except (OSError, ValueError, SyntaxError, Image.DecompressionBombError) as error:
+            raise ValueError("--image {0} is not a readable PNG, JPEG or WebP file.".format(reference)) from error
+    return references
+
+
 def generate(model, prompt: str, out: str, width: int = 1024, height: int = 1024, steps: int = 40, seed: int = 42,
              guidance: float = 1.0, images=()) -> dict:
     """Render one image to ``out`` (PNG), conditioned on ``images`` when given; returns its dimensions, timing, and pixel spread."""
-    images = [str(path) for path in images]
-    if len(images) > MAX_REFERENCES:
-        raise ValueError("Qwen-Image 2.1 takes at most {0} reference images.".format(MAX_REFERENCES))
+    from mflux.models.qwen21.variants.edit.qwen_image_21_edit import QwenImage21Edit
+
+    images = list(images)
+    references = prepare_references(images)
+    paths = [str(path) for path in images if isinstance(path, (str, Path))]
+    render_width, render_height = width, height
+    if isinstance(model, QwenImage21Edit):
+        # The edit backend needs multiples of 32; the CLI accepts multiples of 16.
+        render_width = ((width + 31) // 32) * 32
+        render_height = ((height + 31) // 32) * 32
     started = time.time()
     image = model.generate_image(
-        seed=seed, prompt=prompt, num_inference_steps=steps, width=width, height=height, guidance=guidance,
-        **({"image_paths": images} if images else {}),
+        seed=seed, prompt=prompt, num_inference_steps=steps, width=render_width, height=render_height, guidance=guidance,
+        **({"image_paths": references} if references else {}),
     )
     seconds = time.time() - started
+    if (render_width, render_height) != (width, height):
+        left, top = (render_width - width) // 2, (render_height - height) // 2
+        image.image = image.image.crop((left, top, left + width, top + height))
+        image.width, image.height = width, height
     Path(out).parent.mkdir(parents=True, exist_ok=True)
     image.save(path=out)
     pixels = np.asarray(image.image).astype(np.float32)
     return {
         "path": str(out), "width": int(pixels.shape[1]), "height": int(pixels.shape[0]), "steps": steps, "seed": seed,
-        "seconds": round(seconds, 3), "pixel_std": round(float(pixels.std()), 3), "images": images,
+        "seconds": round(seconds, 3), "pixel_std": round(float(pixels.std()), 3), "images": paths,
     }

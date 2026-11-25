@@ -65,6 +65,13 @@ class GenerateTests(unittest.TestCase):
         argv = self.plan(self.model("qwen_image_21", max_references=10), images=stills)["argv"]
         self.assertEqual([argv[index + 1] for index, flag in enumerate(argv) if flag == "--image"], stills)
 
+    def test_reference_checkpoint_requires_two_steps_even_without_images(self):
+        vision = self.model("qwen_image_21", max_references=10)
+        self.assertIn("1", self.plan(self.model("qwen_image_21"), steps=1)["argv"])
+        with self.assertRaises(GenerateError) as caught:
+            self.plan(vision, steps=1)
+        self.assertEqual(caught.exception.code, "invalid_arguments")
+
     def test_reference_refusals(self):
         vision = self.model("qwen_image_21", max_references=1)
         sheet = self.still("sheet.png")
@@ -136,6 +143,12 @@ class GenerateTests(unittest.TestCase):
                 run_generate(plan, manifests=self.manifests, root=self.root / "backends",
                              runner=lambda argv, **kw: Completed(returncode=1, stderr="MemoryError\n"))
             self.assertEqual(caught.exception.code, "generate_failed")
+
+            with self.assertRaises(GenerateError) as caught:
+                run_generate(plan, manifests=self.manifests, root=self.root / "backends", runner=lambda argv, **kw:
+                             Completed(returncode=3, stdout=json.dumps({"error": "invalid_arguments", "detail": "Unreadable reference."})))
+            self.assertEqual(caught.exception.code, "invalid_arguments")
+            self.assertIn("Unreadable reference.", str(caught.exception))
 
             def slow(argv, **kwargs):
                 raise subprocess.TimeoutExpired(argv, kwargs["timeout"])

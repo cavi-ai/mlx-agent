@@ -52,8 +52,11 @@ def plan_generate(model_path, prompt, out, width=1024, height=1024, steps=40, se
     for name, value in (("width", width), ("height", height)):
         if not isinstance(value, int) or isinstance(value, bool) or value not in SIDES or value % 16:
             raise _invalid("--{0} must be a multiple of 16 from 256 to 2048.".format(name), "Pass --{0} 1024, for example.".format(name))
-    if not isinstance(steps, int) or isinstance(steps, bool) or not 1 <= steps <= 100:
-        raise _invalid("--steps must be 1..100.", "Pass --steps 40, for example.")
+    model_type = config.get("model_type") if isinstance(config, dict) else None
+    limit = config.get("max_references", 0) if isinstance(config, dict) else 0
+    min_steps = 2 if model_type == "qwen_image_21" and limit else 1
+    if not isinstance(steps, int) or isinstance(steps, bool) or not min_steps <= steps <= 100:
+        raise _invalid("--steps must be {0}..100 for this checkpoint.".format(min_steps), "Pass --steps 40, for example.")
     if not isinstance(seed, int) or isinstance(seed, bool) or not 0 <= seed < 2 ** 32:
         raise _invalid("--seed must be 0..4294967295.", "Pass --seed 42, for example.")
     references = [Path(path).expanduser() for path in images]
@@ -61,14 +64,12 @@ def plan_generate(model_path, prompt, out, width=1024, height=1024, steps=40, se
         if not reference.is_absolute() or reference.suffix.lower() not in IMAGE_SUFFIXES or not reference.is_file():
             raise _invalid("--image {0} is not an existing absolute PNG, JPEG or WebP file.".format(reference),
                            "Pass the reference still's absolute path.")
-    limit = config.get("max_references", 0) if isinstance(config, dict) else 0
     if references and not (isinstance(limit, int) and len(references) <= limit):
         raise GenerateError(
             "references_unsupported",
             "{0} takes {1} reference images; {2} were passed.".format(model, limit if isinstance(limit, int) else 0, len(references)),
             "Convert the model again with the current backend to keep its vision encoder, or pass fewer --image.",
         )
-    model_type = config.get("model_type") if isinstance(config, dict) else None
     manifests = load_manifests() if manifests is None else manifests
     registries = load_registries(manifests, root) if registries is None else registries
     hits = sorted(
@@ -100,6 +101,7 @@ CONTRACT = RunnerContract(
     verb="generate", error=GenerateError, accept=lambda value, plan: isinstance(value.get("path"), str),
     action="render the prompt", remediation="Check that the directory is a complete converted image model.",
     activity="Image generation", timeout_remediation="Use fewer steps, a smaller size, or a larger --timeout.",
+    refusals={"invalid_arguments": lambda plan, detail: (detail, "Pass a readable PNG, JPEG or WebP reference file.")},
 )
 
 

@@ -57,7 +57,7 @@ def convert(hf_path: str, mlx_path: str, quantize: bool = False, q_bits: int = 8
     model.save_model(str(out))
     config = {
         "model_type": "qwen_image_21", "mflux_model": MFLUX_MODEL,
-        "components": ["transformer", "text_encoder", "vae", "processor"], "max_references": MAX_REFERENCES,
+        "components": ["transformer", "text_encoder", "vae"], "max_references": MAX_REFERENCES,
         "quantization": {"bits": bits} if bits else None,
         "lora": {"file": Path(lora).name, "scale": lora_scale} if lora else None,
     }

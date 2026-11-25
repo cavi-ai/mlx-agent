@@ -160,6 +160,10 @@ encoder: a conversion through the mflux backend writes `max_references` to
 `references_unsupported`. A referenced render runs in its own process, not on a
 served endpoint.
 
+Reference-enabled Qwen-Image 2.1 checkpoints require at least two steps. Reference
+stills must be readable PNG, JPEG, or WebP files. The rendered PNG omits their
+source paths.
+
 ```bash
 python3 scripts/mlx-agent convert generate --path /absolute/local/image-model --prompt "The same figure on a stage" --image /absolute/input/figure.png --out /absolute/output/stage.png --json
 ```

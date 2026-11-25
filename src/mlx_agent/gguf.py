@@ -652,6 +652,13 @@ def _component_weights(directory):
         isinstance(name, str) and name and "/" not in name and name not in (".", "..") for name in names
     ):
         return False
+    if value.get("model_type") == "qwen_image_21" and value.get("max_references") and "processor" in names:
+        # Earlier reference-enabled conversions listed the weightless image processor here.
+        if not Path(directory, "processor", "preprocessor_config.json").is_file():
+            return False
+        names = [name for name in names if name != "processor"]
+        if not names:
+            return False
     return all(any(Path(directory, name).glob("*.safetensors")) for name in names)
 
 

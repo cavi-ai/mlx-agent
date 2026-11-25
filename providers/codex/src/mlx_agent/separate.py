@@ -53,7 +53,7 @@ def plan_separate(model_path, audio_path, out, rest=None, manifests=None, regist
         raise SeparateError("audio_not_found", "No audio file at {0}.".format(audio), "Pass a WAV, FLAC, or MP3 file.")
     target = _new_wav(out, "--out")
     remainder = None if rest is None else _new_wav(rest, "--rest")
-    if remainder == target:
+    if remainder is not None and remainder.resolve() == target.resolve():
         raise _invalid("--rest must differ from --out.", "Pass two different output paths.")
     manifests = load_manifests() if manifests is None else manifests
     registries = load_registries(manifests, root) if registries is None else registries

@@ -27,6 +27,7 @@ from .backends import (
     port_converter,
     port_downloads,
     port_files,
+    port_is_inference_only,
     port_requirements,
     recipe_for,
     read_install_marker,
@@ -202,6 +203,15 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
             "invalid_arguments", "ACE-Step checkpoints run as published; the ace-step backend converts nothing.",
             "Generate with mlx-agent convert music --path <ACE-Step checkpoint folder>.",
         )
+    config = _source_config(hf_path) if hf_path != repo and backend == "mlx-audio" else {}
+    for candidate in (model_type, config.get("model_type")):
+        if port_is_inference_only(candidate, backend, manifests):
+            raise ConvertError(
+                "conversion_unavailable", "{0} checkpoints use published MLX weights.".format(candidate),
+                "Use a published MLX checkpoint with mlx-agent convert separate --path <checkpoint folder>.",
+            )
+    requantize_music = (config.get("model_type") == "minimax_music3"
+                        and isinstance(config.get("quantization"), dict) and bool(config["quantization"]))
     widths = conversion_bits(model_type, backend, manifests)
     if q_bits == UNQUANTIZED_BITS and q_bits not in widths:
         raise ConvertError("invalid_arguments", "This conversion has no unquantized recipe.", _bits_hint(widths))
@@ -214,7 +224,7 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
         )
     if q_bits == UNQUANTIZED_BITS:
         require_completion = True
-    if backend == "mlx-audio" and _is_quantized_music_source(hf_path) and q_bits not in MUSIC_REQUANTIZE_BITS:
+    if requantize_music and q_bits not in MUSIC_REQUANTIZE_BITS:
         raise ConvertError(
             "invalid_arguments",
             "Exported music checkpoints requantize at {0} bits only.".format(_joined(MUSIC_REQUANTIZE_BITS)),
@@ -246,7 +256,7 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
     if downloads:
         plan["downloads"] = downloads
         plan["downloads_dir"] = str(downloads_dir) if downloads_dir is not None else None
-    if backend == "mlx-audio" and _is_quantized_music_source(hf_path):
+    if requantize_music:
         plan["argv"] = [str(python), str(MUSIC_REQUANTIZE_RUNNER)] + flags
     else:
         plan["argv"] = [str(python), "-m", converter or manifest["convert"]] + flags
@@ -258,14 +268,12 @@ def plan_convert(repo, q_bits=4, out=None, backend=None, manifests=None, backend
     return _finish_source_plan(plan, primary, dependencies, require_completion)
 
 
-def _is_quantized_music_source(path):
-    """Exported MLX music weights need the music loader, not the raw converter."""
+def _source_config(path):
     try:
         config = json.loads((Path(path) / "config.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return False
-    return (isinstance(config, dict) and config.get("model_type") == "minimax_music3"
-            and isinstance(config.get("quantization"), dict) and bool(config["quantization"]))
+        return {}
+    return config if isinstance(config, dict) else {}
 
 
 def _required_sources(repo, model_type, manifests, hf_cache, dependencies=None):

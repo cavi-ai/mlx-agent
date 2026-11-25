@@ -143,6 +143,11 @@ def _validate_manifest(value, path):
         isinstance(module, str) and _PORT.fullmatch(module) for module in converters.values()
     ):
         raise _invalid(path, "port_convert maps declared ports to a module inside the port")
+    inference_only = value.get("port_inference_only", [])
+    if not isinstance(inference_only, list) or not all(
+        isinstance(name, str) and name in ported and name not in converters for name in inference_only
+    ):
+        raise _invalid(path, "port_inference_only lists declared ports that cannot convert checkpoints")
     pipelines = value.get("port_pipelines", {})
     if not isinstance(pipelines, dict) or not all(
         isinstance(name, str) and _PIPELINE.fullmatch(name) and port in ported for name, port in pipelines.items()
@@ -257,6 +262,11 @@ def port_converter(model_type, backend_id, manifests):
     if module is None or category is None:
         return None
     return "{0}.{1}".format(_module_path(manifest, category, name), module)
+
+
+def port_is_inference_only(model_type, backend_id, manifests):
+    manifest = manifests.get(backend_id) or {}
+    return normalize_type(model_type or "") in manifest.get("port_inference_only", ())
 
 
 def port_bits(model_type, backend_id, manifests):

@@ -29,8 +29,9 @@ python3 scripts/mlx-agent convert transcribe --path /absolute/local/whisper-mode
 python3 scripts/mlx-agent convert speak --path /absolute/local/tts-model --text "Hello." --out /absolute/output/speech.wav --json
 ```
 
-Transcription accepts an audio file and optional `--language`. `--words` adds
-`words: [{word, start, end}]` in seconds; models without word times, such as
+Transcription accepts an audio file and optional `--language`. `--words` prints
+start and end times in seconds below the transcript. With `--json`, the timings
+are returned as `words: [{word, start, end}]`. Models without word times, such as
 Parakeet, return `words_unsupported`. Speech output
 requires a new absolute `.wav` path; voice, speed, and language depend on the model.
 Speech generation has a 600-second execution timeout. For longer runs, pass
@@ -44,6 +45,7 @@ python3 scripts/mlx-agent convert separate --path /absolute/local/mel-roformer-m
 
 The audio backend splits a mix with Mel-Band-RoFormer checkpoints
 (`model_type: mel_band_roformer`, such as `mlx-community/mel-roformer-kim-vocal-2-mlx`).
+Use a published MLX checkpoint directly.
 `--out` receives the vocal stem and the optional `--rest` receives the mix minus
 that stem, both as new absolute 44.1 kHz stereo `.wav` paths. Long mixes run in
 the checkpoint's `chunk_size` windows with `num_overlap` overlap. The default

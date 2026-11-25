@@ -2325,8 +2325,12 @@ def _run_convert(arguments):
             plan = plan_transcribe(arguments.path, arguments.audio, language=arguments.language, words=arguments.words)
             from .compute import guarded_start
             result = guarded_start("transcribe", run_transcribe, plan, timeout=arguments.timeout)
+            human = result["text"]
+            if arguments.words and not arguments.json:
+                lines = ["{start:.3f}s - {end:.3f}s  {word}".format(**word) for word in result["words"]]
+                human = "\n".join(([human] if human else []) + lines)
             return _emit_serve_result(
-                ResultEnvelope.ok(operation, result), arguments.json, human=result["text"],
+                ResultEnvelope.ok(operation, result), arguments.json, human=human,
             )
         if arguments.convert_command == "separate":
             if not 1 <= arguments.timeout <= 7200:

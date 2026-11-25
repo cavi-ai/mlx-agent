@@ -86,6 +86,13 @@ class SeparateTests(unittest.TestCase):
                           registries=self.registries, root=self.root / "elsewhere")
         self.assertEqual(caught.exception.code, "backend_not_installed")
 
+    def test_plan_rejects_output_aliases(self):
+        separator = self.model("mel_band_roformer")
+        alias = self.root / "alias"
+        alias.symlink_to(self.root, target_is_directory=True)
+        with self.assertRaisesRegex(SeparateError, "must differ"):
+            self.plan(separator, rest=alias / self.out.name)
+
     def test_run_returns_both_stems(self):
         plan = self.plan(self.model("mel_band_roformer"), rest=self.rest)
         printed = {"path": str(self.out), "rest": str(self.rest), "sample_rate": 44100, "audio_seconds": 12.0,

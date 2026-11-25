@@ -33,7 +33,17 @@ TOOL_USE_TAGS = {
     "function_calling",
     "tools",
 }
-DISCOVERY_ROLES = tuple(role for role, _keywords, _label in ROLES) + ("tool-use",)
+# Discovery roles for taxonomy task types beyond text chat: (role, task type, label).
+TASK_ROLES = (
+    ("speech-to-text", "speech_to_text", "Speech to text"),
+    ("text-to-speech", "text_to_speech", "Text to speech"),
+    ("image-generation", "image_generation", "Image generation"),
+    ("video-generation", "video_generation", "Video generation"),
+    ("mesh-generation", "mesh_generation", "3D mesh generation"),
+    ("music-generation", "music_generation", "Music generation"),
+)
+TASK_ROLE_TYPES = {role: task_type for role, task_type, _label in TASK_ROLES}
+DISCOVERY_ROLES = tuple(role for role, _keywords, _label in ROLES) + ("tool-use",) + tuple(TASK_ROLE_TYPES)
 REPUTABLE = {"mlx-community", "lmstudio-community", "unsloth", "mlx-omni", "mlxvlm", "qwen", "google", "mistralai", "meta-llama", "nvidia"}
 QUANT_TOK = re.compile(r"[-_.]?(mlx|mxfp4|nvfp4|dwq|optiq|turboquant|rotorquant|oq4e?|mtp|q\d(_k(_[ms])?)?|int[48]|fp16|fp8|bf16|\d+\.?\d*bpw|\d+bit|e[24]b|4bit|8bit)$", re.I)
 PARAM_RE = re.compile(r"(\d+(?:\.\d+)?)\s*b(?![a-z])", re.I)
@@ -74,7 +84,28 @@ def name_ram_gb(repo):
     return round(float(match.group(1)) * 0.55, 1)
 
 
-def classify(repo):
+def pipeline_task_type(repo, pipeline_tag, tags=()):
+    """The taxonomy task type a Hugging Face pipeline tag names, or None for an unknown tag."""
+    from .modality import detect_facets
+    from .taxonomy import PIPELINE_TYPES
+
+    task_type = PIPELINE_TYPES.get(pipeline_tag) if pipeline_tag else None
+    # text-to-audio labels speech and music alike; the name or tags tell music apart.
+    if pipeline_tag == "text-to-audio" and "music" in detect_facets("audio", " ".join([repo, *map(str, tags or ())])):
+        return "music_generation"
+    return task_type
+
+
+def classify(repo, pipeline_tag=None, tags=()):
+    """The primary discovery role; None for a task type no discovery role covers."""
+    task_type = pipeline_task_type(repo, pipeline_tag, tags)
+    for role, role_type in TASK_ROLE_TYPES.items():
+        if task_type == role_type:
+            return role
+    if task_type == "embedding":
+        return "embedding"
+    if task_type not in (None, "text_llm", "vision_language"):
+        return None
     low = repo.lower()
     for role, keywords, _label in ROLES:
         if any(keyword in low for keyword in keywords):
@@ -82,9 +113,9 @@ def classify(repo):
     return "general"
 
 
-def classify_roles(repo, enrichment):
+def classify_roles(repo, enrichment, pipeline_tag=None, tags=()):
     """Return ordered role memberships and the canonical tool-use signal."""
-    primary = classify(repo)
+    primary = classify(repo, pipeline_tag, tags)
     explicit = enrichment.get("tool_use")
     if explicit is not None:
         source = enrichment.get("tool_use_src") or "checked"
@@ -156,7 +187,7 @@ def render_md(report):
         host.get("chip") or "?", host.get("ram_gb") or "?", "✓" if host["ollama"] else "✗", "✓" if host["lmstudio"] else "✗") + ("  _(fast mode: name heuristics)_" if report.get("fast") else ""))
     if report.get("error"):
         return "\n".join(out + ["\n> ⚠ {0}".format(report["error"])])
-    labels = {role: label for role, _keywords, label in ROLES}
+    labels = {role: label for role, _keywords, label in ROLES + list(TASK_ROLES)}
     for role, items in report["roles"].items():
         out.extend(["\n## {0}".format(labels.get(role, role)), "| model | RAM | reasoning | fits | license | wiring |", "|---|---|---|---|---|---|"])
         for item in items:

@@ -181,6 +181,7 @@
     "src/mlx_agent/lab_adoption.py",
     "src/mlx_agent/lab_studies.py",
     "src/mlx_agent/lab_workspace.py",
+    "src/mlx_agent/local_status.py",
     "src/mlx_agent/lora.py",
     "src/mlx_agent/mcp_server.py",
     "src/mlx_agent/media_settings.py",

@@ -187,6 +187,43 @@
               "required": false
             },
             {
+              "name": "local_status",
+              "flag": "--local-status",
+              "kind": "option",
+              "type": "boolean",
+              "required": false
+            },
+            {
+              "name": "exclude_local",
+              "flag": "--exclude-local",
+              "kind": "option",
+              "type": "boolean",
+              "required": false
+            },
+            {
+              "name": "gguf_root",
+              "flag": "--gguf-root",
+              "kind": "option",
+              "type": "string",
+              "required": false,
+              "repeatable": true
+            },
+            {
+              "name": "mlx_root",
+              "flag": "--mlx-root",
+              "kind": "option",
+              "type": "string",
+              "required": false,
+              "repeatable": true
+            },
+            {
+              "name": "receipts_dir",
+              "flag": "--receipts-dir",
+              "kind": "option",
+              "type": "string",
+              "required": false
+            },
+            {
               "name": "json",
               "flag": "--json",
               "kind": "option",

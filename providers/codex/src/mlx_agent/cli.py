@@ -124,6 +124,15 @@ def _add_discovery_arguments(parser):
                         help="rank each role by this Hugging Face order (newest: reputable publishers only)")
     parser.add_argument("--search", help="match repository names on Hugging Face")
     parser.add_argument("--fast", action="store_true", help="skip per-model enrichment (name heuristics only)")
+    parser.add_argument("--local-status", action="store_true",
+                        help="mark each candidate with its local copies (exact, variant or absent)")
+    parser.add_argument("--exclude-local", action="store_true",
+                        help="leave out models present locally in any version before ranking (implies --local-status)")
+    parser.add_argument("--gguf-root", action="append", default=None, dest="gguf_roots",
+                        help="local model folder read for local status (repeatable; well-known folders by default)")
+    parser.add_argument("--mlx-root", action="append", default=None, dest="mlx_roots",
+                        help="MLX model folder read for local status (repeatable; defaults to the GGUF roots)")
+    parser.add_argument("--receipts-dir", default=None, help="conversion receipts read for local status")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--wire", metavar="REPO", help="emit setup + config for a model, instead of discovering")
     parser.add_argument("--target", choices=["ollama", "lmstudio", "mlx_lm", "mlx-vlm", "litellm", "openclaw"], default="mlx_lm")
@@ -151,6 +160,18 @@ def _run_discovery(arguments, legacy):
             error = result.to_dict()["error"]
             print("discover failed [{0}]: {1}\nremediation: {2}".format(error["code"], error["message"], error["remediation"]))
         return 2
+    local_models = None
+    if arguments.local_status or arguments.exclude_local:
+        from .convert import ConvertError
+        from .local_status import scan
+        try:
+            local_models = scan(_scan_roots(arguments), mlx_roots=arguments.mlx_roots or (),
+                                receipts=_scan_receipts(arguments), signature=False)["local_models"]
+        except ConvertError as error:
+            result = ResultEnvelope.fail("discover", error.code, str(error), error.remediation)
+            print(json.dumps(result.to_dict(), indent=2) if arguments.json else "discover failed [{0}]: {1}\nremediation: {2}".format(
+                error.code, error, error.remediation))
+            return 2
     service, fixture_warning, fixture_error = _discovery_service_from_environment(arguments.state_dir)
     result = fixture_error or service.discover(DiscoveryRequest(
         role=arguments.role,
@@ -168,6 +189,8 @@ def _run_discovery(arguments, legacy):
         context_tokens=arguments.context_tokens,
         sort=arguments.sort,
         search=arguments.search,
+        local_models=local_models,
+        exclude_local=arguments.exclude_local,
     ))
     if fixture_warning:
         result = ResultEnvelope.ok("discover", result.data, warnings=[fixture_warning])
@@ -2491,21 +2514,12 @@ def _run_convert(arguments):
 
 
 def _convert_scan(arguments):
-    from .convert import ConvertError, load_receipts
-    from .gguf import MAX_SCAN_FILES, default_gguf_roots, families, inventory
-    from .taxonomy import annotate_inventory
-    roots = arguments.gguf_roots if arguments.gguf_roots is not None else (
-        [] if arguments.mlx_roots is not None else default_gguf_roots())
-    if not roots and not arguments.mlx_roots:
-        raise ConvertError(
-            "no_scan_roots",
-            "No model roots were given and none of the well-known GGUF directories exist.",
-            "Pass --gguf-root PATH or --mlx-root PATH for each model directory.",
-        )
-    report = inventory(
-        roots,
+    from .gguf import MAX_SCAN_FILES
+    from .local_status import scan
+    report = scan(
+        _scan_roots(arguments),
         mlx_roots=arguments.mlx_roots or (),
-        receipts=load_receipts(arguments.receipts_dir),
+        receipts=_scan_receipts(arguments),
         signature=not arguments.no_signature,
         limit=arguments.limit or MAX_SCAN_FILES,
         compare_assets=arguments.compare_assets,
@@ -2516,12 +2530,27 @@ def _convert_scan(arguments):
             item for item in report["models"] if item["status"] == "pending"
         ])
     from .splash_runtime import annotate_support
-    report = annotate_inventory(report)
     annotate_support(report["outputs"])
-    task_types = {item["path"]: item["task"].get("type") for item in report["models"] + report["outputs"]
-                  if isinstance(item.get("task"), dict)}
-    report["families"] = families(report["storage"]["items"], task_types)
     return report
+
+
+def _scan_roots(arguments):
+    from .convert import ConvertError
+    from .gguf import default_gguf_roots
+    roots = arguments.gguf_roots if arguments.gguf_roots is not None else (
+        [] if arguments.mlx_roots is not None else default_gguf_roots())
+    if not roots and not arguments.mlx_roots:
+        raise ConvertError(
+            "no_scan_roots",
+            "No model roots were given and none of the well-known GGUF directories exist.",
+            "Pass --gguf-root PATH or --mlx-root PATH for each model directory.",
+        )
+    return roots
+
+
+def _scan_receipts(arguments):
+    from .convert import load_receipts
+    return load_receipts(arguments.receipts_dir)
 
 
 def _human_bytes(count):

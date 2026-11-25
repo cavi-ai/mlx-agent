@@ -131,12 +131,25 @@ _DEFAULT_ROOTS = (
 )
 
 
+_LMSTUDIO_DEFAULT_ROOTS = ("~/.cache/lm-studio/models", "~/.lmstudio/models")
+_LMSTUDIO_SETTINGS = "~/.lmstudio/settings.json"
+
+
+def lmstudio_roots():
+    """LM Studio model folders: its default locations and the downloads folder set in its settings."""
+    candidates = list(_LMSTUDIO_DEFAULT_ROOTS)
+    settings = _read_json_object(Path(_LMSTUDIO_SETTINGS).expanduser(), MAX_CONFIG_BYTES)
+    if settings and isinstance(settings.get("downloadsFolder"), str) and settings["downloadsFolder"]:
+        candidates.append(settings["downloadsFolder"])
+    return list(dict.fromkeys(str(Path(candidate).expanduser()) for candidate in candidates))
+
+
 def default_gguf_roots():
-    """Well-known local weight directories that exist on this host."""
+    """Well-known local weight directories that exist on this host, LM Studio's downloads folder included."""
     roots = []
-    for candidate in _DEFAULT_ROOTS:
+    for candidate in list(_DEFAULT_ROOTS) + lmstudio_roots():
         expanded = Path(candidate).expanduser()
-        if expanded.is_dir():
+        if expanded.is_dir() and str(expanded) not in roots:
             roots.append(str(expanded))
     return roots
 
@@ -884,6 +897,11 @@ def _mlx_name_key(name, sizes=False):
 
 def _mlx_model_key(directory):
     return _mlx_name_key(_mlx_name(directory))
+
+
+def name_key(repo):
+    """The model key a repository shares with its local copies: format and quantization labels removed."""
+    return _mlx_name_key(str(repo).rsplit("/", 1)[-1])
 
 
 def _read_json_object(location, limit):

@@ -4,6 +4,7 @@
 
 - TRELLIS.2 `convert mesh --bbox X Y Z` fits the sampled shape to the box proportions and the mesh bounds to its sizes.
 - Add `mlx_agent.client.convert` for Python tools to run one `convert` verb and receive its JSON `data` or a `ConvertError` carrying the envelope's `code`, `message` and `remediation`.
+- `convert scan` reports `local_models` (store, repository, acquisition, task, duplicate groups); `discover --local-status` marks candidates `exact`, `variant` or `absent`, `--exclude-local` leaves local models out before ranking, and task roles (`speech-to-text`, `text-to-speech`, `image-generation`, `video-generation`, `mesh-generation`, `music-generation`) list the Hub by pipeline tag.
 
 ## 0.16.0
 

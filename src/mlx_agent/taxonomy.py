@@ -53,10 +53,12 @@ PIPELINE_TYPES = {
     "text-ranking": "embedding",
     "text-classification": "classification",
     "zero-shot-classification": "classification",
+    "token-classification": "classification",
     "text-to-image": "image_generation",
     "image-to-image": "image_generation",
     "text-to-video": "video_generation",
     "image-to-3d": "mesh_generation",
+    "text-to-3d": "mesh_generation",
 }
 _SPECIFIC_TOKENS = (
     ("coding", ("code", "coder", "coding", "starcoder", "codestral", "devstral")),
@@ -224,7 +226,7 @@ def read_config_type(directory):
 
 
 def annotate_inventory(report, manifests=None, registries=None):
-    """Add a "task" object to every scanned GGUF model and MLX output."""
+    """Add a "task" object to every scanned GGUF model, MLX output and Ollama model."""
     if manifests is None:
         try:
             manifests = load_manifests()
@@ -255,6 +257,14 @@ def annotate_inventory(report, manifests=None, registries=None):
             backend = output_backend(model_type, keys, output["task"]["type"], manifests, registries)
             if backend is not None:
                 output["backend"] = backend
+    for model in report.get("ollama", []):
+        # An Ollama GGUF names a llama.cpp architecture; a safetensors import names its config model_type.
+        gguf_format = model.get("format") == "gguf"
+        model["task"] = classify(
+            model.get("name"), model_type=None if gguf_format else model.get("architecture"),
+            gguf_architecture=model.get("architecture") if gguf_format else None,
+            manifests=manifests, registries=registries, local=True, draft=model.get("draft") is not None,
+        )
     return report
 
 

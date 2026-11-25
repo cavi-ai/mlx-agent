@@ -165,7 +165,7 @@ python3 scripts/mlx-agent convert scan --gguf-root ~/models --pending-only --jso
 python3 scripts/mlx-agent convert start --gguf ~/models/model-Q4_K_M.gguf --q-bits 4
 ```
 
-`scan` is read-only and needs nothing but Python. It parses bounded GGUF headers under each `--gguf-root` (repeatable; well-known local model directories by default) and gives every file a status:
+`scan` is read-only and needs nothing but Python. It parses bounded GGUF headers under each `--gguf-root` (repeatable; well-known local model directories and LM Studio's configured downloads folder by default) and gives every file a status:
 
 | Status | Meaning |
 | --- | --- |
@@ -225,7 +225,26 @@ architecture, layer count, hidden width and attention heads match (fine-tunes
 and quantizations of one base model), else whose names match without
 quantization labels. Embedding and classification models stay apart from
 generators of the same architecture. Each family has a `name`, its `members`
-(item paths), `copies` and `bytes`, each file counted once.
+(item paths), `copies` and `bytes`, each file counted once. Ollama models carry
+a `task` label too.
+
+`local_models` lists every model in `storage.items` (standalone assets aside)
+with one status record. [Scout](../capabilities/scout.md) matches Hugging Face
+repositories against it.
+
+| Field | Meaning |
+| --- | --- |
+| `path`, `name`, `format`, `bytes` | As in `storage.items`. |
+| `store` | `lmstudio` (inside an LM Studio models folder), `huggingface`, `ollama` or `folder`. |
+| `repo` | The Hugging Face repository: from the cache snapshot, or `publisher/repository` in LM Studio's layout; else `null`. |
+| `acquired` | `converted` (converter provenance or a paired GGUF, receipts included), `cached` (Hugging Face cache) or `downloaded`. |
+| `converted_from` | The conversion source repository or path, else `null`. |
+| `model_key` | The name without format and quantization labels. |
+| `quantization` | The bit width (`8-bit`), GGUF type or Ollama file type. |
+| `task` | The `task` label of the model. |
+| `duplicate_groups` | The `group_id` of every duplicate group holding the model. |
+| `family_id` | Its family in `families`. |
+| `weight_bytes` | Bytes of its `.safetensors` and `.gguf` files; `null` for Ollama. |
 
 Conversion runs two steps in one job: `transformers` dequantizes the GGUF back to Hugging Face weights, then `mlx_lm.convert` quantizes those to MLX. The intermediate checkpoint is full precision and removed afterwards, so budget roughly twice the source model's fp16 size in free disk while the job runs. It needs `torch`, `transformers`, and `gguf` importable by the same interpreter; missing pieces are named and never installed for you.
 

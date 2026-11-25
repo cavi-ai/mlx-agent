@@ -165,7 +165,7 @@ def _run_discovery(arguments, legacy):
         from .convert import ConvertError
         from .local_status import scan
         try:
-            local_models = scan(_scan_roots(arguments), mlx_roots=arguments.mlx_roots or (),
+            local_models = scan(_scan_roots(arguments, allow_empty=True), mlx_roots=arguments.mlx_roots or (),
                                 receipts=_scan_receipts(arguments), signature=False)["local_models"]
         except ConvertError as error:
             result = ResultEnvelope.fail("discover", error.code, str(error), error.remediation)
@@ -2534,12 +2534,12 @@ def _convert_scan(arguments):
     return report
 
 
-def _scan_roots(arguments):
+def _scan_roots(arguments, *, allow_empty=False):
     from .convert import ConvertError
     from .gguf import default_gguf_roots
     roots = arguments.gguf_roots if arguments.gguf_roots is not None else (
         [] if arguments.mlx_roots is not None else default_gguf_roots())
-    if not roots and not arguments.mlx_roots:
+    if not allow_empty and not roots and not arguments.mlx_roots:
         raise ConvertError(
             "no_scan_roots",
             "No model roots were given and none of the well-known GGUF directories exist.",

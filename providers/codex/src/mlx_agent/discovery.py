@@ -58,8 +58,8 @@ def role_pipeline_tag(role):
 
 def _local_digest(records):
     """A stable fingerprint of the local models a response was built against."""
-    rows = sorted([record["path"], record["repo"], record["model_key"], record["weight_bytes"]] for record in records)
-    return hashlib.sha256(json.dumps(rows, separators=(",", ":")).encode("utf-8")).hexdigest()[:20]
+    rows = sorted(records, key=lambda record: record["path"])
+    return hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:20]
 
 
 @dataclass(frozen=True)

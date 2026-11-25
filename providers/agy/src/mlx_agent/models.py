@@ -176,6 +176,8 @@ def resolve_reasoning(repo, enrichment):
 
 
 def wiring(repo, role, host):
+    if role in TASK_ROLE_TYPES:
+        return "`mlx-agent task capabilities` → `{0}` backends".format(TASK_ROLE_TYPES[role])
     preference = prefer_runtime_for_role(role, host or {})
     return wiring_for_preference(repo, role, preference)
 
@@ -188,13 +190,22 @@ def render_md(report):
     if report.get("error"):
         return "\n".join(out + ["\n> ⚠ {0}".format(report["error"])])
     labels = {role: label for role, _keywords, label in ROLES + list(TASK_ROLES)}
+    show_local = "local" in report
+    columns = ["model", "RAM", "reasoning", "fits", "license", "wiring"]
+    if show_local:
+        columns.append("local")
+    header = "| " + " | ".join(columns) + " |"
+    separator = "|" + "---|" * len(columns)
     for role, items in report["roles"].items():
-        out.extend(["\n## {0}".format(labels.get(role, role)), "| model | RAM | reasoning | fits | license | wiring |", "|---|---|---|---|---|---|"])
+        out.extend(["\n## {0}".format(labels.get(role, role)), header, separator])
         for item in items:
             ram = "{0}GB".format(item["est_ram_gb"]) if item.get("est_ram_gb") is not None else "?"
             reason = "⚠ {0}".format(item.get("reason_src") or "") if item.get("reasoning") else "no"
             license_name = (item.get("license") or "?") + (" 🔒" if item.get("gated") else "")
-            out.append("| `{0}`{1} | {2} | {3} | {4} | {5} | {6} |".format(item["repo"], " ⭐" if item.get("trusted") else "", ram, reason, "✓" if item["fits"] else "✗", license_name, item["wiring"]))
+            row = "| `{0}`{1} | {2} | {3} | {4} | {5} | {6} |".format(item["repo"], " ⭐" if item.get("trusted") else "", ram, reason, "✓" if item["fits"] else "✗", license_name, item["wiring"])
+            if show_local:
+                row += " {0} |".format(item["local"]["status"])
+            out.append(row)
     out.append("\n_RAM is always an estimate; measured model-file bytes, when available, are retained separately as evidence. Add KV-cache headroom (~1–4GB) beyond weights._")
     out.append("_`reasoning ⚠` sources: chat_template > tags > name (weakest). Verify with a test-generate._")
     return "\n".join(out)

@@ -30,13 +30,15 @@ Without `--role`, a model's pipeline tag places it in its task role before any
 name keyword applies; embedding tags place it in `embedding`. Models whose tag
 names a task no role covers, such as classification, are not listed. Each
 candidate's `facts.pipeline_tag` records the tag, and its role provenance says
-whether the role came from the pipeline tag or the name. `--runtime` refuses
-task roles for chat runtimes.
+whether the role came from the pipeline tag or the name. Task roles point to
+`mlx-agent task capabilities` for backend compatibility, and `--runtime`
+refuses them for chat runtimes.
 
 ## Local models
 
 `--local-status` reads the local model folders once (`convert scan` without
-content signatures) and adds `local` to every candidate:
+content signatures). The Markdown report shows each candidate's local status,
+and the JSON report adds a `local` object to every candidate:
 
 | Field | Meaning |
 | --- | --- |

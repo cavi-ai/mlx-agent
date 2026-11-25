@@ -119,6 +119,21 @@ class DiscoveryLocalTests(LocalLibrary):
         self.assertEqual([(item["repo"], item["status"]) for item in data["local"]["excluded"]], [(QWEN_4BIT, "variant")])
         self.assertNotIn(QWEN_4BIT, hub.inspected())
 
+    def test_cached_exclusions_change_when_local_models_become_drafters(self):
+        hub = RecordingHub(listing())
+        service = DiscoveryService(host=HostInventory(ram_gb=64), huggingface=HuggingFaceClient(http_get=hub),
+                                   state_dir=self.home / "state")
+        records = self.records()
+        request = DiscoveryRequest(role="general", limit=1, local_models=records, exclude_local=True)
+        first = service.discover(request).to_dict()["data"]
+        self.assertEqual(first["roles"]["general"][0]["repo"], OTHER)
+
+        for record in records:
+            if record["model_key"] == gguf.name_key(QWEN_4BIT):
+                record["task"] = {"type": "speculative_draft"}
+        second = service.discover(request).to_dict()["data"]
+        self.assertEqual(second["roles"]["general"][0]["repo"], QWEN_4BIT)
+
     def test_discover_command_reads_local_folders_and_excludes_them(self):
         fixture = self.home / "fixture.json"
         fixture.write_text(json.dumps({
@@ -134,6 +149,38 @@ class DiscoveryLocalTests(LocalLibrary):
         self.assertEqual([item["repo"] for item in data["roles"]["general"]], [OTHER])
         self.assertEqual(data["roles"]["general"][0]["local"]["status"], "absent")
         self.assertEqual([item["repo"] for item in data["local"]["excluded"]], [QWEN_4BIT])
+
+    def test_discover_command_shows_local_status_in_markdown(self):
+        fixture = self.home / "fixture.json"
+        fixture.write_text(json.dumps({
+            "host": {"ram_gb": 64, "chip": None, "ollama": False, "lmstudio": True},
+            "models": listing(), "details": {}, "trees": {},
+        }))
+        out = io.StringIO()
+        with patch.dict(os.environ, {"MLX_AGENT_FIXTURE": str(fixture)}), redirect_stdout(out):
+            code = main(["discover", "--role", "general", "--limit", "2", "--local-status",
+                         "--gguf-root", str(self.library)])
+        self.assertEqual(code, 0)
+        rows = out.getvalue().splitlines()
+        self.assertTrue(next(row for row in rows if QWEN_4BIT in row).endswith("| variant |"))
+        self.assertTrue(next(row for row in rows if OTHER in row).endswith("| absent |"))
+
+
+class EmptyLocalLibraryTests(unittest.TestCase):
+    def test_first_discovery_with_an_empty_home_reports_models_as_absent(self):
+        with TemporaryDirectory() as directory:
+            fixture = Path(directory) / "fixture.json"
+            fixture.write_text(json.dumps({
+                "host": {"ram_gb": 64, "chip": None, "ollama": False, "lmstudio": False},
+                "models": listing(), "details": {}, "trees": {},
+            }))
+            out = io.StringIO()
+            with patch.dict(os.environ, {"HOME": directory, "MLX_AGENT_FIXTURE": str(fixture)}), redirect_stdout(out):
+                code = main(["discover", "--role", "general", "--limit", "1", "--exclude-local", "--json"])
+            response = json.loads(out.getvalue())
+            self.assertEqual(code, 0, response)
+            self.assertEqual(response["data"]["local"]["models"], 0)
+            self.assertEqual(response["data"]["roles"]["general"][0]["local"]["status"], "absent")
 
 
 class TaskRoleTests(unittest.TestCase):
@@ -151,7 +198,9 @@ class TaskRoleTests(unittest.TestCase):
                 hub = RecordingHub([{"id": repo, "pipeline_tag": tag, "downloads": 10, "likes": 1}])
                 data = discover(hub, role=role, limit=2)
                 self.assertEqual(hub.list_query()["pipeline_tag"], [tag])
-                self.assertEqual([item["repo"] for item in data["roles"].get(role, [])], [repo])
+                candidates = data["roles"].get(role, [])
+                self.assertEqual([item["repo"] for item in candidates], [repo])
+                self.assertIn("mlx-agent task capabilities", candidates[0]["wiring"])
 
     def test_an_unfiltered_listing_places_models_by_pipeline_tag(self):
         rows = [

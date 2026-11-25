@@ -1321,6 +1321,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
             body = inference_defaults.apply(body, self.server.controller.request_defaults)
             self._measurement = self.server.controller.inference_telemetry.begin()
             port = self.server.controller.acquire(cancelled=self._client_gone)
+            self._measurement.mark_ready()
             leased = True
             connection = self.server.controller.connection(timeout=120)
             connection.connect()

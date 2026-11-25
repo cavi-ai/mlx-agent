@@ -14,6 +14,11 @@ class HostInventory:
     @staticmethod
     def runtime_supports(runtime, role):
         """Whether a runtime can serve the requested model class, independent of install state."""
+        from .models import TASK_ROLE_TYPES
+
+        # Speech, image, video, 3D and music models run on task backends, not chat servers.
+        if role in TASK_ROLE_TYPES:
+            return False
         if runtime == "mlx-vlm":
             return role == "vision"
         if role == "vision":

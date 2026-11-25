@@ -533,10 +533,12 @@ class HuggingFaceClient:
         return self._header_get(url, timeout=timeout)
 
     @staticmethod
-    def list_models_url(sort="trendingScore", limit_fetch=300, search=""):
+    def list_models_url(sort="trendingScore", limit_fetch=300, search="", pipeline_tag=None):
         params = {"filter": "mlx", "sort": sort, "direction": "-1", "limit": limit_fetch}
         if search:
             params["search"] = search
+        if pipeline_tag:
+            params["pipeline_tag"] = pipeline_tag
         return "{0}?{1}".format(HF_API, urllib.parse.urlencode(params))
 
     @staticmethod
@@ -573,8 +575,9 @@ class HuggingFaceClient:
             params["search"] = search
         return "{0}?{1}".format(HF_DATASETS_API, urllib.parse.urlencode(params))
 
-    def list_models(self, sort="trendingScore", limit_fetch=300, search=""):
-        return self._http_get(self.list_models_url(sort=sort, limit_fetch=limit_fetch, search=search))
+    def list_models(self, sort="trendingScore", limit_fetch=300, search="", pipeline_tag=None):
+        return self._http_get(self.list_models_url(sort=sort, limit_fetch=limit_fetch, search=search,
+                                                   pipeline_tag=pipeline_tag))
 
     def list_adapters(self, search="", limit_fetch=20, timeout=10):
         """List PEFT/LoRA adapter model rows from the Hub (read-only)."""

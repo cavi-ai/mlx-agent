@@ -14,18 +14,22 @@ from pathlib import Path
 from .contracts import ResultEnvelope
 from .host import HostInventory
 from .huggingface import HuggingFaceClient
+from .local_status import match as local_match
 from .models import (
     DISCOVERY_ROLES,
     REPUTABLE,
+    TASK_ROLE_TYPES,
     base_name,
     classify,
     classify_roles,
     infer_quantization,
+    pipeline_task_type,
     quant_rank,
     resolve_ram,
     resolve_reasoning,
     wiring,
 )
+from .taxonomy import PIPELINE_TYPES
 
 
 CACHE_SCHEMA_VERSION = "2.0"
@@ -39,6 +43,23 @@ SORTS = {
     "likes": "likes",
     "newest": "createdAt",
 }
+
+
+def role_pipeline_tag(role):
+    """The Hugging Face pipeline tag a task role lists by: the first tag taxonomy maps to its task type."""
+    task_type = TASK_ROLE_TYPES.get(role)
+    if task_type is None:
+        return None
+    # Music models carry text-to-audio, which taxonomy also reads as speech.
+    if task_type == "music_generation":
+        return "text-to-audio"
+    return next((tag for tag, mapped in PIPELINE_TYPES.items() if mapped == task_type), None)
+
+
+def _local_digest(records):
+    """A stable fingerprint of the local models a response was built against."""
+    rows = sorted(records, key=lambda record: record["path"])
+    return hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:20]
 
 
 @dataclass(frozen=True)
@@ -60,6 +81,9 @@ class DiscoveryRequest:
     context_tokens: object = None
     sort: object = None
     search: object = None
+    # Records from local_status.local_models; exclude_local drops present models before ranking.
+    local_models: object = None
+    exclude_local: bool = False
 
     def cache_request(self):
         """The reproducible request shape, excluding transport-only cache switches."""
@@ -81,6 +105,9 @@ class DiscoveryRequest:
             shape["sort"] = self.sort
         if _normalise_search(self.search) is not None:
             shape["search"] = _normalise_search(self.search)
+        if self.local_models is not None:
+            shape["local"] = _local_digest(self.local_models)
+            shape["exclude_local"] = bool(self.exclude_local)
         return shape
 
 
@@ -218,6 +245,9 @@ class DiscoveryService:
         list_options = {"sort": list_sort}
         if search is not None:
             list_options["search"] = search
+        pipeline_tag = role_pipeline_tag(request.role)
+        if pipeline_tag is not None:
+            list_options["pipeline_tag"] = pipeline_tag
         list_url_builder = getattr(self._huggingface, "list_models_url", None)
         list_url = (
             list_url_builder(limit_fetch=300, **list_options)
@@ -259,24 +289,34 @@ class DiscoveryService:
         limit = max(0, int(request.limit))
         ranking = self._ranking(request)
         listed = []
+        primary = {}
+        excluded = []
         for model in raw:
             repo = model.get("id") or model.get("modelId")
             if not repo or repo in seen_repo:
                 continue
             seen_repo.add(repo)
             list_rank = len(seen_repo) - 1
-            if (
-                request.role
-                and request.role != "tool-use"
-                and classify(repo) != request.role
-            ):
+            tags = model.get("tags") or []
+            role = classify(repo, model.get("pipeline_tag"), tags)
+            # A task type without a discovery role (classification, segmentation) is never listed.
+            if role is None:
+                continue
+            if request.role and request.role != "tool-use" and role != request.role:
                 continue
             if request.sort == "newest" and repo.split("/", 1)[0].lower() not in REPUTABLE:
                 continue
-            tags = model.get("tags") or []
             # GGUF-only repositories carry no MLX weights, and their tree sums every quant file.
             if "gguf" in tags and "safetensors" not in tags:
                 continue
+            # Models already local in any version leave before ranking, so they never take a slot.
+            if request.exclude_local and request.local_models is not None:
+                presence = local_match(request.local_models, repo)
+                if presence["status"] != "absent":
+                    excluded.append({"repo": repo, "status": presence["status"], "basis": presence["basis"],
+                                     "copies": [copy["path"] for copy in presence["copies"]]})
+                    continue
+            primary[repo] = role
             listed.append((repo, model, list_rank))
         # Walk in final rank order: a role list is settled once it holds `limit`
         # candidates, because every later candidate ranks below them.
@@ -284,7 +324,7 @@ class DiscoveryService:
         wanted = (request.role,) if request.role else DISCOVERY_ROLES
         remaining = {role: 0 for role in DISCOVERY_ROLES}
         for repo, _model, _rank in listed:
-            remaining[classify(repo)] += 1
+            remaining[primary[repo]] += 1
         unprocessed = len(listed)
 
         def open_roles():
@@ -308,10 +348,10 @@ class DiscoveryService:
             while position < len(listed) and len(batch) < batch_size:
                 entry = listed[position]
                 position += 1
-                remaining[classify(entry[0])] -= 1
+                remaining[primary[entry[0]]] -= 1
                 unprocessed -= 1
                 # A repository whose role list is settled can still join tool-use.
-                if classify(entry[0]) in still_open or "tool-use" in still_open:
+                if primary[entry[0]] in still_open or "tool-use" in still_open:
                     batch.append(entry)
             enrichments = {} if request.fast else self._inspect_all([repo for repo, _model, _rank in batch])
             self._accept_batch(
@@ -323,19 +363,26 @@ class DiscoveryService:
             buckets[role].sort(key=ranking, reverse=True)
             buckets[role] = buckets[role][:limit]
 
-        return {
+        response = {
             "host": host_data,
             "fast": request.fast,
             "roles": {role: items for role, items in buckets.items() if items},
             "rejected": rejected,
             "request": request.cache_request(),
         }
+        if request.local_models is not None:
+            response["local"] = {
+                "models": len(request.local_models),
+                "exclude_local": bool(request.exclude_local),
+                "excluded": excluded,
+            }
+        return response
 
     def _accept_batch(self, batch, enrichments, request, host_data, list_url,
                       buckets, rejected, seen_base, rejection_limit, ranking):
         for repo, model, list_rank in batch:
             enrichment = {} if request.fast else enrichments[repo]
-            roles, tool_use = classify_roles(repo, enrichment)
+            roles, tool_use = classify_roles(repo, enrichment, model.get("pipeline_tag"), model.get("tags") or ())
             selected_roles = (
                 (request.role,) if request.role in roles else ()
             ) if request.role else roles
@@ -417,6 +464,11 @@ class DiscoveryService:
         }
         if enrichment.get("tree_available") is True and enrichment.get("weight_bytes"):
             facts["weight_bytes"] = enrichment["weight_bytes"]
+        pipeline_tag = model.get("pipeline_tag")
+        if pipeline_tag:
+            facts["pipeline_tag"] = pipeline_tag
+        task_type = pipeline_task_type(repo, pipeline_tag, model.get("tags") or ())
+        role_source = "pipeline_tag" if task_type not in (None, "text_llm", "vision_language") else "name"
         candidate = {
             # Legacy report keys.
             "repo": repo,
@@ -456,6 +508,7 @@ class DiscoveryService:
                 ram_source,
                 reason_source,
                 list_url,
+                role_source,
             ),
             "rank_score": rank_score,
             # Position in the Hugging Face listing for the requested sort.
@@ -465,6 +518,8 @@ class DiscoveryService:
         }
         if community_bench is not None:
             candidate["community_bench"] = community_bench
+        if request.local_models is not None:
+            candidate["local"] = local_match(request.local_models, repo, facts.get("weight_bytes"))
         return candidate
 
     @staticmethod
@@ -477,6 +532,7 @@ class DiscoveryService:
         ram_source,
         reason_source,
         list_url=None,
+        role_source="name",
     ):
         encoded = repo.replace("/", "%2F")
         records = [{
@@ -501,7 +557,9 @@ class DiscoveryService:
                 "url": enrichment.get("tree_url") or "https://huggingface.co/api/models/{0}/tree/main?recursive=true".format(encoded),
                 "fields": ["weight_bytes"],
             })
-        if tool_use["source"] in ("chat_template", "tags", "checked"):
+        if role_source == "pipeline_tag":
+            role_basis = "primary role from Hugging Face pipeline tag"
+        elif tool_use["source"] in ("chat_template", "tags", "checked"):
             role_basis = (
                 "primary role from repository name; tool-use signal from "
                 "Hugging Face metadata ({0})"
@@ -637,6 +695,7 @@ class DiscoveryService:
             and request.runtime is None
             and request.sort is None
             and _normalise_search(request.search) is None
+            and request.local_models is None
             and not request.refresh
             and not request.offline
         )

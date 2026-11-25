@@ -77,3 +77,25 @@ class InferenceTelemetryTests(unittest.TestCase):
         snapshot['last_request']['input_tokens'] = 999
         self.assertEqual(telemetry.snapshot()['last_request']['input_tokens'], 2)
         self.assertIsNone(InferenceTelemetry().snapshot()['input_tokens'])
+
+    def test_streamed_request_reports_wait_prompt_and_decode_stages(self):
+        telemetry = InferenceTelemetry(clock=mock.Mock(side_effect=[10, 13, 15, 19, 30, 31, 35]))
+        streamed = telemetry.begin()
+        streamed.mark_ready()
+        for value in ({'choices': [{'delta': {'role': 'assistant'}}]}, {'choices': [{'delta': {'content': 'Hi'}}]},
+                      {'choices': [], 'usage': {'prompt_tokens': 40, 'completion_tokens': 9}}):
+            streamed.feed(b'data: ' + json.dumps(value).encode() + b'\n\n')
+        streamed.feed(b'data: [DONE]\n\n')
+        streamed.finish(success=True)
+        last = telemetry.snapshot()['last_request']
+        self.assertEqual((last['wait_seconds'], last['first_token_seconds'], last['response_seconds']), (3, 5, 9))
+        self.assertEqual((last['prompt_tokens_per_second'], last['decode_tokens_per_second']), (20, 2))
+        unstreamed = telemetry.begin()
+        unstreamed.mark_ready()
+        unstreamed.observe({'usage': {'prompt_tokens': 40, 'completion_tokens': 9}})
+        unstreamed.finish(success=True)
+        last = telemetry.snapshot()['last_request']
+        self.assertEqual(last['wait_seconds'], 1)
+        self.assertIsNone(last['first_token_seconds'])
+        self.assertIsNone(last['prompt_tokens_per_second'])
+        self.assertIsNone(last['decode_tokens_per_second'])

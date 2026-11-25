@@ -486,6 +486,12 @@ for that gateway process: accepted, completed, failed and measured requests;
 reported input/output tokens; and the latest response duration and output rate.
 The duration includes admission, loading and response time, so this rate is
 end-to-end response throughput rather than the model's decode speed.
+`last_request` also splits the response into stages: `wait_seconds` (loading and
+queueing until a worker accepts the request) and, for streamed replies,
+`first_token_seconds`, `prompt_tokens_per_second` (input tokens over the time from
+acceptance to the first generated text) and `decode_tokens_per_second` (output
+tokens after the first, over the remaining time). Unstreamed replies report `null`
+for the streamed fields.
 
 Token totals include only completed replies with valid worker-reported usage.
 `measured_requests` identifies that subset; missing usage is `null`, not an estimate

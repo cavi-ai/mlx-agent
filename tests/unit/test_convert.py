@@ -145,6 +145,16 @@ class BackendConvertTests(unittest.TestCase):
         ])
         self.assertNotIn("--trust-remote-code", plan["argv"])
 
+    def test_backend_plan_rejects_inference_only_separation(self):
+        source = self.root / "source"
+        source.mkdir()
+        (source / "config.json").write_text('{"model_type": "mel_band_roformer"}', encoding="utf-8")
+        for options in ({"model_type": "mel-band-roformer"}, {"source_path": source}):
+            with self.subTest(options=options), self.assertRaises(ConvertError) as caught:
+                plan_convert("pub/model", backend="mlx-audio", backends_root_dir=self.root, **options)
+            self.assertEqual(caught.exception.code, "conversion_unavailable")
+            self.assertIn("convert separate", caught.exception.remediation)
+
     def test_unknown_backend_is_refused(self):
         with self.assertRaises(ConvertError) as caught:
             plan_convert("pub/model", backend="nope")
@@ -191,7 +201,7 @@ class BackendConvertTests(unittest.TestCase):
 
     def test_backend_plan_names_the_ports_it_installs(self):
         plan = plan_convert("Edge0/Audio8-ASR-Infinite", backend="mlx-audio", backends_root_dir=self.root)
-        self.assertEqual(plan["ports"], ["audio8_asr_infinite"])
+        self.assertEqual(plan["ports"], ["audio8_asr_infinite", "mel_band_roformer"])
         self.assertNotIn("ports", plan_convert("pub/model", backend="mlx-vlm", backends_root_dir=self.root))
 
     def test_model_type_selects_a_port_converter_only_where_the_port_ships_one(self):

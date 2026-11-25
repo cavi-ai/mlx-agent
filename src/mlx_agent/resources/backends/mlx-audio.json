@@ -7,10 +7,14 @@
   "convert": "mlx_audio.convert",
   "lock": "mlx-audio.lock",
   "ports": {
+    "source_separation": [
+      "mel_band_roformer"
+    ],
     "speech_to_text": [
       "audio8_asr_infinite"
     ]
   },
+  "port_inference_only": ["mel_band_roformer"],
   "port_quantize": {
     "audio8_asr_infinite": {
       "include": [
@@ -27,7 +31,8 @@
   "categories": {
     "speech_to_text": "stt/models",
     "text_to_speech": "tts/models",
-    "music_generation": "music/models"
+    "music_generation": "music/models",
+    "source_separation": "mlx_agent_ports"
   },
   "remap_files": {
     "music_generation": ["music/utils.py"],

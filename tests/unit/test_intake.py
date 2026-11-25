@@ -395,6 +395,22 @@ class ResolveTests(unittest.TestCase):
         payload = self.run_resolve(client, installed=("mlx-lm",))
         self.assertEqual((payload["verdict"], payload["backend"], payload["backend_installed"]), ("convertible_after_install", "mlx-audio", False))
 
+    def test_inference_only_separation_resolves_published_mlx_but_offers_no_conversion(self):
+        manifests = load_manifests()
+        registries = {backend: {"installed": backend == "mlx-audio"} for backend in manifests}
+        config = {"config.json": json.dumps({"model_type": "mel_band_roformer"})}
+        for tags, verdict, backend, reasons in (
+            ([], "unsupported", None, ["conversion_unavailable"]),
+            (["mlx"], "already_mlx", "mlx-audio", []),
+        ):
+            with self.subTest(tags=tags):
+                client = FakeClient(info=repo_info(tags=tags), files=config)
+                payload = resolve("org/name", client=client, manifests=manifests, registries=registries)
+                self.assertEqual((payload["verdict"], payload["backend"], payload["reasons"]), (verdict, backend, reasons))
+                self.assertEqual(payload["backend_installed"], bool(backend))
+                self.assertEqual(payload["task"]["type"], "source_separation")
+                self.validator.validate(payload)
+
     def test_vision_config_routes_to_vlm(self):
         client = FakeClient(info=repo_info(pipeline_tag="image-text-to-text"), files={"config.json": json.dumps({"model_type": "qwen2_vl", "vision_config": {"model_type": "qwen2_vl"}})})
         payload = self.run_resolve(client)

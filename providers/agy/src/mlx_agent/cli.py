@@ -2165,8 +2165,19 @@ def _add_convert_arguments(parser):
     transcribe.add_argument("--path", required=True, help="converted speech model directory")
     transcribe.add_argument("--audio", required=True, help="audio file (WAV, FLAC, MP3)")
     transcribe.add_argument("--language", default=None, help="language code passed to models that take one")
+    transcribe.add_argument("--words", action="store_true", help="also return each word's start and end seconds (Whisper models)")
     transcribe.add_argument("--timeout", type=int, default=300, help="seconds before the backend run is stopped")
     transcribe.add_argument("--json", action="store_true")
+    separate = actions.add_parser(
+        "separate",
+        help="split one audio mix into a vocal stem and the rest with a source-separation model",
+    )
+    separate.add_argument("--path", required=True, help="source-separation model directory")
+    separate.add_argument("--audio", required=True, help="audio mix (WAV, FLAC, MP3)")
+    separate.add_argument("--out", required=True, help="new absolute .wav path for the vocal stem")
+    separate.add_argument("--rest", default=None, help="new absolute .wav path for the mix minus the vocal stem")
+    separate.add_argument("--timeout", type=int, default=1800, help="seconds before the backend run is stopped")
+    separate.add_argument("--json", action="store_true")
     decide = actions.add_parser(
         "decide",
         help="answer typed questions about a state with a converted classification model (read-only verification canary)",
@@ -2282,6 +2293,7 @@ def _run_convert(arguments):
     from .gguf import GGUFError
     from .inference_runner import InferenceError
     from .music import plan_music, run_music
+    from .separate import plan_separate, run_separate
     from .serve import default_model_present
     from .speak import plan_speak, run_speak
     from .transcribe import plan_transcribe, run_transcribe
@@ -2310,11 +2322,24 @@ def _run_convert(arguments):
         if arguments.convert_command == "transcribe":
             if not 1 <= arguments.timeout <= 3600:
                 raise ValueError("--timeout must be 1..3600 seconds")
-            plan = plan_transcribe(arguments.path, arguments.audio, language=arguments.language)
+            plan = plan_transcribe(arguments.path, arguments.audio, language=arguments.language, words=arguments.words)
             from .compute import guarded_start
             result = guarded_start("transcribe", run_transcribe, plan, timeout=arguments.timeout)
+            human = result["text"]
+            if arguments.words and not arguments.json:
+                lines = ["{start:.3f}s - {end:.3f}s  {word}".format(**word) for word in result["words"]]
+                human = "\n".join(([human] if human else []) + lines)
             return _emit_serve_result(
-                ResultEnvelope.ok(operation, result), arguments.json, human=result["text"],
+                ResultEnvelope.ok(operation, result), arguments.json, human=human,
+            )
+        if arguments.convert_command == "separate":
+            if not 1 <= arguments.timeout <= 7200:
+                raise ValueError("--timeout must be 1..7200 seconds")
+            plan = plan_separate(arguments.path, arguments.audio, arguments.out, rest=arguments.rest)
+            from .compute import guarded_start
+            result = guarded_start("separate", run_separate, plan, timeout=arguments.timeout)
+            return _emit_serve_result(
+                ResultEnvelope.ok(operation, result), arguments.json, human=result["path"],
             )
         if arguments.convert_command == "decide":
             if not 1 <= arguments.timeout <= 3600:

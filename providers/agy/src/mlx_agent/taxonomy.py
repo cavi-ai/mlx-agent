@@ -15,7 +15,7 @@ from .modality import detect_facets, detect_modalities
 
 TASK_TYPES = (
     "text_llm", "vision_language", "speech_to_text", "text_to_speech",
-    "embedding", "classification", "image_generation", "image_segmentation", "video_generation", "mesh_generation", "music_generation", "speculative_draft", "vision_projector", "other",
+    "embedding", "classification", "image_generation", "image_segmentation", "source_separation", "video_generation", "mesh_generation", "music_generation", "speculative_draft", "vision_projector", "other",
 )
 # Ordered specific-first; the last entry is the type's default use case.
 USE_CASES = {
@@ -27,6 +27,7 @@ USE_CASES = {
     "classification": ("moderation", "routing", "classification"),
     "image_generation": ("image_generation",),
     "image_segmentation": ("image_segmentation",),
+    "source_separation": ("source_separation",),
     "video_generation": ("video_generation",),
     "mesh_generation": ("mesh_generation",),
     "music_generation": ("music_generation",),
@@ -120,6 +121,8 @@ def _type_from_hits(hits, config_keys, haystack, vision_module=False, allow_visi
         return "image_generation"
     if "image_segmentation" in categories:
         return "image_segmentation"
+    if "source_separation" in categories:
+        return "source_separation"
     if "mesh_generation" in categories:
         return "mesh_generation"
     if "video_generation" in categories:

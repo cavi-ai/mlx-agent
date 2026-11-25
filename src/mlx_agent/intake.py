@@ -10,7 +10,7 @@ import re
 
 from .backends import (
     CONVERSION_BITS, choose_backend, component_matches, conversion_bits, load_manifests, load_registries, lookup,
-    port_downloads, port_files, port_for_files, port_for_pipeline, port_requirements, quantize_rule, recipe_for,
+    port_downloads, port_files, port_for_files, port_for_pipeline, port_is_inference_only, port_requirements, quantize_rule, recipe_for,
     snapshot_files,
 )
 from .huggingface import HuggingFaceClient, HuggingFaceHTTPError
@@ -263,6 +263,8 @@ def _verdict(payload, tags, files, config, manifests, registries):
     hits = lookup(payload["model_type"], manifests, registries)
     backend = choose_backend(hits, payload["task"]["type"], "vision_config" in config)
     if backend:
+        if port_is_inference_only(payload["model_type"], backend, manifests):
+            return "unsupported", ["conversion_unavailable"], None
         installed = registries.get(backend, {}).get("installed", False)
         return ("convertible" if installed else "convertible_after_install"), [], backend
     reasons = ["arch_not_in_registry"]

@@ -101,6 +101,23 @@ class TranscribeTests(unittest.TestCase):
             run_transcribe(plan, manifests=self.manifests, root=self.root / "backends", runner=slow, timeout=5)
         self.assertEqual(caught.exception.code, "transcribe_timeout")
 
+    def test_words_are_requested_and_returned_with_their_times(self):
+        plan = self.plan(self.model("whisper"), words=True)
+        self.assertEqual(plan["argv"][-1], "--words")
+        self.assertNotIn("--words", self.plan(self.root / "whisper")["argv"])
+        words = [{"word": "hello", "start": 0.12, "end": 0.48}, {"word": "there", "start": 0.48, "end": 0.9}]
+        timed = lambda argv, **kwargs: Completed(stdout=json.dumps({"text": "hello there", "words": words}) + "\n")
+        result = run_transcribe(plan, manifests=self.manifests, root=self.root / "backends", runner=timed)
+        self.assertEqual(result["words"], words)
+        untimed = lambda argv, **kwargs: Completed(stdout='{"text": "hello there"}\n')
+        with self.assertRaises(TranscribeError) as caught:
+            run_transcribe(plan, manifests=self.manifests, root=self.root / "backends", runner=untimed)
+        self.assertEqual(caught.exception.code, "transcribe_failed")
+        refusing = lambda argv, **kwargs: Completed(returncode=2, stdout='{"error": "words_unsupported", "detail": "Parakeet"}\n')
+        with self.assertRaises(TranscribeError) as caught:
+            run_transcribe(plan, manifests=self.manifests, root=self.root / "backends", runner=refusing)
+        self.assertEqual(caught.exception.code, "words_unsupported")
+
 
 PRE_V3_VOCABULARY = {"<|endoftext|>": 50257, "<|nocaptions|>": 50362}
 V3_VOCABULARY = {"<|endoftext|>": 50257, "<|nospeech|>": 50363}
@@ -154,8 +171,21 @@ class FakeParakeet:
         return types.SimpleNamespace(text="The quick brown fox jumps over the lazy dog.")
 
 
+class FakeTimedWhisper:
+    """Returns mlx-audio Whisper segments, whose words carry padded text, times and probabilities."""
+
+    def __init__(self):
+        self.word_timestamps = None
+
+    def generate(self, audio, language=None, word_timestamps=False):
+        self.word_timestamps = word_timestamps
+        words = [{"word": " Hello", "start": 0.1234, "end": 0.5, "probability": 0.9},
+                 {"word": " there", "start": 0.5, "end": 0.8126, "probability": 0.8}]
+        return types.SimpleNamespace(text=" Hello there", segments=[{"text": " Hello there", "words": words}])
+
+
 class TranscribeRunnerTests(unittest.TestCase):
-    def transcribe(self, model):
+    def transcribe(self, model, *extra, expected=0):
         utils = types.ModuleType("mlx_audio.stt.utils")
         utils.load_model = lambda path: model
         utils.load_audio = lambda path: types.SimpleNamespace(shape=(45000,))
@@ -163,9 +193,21 @@ class TranscribeRunnerTests(unittest.TestCase):
                    "mlx_audio.stt.utils": utils}
         buffer = io.StringIO()
         with mock.patch.dict(sys.modules, modules), redirect_stdout(buffer):
-            code = transcribe_runner.main(["--model", "/m", "--audio", "/clip.wav", "--language", "en"])
-        self.assertEqual(code, 0)
+            code = transcribe_runner.main(["--model", "/m", "--audio", "/clip.wav", "--language", "en", *extra])
+        self.assertEqual(code, expected)
         return json.loads(buffer.getvalue())
+
+    def test_words_carry_their_start_and_end_seconds(self):
+        model = FakeTimedWhisper()
+        result = self.transcribe(model, "--words")
+        self.assertIs(model.word_timestamps, True)
+        self.assertEqual(result["words"], [{"word": "Hello", "start": 0.123, "end": 0.5},
+                                           {"word": "there", "start": 0.5, "end": 0.813}])
+        self.assertNotIn("words", self.transcribe(FakeTimedWhisper()))
+
+    def test_a_model_without_word_times_refuses_words(self):
+        self.assertEqual(self.transcribe(FakeParakeet(), "--words", expected=2),
+                         {"error": "words_unsupported", "detail": "FakeParakeet"})
 
     def test_a_pre_v3_whisper_vocabulary_suppresses_no_captions_instead_of_the_end_token(self):
         model = FakeWhisper(PRE_V3_VOCABULARY)

@@ -35,6 +35,21 @@ class ConvertCliTests(unittest.TestCase):
             code = main(argv)
         return code, buffer.getvalue()
 
+    def test_transcribe_words_displays_timings_and_keeps_json_structured(self):
+        result = {"text": "Hello world", "words": [
+            {"word": "Hello", "start": 0.125, "end": 0.5},
+            {"word": "world", "start": 0.5, "end": 1.0},
+        ]}
+        argv = ["convert", "transcribe", "--path", "/model", "--audio", "/mix.wav"]
+        with patch("mlx_agent.transcribe.plan_transcribe"), patch("mlx_agent.compute.guarded_start", return_value=result):
+            self.assertEqual(self._run(argv), (0, "Hello world\n"))
+            code, output = self._run(argv + ["--words"])
+            self.assertEqual(code, 0)
+            self.assertEqual(output.splitlines(), ["Hello world", "0.125s - 0.500s  Hello", "0.500s - 1.000s  world"])
+            code, output = self._run(argv + ["--words", "--json"])
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(output)["data"], result)
+
     def test_start_preview_requires_confirmation(self):
         code, output = self._run([
             "convert", "start", "--repo", "pub/model", "--q-bits", "4",

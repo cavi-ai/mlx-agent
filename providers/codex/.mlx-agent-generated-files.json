@@ -126,6 +126,7 @@
     "src/mlx_agent/capture_volume.py",
     "src/mlx_agent/chat_completions.py",
     "src/mlx_agent/cli.py",
+    "src/mlx_agent/client.py",
     "src/mlx_agent/coding_bench.py",
     "src/mlx_agent/coding_capture.py",
     "src/mlx_agent/coding_capture_client.py",

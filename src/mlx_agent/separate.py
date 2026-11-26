@@ -1,4 +1,7 @@
-"""Split one audio mix into a vocal stem and the rest with a source-separation model through its backend."""
+"""Split one audio mix into a stem and the rest with a source-separation model through its backend.
+
+Vocal models split out the vocals; text-prompted models split out the sound a prompt names.
+"""
 
 from __future__ import annotations
 
@@ -12,12 +15,14 @@ from .backends import (
     load_manifests,
     load_registries,
     lookup,
+    port_is_prompted,
 )
 from .inference_runner import InferenceError, RunnerContract, invoke
 
 SEPARATE_SCHEMA = "separate/1"
 SEPARATE_RUNNER = Path(__file__).resolve().with_name("separate_runner.py")
 DEFAULT_TIMEOUT_SECONDS = 1800
+MAX_PROMPT_CHARACTERS = 500
 
 
 class SeparateError(InferenceError):
@@ -37,7 +42,17 @@ def _new_wav(value, flag):
     return target
 
 
-def plan_separate(model_path, audio_path, out, rest=None, manifests=None, registries=None, root=None):
+def _prompt(value):
+    if value is None:
+        return None
+    text = value.strip() if isinstance(value, str) else ""
+    if not text or len(text) > MAX_PROMPT_CHARACTERS or any(not character.isprintable() for character in text):
+        raise _invalid("--prompt must be one line of 1 to {0} characters.".format(MAX_PROMPT_CHARACTERS),
+                       "Name the sound to separate, such as --prompt drums.")
+    return text
+
+
+def plan_separate(model_path, audio_path, out, rest=None, manifests=None, registries=None, root=None, prompt=None):
     """Pick the separation backend and port for a model directory; pure apart from reading config.json."""
     model = Path(model_path).expanduser().resolve()
     try:
@@ -55,6 +70,7 @@ def plan_separate(model_path, audio_path, out, rest=None, manifests=None, regist
     remainder = None if rest is None else _new_wav(rest, "--rest")
     if remainder is not None and remainder.resolve() == target.resolve():
         raise _invalid("--rest must differ from --out.", "Pass two different output paths.")
+    prompt = _prompt(prompt)
     manifests = load_manifests() if manifests is None else manifests
     registries = load_registries(manifests, root) if registries is None else registries
     hits = sorted((hit for hit in lookup(model_type, manifests, registries) if hit["category"] == "source_separation"),
@@ -62,9 +78,17 @@ def plan_separate(model_path, audio_path, out, rest=None, manifests=None, regist
     if not hits:
         raise SeparateError(
             "not_separation_model", "No source-separation backend implements model_type {0!r}.".format(model_type),
-            "Separation applies to vocal separation models such as Mel-Band-RoFormer.",
+            "Separation applies to vocal separation models such as Mel-Band-RoFormer and text-prompted models "
+            "such as SAM-Audio.",
         )
     manifest = manifests[hits[0]["backend"]]
+    prompted = port_is_prompted(model_type, manifest["id"], manifests)
+    if prompted and prompt is None:
+        raise _invalid("{0} separates the sound a --prompt names.".format(model_type),
+                       "Pass --prompt, such as --prompt drums.")
+    if not prompted and prompt is not None:
+        raise _invalid("{0} separates vocals and takes no --prompt.".format(model_type),
+                       "Drop --prompt, or pass a text-prompted model such as SAM-Audio.")
     if not is_installed(manifest, root):
         raise SeparateError(
             "backend_not_installed", "The {0} backend is not installed.".format(manifest["id"]),
@@ -74,8 +98,10 @@ def plan_separate(model_path, audio_path, out, rest=None, manifests=None, regist
             "--model", str(model), "--audio", str(audio), "--out", str(target)]
     if remainder is not None:
         argv += ["--rest", str(remainder)]
+    if prompt is not None:
+        argv.append("--prompt=" + prompt)
     return {"backend": manifest["id"], "model": str(model), "audio": str(audio), "out": str(target),
-            "rest": None if remainder is None else str(remainder), "argv": argv}
+            "rest": None if remainder is None else str(remainder), "prompt": prompt, "argv": argv}
 
 
 CONTRACT = RunnerContract(
@@ -90,7 +116,8 @@ def run_separate(plan, manifests=None, root=None, timeout=DEFAULT_TIMEOUT_SECOND
     result = invoke(plan, CONTRACT, manifests, root, timeout, runner)
     return {
         "schema": SEPARATE_SCHEMA, "backend": plan["backend"], "model": plan["model"], "audio": plan["audio"],
-        "path": result["path"], "rest": result.get("rest"), "sample_rate": result.get("sample_rate"),
+        "path": result["path"], "rest": result.get("rest"), "prompt": plan.get("prompt"),
+        "sample_rate": result.get("sample_rate"),
         "audio_seconds": result.get("audio_seconds"), "seconds": result.get("seconds"),
         "load_seconds": result.get("load_seconds"),
     }

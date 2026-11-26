@@ -8,13 +8,15 @@
   "lock": "mlx-audio.lock",
   "ports": {
     "source_separation": [
-      "mel_band_roformer"
+      "mel_band_roformer",
+      "sam_audio"
     ],
     "speech_to_text": [
       "audio8_asr_infinite"
     ]
   },
-  "port_inference_only": ["mel_band_roformer"],
+  "port_inference_only": ["mel_band_roformer", "sam_audio"],
+  "port_prompted": ["sam_audio"],
   "port_quantize": {
     "audio8_asr_infinite": {
       "include": [

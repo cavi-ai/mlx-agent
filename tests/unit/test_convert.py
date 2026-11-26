@@ -201,7 +201,7 @@ class BackendConvertTests(unittest.TestCase):
 
     def test_backend_plan_names_the_ports_it_installs(self):
         plan = plan_convert("Edge0/Audio8-ASR-Infinite", backend="mlx-audio", backends_root_dir=self.root)
-        self.assertEqual(plan["ports"], ["audio8_asr_infinite", "mel_band_roformer"])
+        self.assertEqual(plan["ports"], ["audio8_asr_infinite", "mel_band_roformer", "sam_audio"])
         self.assertNotIn("ports", plan_convert("pub/model", backend="mlx-vlm", backends_root_dir=self.root))
 
     def test_model_type_selects_a_port_converter_only_where_the_port_ships_one(self):

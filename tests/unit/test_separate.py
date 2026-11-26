@@ -86,6 +86,38 @@ class SeparateTests(unittest.TestCase):
                           registries=self.registries, root=self.root / "elsewhere")
         self.assertEqual(caught.exception.code, "backend_not_installed")
 
+    def test_plan_sends_a_text_prompt_to_a_sam_audio_checkpoint(self):
+        separator = self.model("sam_audio")
+        plan = self.plan(separator, rest=self.rest, prompt="  drums ")
+        self.assertEqual(plan["argv"][2:4], ["--module", "mlx_audio.mlx_agent_ports.sam_audio"])
+        self.assertEqual(plan["argv"][-1], "--prompt=drums")
+        self.assertEqual(plan["prompt"], "drums")
+        printed = {"path": str(self.out), "rest": str(self.rest), "prompt": "drums", "sample_rate": 48000}
+        runner = lambda argv, **kwargs: Completed(stdout=json.dumps(printed) + "\n")
+        result = run_separate(plan, manifests=self.manifests, root=self.root / "backends", runner=runner)
+        self.assertEqual((result["prompt"], result["sample_rate"]), ("drums", 48000))
+        self.assertTrue((self.package / "mlx_agent_ports" / "sam_audio" / "__init__.py").is_file())
+
+    def test_dash_prefixed_prompt_reaches_the_runner(self):
+        plan = self.plan(self.model("sam_audio"), prompt="-drums")
+        name = "mlx_audio.mlx_agent_ports.sam_audio"
+        port = types.ModuleType(name)
+        port.load = lambda path: path
+        port.generate = lambda model, audio, out, rest, prompt: {"prompt": prompt}
+        buffer = io.StringIO()
+        with mock.patch.dict(sys.modules, {name: port}), redirect_stdout(buffer):
+            code = separate_runner.main(plan["argv"][2:])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(buffer.getvalue())["prompt"], "-drums")
+
+    def test_prompt_refusals(self):
+        prompted, vocal = self.model("sam_audio"), self.model("mel_band_roformer")
+        for path, prompt in ((prompted, None), (vocal, "drums"), (prompted, " "), (prompted, "drums\nbass"),
+                             (prompted, "x" * 501)):
+            with self.subTest(model=path.name, prompt=prompt), self.assertRaises(SeparateError) as caught:
+                self.plan(path, prompt=prompt)
+            self.assertEqual(caught.exception.code, "invalid_arguments")
+
     def test_plan_rejects_output_aliases(self):
         separator = self.model("mel_band_roformer")
         alias = self.root / "alias"
@@ -128,6 +160,16 @@ class SeparateRunnerTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual((result["path"], result["rest"], result["model"], result["audio"]), ("/v.wav", "/r.wav", "/m", "/mix.wav"))
         self.assertIn("load_seconds", result)
+
+    def test_the_runner_hands_a_prompt_to_the_port(self):
+        port = types.ModuleType("prompted_port")
+        port.load = lambda path: path
+        port.generate = lambda model, audio, out, rest, prompt: {"path": out, "rest": rest, "prompt": prompt}
+        buffer = io.StringIO()
+        with mock.patch.dict(sys.modules, {"prompted_port": port}), redirect_stdout(buffer):
+            separate_runner.main(["--module", "prompted_port", "--model", "/m", "--audio", "/mix.wav",
+                                  "--out", "/d.wav", "--prompt", "drums"])
+        self.assertEqual(json.loads(buffer.getvalue())["prompt"], "drums")
 
 
 if __name__ == "__main__":

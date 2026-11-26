@@ -8,7 +8,7 @@
 - `convert music` takes `--key` and `--keep-caption` for ACE-Step checkpoints and reports the planner's caption, tempo, key, length, meter and language as `planned`; `convert compose` runs the ACE-Step planner alone; `convert describe` answers a text prompt with no media.
 - TRELLIS.2 `convert mesh --bbox X Y Z` fits the sampled shape to the box proportions and the mesh bounds to its sizes.
 - Add `mlx_agent.client.convert` for Python tools to run one `convert` verb and receive its JSON `data` or a `ConvertError` carrying the envelope's `code`, `message` and `remediation`.
-- `convert scan` reports `local_models` (store, repository, acquisition, task, duplicate groups); `discover --local-status` marks candidates `exact`, `variant` or `absent`, `--exclude-local` leaves local models out before ranking, and task roles (`speech-to-text`, `text-to-speech`, `image-generation`, `video-generation`, `mesh-generation`, `music-generation`) list the Hub by pipeline tag.
+- `convert scan` reports `local_models` (store, repository, acquisition, task, duplicate groups); `discover --local-status` marks candidates `exact`, `variant` or `absent`, `--exclude-local` leaves local models out before ranking, and task roles (`speech-to-text`, `text-to-speech`, `image-generation`, `video-generation`, `mesh-generation`, `music-generation`) list the Hub by pipeline tag. A projector attached during its base model's conversion is `converted` with that output, and a drafter no port converts is a `companion` instead of `pending`.
 
 ## 0.16.0
 

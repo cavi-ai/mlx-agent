@@ -128,6 +128,7 @@ def convert(hf_path, mlx_path, sources=None, quantize=False, q_bits=8):
         raise ValueError("TRELLIS.2 conversion supports 8-bit quantization only.")
     files, configs, settings = _plan(base, sources)
     import mlx.core as mx
+    from .closed import reconstruction_settings
 
     out.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".trellis2-", dir=out.parent))
@@ -138,7 +139,8 @@ def convert(hf_path, mlx_path, sources=None, quantize=False, q_bits=8):
             del converted
         sampler = settings["shape_slat_sampler"]
         mesh = {"resolutions": list(RESOLUTIONS), "resolution": DEFAULT_RESOLUTION, "steps": sampler["steps"],
-                "guidance": sampler["guidance_strength"], "max_tokens": MAX_TOKENS, "cascade_floor": CASCADE_FLOOR}
+                "guidance": sampler["guidance_strength"], "max_tokens": MAX_TOKENS, "cascade_floor": CASCADE_FLOOR,
+                **reconstruction_settings()}
         config = {"model_type": "trellis2", "components": configs, "pipeline": settings, "mesh": mesh}
         if quantize:
             config["quantization"] = {"bits": q_bits, "group_size": 64}

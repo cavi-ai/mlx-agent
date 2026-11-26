@@ -127,6 +127,12 @@ before decimation. Space that no straight line along an axis reaches from
 outside is filled, so a hollow shell becomes solid except where an opening
 shows its inside. Reconstruction uses bounded tiles at the requested grid resolution.
 
+Edit `mesh.field_cache_bytes` in the converted model's `config.json` to change
+how many bytes of sparse distances reconstruction retains. Tiles that exceed
+the budget are recomputed as needed. Set it to `0` to disable the cache.
+`mesh.projection_budget_bytes` limits the axis projection arrays. Each setting
+defaults to 64 MiB when omitted. Reload the model after editing the file.
+
 ## Pixal3D image-to-3D
 
 Pixal3D conditions TRELLIS.2-style shape flows on image features projected onto

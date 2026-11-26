@@ -29,6 +29,10 @@ NORMALIZATIONS = ("shape_slat_normalization", "tex_slat_normalization")
 ENCODER_TYPE = "dinov3_vit"
 RESOLUTIONS = (512, 1024, 1536)
 DEFAULT_RESOLUTION = 1024
+# Mesh-block defaults: the high-resolution level drops by 128 while its voxels exceed max_tokens, down to
+# cascade_floor.
+MAX_TOKENS = 49152
+CASCADE_FLOOR = 1024
 
 
 def _read(path):
@@ -134,7 +138,7 @@ def convert(hf_path, mlx_path, sources=None, quantize=False, q_bits=8):
             del converted
         sampler = settings["shape_slat_sampler"]
         mesh = {"resolutions": list(RESOLUTIONS), "resolution": DEFAULT_RESOLUTION, "steps": sampler["steps"],
-                "guidance": sampler["guidance_strength"]}
+                "guidance": sampler["guidance_strength"], "max_tokens": MAX_TOKENS, "cascade_floor": CASCADE_FLOOR}
         config = {"model_type": "trellis2", "components": configs, "pipeline": settings, "mesh": mesh}
         if quantize:
             config["quantization"] = {"bits": q_bits, "group_size": 64}

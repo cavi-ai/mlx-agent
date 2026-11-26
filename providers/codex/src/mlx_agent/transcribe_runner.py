@@ -11,6 +11,9 @@ if __package__:
 else:
     from runner_model_cache import load_model as retained_load
 
+# Audio left after the last heard segment that is decoded again.
+RESUME_SECONDS = 1.0
+
 
 def _restore_whisper_end_token(model):
     """Give a Whisper tokenizer the no-speech token its vocabulary has.
@@ -65,16 +68,26 @@ def main(argv=None):
             return 2
         kwargs["word_timestamps"] = True
     output = model.generate(arguments.audio, **kwargs)
-    text = getattr(output, "text", output if isinstance(output, str) else "")
+    text = str(getattr(output, "text", output if isinstance(output, str) else "")).strip()
+    segments = list(getattr(output, "segments", None) or [])
+    audio_seconds = int(samples.shape[0]) / 16000
+    # Whisper can end a clip's text early on sung audio and skip the rest; decode again from the last segment.
+    while "clip_timestamps" in parameters and segments and audio_seconds - float(segments[-1]["end"]) >= RESUME_SECONDS:
+        heard_until = float(segments[-1]["end"])
+        later = list(getattr(model.generate(arguments.audio, **kwargs, clip_timestamps=[heard_until]), "segments", None) or [])
+        if not later or float(later[-1]["end"]) <= heard_until:
+            break
+        segments += later
+        text = " ".join([text, *(str(segment["text"]).strip() for segment in later)]).strip()
     result = {
-        "text": str(text).strip(),
+        "text": text,
         "seconds": round(time.time() - started, 3),
-        "audio_seconds": round(int(samples.shape[0]) / 16000, 3),
+        "audio_seconds": round(audio_seconds, 3),
     }
     if arguments.words:
         result["words"] = [
             {"word": str(word["word"]).strip(), "start": round(float(word["start"]), 3), "end": round(float(word["end"]), 3)}
-            for segment in getattr(output, "segments", None) or [] for word in segment.get("words") or []
+            for segment in segments for word in segment.get("words") or []
         ]
     print(json.dumps(result), flush=True)
     return 0

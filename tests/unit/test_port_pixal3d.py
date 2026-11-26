@@ -307,10 +307,14 @@ class Pixal3DNativeTests(unittest.TestCase):
         line = np.stack([np.arange(512), np.zeros(512), np.zeros(512)], axis=1)
         coords, resolution = pipeline.cascade_coords(line, 512, 1536)
         self.assertEqual((len(coords), resolution, int(coords[:, 0].max())), (96, 1536, 95))
+        coords, resolution = pipeline.cascade_coords(line, 512, 1536, max_tokens=96)
+        self.assertEqual((len(coords), resolution), (96, 1536))
         coords, resolution = pipeline.cascade_coords(line, 512, 1536, max_tokens=90)
         self.assertEqual((len(coords), resolution), (88, 1408))
         coords, resolution = pipeline.cascade_coords(line, 512, 1536, max_tokens=10)
         self.assertEqual((len(coords), resolution), (64, 1024))
+        coords, resolution = pipeline.cascade_coords(line, 512, 1536, max_tokens=10, floor=1280)
+        self.assertEqual((len(coords), resolution), (80, 1280))
 
     def test_load_and_generate_refuse_what_they_cannot_run(self):
         pipeline = port('pixal3d.pipeline')
@@ -386,7 +390,8 @@ class Pixal3DNativeTests(unittest.TestCase):
             listed = {item['name']: item for item in scan_mlx_outputs([models])}
             leftovers = [path.name for path in models.iterdir() if path.name.startswith('.')]
         self.assertEqual(full['model_type'], 'pixal3d')
-        self.assertEqual(full['mesh'], {'resolutions': [1024, 1536], 'resolution': 1536, 'steps': 10, 'guidance': 6.0})
+        self.assertEqual(full['mesh'], {'resolutions': [1024, 1536], 'resolution': 1536, 'steps': 10, 'guidance': 6.0,
+                                        'max_tokens': 49152, 'cascade_floor': 1024})
         self.assertEqual(full['components']['moge']['remap_output'], 'exp')
         self.assertEqual(names, ['config.json', 'image_encoder.safetensors', 'mlx-converter.json', 'moge.safetensors',
                                  'naf.safetensors', 'shape_decoder.safetensors', 'shape_flow_1024.safetensors',

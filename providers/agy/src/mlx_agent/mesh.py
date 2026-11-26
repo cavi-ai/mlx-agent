@@ -48,6 +48,11 @@ def _settings(config):
         type(value) is int and RESOLUTION_RANGE[0] <= value <= RESOLUTION_RANGE[1] for value in resolutions
     ):
         raise MeshError("model_unreadable", "The model config lists invalid mesh resolutions.", "Convert the model again.")
+    # Optional cascade settings: the token cap of the high-resolution flow and the lowest level it drops to.
+    for key, low, high in (("max_tokens", 1, 2**31 - 1), ("cascade_floor", *RESOLUTION_RANGE)):
+        if key in mesh and (type(mesh[key]) is not int or not low <= mesh[key] <= high):
+            raise MeshError("model_unreadable", "The model config mesh {0} must be an integer {1}..{2}.".format(
+                key, low, high), "Set mesh.{0} in the model's config.json.".format(key))
     return tuple(resolutions), {key: mesh.get(key, value) for key, value in DEFAULTS.items()}
 
 

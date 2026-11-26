@@ -10,15 +10,16 @@ from PIL import Image
 
 from . import moge, naf, projection
 from ..trellis2 import dinov3, dual_grid, flow, sparse, structure
-from ..trellis2.pipeline import _denormalize, _kernels, _noise, _sampler, gltf_axes
+from ..trellis2.convert import CASCADE_FLOOR, MAX_TOKENS
+from ..trellis2.pipeline import (
+    HIGH_CONDITION_PIXELS, _denormalize, _kernels, _noise, _sampler, cascade_settings, gltf_axes,
+)
 from ..triposg.geometry import decimate, write_glb
 from ..triposg.weights import Weights
 
 COMPONENTS = ("image_encoder", "ss_flow", "ss_decoder", "shape_flow_512", "shape_flow_1024", "shape_decoder",
               "moge", "naf")
 RESOLUTIONS = (1024, 1536)
-MAX_TOKENS = 49152
-CASCADE_FLOOR = 1024
 LOW_RESOLUTION = 512
 CROP_MARGIN = 1.1
 NAF_SIZE = (512, 512)
@@ -44,12 +45,13 @@ def load(path):
     return config, weights
 
 
-def cascade_coords(coords, low, high, max_tokens=MAX_TOKENS):
-    """Rounded high-resolution latent coordinates, lowering ``high`` by 128 until they fit the token cap."""
+def cascade_coords(coords, low, high, max_tokens=MAX_TOKENS, floor=CASCADE_FLOOR):
+    """Rounded high-resolution latent coordinates, lowering ``high`` by 128 until they fit the token cap or the next
+    level would fall below ``floor``."""
     coords = np.asarray(coords, dtype=np.float64)
     while True:
         quantized = np.unique(np.round((coords + 0.5) / low * (high // 16 - 1)).astype(np.int32), axis=0)
-        if len(quantized) < max_tokens or high == CASCADE_FLOOR:
+        if len(quantized) <= max_tokens or high - 128 < floor:
             return quantized, high
         high -= 128
 
@@ -127,12 +129,12 @@ def generate(model, image, out, steps=12, seed=42, resolution=1536, guidance=7.5
     slat = _denormalize(slat[0], normalization)
     decoder = config["components"]["shape_decoder"]
     upsampled = sparse.run(weights["shape_decoder"], decoder, slat, coords, stop_level=4)
-    coords, level_resolution = cascade_coords(upsampled, LOW_RESOLUTION, resolution)
+    coords, level_resolution = cascade_coords(upsampled, LOW_RESOLUTION, resolution, *cascade_settings(config))
     del cond, slat, upsampled
     previous, cursor = cursor, time.perf_counter()
     stages["shape_latent_512"] = cursor - previous
 
-    cond = Condition(weights, config, picture, CASCADE_FLOOR, upsample=True)
+    cond = Condition(weights, config, picture, HIGH_CONDITION_PIXELS, upsample=True)
     high = config["components"]["shape_flow_1024"]
     slat = flow.sample(weights["shape_flow_1024"], high, _noise(rng, (1, len(coords), high["in_channels"])),
                        cond.globals, mx.zeros_like(cond.globals),

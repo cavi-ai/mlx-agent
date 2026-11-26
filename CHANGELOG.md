@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- TRELLIS.2 frees the MLX buffer cache before its CPU mesh stages, so 1024 generation completes on a 128 GB Mac.
+- TRELLIS.2 and Pixal3D read the cascade token cap and floor from the converted model's `mesh.max_tokens` and `mesh.cascade_floor`.
+- Mesh decimation repeats one aggression higher until the face count meets `--max-faces`.
 - `convert music` takes `--key` and `--keep-caption` for ACE-Step checkpoints and reports the planner's caption, tempo, key, length, meter and language as `planned`; `convert compose` runs the ACE-Step planner alone; `convert describe` answers a text prompt with no media.
 - TRELLIS.2 `convert mesh --bbox X Y Z` fits the sampled shape to the box proportions and the mesh bounds to its sizes.
 - Add `mlx_agent.client.convert` for Python tools to run one `convert` verb and receive its JSON `data` or a `ConvertError` carrying the envelope's `code`, `message` and `remediation`.

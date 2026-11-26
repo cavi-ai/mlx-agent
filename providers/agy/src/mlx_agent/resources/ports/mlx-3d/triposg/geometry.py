@@ -38,17 +38,27 @@ def extract_mesh(query, depth=9, bounds=DEFAULT_BOUNDS, seconds=None):
 
 
 def decimate(vertices, faces, max_faces, aggression=7):
-    """Quadric edge collapse down to `max_faces` triangles; meshes at or under the cap pass through.
+    """Quadric edge collapse down to at most `max_faces` triangles; meshes at or under the cap pass through.
 
     A lower `aggression` raises the error threshold more slowly, which joins fewer separate sheets along an edge.
+    Retry above the cap with increasing aggression up to 10 (or the starting value if higher).
+    At that limit, stop if a pass removes no faces.
     """
     if len(faces) <= max_faces:
         return vertices, faces
     from fast_simplification import simplify
 
-    points, triangles = simplify(np.ascontiguousarray(vertices, dtype=np.float32),
-                                 np.ascontiguousarray(faces, dtype=np.int32), target_count=max_faces, agg=aggression)
-    return points.astype(np.float32), triangles
+    max_aggression = max(aggression, 10)
+    points, triangles = np.ascontiguousarray(vertices, dtype=np.float32), np.ascontiguousarray(faces, dtype=np.int32)
+    while len(triangles) > max_faces:
+        count = len(triangles)
+        points, triangles = simplify(points, triangles, target_count=max_faces, agg=aggression)
+        points, triangles = np.ascontiguousarray(points, dtype=np.float32), np.ascontiguousarray(triangles, dtype=np.int32)
+        if len(triangles) >= count and aggression == max_aggression:
+            raise ValueError("Decimation stopped at {0} faces above the {1} cap; raise --max-faces.".format(
+                len(triangles), max_faces))
+        aggression = min(aggression + 1, max_aggression)
+    return points, triangles
 
 
 def _material_atlas(materials, faces):

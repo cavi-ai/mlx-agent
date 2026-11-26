@@ -12,6 +12,7 @@ import numpy as np
 from PIL import Image
 
 from . import closed, components, dinov3, dual_grid, flow, sparse, structure
+from .convert import CASCADE_FLOOR, MAX_TOKENS
 from .guide import fit, fit_size, place, surface_coords
 from ..triposg.geometry import decimate, write_glb
 from ..triposg.weights import Weights
@@ -20,8 +21,8 @@ COMPONENTS = ("image_encoder", "ss_flow", "ss_decoder", "shape_flow_512", "shape
 TEXTURE_COMPONENTS = components.TEXTURE
 DECODERS = ("shape_decoder", "tex_decoder")
 RESOLUTIONS = (512, 1024, 1536)
-MAX_TOKENS = 49152
-CASCADE_FLOOR = 1024
+# DINOv3 image size that conditions the high-resolution flows.
+HIGH_CONDITION_PIXELS = 1024
 LOW_RESOLUTION = 512
 
 
@@ -152,14 +153,32 @@ def _sampler(params, steps, guidance):
                 guidance_interval=params["guidance_interval"], rescale_t=params["rescale_t"])
 
 
-def cascade_coords(coords, low, high, max_tokens=MAX_TOKENS):
-    """High-resolution latent coordinates from upsampled low-resolution voxels, lowering ``high`` to fit the token cap."""
+def cascade_settings(config):
+    """The converted model's ``mesh`` token cap and cascade floor, else the conversion defaults."""
+    mesh = config.get("mesh") if isinstance(config.get("mesh"), dict) else {}
+    return mesh.get("max_tokens", MAX_TOKENS), mesh.get("cascade_floor", CASCADE_FLOOR)
+
+
+def cascade_coords(coords, low, high, max_tokens=MAX_TOKENS, floor=CASCADE_FLOOR):
+    """High-resolution latent coordinates from upsampled low-resolution voxels, lowering ``high`` by 128 to fit the
+    token cap while it stays at or above ``floor``."""
     coords = np.asarray(coords, dtype=np.float64)
     while True:
         quantized = np.unique(((coords + 0.5) / low * (high // 16)).astype(np.int32), axis=0)
-        if len(quantized) < max_tokens or high == CASCADE_FLOOR:
+        if len(quantized) <= max_tokens or high - 128 < floor:
             return quantized, high
         high -= 128
+
+
+def surface(voxels, vertices, crossed, split, resolution):
+    """Closed glTF-axis mesh from decoded dual-grid voxels, with the seconds of its ``mesh`` and ``closed_surface``
+    stages. These CPU stages share unified memory with MLX, so the buffer cache the GPU stages filled is freed first."""
+    mx.clear_cache()
+    started = time.perf_counter()
+    vertices, faces = dual_grid.to_mesh(voxels, vertices, crossed, split, resolution)
+    meshed = time.perf_counter()
+    vertices, faces = closed.closed_surface(vertices, faces, resolution)
+    return gltf_axes(vertices), faces, {"mesh": meshed - started, "closed_surface": time.perf_counter() - meshed}
 
 
 def _write_mesh(out, vertices, faces, colors, materials, bbox):
@@ -203,7 +222,7 @@ def generate(model, image, out, steps=12, seed=42, resolution=1024, guidance=7.5
                 for picture in pictures]
     cond_high = None
     if resolution > LOW_RESOLUTION:
-        cond_high = [dinov3.encode(weights["image_encoder"], encoder, dinov3.pixels(picture, CASCADE_FLOOR))
+        cond_high = [dinov3.encode(weights["image_encoder"], encoder, dinov3.pixels(picture, HIGH_CONDITION_PIXELS))
                      for picture in pictures]
     cursor = time.perf_counter()
     stages["conditioning"] = cursor - started
@@ -236,7 +255,7 @@ def generate(model, image, out, steps=12, seed=42, resolution=1024, guidance=7.5
     level_resolution = LOW_RESOLUTION
     if resolution > LOW_RESOLUTION:
         upsampled = sparse.run(weights["shape_decoder"], decoder, slat, coords, stop_level=4)
-        coords, level_resolution = cascade_coords(upsampled, LOW_RESOLUTION, resolution)
+        coords, level_resolution = cascade_coords(upsampled, LOW_RESOLUTION, resolution, *cascade_settings(config))
         high = config["components"]["shape_flow_1024"]
         slat = flow.sample(weights["shape_flow_1024"], high, _noise(rng, (1, len(coords), high["in_channels"])),
                            cond_high, mx.zeros_like(cond_high[0]), flow.rope_tables(coords, head_dim), **shape_params)
@@ -268,13 +287,9 @@ def generate(model, image, out, steps=12, seed=42, resolution=1024, guidance=7.5
                                                  texture_latent, coords, subdivisions)
         previous, cursor = cursor, time.perf_counter()
         stages["texture_decode"] = cursor - previous
-    vertices, faces = dual_grid.to_mesh(voxels, vertices, crossed, split, level_resolution)
-    previous, cursor = cursor, time.perf_counter()
-    stages["mesh"] = cursor - previous
-    vertices, faces = closed.closed_surface(vertices, faces, level_resolution)
-    vertices = gltf_axes(vertices)
-    previous, cursor = cursor, time.perf_counter()
-    stages["closed_surface"] = cursor - previous
+    vertices, faces, seconds = surface(voxels, vertices, crossed, split, level_resolution)
+    stages.update(seconds)
+    cursor = time.perf_counter()
     vertices, faces = closed.without_fins(*decimate(vertices, faces, max_faces, aggression=3))
     previous, cursor = cursor, time.perf_counter()
     stages["decimation"] = cursor - previous

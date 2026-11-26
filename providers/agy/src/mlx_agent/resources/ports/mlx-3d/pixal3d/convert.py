@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..trellis2.convert import (
-    ENCODER_TYPE, FLOW_FLAGS, PIPELINE_NAME, PROVENANCE_NAME, SAMPLERS, UNQUANTIZED_BITS, _convert_tensors, _read,
-    _source,
+    CASCADE_FLOOR, ENCODER_TYPE, FLOW_FLAGS, MAX_TOKENS, PIPELINE_NAME, PROVENANCE_NAME, SAMPLERS, UNQUANTIZED_BITS,
+    _convert_tensors, _read, _source,
 )
 
 MODELS = {
@@ -151,7 +151,7 @@ def convert(hf_path, mlx_path, sources=None, downloads=None, quantize=False, q_b
             del converted
         sampler = settings["shape_slat_sampler"]
         mesh = {"resolutions": list(RESOLUTIONS), "resolution": default, "steps": sampler["steps"],
-                "guidance": sampler["guidance_strength"]}
+                "guidance": sampler["guidance_strength"], "max_tokens": MAX_TOKENS, "cascade_floor": CASCADE_FLOOR}
         config = {"model_type": "pixal3d", "components": configs, "pipeline": settings, "mesh": mesh}
         if quantize:
             config["quantization"] = {"bits": q_bits, "group_size": 64}

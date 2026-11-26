@@ -190,7 +190,8 @@ class Trellis2NativeTests(unittest.TestCase):
             listed = {item['name']: item for item in scan_mlx_outputs([models])}
             leftovers = [path.name for path in models.iterdir() if path.name.startswith('.')]
         self.assertEqual(full['model_type'], 'trellis2')
-        self.assertEqual(full['mesh'], {'resolutions': [512, 1024, 1536], 'resolution': 1024, 'steps': 10, 'guidance': 6.0})
+        self.assertEqual(full['mesh'], {'resolutions': [512, 1024, 1536], 'resolution': 1024, 'steps': 10, 'guidance': 6.0,
+                                        'max_tokens': 49152, 'cascade_floor': 1024})
         self.assertEqual(full['pipeline']['sparse_structure_sampler']['rescale_t'], 5.0)
         self.assertNotIn('quantization', full)
         self.assertEqual(sorted(listed), ['TRELLIS.2-MLX-32bit', 'TRELLIS.2-MLX-8bit'])
@@ -536,6 +537,24 @@ class Trellis2NativeTests(unittest.TestCase):
         _, faces = dual_grid.to_mesh(coords[:3], vertices[:3], crossed[:3], np.ones((3, 1)), 4)
         self.assertEqual(faces.shape, (0, 3))
 
+    @unittest.skipUnless(HAS_SURFACE, 'requires scipy and scikit-image')
+    def test_surface_frees_the_mlx_buffer_cache_before_the_cpu_mesh_stages(self):
+        import mlx.core as mx
+        import numpy as np
+        pipeline = port('pipeline')
+        # A 16 x 16 voxel sheet whose z edges cross: 225 quads for the closed surface to wrap.
+        coords = np.stack(np.meshgrid(np.arange(8, 24), np.arange(8, 24), [16], indexing='ij'), axis=-1).reshape(-1, 3)
+        crossed = np.zeros((len(coords), 3), dtype=bool)
+        crossed[:, 2] = True
+        dual = np.full((len(coords), 3), 0.5, dtype=np.float32)
+        mx.eval(mx.zeros((1 << 22,)) + 1)
+        self.assertGreater(mx.get_cache_memory(), 0)
+        vertices, faces, seconds = pipeline.surface(coords, dual, crossed, np.ones((len(coords), 1)), 32)
+        self.assertEqual(mx.get_cache_memory(), 0)
+        self.assertEqual(list(seconds), ['mesh', 'closed_surface'])
+        self.assertGreater(len(faces), 450)
+        self.assertEqual(faces.max(), len(vertices) - 1)
+
     def test_occupancy_keys_match_lexicographic_unique_and_fall_back(self):
         import numpy as np
         from unittest.mock import patch
@@ -778,11 +797,26 @@ class Trellis2NativeTests(unittest.TestCase):
         import numpy as np
         pipeline = port('pipeline')
         line = np.stack([np.arange(512), np.zeros(512), np.zeros(512)], axis=1)
+        coords, resolution = pipeline.cascade_coords(line, 512, 1536, max_tokens=96)
+        self.assertEqual((len(coords), resolution), (96, 1536))
         coords, resolution = pipeline.cascade_coords(line, 512, 1536, max_tokens=81)
         self.assertEqual((len(coords), resolution), (80, 1280))
         self.assertEqual(coords[:, 0].tolist(), list(range(80)))
         coords, resolution = pipeline.cascade_coords(line, 512, 1536, max_tokens=10)
         self.assertEqual((len(coords), resolution), (64, 1024))
+
+    def test_the_model_config_sets_the_cascade_token_cap_and_floor(self):
+        import numpy as np
+        pipeline = port('pipeline')
+        line = np.stack([np.arange(512), np.zeros(512), np.zeros(512)], axis=1)
+        self.assertEqual(pipeline.cascade_settings({'mesh': {'resolution': 1024}}), (49152, 1024))
+        settings = pipeline.cascade_settings({'mesh': {'max_tokens': 10, 'cascade_floor': 1280}})
+        self.assertEqual(settings, (10, 1280))
+        coords, resolution = pipeline.cascade_coords(line, 512, 1536, *settings)
+        self.assertEqual((len(coords), resolution), (80, 1280))
+        coords, resolution = pipeline.cascade_coords(line, 512, 1536, *pipeline.cascade_settings({'mesh': {
+            'max_tokens': 81}}))
+        self.assertEqual((len(coords), resolution), (80, 1280))
 
     def test_schedule_rescales_time_toward_the_noisy_end(self):
         flow = port('flow')

@@ -4,6 +4,7 @@ import json
 import struct
 import unittest
 from contextlib import redirect_stdout
+from os.path import relpath
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -400,6 +401,54 @@ class PairingTests(unittest.TestCase):
         self.assertEqual(models[str(loose)]["status"], "companion")
         self.assertEqual((models[str(drafter)]["status"], models[str(drafter)]["evidence"]), ("companion", "drafter"))
         self.assertEqual((report["pending"], report["totals"]["pending"]), ([], 0))
+
+    def test_projector_pairs_from_monitored_provenance_without_a_receipt(self):
+        projector = write_gguf(self.root / "mmproj-F16.gguf", architecture="clip")
+        out = write_mlx_output(self.root / "model-MLX", quantization=False, provenance={
+            "schema_version": "1.1",
+            "source": {"kind": "gguf", "projector": {"path": str(projector), "signature": file_signature(projector)}},
+        })
+        model, = inventory([self.root])["models"]
+        self.assertEqual((model["status"], model["outputs"], model["evidence"]),
+                         ("converted", [str(out)], "provenance"))
+
+    def test_projector_pairs_from_absolute_provenance_with_a_relative_scan_root(self):
+        projector = write_gguf(self.root / "mmproj-F16.gguf", architecture="clip")
+        out = write_mlx_output(self.root / "model-MLX", provenance={
+            "schema_version": "1.0",
+            "source": {"kind": "gguf"},
+            "projector": {"path": str(projector.resolve())},
+        })
+        model, = inventory([relpath(self.root)])["models"]
+        self.assertEqual((model["status"], model["outputs"]), ("converted", [relpath(out)]))
+
+    def test_projector_receipt_requires_model_output(self):
+        gguf_root = self.root / "gguf"
+        projector = write_gguf(gguf_root / "mmproj-F16.gguf", architecture="clip")
+        out = self.root / "model-MLX"
+        out.mkdir()
+        receipt = {"source": {"projector": {"path": str(projector)}}, "out": str(out), "exit_status": None}
+
+        model, = inventory([gguf_root], receipts=[receipt])["models"]
+        self.assertEqual((model["status"], model["outputs"]), ("companion", []))
+
+        write_mlx_output(out)
+        model, = inventory([gguf_root], receipts=[receipt])["models"]
+        self.assertEqual((model["status"], model["outputs"], model["evidence"]),
+                         ("converted", [str(out)], "receipt"))
+
+        model, = inventory([gguf_root], receipts=[dict(receipt, exit_status="failed")])["models"]
+        self.assertEqual((model["status"], model["outputs"]), ("companion", []))
+
+    def test_projector_receipt_does_not_match_replacement_at_same_path(self):
+        projector = write_gguf(self.root / "mmproj-F16.gguf", architecture="clip", padding=b"old")
+        out = write_mlx_output(self.root / "model-MLX")
+        receipt = {"source": {"projector": {"path": str(projector), "signature": file_signature(projector)}},
+                   "out": str(out)}
+        write_gguf(projector, architecture="clip", padding=b"new")
+
+        model, = inventory([self.root], receipts=[receipt])["models"]
+        self.assertEqual((model["status"], model["outputs"]), ("companion", []))
 
 
 class DuplicateTests(unittest.TestCase):

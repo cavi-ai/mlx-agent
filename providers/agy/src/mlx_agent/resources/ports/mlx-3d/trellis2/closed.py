@@ -3,7 +3,6 @@
 import numpy as np
 
 PAD = 3
-FIELD_CACHE_LIMIT = 64 * 1024 ** 2
 OCCUPANCY_KEY_MIN_ROWS = 65536
 
 
@@ -39,17 +38,17 @@ def _expanded_occupancy(occupied):
     return ndimage.maximum_filter(occupied, size=5, mode="constant", cval=0)
 
 
-def closed_surface(vertices, faces, grid, band=0.75, *, field_cache_bytes=FIELD_CACHE_LIMIT):
+def closed_surface(vertices, faces, grid, band=0.75):
     """Fill cells hidden along every axis, using bounded tiles and 2D axis projections.
 
-    The mesh is sampled at the requested grid resolution; axis-visible openings remain open.
+    The mesh is sampled at the requested grid resolution; axis-visible openings remain open. Each near cell's
+    distance is queried once: the first pass keeps them sparse by tile and the second pass assembles its overlapping
+    tiles from them.
     """
     from scipy.spatial import cKDTree
     from skimage.measure import marching_cubes
     from itertools import product
 
-    if type(field_cache_bytes) is not int or not 0 <= field_cache_bytes <= FIELD_CACHE_LIMIT:
-        raise ValueError("Field cache must be between 0 and 64 MiB.")
     triangles = np.asarray(faces, dtype=np.int64)
     if triangles.ndim != 2 or triangles.shape[1] != 3 or not len(triangles):
         raise ValueError("A closed surface requires at least one triangle.")
@@ -104,16 +103,33 @@ def closed_surface(vertices, faces, grid, band=0.75, *, field_cache_bytes=FIELD_
             values[tuple(index.T)] = np.minimum(distance, far)
         return values
 
-    field_cache = {}
-    retained_bytes = 0
+    # Every near cell lies in a candidate tile, so cells absent from ``stored`` are ``far`` in any region.
+    stored = {}
+
+    def assembled(key, start, end):
+        values = np.full(tuple(end - start), far, dtype=np.float32)
+        extent = end - start
+        for delta in product((0, 1), repeat=3):
+            entry = stored.get(tuple(key[i] + delta[i] for i in range(3)))
+            if entry is None:
+                continue
+            # A neighbor tile contributes only cells on its low faces along the axes it is offset on.
+            local, distance = entry[:2] if not any(delta) else entry[2:]
+            cells = local.astype(np.intp) + np.asarray(delta) * tile
+            kept = np.all(cells < extent, axis=1)
+            values[tuple(cells[kept].T)] = distance[kept]
+        return values
+
     try:
         for key in sorted(candidates):
             start = np.asarray(key) * tile
             end = np.minimum(start + tile, shape)
             values = field(start, end)
-            if retained_bytes + values.nbytes <= field_cache_bytes and np.any(values < far):
-                field_cache[key] = values
-                retained_bytes += values.nbytes
+            local = np.argwhere(values < far).astype(np.uint8)
+            if len(local):
+                distance = values[tuple(local.T)]
+                low = np.any(local == 0, axis=1)
+                stored[key] = (local, distance, local[low], distance[low])
             index = np.argwhere(values <= band) + start
             if not len(index):
                 continue
@@ -138,24 +154,7 @@ def closed_surface(vertices, faces, grid, band=0.75, *, field_cache_bytes=FIELD_
                          for delta in product((0, 1), repeat=3))
             if not possible and not nearby:
                 continue
-            cached = field_cache.pop(key, None)
-            if cached is None:
-                values = field(start, end)
-            else:
-                retained_bytes -= cached.nbytes
-                interior = np.asarray(cached.shape)
-                extent = end - start
-                values = np.empty(tuple(extent), dtype=np.float32)
-                values[tuple(slice(0, int(size)) for size in interior)] = cached
-                del cached
-                # Three disjoint border slabs partition the added coordinates.
-                slabs = (([interior[0], 0, 0], [extent[0], extent[1], extent[2]]),
-                         ([0, interior[1], 0], [interior[0], extent[1], extent[2]]),
-                         ([0, 0, interior[2]], [interior[0], interior[1], extent[2]]))
-                for low, high in slabs:
-                    low, high = np.asarray(low), np.asarray(high)
-                    if np.all(low < high):
-                        values[tuple(slice(int(low[i]), int(high[i])) for i in range(3))] = field(start + low, start + high)
+            values = assembled(key, start, end)
             inside = np.ones(tuple(end - start), dtype=bool)
             x, y, z = (np.arange(start[i], end[i]) for i in range(3))
             inside &= (x[:, None, None] >= first[0][region[1], region[2]][None, :, :]) & (x[:, None, None] <= last[0][region[1], region[2]][None, :, :])
@@ -172,7 +171,7 @@ def closed_surface(vertices, faces, grid, band=0.75, *, field_cache_bytes=FIELD_
             faces_out.append(triangles + vertex_offset)
             vertex_offset += len(surface)
     finally:
-        field_cache.clear()
+        stored.clear()
     if not surfaces:
         raise ValueError("The mesh has no reconstructable closed surface.")
     surface, inverse = np.unique(np.concatenate(surfaces), axis=0, return_inverse=True)

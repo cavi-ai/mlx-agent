@@ -90,13 +90,25 @@ class SeparateTests(unittest.TestCase):
         separator = self.model("sam_audio")
         plan = self.plan(separator, rest=self.rest, prompt="  drums ")
         self.assertEqual(plan["argv"][2:4], ["--module", "mlx_audio.mlx_agent_ports.sam_audio"])
-        self.assertEqual(plan["argv"][-2:], ["--prompt", "drums"])
+        self.assertEqual(plan["argv"][-1], "--prompt=drums")
         self.assertEqual(plan["prompt"], "drums")
         printed = {"path": str(self.out), "rest": str(self.rest), "prompt": "drums", "sample_rate": 48000}
         runner = lambda argv, **kwargs: Completed(stdout=json.dumps(printed) + "\n")
         result = run_separate(plan, manifests=self.manifests, root=self.root / "backends", runner=runner)
         self.assertEqual((result["prompt"], result["sample_rate"]), ("drums", 48000))
         self.assertTrue((self.package / "mlx_agent_ports" / "sam_audio" / "__init__.py").is_file())
+
+    def test_dash_prefixed_prompt_reaches_the_runner(self):
+        plan = self.plan(self.model("sam_audio"), prompt="-drums")
+        name = "mlx_audio.mlx_agent_ports.sam_audio"
+        port = types.ModuleType(name)
+        port.load = lambda path: path
+        port.generate = lambda model, audio, out, rest, prompt: {"prompt": prompt}
+        buffer = io.StringIO()
+        with mock.patch.dict(sys.modules, {name: port}), redirect_stdout(buffer):
+            code = separate_runner.main(plan["argv"][2:])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(buffer.getvalue())["prompt"], "-drums")
 
     def test_prompt_refusals(self):
         prompted, vocal = self.model("sam_audio"), self.model("mel_band_roformer")

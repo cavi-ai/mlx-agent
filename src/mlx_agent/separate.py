@@ -99,7 +99,7 @@ def plan_separate(model_path, audio_path, out, rest=None, manifests=None, regist
     if remainder is not None:
         argv += ["--rest", str(remainder)]
     if prompt is not None:
-        argv += ["--prompt", prompt]
+        argv.append("--prompt=" + prompt)
     return {"backend": manifest["id"], "model": str(model), "audio": str(audio), "out": str(target),
             "rest": None if remainder is None else str(remainder), "prompt": prompt, "argv": argv}
 

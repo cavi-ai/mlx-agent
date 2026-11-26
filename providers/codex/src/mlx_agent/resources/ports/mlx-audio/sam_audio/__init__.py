@@ -7,7 +7,6 @@ checkpoint, so nothing is fetched.
 import dataclasses
 import importlib
 import json
-import warnings
 from contextlib import ExitStack
 from pathlib import Path
 
@@ -50,18 +49,40 @@ def _t5(folder):
     return model
 
 
-def load(path):
-    encoder = text_encoder_folder(path)
-    import transformers
-    from mlx_audio.sts.models.sam_audio import SAMAudio
+def _checkpoint_weights(folder):
+    import mlx.core as mx
 
-    # mlx-audio warns and keeps random weights when a checkpoint is incomplete.
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        model = SAMAudio.from_pretrained(path)
-    failed = [str(item.message) for item in caught if Path(item.filename).parent.name == "sam_audio"]
-    if failed:
-        raise RuntimeError("SAM-Audio checkpoint did not load: " + "; ".join(failed))
+    shards = sorted(folder.glob("*.safetensors"))
+    if shards:
+        weights = {}
+        for shard in shards:
+            weights.update(mx.load(str(shard)))
+        return weights
+
+    checkpoint = folder / "checkpoint.pt"
+    if checkpoint.is_file():
+        import torch
+
+        weights = torch.load(str(checkpoint), map_location="cpu", weights_only=True)
+        return {name: mx.array(tensor.numpy()) for name, tensor in weights.items()}
+
+    raise FileNotFoundError("No SAM-Audio weights in {0}; expected safetensors or checkpoint.pt.".format(folder))
+
+
+def load(path):
+    folder = Path(path)
+    encoder = text_encoder_folder(folder)
+    import mlx.core as mx
+    import transformers
+    from mlx_audio.sts.models.sam_audio import SAMAudio, SAMAudioConfig
+
+    config = SAMAudioConfig.from_dict(json.loads((folder / "config.json").read_text(encoding="utf-8")))
+    weights = _checkpoint_weights(folder)
+    model = SAMAudio(config)
+    # mlx-audio's from_pretrained can return a partially initialized model without a warning.
+    model.load_weights(list(model.sanitize(weights).items()), strict=True)
+    mx.eval(model.parameters())
+    model = model.post_load_hook(folder)
     model.text_encoder.tokenizer = transformers.AutoTokenizer.from_pretrained(str(encoder), local_files_only=True)
     model.text_encoder.model = _t5(encoder)
     model.eval()

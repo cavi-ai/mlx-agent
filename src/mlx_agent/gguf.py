@@ -765,15 +765,43 @@ def _output_matches(entry, output):
     return None
 
 
+def _attached_projector(output):
+    projector = (output.get("provenance") or {}).get("projector")
+    return projector.get("path") if isinstance(projector, dict) else None
+
+
+def _pair_companion(entry, outputs, projector_receipts):
+    """A projector is converted once its base model's conversion attached it to an output."""
+    matches = [output["path"] for output in outputs if _attached_projector(output) == entry["path"]]
+    evidence = "provenance" if matches else "companion"
+    if not matches:
+        for key in (entry.get("signature"), entry["path"]):
+            for receipt in projector_receipts.get(key, ()):
+                out = receipt.get("out")
+                if isinstance(out, str) and Path(out).is_dir():
+                    matches.append(out)
+                    evidence = "receipt"
+    return dict(entry, status="converted" if matches else "companion", outputs=sorted(set(matches)), evidence=evidence)
+
+
 def pair_conversions(entries, outputs, receipts=()):
-    """Mark each GGUF as converted or pending, by provenance then by name."""
+    """Mark each GGUF as converted or pending, by provenance then by name.
+
+    Projectors pair with the output their base model's conversion attached them to; drafters no
+    port converts stay companions of their target instead of pending conversions.
+    """
     receipt_sources = {}
+    projector_receipts = {}
     for receipt in receipts:
         source = receipt.get("source") or {}
+        projector = source.get("projector")
         for key in ("signature", "path"):
             value = source.get(key)
             if isinstance(value, str) and value:
                 receipt_sources.setdefault(value, receipt)
+            value = projector.get(key) if isinstance(projector, dict) else None
+            if isinstance(value, str) and value:
+                projector_receipts.setdefault(value, []).append(receipt)
     paired = []
     for entry in entries:
         shard = entry.get("shard")
@@ -781,7 +809,7 @@ def pair_conversions(entries, outputs, receipts=()):
             paired.append(dict(entry, status="shard", outputs=[], evidence="shard"))
             continue
         if entry.get("companion"):
-            paired.append(dict(entry, status="companion", outputs=[], evidence="companion"))
+            paired.append(_pair_companion(entry, outputs, projector_receipts))
             continue
         matches = []
         evidence = None
@@ -797,9 +825,13 @@ def pair_conversions(entries, outputs, receipts=()):
             if isinstance(out, str) and Path(out).is_dir():
                 matches.append(out)
                 evidence = "receipt"
+        status = "converted" if matches else "pending"
+        draft = entry.get("draft")
+        if not matches and draft is not None and draft.get("port") is None:
+            status, evidence = "companion", "drafter"
         paired.append(dict(
             entry,
-            status="converted" if matches else "pending",
+            status=status,
             outputs=sorted(set(matches)),
             evidence=evidence,
         ))

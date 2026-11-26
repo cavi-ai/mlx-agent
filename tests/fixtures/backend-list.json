@@ -58,7 +58,7 @@
       "started_at": null,
       "state": "absent",
       "target": "/backends/mlx-3d",
-      "version": "0.31.1"
+      "version": "0.32.5"
     },
     {
       "builtin": false,

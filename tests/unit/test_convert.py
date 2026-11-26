@@ -315,7 +315,7 @@ class BackendConvertTests(unittest.TestCase):
         (venv / "lib" / "python3.12" / "site-packages" / "mlx").mkdir(parents=True)
         (venv / "bin").mkdir()
         (venv / "bin" / "python").write_text("", encoding="utf-8")
-        (venv / ".mlx-agent-backend.json").write_text(json.dumps({"id": "mlx-3d", "version": "0.31.1"}), encoding="utf-8")
+        (venv / ".mlx-agent-backend.json").write_text(json.dumps({"id": "mlx-3d", "version": "0.32.5"}), encoding="utf-8")
         plan = plan_convert("microsoft/TRELLIS.2-4B", out=str(self.root / "trellis2-out"), **options)
         outcome = start_convert(plan, receipts_dir=str(self.root), confirm=True, preview_hash=plan["preview_hash"],
                                 spawn=lambda argv, log: 99, model_present=lambda repo: True)

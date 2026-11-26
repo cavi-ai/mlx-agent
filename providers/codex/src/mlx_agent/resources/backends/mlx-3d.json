@@ -1,7 +1,7 @@
 {
   "schema": "backend/1",
   "id": "mlx-3d",
-  "version": "0.31.1",
+  "version": "0.32.5",
   "builtin": false,
   "package": "mlx",
   "convert": "mlx.mlx_agent_ports.triposg.convert",

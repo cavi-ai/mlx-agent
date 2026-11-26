@@ -282,6 +282,7 @@
     "src/mlx_agent/resources/ports/mlx-3d/trellis2/flow.py",
     "src/mlx_agent/resources/ports/mlx-3d/trellis2/guide.py",
     "src/mlx_agent/resources/ports/mlx-3d/trellis2/pipeline.py",
+    "src/mlx_agent/resources/ports/mlx-3d/trellis2/reconstruction.json",
     "src/mlx_agent/resources/ports/mlx-3d/trellis2/sparse.py",
     "src/mlx_agent/resources/ports/mlx-3d/trellis2/structure.py",
     "src/mlx_agent/resources/ports/mlx-3d/triposg/LICENSE",

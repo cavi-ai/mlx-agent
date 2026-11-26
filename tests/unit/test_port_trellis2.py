@@ -271,7 +271,8 @@ class Trellis2NativeTests(unittest.TestCase):
             leftovers = [path.name for path in models.iterdir() if path.name.startswith('.')]
         self.assertEqual(full['model_type'], 'trellis2')
         self.assertEqual(full['mesh'], {'resolutions': [512, 1024, 1536], 'resolution': 1024, 'steps': 10, 'guidance': 6.0,
-                                        'max_tokens': 49152, 'cascade_floor': 1024})
+                                        'max_tokens': 49152, 'cascade_floor': 1024,
+                                        'field_cache_bytes': 64 << 20, 'projection_budget_bytes': 64 << 20})
         self.assertEqual(full['pipeline']['sparse_structure_sampler']['rescale_t'], 5.0)
         self.assertNotIn('quantization', full)
         self.assertEqual(sorted(listed), ['TRELLIS.2-MLX-32bit', 'TRELLIS.2-MLX-8bit'])
@@ -634,6 +635,9 @@ class Trellis2NativeTests(unittest.TestCase):
         self.assertEqual(list(seconds), ['mesh', 'closed_surface'])
         self.assertGreater(len(faces), 450)
         self.assertEqual(faces.max(), len(vertices) - 1)
+        with self.assertRaisesRegex(ValueError, 'Axis projections.*1 byte'):
+            pipeline.surface(coords, dual, crossed, np.ones((len(coords), 1)), 32,
+                             mesh={'projection_budget_bytes': 1})
 
     def test_occupancy_keys_match_lexicographic_unique_and_fall_back(self):
         import numpy as np
@@ -803,7 +807,7 @@ class Trellis2NativeTests(unittest.TestCase):
         self.assertGreater(len(points), 0); self.assertGreater(len(triangles), 0)
 
     @unittest.skipUnless(HAS_SURFACE, 'requires scipy and scikit-image')
-    def test_closed_surface_queries_each_near_cell_once_across_tile_seams(self):
+    def test_closed_surface_recomputes_only_uncached_tiles_without_changing_the_mesh(self):
         import numpy as np
         from unittest.mock import patch
         from scipy.spatial import cKDTree
@@ -822,10 +826,20 @@ class Trellis2NativeTests(unittest.TestCase):
                 return self.tree.query(points, **kwargs)
         with patch('scipy.spatial.cKDTree', CountedTree):
             points, triangles = closed.closed_surface(vertices, faces, grid)
-        cells = np.concatenate(queried)
-        # The sheet crosses a 64-cell tile seam, so second-pass tiles need distances from their neighbors.
-        self.assertGreater(np.ptp(cells[:, 0]), 64); self.assertGreater(np.ptp(cells[:, 1]), 64)
-        self.assertEqual(len(np.unique(cells, axis=0)), len(cells))
+            cells = np.concatenate(queried)
+            # Neighboring tiles need the distances along the shared seams.
+            self.assertGreater(np.ptp(cells[:, 0]), 64)
+            self.assertGreater(np.ptp(cells[:, 1]), 64)
+            self.assertEqual(len(np.unique(cells, axis=0)), len(cells))
+            query_counts = []
+            for budget in (110_000, 0):
+                queried.clear()
+                rebuilt, rebuilt_faces = closed.closed_surface(vertices, faces, grid, mesh={'field_cache_bytes': budget})
+                np.testing.assert_array_equal(rebuilt, points)
+                np.testing.assert_array_equal(rebuilt_faces, triangles)
+                query_counts.append(sum(map(len, queried)))
+        self.assertLess(len(cells), query_counts[0])
+        self.assertLess(query_counts[0], query_counts[1])
         edges = np.sort(np.concatenate([triangles[:, [0, 1]], triangles[:, [1, 2]], triangles[:, [2, 0]]]), axis=1)
         _, counts = np.unique(edges, axis=0, return_counts=True)
         self.assertTrue(np.all(counts == 2))

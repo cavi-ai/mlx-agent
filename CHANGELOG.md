@@ -3,7 +3,7 @@
 ## Unreleased
 
 - TRELLIS.2 shape and texture decoders run their blocks in float16 when the decoder config sets `use_fp16` (every published decoder) instead of float32; norms and the input and output layers stay float32.
-- TRELLIS.2 closed-surface reconstruction queries each near-surface cell's distance once: the second pass builds its tiles from the first pass's sparse distances instead of querying tile borders again and every tile past a 64 MiB cache.
+- TRELLIS.2 closed-surface reconstruction reuses sparse distances across tile seams and recomputes tiles that exceed the cache budget. The converted model's `mesh.field_cache_bytes` and `mesh.projection_budget_bytes` control the reconstruction memory budgets.
 
 ## 0.17.0
 

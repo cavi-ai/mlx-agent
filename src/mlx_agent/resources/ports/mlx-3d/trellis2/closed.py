@@ -1,5 +1,8 @@
 """A closed, outward-facing solid around a dual-grid mesh, which is open, unoriented and non-manifold."""
 
+import json
+from pathlib import Path
+
 import numpy as np
 
 PAD = 3
@@ -38,17 +41,30 @@ def _expanded_occupancy(occupied):
     return ndimage.maximum_filter(occupied, size=5, mode="constant", cval=0)
 
 
-def closed_surface(vertices, faces, grid, band=0.75):
+def reconstruction_settings(mesh=None):
+    defaults = json.loads(Path(__file__).with_name("reconstruction.json").read_text(encoding="utf-8"))
+    settings = {}
+    for key, minimum in (("field_cache_bytes", 0), ("projection_budget_bytes", 1)):
+        value = mesh.get(key, defaults[key]) if isinstance(mesh, dict) else defaults[key]
+        if type(value) is not int or value < minimum:
+            raise ValueError(f"mesh.{key} must be an integer of at least {minimum} bytes.")
+        settings[key] = value
+    return settings
+
+
+def closed_surface(vertices, faces, grid, band=0.75, *, mesh=None):
     """Fill cells hidden along every axis, using bounded tiles and 2D axis projections.
 
-    The mesh is sampled at the requested grid resolution; axis-visible openings remain open. Each near cell's
-    distance is queried once: the first pass keeps them sparse by tile and the second pass assembles its overlapping
-    tiles from them.
+    The mesh is sampled at the requested grid resolution; axis-visible openings remain open. The first pass caches
+    sparse distances up to the configured byte budget. The second pass recomputes any regions that did not fit.
     """
     from scipy.spatial import cKDTree
     from skimage.measure import marching_cubes
     from itertools import product
 
+    settings = reconstruction_settings(mesh)
+    cache_budget = settings["field_cache_bytes"]
+    projection_budget = settings["projection_budget_bytes"]
     triangles = np.asarray(faces, dtype=np.int64)
     if triangles.ndim != 2 or triangles.shape[1] != 3 or not len(triangles):
         raise ValueError("A closed surface requires at least one triangle.")
@@ -63,8 +79,8 @@ def closed_surface(vertices, faces, grid, band=0.75):
     cells -= origin
     shape = cells.max(axis=0) + PAD + 1
     plane_sizes = [int(shape[1] * shape[2]), int(shape[0] * shape[2]), int(shape[0] * shape[1])]
-    if sum(plane_sizes) * 2 * np.dtype(np.int32).itemsize > 64 * 1024 * 1024:
-        raise ValueError("Axis projections exceed the 64 MiB reconstruction bound.")
+    if sum(plane_sizes) * 2 * np.dtype(np.int32).itemsize > projection_budget:
+        raise ValueError(f"Axis projections exceed mesh.projection_budget_bytes ({projection_budget} bytes).")
     projection_shapes = [(shape[1], shape[2]), (shape[0], shape[2]), (shape[0], shape[1])]
     first = [np.full(s, shape[axis], dtype=np.int32) for axis, s in enumerate(projection_shapes)]
     last = [np.full(s, -1, dtype=np.int32) for s in projection_shapes]
@@ -103,14 +119,24 @@ def closed_surface(vertices, faces, grid, band=0.75):
             values[tuple(index.T)] = np.minimum(distance, far)
         return values
 
-    # Every near cell lies in a candidate tile, so cells absent from ``stored`` are ``far`` in any region.
+    # Candidate tiles with finite distances are either stored or recomputed as needed.
     stored = {}
+    uncached = set()
+    retained_bytes = 0
 
     def assembled(key, start, end):
         values = np.full(tuple(end - start), far, dtype=np.float32)
         extent = end - start
         for delta in product((0, 1), repeat=3):
-            entry = stored.get(tuple(key[i] + delta[i] for i in range(3)))
+            neighbor = tuple(key[i] + delta[i] for i in range(3))
+            if neighbor in uncached:
+                low = np.asarray(neighbor) * tile
+                high = np.minimum(low + tile, end)
+                if np.all(low < high):
+                    region = tuple(slice(int(a), int(b)) for a, b in zip(low - start, high - start))
+                    values[region] = field(low, high)
+                continue
+            entry = stored.get(neighbor)
             if entry is None:
                 continue
             # A neighbor tile contributes only cells on its low faces along the axes it is offset on.
@@ -129,7 +155,14 @@ def closed_surface(vertices, faces, grid, band=0.75):
             if len(local):
                 distance = values[tuple(local.T)]
                 low = np.any(local == 0, axis=1)
-                stored[key] = (local, distance, local[low], distance[low])
+                entry = (local, distance, local[low], distance[low])
+                size = sum(array.nbytes for array in entry)
+                if retained_bytes + size <= cache_budget:
+                    stored[key] = entry
+                    retained_bytes += size
+                else:
+                    uncached.add(key)
+                del entry, local, distance
             index = np.argwhere(values <= band) + start
             if not len(index):
                 continue

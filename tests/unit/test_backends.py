@@ -296,6 +296,21 @@ class PortTests(unittest.TestCase):
         self.assertNotIn("stale", (target / "config.py").read_text(encoding="utf-8"))
         self.assertEqual(sorted(path.name for path in self.models.iterdir()), ["audio8_asr_infinite"])
 
+    def test_sync_updates_a_port_when_only_its_json_defaults_change(self):
+        self.install()
+        ports = self.root / "ports"
+        manifest = dict(self.manifest, ports={"speech_to_text": ["audio8_asr_infinite"]})
+        source = ports / "mlx-audio" / "audio8_asr_infinite"
+        source.mkdir(parents=True)
+        (source / "__init__.py").touch()
+        defaults = source / "defaults.json"
+        defaults.write_text('{"limit": 32}', encoding="utf-8")
+        sync_ports(manifest, self.root, ports_dir=ports)
+        defaults.write_text('{"limit": 64}', encoding="utf-8")
+        self.assertEqual(sync_ports(manifest, self.root, ports_dir=ports), ["audio8_asr_infinite"])
+        installed = self.models / "audio8_asr_infinite" / "defaults.json"
+        self.assertEqual(json.loads(installed.read_text(encoding="utf-8")), {"limit": 64})
+
     def test_sync_refuses_a_module_the_backend_ships_and_symlinks(self):
         self.install()
         (self.models / "audio8_asr_infinite").mkdir()

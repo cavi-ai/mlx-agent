@@ -2,6 +2,7 @@
 
 import json
 import math
+import re
 import subprocess
 from pathlib import Path
 
@@ -20,6 +21,14 @@ ACESTEP_PLANNER = "acestep-5Hz-lm-1.7B"
 ACESTEP_TURBO_STEPS = 20
 TIME_SIGNATURES = (2, 3, 4, 6)
 REFERENCE_FORMATS = (".wav", ".flac", ".mp3", ".m4a", ".aif", ".aiff", ".ogg")
+# ACE-Step tasks on a source: cover keeps its melody, rhythm, chords and structure under a new caption or lyrics;
+# repaint regenerates a window of it and keeps the rest; complete adds an accompaniment to a single track, such as
+# a vocal stem, on base checkpoints only.
+TASKS = ("text2music", "cover", "repaint", "complete")
+# The tracks ACE-Step's complete task can add.
+TRACKS = ("woodwinds", "brass", "fx", "synth", "strings", "percussion", "keyboard", "guitar", "bass", "drums",
+          "backing_vocals", "vocals")
+MAX_SOURCE_SECONDS = 600
 # ACE-Step's planner decodes a key as a note, an optional accidental and a mode, such as "F# minor".
 KEY_NOTES = "ABCDEFG"
 KEY_ACCIDENTALS = ("", "#", "b", "♯", "♭")
@@ -40,8 +49,63 @@ def normalize_key(key):
     return "{0}{1} {2}".format(parts[0][0].upper(), parts[0][1:], parts[1].lower())
 
 
+def _seconds(value):
+    return not isinstance(value, bool) and isinstance(value, (float, int)) and math.isfinite(value)
+
+
+def validate_task(task="text2music", source=None, cover_strength=None, repaint_start=None, repaint_end=None,
+                  tracks=None):
+    """The cover, repaint or complete settings that apply to task; MusicError for a setting the task does not take."""
+    if task not in TASKS:
+        raise MusicError("invalid_arguments", "The task must be text2music, cover, repaint or complete.",
+                         "Use --task cover, --task repaint or --task complete with --source.")
+    if task == "text2music":
+        if (source, cover_strength, repaint_start, repaint_end, tracks) != (None, None, None, None, None):
+            raise MusicError("invalid_arguments",
+                             "--source, --cover-strength, the repaint window and --track apply to cover, repaint and complete.",
+                             "Pass --task cover, --task repaint or --task complete, or drop them.")
+        return {}
+    path = Path(source) if isinstance(source, str) else None
+    if path is None or not path.is_absolute() or not path.is_file() or path.suffix.lower() not in REFERENCE_FORMATS:
+        raise MusicError("invalid_arguments", "The source must be an existing absolute audio file.",
+                         "Pass --source as a {0} file.".format(", ".join(REFERENCE_FORMATS)))
+    settings = {"task": task, "source": str(path)}
+    if tracks is not None and task != "complete":
+        raise MusicError("invalid_arguments", "--track applies to --task complete.", "Drop --track, or use --task complete.")
+    if task == "complete":
+        if (cover_strength, repaint_start, repaint_end) != (None, None, None):
+            raise MusicError("invalid_arguments", "--cover-strength and the repaint window do not apply to --task complete.",
+                             "Drop them, or use --task cover or --task repaint.")
+        if tracks is not None:
+            if (not isinstance(tracks, (list, tuple)) or not tracks
+                    or not all(isinstance(track, str) and track in TRACKS for track in tracks)
+                    or len(set(tracks)) != len(tracks)):
+                raise MusicError("invalid_arguments", "Each --track must be one of {0}, named once.".format(", ".join(TRACKS)),
+                                 "Use --track drums --track bass, or leave --track out for a full accompaniment.")
+            settings["tracks"] = list(tracks)
+        return settings
+    if task == "cover":
+        if (repaint_start, repaint_end) != (None, None):
+            raise MusicError("invalid_arguments", "--repaint-start and --repaint-end apply to --task repaint.",
+                             "Drop them, or use --task repaint.")
+        if cover_strength is not None:
+            if not _seconds(cover_strength) or not 0 <= cover_strength <= 1:
+                raise MusicError("invalid_arguments", "Cover strength must be from 0 to 1.",
+                                 "Use --cover-strength 0.5; lower values keep less of the source.")
+            settings["cover_strength"] = float(cover_strength)
+        return settings
+    if cover_strength is not None:
+        raise MusicError("invalid_arguments", "--cover-strength applies to --task cover.", "Drop --cover-strength.")
+    if not (_seconds(repaint_start) and _seconds(repaint_end) and 0 <= repaint_start < repaint_end <= MAX_SOURCE_SECONDS):
+        raise MusicError("invalid_arguments",
+                         "Repaint needs a window from 0 to {0} seconds that ends after it starts.".format(MAX_SOURCE_SECONDS),
+                         "Use --repaint-start 8 --repaint-end 16.")
+    return dict(settings, repaint_start=float(repaint_start), repaint_end=float(repaint_end))
+
+
 def validate_parameters(caption, lyrics, duration=15.0, steps=30, seed=42, bpm=None, time_signature=None, reference=None,
-                        key=None, keep_caption=False):
+                        key=None, keep_caption=False, task="text2music", source=None, cover_strength=None,
+                        repaint_start=None, repaint_end=None, tracks=None):
     """Validate generation settings without accessing weights or a backend."""
     for name, text, limit in (("caption", caption, 2000), ("lyrics", lyrics, 10000)):
         if not isinstance(text, str) or not text.strip() or len(text) > limit or any(ord(c) < 32 and c not in "\n\t" for c in text):
@@ -66,7 +130,14 @@ def validate_parameters(caption, lyrics, duration=15.0, steps=30, seed=42, bpm=N
     settings = {"bpm": bpm, "time_signature": time_signature, "reference": reference, "key": key,
                 "keep_caption": keep_caption or None}
     return dict({"caption": caption, "lyrics": lyrics, "duration": duration, "steps": steps, "seed": seed},
-                **{key: value for key, value in settings.items() if value is not None})
+                **{key: value for key, value in settings.items() if value is not None},
+                **validate_task(task, source, cover_strength, repaint_start, repaint_end, tracks))
+
+
+def _base_checkpoint(model):
+    """ACE-Step's own test for a base checkpoint: a folder name with the word base and without sft or turbo."""
+    words = set(re.split(r"[._-]", model.name.lower()))
+    return "base" in words and not words & {"sft", "turbo"}
 
 
 def _acestep_planner(model):
@@ -84,7 +155,8 @@ def _acestep_planner(model):
 
 
 def plan_music(model_path, caption, lyrics, out, duration=15.0, steps=30, seed=42, bpm=None, time_signature=None,
-               reference=None, key=None, keep_caption=False, manifests=None, registries=None, root=None):
+               reference=None, key=None, keep_caption=False, task="text2music", source=None, cover_strength=None,
+               repaint_start=None, repaint_end=None, tracks=None, manifests=None, registries=None, root=None):
     model = Path(model_path).expanduser()
     try:
         config = json.loads((model / "config.json").read_text(encoding="utf-8"))
@@ -92,8 +164,11 @@ def plan_music(model_path, caption, lyrics, out, duration=15.0, steps=30, seed=4
             raise ValueError("An absolute local model directory is required")
     except (OSError, ValueError) as error:
         raise MusicError("model_unreadable", str(error), "Pass an existing converted music model directory.") from error
-    key = validate_parameters(caption, lyrics, duration, steps, seed, bpm, time_signature, reference, key,
-                              keep_caption).get("key")
+    valid = validate_parameters(caption, lyrics, duration, steps, seed, bpm, time_signature, reference, key,
+                                keep_caption, task, source, cover_strength, repaint_start, repaint_end, tracks)
+    key = valid.get("key")
+    edit = {name: valid[name] for name in ("task", "source", "cover_strength", "repaint_start", "repaint_end", "tracks")
+            if name in valid}
     target = Path(out).expanduser()
     if not target.is_absolute() or target.suffix.lower() != ".wav" or target.exists() or target.is_symlink() or not target.parent.is_dir():
         raise MusicError("invalid_arguments", "Output must be a new absolute WAV path.", "Choose a new .wav file in an existing directory.")
@@ -109,15 +184,23 @@ def plan_music(model_path, caption, lyrics, out, duration=15.0, steps=30, seed=4
             raise MusicError("model_unreadable", str(error), "Restore the checkpoint's tokenizer files before generating music.") from error
     manifest = manifests[sorted(hits, key=lambda hit: hit["backend"])[0]["backend"]]
     acestep = manifest["id"] == "ace-step"
-    if not acestep and ((bpm, time_signature, reference, key) != (None, None, None, None) or keep_caption):
-        raise MusicError("invalid_arguments", "BPM, time signature, reference, key and keep-caption apply to ACE-Step models only.",
-                         "Drop --bpm, --time-signature, --reference, --key and --keep-caption for this model.")
+    if not acestep and ((bpm, time_signature, reference, key) != (None, None, None, None) or keep_caption or edit):
+        raise MusicError("invalid_arguments",
+                         "BPM, time signature, reference, key, keep-caption and --task apply to ACE-Step models only.",
+                         "Drop --bpm, --time-signature, --reference, --key, --keep-caption and --task for this model.")
+    if edit.get("task") == "complete" and not _base_checkpoint(model):
+        raise MusicError("invalid_arguments", "Complete runs on ACE-Step base checkpoints only.",
+                         "Use acestep-v15-base or acestep-v15-xl-base.")
     turbo = acestep and config.get("is_turbo") is True
     limit = ACESTEP_TURBO_STEPS if turbo else STEP_LIMITS.get(manifest["id"], MAX_STEPS)
     if steps > limit:
         raise MusicError("invalid_arguments", "This model takes 1..{0} steps.".format(limit),
                          "Use --steps 8." if turbo else "Use --steps {0} or fewer.".format(limit))
     planner = _acestep_planner(model) if acestep else None
+    if edit:
+        # ACE-Step conditions cover, repaint and complete on the source directly, skips its planner and keeps the
+        # source length.
+        planner, duration = None, None
     if not is_installed(manifest, root):
         raise MusicError("backend_not_installed", "The {0} backend is not installed.".format(manifest["id"]),
                          "Install it first: mlx-agent backend install {0}.".format(manifest["id"]))
@@ -125,11 +208,12 @@ def plan_music(model_path, caption, lyrics, out, duration=15.0, steps=30, seed=4
             "duration": duration, "steps": steps, "seed": seed,
             "argv": [str(backend_python(manifest, root)), str(ACESTEP_RUNNER if acestep else MUSIC_RUNNER),
                      "--model", str(model), "--caption=" + caption, "--lyrics=" + lyrics, "--out", str(target),
-                     "--duration", str(duration), "--steps", str(steps), "--seed", str(seed)]}
+                     *(["--duration", str(duration)] if duration is not None else []),
+                     "--steps", str(steps), "--seed", str(seed)]}
     if acestep:
         # Turbo checkpoints are distilled for shift 3 and ignore guidance; the others use ACE-Step's defaults.
         plan.update(bpm=bpm, time_signature=time_signature, reference=reference, key=key, keep_caption=keep_caption,
-                    planner=planner, shift=3.0 if turbo else 1.0, guidance=7.0)
+                    planner=planner, shift=3.0 if turbo else 1.0, guidance=7.0, **edit)
         plan["argv"] += ["--shift", str(plan["shift"]), "--guidance", str(plan["guidance"])]
         for flag, value in (("--bpm", bpm), ("--time-signature", time_signature), ("--reference", reference),
                             ("--key", key), ("--planner", planner)):
@@ -137,6 +221,11 @@ def plan_music(model_path, caption, lyrics, out, duration=15.0, steps=30, seed=4
                 plan["argv"] += [flag, str(value)]
         if keep_caption:
             plan["argv"].append("--keep-caption")
+        for name, value in edit.items():
+            if name == "tracks":
+                plan["argv"] += [arg for track in value for arg in ("--track", track)]
+            else:
+                plan["argv"] += ["--" + name.replace("_", "-"), str(value)]
     return plan
 
 
@@ -164,7 +253,8 @@ def run_music(plan, manifests=None, root=None, timeout=DEFAULT_TIMEOUT_SECONDS, 
     result = invoke(plan, CONTRACT, manifests, root, timeout, runner)
     keys = ("path", "sample_rate", "audio_seconds", "seconds", "load_seconds", "real_time_factor", "peak_memory_gb")
     settings = {key: plan[key] for key in ("bpm", "time_signature", "reference", "key", "keep_caption", "planner", "shift",
-                                           "guidance") if key in plan}
+                                           "guidance", "task", "source", "cover_strength", "repaint_start",
+                                           "repaint_end", "tracks") if key in plan}
     # What the ACE-Step planner conditioned the take on: its caption, tempo, key, length, meter and language.
     planned = {"planned": result["planned"]} if isinstance(result.get("planned"), dict) else {}
     return dict({"schema": "music/1", "backend": plan["backend"], "model": plan["model"],

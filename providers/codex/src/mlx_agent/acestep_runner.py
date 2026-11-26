@@ -80,7 +80,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("model", "caption", "lyrics", "out"):
         parser.add_argument("--" + name, required=True)
-    parser.add_argument("--duration", type=float, required=True)
+    # Cover, repaint and complete keep the source's length, so they take no duration.
+    parser.add_argument("--duration", type=float, default=-1.0)
     parser.add_argument("--steps", type=int, required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--shift", type=float, required=True)
@@ -91,6 +92,12 @@ def main(argv=None):
     parser.add_argument("--key")
     parser.add_argument("--keep-caption", action="store_true")
     parser.add_argument("--planner")
+    parser.add_argument("--task", choices=("text2music", "cover", "repaint", "complete"), default="text2music")
+    parser.add_argument("--source")
+    parser.add_argument("--track", action="append")
+    parser.add_argument("--cover-strength", type=float, default=1.0)
+    parser.add_argument("--repaint-start", type=float, default=0.0)
+    parser.add_argument("--repaint-end", type=float, default=-1.0)
     args = parser.parse_args(argv)
     model, out = Path(args.model), Path(args.out)
     from acestep.model_downloader import _CHECKPOINT_TO_VARIANT
@@ -144,15 +151,20 @@ def main(argv=None):
                 raise RuntimeError("The ACE-Step planner did not load: {0}".format(status))
         load_seconds = time.perf_counter() - started
         mx.reset_peak_memory()
+        task = {"task_type": "text2music"} if args.task == "text2music" else {
+            "task_type": args.task,
+            "instruction": handler.generate_instruction(task_type=args.task, complete_track_classes=args.track),
+            "src_audio": args.source, "audio_cover_strength": args.cover_strength,
+            "repainting_start": args.repaint_start, "repainting_end": args.repaint_end}
         params = GenerationParams(
-            task_type="text2music", caption=args.caption, lyrics="[Instrumental]" if instrumental else args.lyrics,
+            caption=args.caption, lyrics="[Instrumental]" if instrumental else args.lyrics,
             instrumental=instrumental, bpm=args.bpm, keyscale=args.key or "",
             timesignature=str(args.time_signature) if args.time_signature else "",
             duration=args.duration, inference_steps=args.steps, guidance_scale=args.guidance, shift=args.shift,
             seed=args.seed, thinking=planner is not None, use_cot_metas=planner is not None,
             # A kept caption reaches the DiT as written; the planner still chooses what the take leaves open.
             use_cot_caption=planner is not None and not args.keep_caption, use_cot_language=planner is not None,
-            reference_audio=args.reference)
+            reference_audio=args.reference, **task)
         config = GenerationConfig(batch_size=1, use_random_seed=False, seeds=[args.seed], audio_format="wav")
         started = time.perf_counter()
         result = generate_music(dit_handler=handler, llm_handler=planner, params=params, config=config,

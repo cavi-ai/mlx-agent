@@ -3,6 +3,7 @@
 ## Unreleased
 
 - TRELLIS.2 shape and texture decoders run their blocks in float16 when the decoder config sets `use_fp16` (every published decoder) instead of float32; norms and the input and output layers stay float32.
+- `convert music --task cover|repaint|complete --source <audio>` on ACE-Step checkpoints: a cover keeps the source's melody, rhythm, chords and structure under a new caption or lyrics (`--cover-strength`), a repaint regenerates `--repaint-start` to `--repaint-end` seconds and keeps the rest, and a complete adds an accompaniment (`--track`) to a single track such as a vocal stem on base checkpoints.
 
 ## 0.17.0
 

@@ -98,8 +98,9 @@ def _block(w, name, x, mod, context, cos, sin, heads, proj=None):
 def velocity(w, config, x, t, context, rope, proj=None):
     """Predicted flow velocity for tokens ``x`` (B, N, in) at timesteps ``t`` (B,) given image tokens ``context``
     and, for projection-conditioned models, image features ``proj`` (B, N, P) aligned with the tokens.
-    The blocks run in the checkpoint's dtype; input, timestep and output layers stay float32."""
-    dtype = compute_dtype(config)
+    TRELLIS.2 blocks run in the configured dtype; input, timestep and output layers stay float32."""
+    # The Pixal3D loader keeps float32 block weights and quantization scales.
+    dtype = mx.float32 if proj is not None else compute_dtype(config)
     cos, sin = rope
     h = w.linear("input_layer", x).astype(dtype)
     mod = w.linear("t_embedder.mlp.0", timestep_embedding(t))

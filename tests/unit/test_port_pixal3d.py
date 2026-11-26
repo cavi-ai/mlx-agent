@@ -331,6 +331,7 @@ class Pixal3DNativeTests(unittest.TestCase):
         import mlx.core as mx
         import numpy as np
         flow = port('trellis2.flow')
+        convert = port('trellis2.convert')._convert_tensors
         Weights = port('triposg.weights').Weights
         rng = np.random.default_rng(1)
         shapes = {
@@ -352,7 +353,7 @@ class Pixal3DNativeTests(unittest.TestCase):
         cross['blocks.0.norm2.bias'] = mx.zeros(8)
         offset = mx.array(rng.standard_normal(8).astype(np.float32))
         projected = {name.replace('.cross_attn.', '.cross_attn.cross_attn_block.'): value for name, value in cross.items()}
-        projected['blocks.0.cross_attn.proj_linear.weight'] = mx.zeros((8, 6))
+        projected['blocks.0.cross_attn.proj_linear.weight'] = mx.zeros((8, 64))
         projected['blocks.0.cross_attn.proj_linear.bias'] = offset
         shifted = dict(cross, **{'blocks.0.cross_attn.to_out.bias': cross['blocks.0.cross_attn.to_out.bias'] + offset})
         config = {'num_blocks': 1, 'num_heads': 2}
@@ -360,13 +361,22 @@ class Pixal3DNativeTests(unittest.TestCase):
         t = mx.array([500.0])
         context = mx.array(rng.standard_normal((1, 4, 5)).astype(np.float32))
         rope = flow.rope_tables(np.argwhere(np.ones((5, 1, 1))), 4)
-        proj = mx.array(rng.standard_normal((1, 5, 6)).astype(np.float32))
+        proj = mx.array(rng.standard_normal((1, 5, 64)).astype(np.float32))
         with_proj = flow.velocity(Weights(projected), config, x, t, context, rope, proj)
         plain = flow.velocity(Weights(shifted), config, x, t, context, rope)
         np.testing.assert_allclose(np.array(with_proj), np.array(plain), rtol=1e-4, atol=1e-5)
-        projected['blocks.0.cross_attn.proj_linear.weight'] = mx.array(rng.standard_normal((8, 6)).astype(np.float32))
+        projected['blocks.0.cross_attn.proj_linear.weight'] = mx.array(rng.standard_normal((8, 64)).astype(np.float32))
         changed = flow.velocity(Weights(projected), config, x, t, context, rope, proj)
         self.assertGreater(float(mx.abs(changed - with_proj).max()), 1e-3)
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / 'flow.safetensors'
+            mx.save_safetensors(str(path), projected)
+            for quantize in (False, True):
+                with self.subTest(quantize=quantize):
+                    weights = Weights(convert(path, quantize, 8))
+                    expected = flow.velocity(weights, config, x, t, context, rope, proj)
+                    actual = flow.velocity(weights, dict(config, dtype='bfloat16'), x, t, context, rope, proj)
+                    np.testing.assert_array_equal(np.array(actual), np.array(expected))
 
     def test_conversion_writes_every_component_its_defaults_and_provenance(self):
         import mlx.core as mx

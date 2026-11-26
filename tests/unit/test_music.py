@@ -319,24 +319,41 @@ class AceStepMusicTests(unittest.TestCase):
         source = self.root / "take.wav"
         source.write_bytes(b"RIFF")
         seen = {}
+        source_frames = 96000
+        generated_frames = 245760
 
         class Handler:
+            sample_rate = 48000
+
+            def process_src_audio(self, path):
+                seen.setdefault("decoded", []).append(path)
+                return SimpleNamespace(shape=(2, source_frames))
+
             def initialize_service(self, **kwargs):
+                seen["loads"] = seen.get("loads", 0) + 1
                 return "ready", True
 
             def generate_instruction(self, task_type, complete_track_classes=None):
                 return "instruction for " + task_type
 
-        def generate_music(*, llm_handler, params, save_dir, **kwargs):
+        def generate_music(*, dit_handler, llm_handler, params, save_dir, **kwargs):
             seen.update(planner=llm_handler, params=params)
+            dit_handler.process_src_audio(params.src_audio)
+            seen["frames"] = generated_frames
             path = Path(save_dir) / "music.wav"
             path.touch()
             return SimpleNamespace(success=True, audios=[{"path": str(path)}], extra_outputs={})
 
+        def truncate(frames):
+            seen["frames"] = frames
+
+        wav = mock.MagicMock()
+        wav.__enter__.return_value.truncate.side_effect = truncate
         mx = SimpleNamespace(reset_peak_memory=lambda: None, get_peak_memory=lambda: 0)
         modules = {
             "mlx": SimpleNamespace(core=mx), "mlx.core": mx,
-            "soundfile": SimpleNamespace(info=lambda path: SimpleNamespace(frames=96000, samplerate=48000)),
+            "soundfile": SimpleNamespace(info=lambda path: SimpleNamespace(frames=seen["frames"], samplerate=48000),
+                                         SoundFile=lambda *args: wav),
             "acestep.model_downloader": SimpleNamespace(_CHECKPOINT_TO_VARIANT={self.model.name: "turbo"}),
             "acestep.handler": SimpleNamespace(AceStepHandler=Handler),
             "acestep.inference": SimpleNamespace(GenerationParams=SimpleNamespace, GenerationConfig=SimpleNamespace,
@@ -344,13 +361,14 @@ class AceStepMusicTests(unittest.TestCase):
             "acestep.llm_inference": SimpleNamespace(LLMHandler=object),
         }
 
-        def run(plan):
+        def run(plan, status=0):
             output = io.StringIO()
             with mock.patch.dict(sys.modules, modules), mock.patch.dict(acestep_runner.os.environ), \
                     mock.patch.object(acestep_runner, "socket", SimpleNamespace(socket=SimpleNamespace())), \
                     redirect_stdout(output):
-                self.assertEqual(acestep_runner.main(plan["argv"][2:]), 0)
-            self.out.unlink()
+                self.assertEqual(acestep_runner.main(plan["argv"][2:]), status)
+            if status == 0:
+                self.out.unlink()
             return json.loads(output.getvalue())
 
         cover = self.plan(steps=8, lyrics="[verse]\nNew words", task="cover", source=str(source), cover_strength=0.4)
@@ -363,18 +381,38 @@ class AceStepMusicTests(unittest.TestCase):
                           params.lyrics, params.thinking),
                          ("cover", str(source), 0.4, "instruction for cover", "[verse]\nNew words", False))
 
-        repaint = self.plan(steps=8, task="repaint", source=str(source), repaint_start=4, repaint_end=9.5)
-        run(repaint)
+        self.assertTrue(getattr(params, "enable_normalization", True))
+
+        repaint = self.plan(steps=8, task="repaint", source=str(source), repaint_start=0.45, repaint_end=1.25)
+        seen["decoded"].clear()
+        self.assertEqual(run(repaint)["audio_seconds"], 2.0)
+        self.assertEqual(seen["decoded"], [str(source)])
+        wav.__enter__.return_value.truncate.assert_called_once_with(source_frames)
         params = seen["params"]
         self.assertEqual((params.task_type, params.src_audio, params.repainting_start, params.repainting_end,
-                          params.instruction), ("repaint", str(source), 4.0, 9.5, "instruction for repaint"))
+                          params.instruction), ("repaint", str(source), 0.45, 1.25, "instruction for repaint"))
+        self.assertFalse(params.enable_normalization)
+
+        outpainting = self.plan(steps=8, task="repaint", source=str(source), repaint_start=1.5, repaint_end=2.01)
+        loads = seen["loads"]
+        refused = run(outpainting, status=2)
+        self.assertEqual(refused["error"], "invalid_arguments")
+        self.assertIn("2 s source", refused["detail"])
+        self.assertEqual(seen["loads"], loads)
+        self.assertFalse(self.out.exists())
 
         def runner(argv, **kwargs):
-            self.out.write_bytes(b"audio")
-            return subprocess.CompletedProcess(argv, 0, json.dumps({"path": str(self.out), "audio_seconds": 2}), "")
+            record = refused if argv == outpainting["argv"] else {"path": str(self.out), "audio_seconds": 2.0}
+            if "path" in record:
+                self.out.write_bytes(b"audio")
+            return subprocess.CompletedProcess(argv, 2 if "error" in record else 0, json.dumps(record), "")
+        with self.assertRaises(MusicError) as error:
+            run_music(outpainting, manifests=self.manifests, root=self.root, runner=runner)
+        self.assertEqual(error.exception.code, "invalid_arguments")
+        self.assertIn("2 s source", str(error.exception))
         result = run_music(repaint, manifests=self.manifests, root=self.root, runner=runner)
         self.assertEqual((result["task"], result["source"], result["repaint_start"], result["repaint_end"],
-                          result["duration"], result.get("planner")), ("repaint", str(source), 4.0, 9.5, None, None))
+                          result["duration"], result.get("planner")), ("repaint", str(source), 0.45, 1.25, None, None))
         self.out.unlink()
         self.assertNotIn("task", run_music(self.plan(steps=8), manifests=self.manifests, root=self.root,
                                            runner=runner))

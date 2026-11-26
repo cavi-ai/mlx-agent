@@ -15,6 +15,7 @@ import tempfile
 import time
 
 SIBLINGS = ("vae", "Qwen3-Embedding-0.6B")
+VAE_HOP_FRAMES = 1920  # ACE-Step's 25 Hz latents at 48 kHz.
 
 
 def offline(*args, **kwargs):
@@ -116,6 +117,13 @@ def main(argv=None):
     class LocalHandler(AceStepHandler):
         """Never download: the staged folders hold every file the DiT, VAE and text encoder read."""
 
+        repaint_source = None
+
+        def process_src_audio(self, audio_file):
+            if self.repaint_source is not None and audio_file == args.source:
+                return self.repaint_source
+            return super().process_src_audio(audio_file)
+
         def _ensure_models_present(self, *, checkpoint_path, config_path, prefer_source, vae_variant=None):
             return None
 
@@ -137,6 +145,26 @@ def main(argv=None):
         os.environ.update(ACESTEP_CHECKPOINTS_DIR=str(checkpoints), ACESTEP_PROJECT_ROOT=directory)
         started = time.perf_counter()
         handler = LocalHandler()
+        repaint_frames = None
+        if args.task == "repaint":
+            source = handler.process_src_audio(args.source)
+            if source is None or source.shape[-1] == 0:
+                detail = "The repaint source has no readable audio."
+                print(json.dumps({"error": "invalid_arguments", "detail": detail}), flush=True)
+                return 2
+            repaint_frames = source.shape[-1]
+            source_seconds = repaint_frames / handler.sample_rate
+            if args.repaint_end > source_seconds:
+                detail = "Repaint ends at {0:g} s, beyond the {1:.9g} s source.".format(args.repaint_end, source_seconds)
+                print(json.dumps({"error": "invalid_arguments", "detail": detail}), flush=True)
+                return 2
+            # The VAE drops a partial final frame. Pad the decoded source once and reuse it for generation.
+            padding = -repaint_frames % VAE_HOP_FRAMES
+            if padding:
+                from torch.nn.functional import pad
+
+                source = pad(source, (0, padding))
+            handler.repaint_source = source
         status, ok = handler.initialize_service(
             project_root=directory, config_path=model.name, device="mps", use_flash_attention=False,
             compile_model=False, offload_to_cpu=False, offload_dit_to_cpu=False, quantization=None, use_mlx_dit=True)
@@ -164,7 +192,7 @@ def main(argv=None):
             seed=args.seed, thinking=planner is not None, use_cot_metas=planner is not None,
             # A kept caption reaches the DiT as written; the planner still chooses what the take leaves open.
             use_cot_caption=planner is not None and not args.keep_caption, use_cot_language=planner is not None,
-            reference_audio=args.reference, **task)
+            reference_audio=args.reference, enable_normalization=args.task != "repaint", **task)
         config = GenerationConfig(batch_size=1, use_random_seed=False, seeds=[args.seed], audio_format="wav")
         started = time.perf_counter()
         result = generate_music(dit_handler=handler, llm_handler=planner, params=params, config=config,
@@ -174,6 +202,13 @@ def main(argv=None):
             raise RuntimeError("ACE-Step generated nothing: {0}".format(result.error))
         written = Path(result.audios[0]["path"])
         info = soundfile.info(str(written))
+        if repaint_frames is not None:
+            if info.samplerate != handler.sample_rate or info.frames < repaint_frames:
+                raise RuntimeError("ACE-Step repaint did not render the full source at the expected sample rate.")
+            if info.frames > repaint_frames:
+                with soundfile.SoundFile(str(written), "r+") as wav:
+                    wav.truncate(repaint_frames)
+                info = soundfile.info(str(written))
         # A hard link claims the new output name or fails, so an existing file is never replaced.
         os.link(written, out)
     audio_seconds = info.frames / info.samplerate

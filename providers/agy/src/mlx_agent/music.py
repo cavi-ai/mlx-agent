@@ -243,7 +243,10 @@ CONTRACT = RunnerContract(
     verb="music", error=MusicError, accept=_wrote_output, action="generate the music",
     remediation="Check local model completeness and the audio backend.",
     activity="Music generation", timeout_remediation="Use a shorter duration or a larger timeout.",
-    refusals={"unknown_checkpoint": _unknown_checkpoint},
+    refusals={
+        "unknown_checkpoint": _unknown_checkpoint,
+        "invalid_arguments": lambda plan, detail: (detail, "Pass a readable --source and a repaint window within its duration."),
+    },
     # Generation never resolves or downloads missing weights or tokenizer files.
     environment={"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"},
 )

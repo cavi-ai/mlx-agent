@@ -41,21 +41,23 @@ def decimate(vertices, faces, max_faces, aggression=7):
     """Quadric edge collapse down to at most `max_faces` triangles; meshes at or under the cap pass through.
 
     A lower `aggression` raises the error threshold more slowly, which joins fewer separate sheets along an edge.
-    A pass whose schedule ends above the cap repeats on its result one aggression higher until the cap holds.
+    Retry above the cap with increasing aggression up to 10 (or the starting value if higher).
+    At that limit, stop if a pass removes no faces.
     """
     if len(faces) <= max_faces:
         return vertices, faces
     from fast_simplification import simplify
 
+    max_aggression = max(aggression, 10)
     points, triangles = np.ascontiguousarray(vertices, dtype=np.float32), np.ascontiguousarray(faces, dtype=np.int32)
     while len(triangles) > max_faces:
         count = len(triangles)
         points, triangles = simplify(points, triangles, target_count=max_faces, agg=aggression)
         points, triangles = np.ascontiguousarray(points, dtype=np.float32), np.ascontiguousarray(triangles, dtype=np.int32)
-        if len(triangles) >= count:
+        if len(triangles) >= count and aggression == max_aggression:
             raise ValueError("Decimation stopped at {0} faces above the {1} cap; raise --max-faces.".format(
                 len(triangles), max_faces))
-        aggression += 1
+        aggression = min(aggression + 1, max_aggression)
     return points, triangles
 
 

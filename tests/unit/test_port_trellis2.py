@@ -797,6 +797,8 @@ class Trellis2NativeTests(unittest.TestCase):
         import numpy as np
         pipeline = port('pipeline')
         line = np.stack([np.arange(512), np.zeros(512), np.zeros(512)], axis=1)
+        coords, resolution = pipeline.cascade_coords(line, 512, 1536, max_tokens=96)
+        self.assertEqual((len(coords), resolution), (96, 1536))
         coords, resolution = pipeline.cascade_coords(line, 512, 1536, max_tokens=81)
         self.assertEqual((len(coords), resolution), (80, 1280))
         self.assertEqual(coords[:, 0].tolist(), list(range(80)))

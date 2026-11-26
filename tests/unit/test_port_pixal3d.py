@@ -307,6 +307,8 @@ class Pixal3DNativeTests(unittest.TestCase):
         line = np.stack([np.arange(512), np.zeros(512), np.zeros(512)], axis=1)
         coords, resolution = pipeline.cascade_coords(line, 512, 1536)
         self.assertEqual((len(coords), resolution, int(coords[:, 0].max())), (96, 1536, 95))
+        coords, resolution = pipeline.cascade_coords(line, 512, 1536, max_tokens=96)
+        self.assertEqual((len(coords), resolution), (96, 1536))
         coords, resolution = pipeline.cascade_coords(line, 512, 1536, max_tokens=90)
         self.assertEqual((len(coords), resolution), (88, 1408))
         coords, resolution = pipeline.cascade_coords(line, 512, 1536, max_tokens=10)

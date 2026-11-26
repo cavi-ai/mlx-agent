@@ -379,6 +379,18 @@ class TripoSGGeometryTests(unittest.TestCase):
         self.assertGreater(len(reduced_faces), 750)
         self.assertEqual(int(reduced_faces.max()), len(reduced_vertices) - 1)
 
+    def test_decimation_escalates_after_a_pass_without_collapses(self):
+        import numpy as np
+        from triposg.geometry import decimate
+        origins = np.array(list(np.ndindex(7, 6, 6)), dtype=np.float32) / 7
+        tetrahedron = np.array([[0, 0, 0], [.1, 0, 0], [0, .1, 0], [0, 0, .1]], dtype=np.float32)
+        triangles = np.array([[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]], dtype=np.int32)
+        vertices = (origins[:, None, :] + tetrahedron).reshape(-1, 3)
+        offsets = 4 * np.arange(len(origins), dtype=np.int32)[:, None, None]
+        faces = (triangles + offsets).reshape(-1, 3)
+        _, reduced_faces = decimate(vertices, faces, 1000, aggression=3)
+        self.assertEqual(len(reduced_faces), 1000)
+
 
 @unittest.skipUnless(HAS_MLX and HAS_GEOMETRY, 'requires MLX, numpy, scipy, scikit-image and fast-simplification')
 class TripoSGGenerationTests(unittest.TestCase):

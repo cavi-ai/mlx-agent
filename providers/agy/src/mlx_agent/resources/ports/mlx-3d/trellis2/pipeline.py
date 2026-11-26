@@ -165,7 +165,7 @@ def cascade_coords(coords, low, high, max_tokens=MAX_TOKENS, floor=CASCADE_FLOOR
     coords = np.asarray(coords, dtype=np.float64)
     while True:
         quantized = np.unique(((coords + 0.5) / low * (high // 16)).astype(np.int32), axis=0)
-        if len(quantized) < max_tokens or high - 128 < floor:
+        if len(quantized) <= max_tokens or high - 128 < floor:
             return quantized, high
         high -= 128
 

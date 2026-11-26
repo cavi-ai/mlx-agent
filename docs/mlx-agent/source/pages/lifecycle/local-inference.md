@@ -32,7 +32,9 @@ python3 scripts/mlx-agent convert speak --path /absolute/local/tts-model --text 
 Transcription accepts an audio file and optional `--language`. `--words` prints
 start and end times in seconds below the transcript. With `--json`, the timings
 are returned as `words: [{word, start, end}]`. Models without word times, such as
-Parakeet, return `words_unsupported`. Speech output
+Parakeet, return `words_unsupported`. When Whisper ends its text with a second or
+more of the clip left, as it can on sung audio, decoding resumes from the last
+heard segment. Speech output
 requires a new absolute `.wav` path; voice, speed, and language depend on the model.
 Speech generation has a 600-second execution timeout. For longer runs, pass
 `--timeout` to `convert speak`; it accepts 1 to 7,200 seconds.

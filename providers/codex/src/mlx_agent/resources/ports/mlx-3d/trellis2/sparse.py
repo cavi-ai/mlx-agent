@@ -8,6 +8,18 @@ GATHER_ELEMENTS = 1 << 27
 OFFSETS = np.array([(v // 9 - 1, v // 3 % 3 - 1, v % 3 - 1) for v in range(27)], dtype=np.int64)
 
 
+def compute_dtype(config):
+    """float16 when the decoder config sets ``use_fp16``, the dtype the reference runs its blocks in; else float32."""
+    return mx.float16 if config.get("use_fp16") else mx.float32
+
+
+def block_values(values, dtype):
+    """Floating convolution and linear ``blocks.*`` tensors in ``dtype``; norm parameters stay float32, as the
+    reference's half-precision conversion leaves them."""
+    return {name: value.astype(dtype) if name.startswith("blocks.") and ".norm" not in name
+            and mx.issubdtype(value.dtype, mx.floating) else value for name, value in values.items()}
+
+
 def neighbor_map(coords):
     """(27, N) source rows for each kernel offset of each voxel; N marks an empty neighbor."""
     coords = np.asarray(coords, dtype=np.int64)
@@ -70,6 +82,11 @@ def _norm(w, name, x, eps=1e-6):
     return w.norm(name, x, eps)
 
 
+def _plain_norm(x, eps):
+    # Norms without affine parameters also normalize in float32 and return the block dtype.
+    return mx.fast.layer_norm(x.astype(mx.float32), None, None, eps).astype(x.dtype)
+
+
 def convnext_block(w, name, voxels):
     h = sparse_conv(w, name + ".conv", voxels).feats
     h = _norm(w, name + ".norm", h)
@@ -97,7 +114,7 @@ def up_block(w, name, voxels, out_channels, keep=None):
     h = sparse_conv(w, name + ".conv1", voxels.replace(h)).feats
     coords, (h, skip) = subdivide(voxels, (h, voxels.feats), keep)
     child = Voxels(h, coords)
-    h = nn.silu(mx.fast.layer_norm(h, None, None, 1e-6))
+    h = nn.silu(_plain_norm(h, 1e-6))
     h = sparse_conv(w, name + ".conv2", child.replace(h)).feats
     repeat = out_channels // skip.shape[1]
     skip = mx.repeat(skip, repeat, axis=1) if repeat > 1 else skip
@@ -111,8 +128,9 @@ def _levels(config):
 
 def run(w, config, feats, coords, stop_level=None, subdivisions=None, guide=None):
     """Decoder trunk: returns the last level's voxels, or the coordinates reached at ``stop_level``. A list passed as
-    ``subdivisions`` receives each level's kept octants; ``guide`` replays such a list instead of predicting them."""
-    voxels = Voxels(w.linear("from_latent", feats), coords)
+    ``subdivisions`` receives each level's kept octants; ``guide`` replays such a list instead of predicting them.
+    The blocks run in the config's dtype; ``from_latent`` stays float32."""
+    voxels = Voxels(w.linear("from_latent", feats).astype(compute_dtype(config)), coords)
     channels = config["model_channels"]
     for level, width, count in _levels(config):
         if level == stop_level:
@@ -133,7 +151,7 @@ def decode_attributes(w, config, feats, coords, guide):
     """Per-voxel attributes in [0, 1] (base color, metallic, roughness, alpha) on the voxels a shape decode produced
     with the subdivisions ``guide``; rows follow that decode's voxel order."""
     voxels = run(w, config, feats, coords, guide=guide)
-    h = w.linear("output_layer", mx.fast.layer_norm(voxels.feats, None, None, 1e-5)) * 0.5 + 0.5
+    h = w.linear("output_layer", mx.fast.layer_norm(voxels.feats.astype(mx.float32), None, None, 1e-5)) * 0.5 + 0.5
     mx.eval(h)
     return voxels.coords, np.array(h)
 
@@ -141,7 +159,7 @@ def decode_attributes(w, config, feats, coords, guide):
 def decode(w, config, feats, coords, subdivisions=None):
     """Per-voxel dual vertex (3), edge crossing flags (3) and quad split weight (1) at the output level."""
     voxels = run(w, config, feats, coords, subdivisions=subdivisions)
-    h = w.linear("output_layer", mx.fast.layer_norm(voxels.feats, None, None, 1e-5))
+    h = w.linear("output_layer", mx.fast.layer_norm(voxels.feats.astype(mx.float32), None, None, 1e-5))
     margin = 0.5
     vertices = (1 + 2 * margin) * mx.sigmoid(h[:, 0:3]) - margin
     crossed = h[:, 3:6] > 0

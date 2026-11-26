@@ -116,6 +116,11 @@ def main(argv=None):
             super()._sync_model_code_if_needed(config_path, checkpoint_path)
             adapt_quantizer(Path(checkpoint_path) / config_path)
 
+    class LocalPlanner(LLMHandler):
+        def has_all_metas(self, user_metadata):
+            # The caller can bind every musical setting while the caption or vocal language still needs planning.
+            return False
+
     instrumental = args.lyrics.strip().lower() == "[instrumental]"
     # The take is written beside the output, so linking it to the output name stays on one volume.
     with tempfile.TemporaryDirectory(prefix="mlx-agent-acestep-") as directory, \
@@ -132,7 +137,7 @@ def main(argv=None):
             raise RuntimeError("ACE-Step did not load: {0}".format(status))
         planner = None
         if args.planner:
-            planner = LLMHandler()
+            planner = LocalPlanner()
             status, ok = planner.initialize(checkpoint_dir=str(checkpoints), lm_model_path=args.planner,
                                             backend="mlx", device="mps")
             if not ok:

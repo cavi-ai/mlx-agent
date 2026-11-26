@@ -23,7 +23,7 @@ def main(argv=None):
         parser.add_argument("--" + name, required=True)
     parser.add_argument("--temperature", type=float, required=True)
     parser.add_argument("--bpm", type=int)
-    parser.add_argument("--duration", type=float)
+    parser.add_argument("--duration", type=int)
     parser.add_argument("--key")
     parser.add_argument("--time-signature", type=int)
     parser.add_argument("--language")

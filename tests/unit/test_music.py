@@ -176,6 +176,17 @@ class MusicTests(unittest.TestCase):
             self.assertEqual(cli.main(["convert", "music", "--path", str(self.model), "--caption=-warm piano", "--out", str(self.out), "--json"]), 0)
         self.assertEqual(plan.call_args.args[1:3], ("-warm piano", "[instrumental]"))
 
+    def test_served_music_omits_keep_caption_unless_requested(self):
+        from mlx_agent.served import request
+
+        parser = cli.build_parser("convert")
+        argv = ["convert", "music", "--path", str(self.model), "--caption", "warm piano", "--out", str(self.out)]
+        kind, default = request("music", parser.parse_args(argv))
+        _, explicit = request("music", parser.parse_args([*argv, "--keep-caption"]))
+        self.assertEqual(kind, "music_generation")
+        self.assertNotIn("keep_caption", default)
+        self.assertEqual(explicit, {**default, "keep_caption": True})
+
 
 class AceStepMusicTests(unittest.TestCase):
     """ACE-Step 1.5 checkpoints: a DiT folder beside its VAE, text encoder and planner folders."""
@@ -254,6 +265,54 @@ class AceStepMusicTests(unittest.TestCase):
                          {"bpm": 124, "key": "F# minor", "time_signature": 4, "language": "en", "caption": "as written"})
         self.assertEqual(acestep_runner.planned(metadata, "as written", False)["caption"], "rewritten by the planner")
 
+    def test_music_plans_caption_even_with_all_musical_settings_bound(self):
+        from mlx_agent import acestep_runner
+
+        class Planner:
+            def initialize(self, **kwargs):
+                return "ready", True
+
+            def has_all_metas(self, metadata):
+                return {"bpm", "keyscale", "timesignature", "duration"} <= metadata.keys()
+
+        def generate_music(*, llm_handler, params, save_dir, **kwargs):
+            metadata = {"bpm": params.bpm, "keyscale": params.keyscale, "timesignature": params.timesignature,
+                        "duration": params.duration}
+            self.assertEqual(metadata, {"bpm": 120, "keyscale": "F# minor", "timesignature": "4", "duration": 30})
+            if params.use_cot_metas and not llm_handler.has_all_metas(metadata):
+                if params.use_cot_caption:
+                    metadata["caption"] = "Four-on-the-floor groove with a dry kick and warm bass"
+                if params.use_cot_language:
+                    metadata["language"] = "en"
+            path = Path(save_dir) / "music.wav"
+            path.touch()
+            return SimpleNamespace(success=True, audios=[{"path": str(path)}], extra_outputs={"lm_metadata": metadata})
+
+        mx = SimpleNamespace(reset_peak_memory=lambda: None, get_peak_memory=lambda: 0)
+        handler = type("Handler", (), {"initialize_service": lambda self, **kwargs: ("ready", True)})
+        modules = {
+            "mlx": SimpleNamespace(core=mx), "mlx.core": mx,
+            "soundfile": SimpleNamespace(info=lambda path: SimpleNamespace(frames=48000, samplerate=48000)),
+            "acestep.model_downloader": SimpleNamespace(_CHECKPOINT_TO_VARIANT={self.model.name: "turbo"}),
+            "acestep.handler": SimpleNamespace(AceStepHandler=handler),
+            "acestep.inference": SimpleNamespace(GenerationParams=SimpleNamespace, GenerationConfig=SimpleNamespace,
+                                                 generate_music=generate_music),
+            "acestep.llm_inference": SimpleNamespace(LLMHandler=Planner),
+        }
+        for keep_caption, expected in ((False, "Four-on-the-floor groove with a dry kick and warm bass"),
+                                       (True, "minimal tech house")):
+            with self.subTest(keep_caption=keep_caption):
+                plan = self.plan(duration=30, steps=8, bpm=120, key="F# minor", time_signature=4,
+                                 keep_caption=keep_caption)
+                output = io.StringIO()
+                with mock.patch.dict(sys.modules, modules), mock.patch.dict(acestep_runner.os.environ), \
+                        mock.patch.object(acestep_runner, "socket", SimpleNamespace(socket=SimpleNamespace())), \
+                        redirect_stdout(output):
+                    self.assertEqual(acestep_runner.main(plan["argv"][2:]), 0)
+                self.out.unlink()
+                result = json.loads(output.getvalue())["planned"]
+                self.assertEqual((result["caption"], result.get("language")), (expected, "en"))
+
     def test_compose_runs_the_planner_beside_the_checkpoint_bound_to_the_given_values(self):
         from mlx_agent.compose import plan_compose, run_compose
         def compose(**kwargs):
@@ -266,7 +325,7 @@ class AceStepMusicTests(unittest.TestCase):
                          ["--bpm=96", "--duration=30", "--key=F# minor", "--language=en"])
         self.assertFalse(any(item.startswith(("--bpm", "--key")) for item in compose()["argv"]))
         answer = {"caption": "A dusty boom bap beat over warm bass", "lyrics": "[Verse]\nRun it local", "bpm": 96,
-                  "key": "F# minor", "time_signature": 4, "language": "en"}
+                  "key": "F# minor", "time_signature": 4}
         def runner(argv, **kwargs):
             self.assertEqual(kwargs["env"]["HF_HUB_OFFLINE"], "1")
             return subprocess.CompletedProcess(argv, 0, json.dumps(answer), "")
@@ -274,6 +333,7 @@ class AceStepMusicTests(unittest.TestCase):
         self.assertEqual((result["schema"], result["caption"], result["key"], result["bound"]),
                          ("compose/1", answer["caption"], "F# minor",
                           {"bpm": 96, "duration": 30, "key": "F# minor", "language": "en"}))
+        self.assertEqual(result["language"], "en")
         for kwargs in ({"key": "F# dorian"}, {"bpm": 20}, {"language": "e n"}, {"temperature": 3}):
             with self.subTest(kwargs=kwargs), self.assertRaises(MusicError):
                 compose(**kwargs)
@@ -281,6 +341,18 @@ class AceStepMusicTests(unittest.TestCase):
         with self.assertRaises(MusicError) as caught:
             compose()
         self.assertIn("planner", str(caught.exception))
+
+    def test_compose_duration_requires_whole_seconds(self):
+        from mlx_agent.compose import plan_compose
+
+        def compose(duration):
+            return plan_compose(str(self.model), "boom bap", "[instrumental]", duration=duration,
+                                manifests=self.manifests, registries=self.registries, root=self.root)
+
+        for duration in (0.5, 30.5):
+            with self.subTest(duration=duration), self.assertRaisesRegex(MusicError, "whole seconds"):
+                compose(duration)
+        self.assertIn("--duration=30", compose(30.0)["argv"])
 
     def test_ace_step_limits_and_incomplete_checkpoints_are_refused(self):
         with self.assertRaises(MusicError) as caught:

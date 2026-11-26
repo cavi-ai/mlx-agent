@@ -32,6 +32,8 @@ def plan_compose(model_path, caption, lyrics, bpm=None, duration=None, key=None,
         raise MusicError("model_unreadable", str(error), "Pass an existing ACE-Step checkpoint directory.") from error
     checked = validate_parameters(caption, lyrics, 15.0 if duration is None else duration, bpm=bpm,
                                   time_signature=time_signature, key=key)
+    if duration is not None and duration != int(duration):
+        raise MusicError("invalid_arguments", "Compose duration must be specified in whole seconds.", "Use --duration 30.")
     if language is not None and (not isinstance(language, str) or not language.isascii() or not language.isalpha()
                                  or not 2 <= len(language) <= 8):
         raise MusicError("invalid_arguments", "The language must be a language code such as en.", "Use --language en.")
@@ -54,8 +56,8 @@ def plan_compose(model_path, caption, lyrics, bpm=None, duration=None, key=None,
                          "Install it first: mlx-agent backend install ace-step.")
     argv = [str(backend_python(manifest, root)), str(COMPOSE_RUNNER), "--planner", str(model.parent / planner),
             "--caption=" + caption, "--lyrics=" + lyrics, "--temperature", repr(float(temperature))]
-    bound = {"bpm": bpm, "duration": duration, "key": checked.get("key"), "time_signature": time_signature,
-             "language": language}
+    bound = {"bpm": bpm, "duration": int(duration) if duration is not None else None, "key": checked.get("key"),
+             "time_signature": time_signature, "language": language}
     for name, value in bound.items():
         if value is not None:
             argv += ["--" + name.replace("_", "-") + "=" + str(value)]
@@ -75,6 +77,10 @@ CONTRACT = RunnerContract(
 
 def run_compose(plan, manifests=None, root=None, timeout=DEFAULT_TIMEOUT_SECONDS, runner=subprocess.run):
     result = invoke(plan, CONTRACT, manifests, root, timeout, runner)
+    bound = dict(plan["bound"])
+    # ACE-Step skips emitting the language field when the caller supplies it.
+    if "language" in bound:
+        result["language"] = bound["language"]
     return dict({"schema": COMPOSE_SCHEMA, "backend": plan["backend"], "model": plan["model"], "planner": plan["planner"],
-                 "temperature": plan["temperature"], "bound": dict(plan["bound"])},
+                 "temperature": plan["temperature"], "bound": bound},
                 **{key: result.get(key) for key in RESULT_KEYS})

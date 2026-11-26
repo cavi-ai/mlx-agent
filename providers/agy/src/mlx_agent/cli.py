@@ -2246,7 +2246,7 @@ def _add_convert_arguments(parser):
     compose.add_argument("--caption", required=True, help="style, instruments, mood and vocals (1..2000 characters)")
     compose.add_argument("--lyrics", required=True, help="lyrics under [section] tags, or [instrumental]")
     compose.add_argument("--bpm", type=int, help="tempo the plan keeps (30..300)")
-    compose.add_argument("--duration", type=float, help="seconds the plan keeps (up to 360)")
+    compose.add_argument("--duration", type=float, help="whole seconds the plan keeps (1..360)")
     compose.add_argument("--key", help='key the plan keeps, such as "F# minor"')
     compose.add_argument("--time-signature", type=int, help="beats per bar the plan keeps: 2, 3, 4 or 6")
     compose.add_argument("--language", help="vocal language code the plan keeps, such as en")

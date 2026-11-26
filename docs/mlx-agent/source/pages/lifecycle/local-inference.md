@@ -98,7 +98,8 @@ folder of links to the checkpoint files, so the model folder is never written.
 `convert compose` runs the planner on its own: it rewrites a caption into a
 detailed one, structures the lyrics, and chooses tempo, key, length, meter and
 language. `--bpm`, `--duration`, `--key`, `--time-signature` and `--language`
-bind those values. Nothing is rendered.
+bind those values. A bound duration must be a whole number of seconds from 1
+through 360. Nothing is rendered.
 
 ```bash
 python3 scripts/mlx-agent convert compose --path /absolute/ACE-Step-1.5/checkpoints/acestep-v15-turbo --caption "boom bap, warm bass" --lyrics $'[verse]\nRun it local, run it fast' --bpm 96 --duration 30 --json

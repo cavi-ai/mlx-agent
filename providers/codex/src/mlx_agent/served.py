@@ -58,6 +58,8 @@ def request(verb, arguments):
     else:
         kind, names = VERBS[verb]
         parameters = {name: getattr(arguments, name) for name in names}
+        if verb == "music" and not parameters["keep_caption"]:
+            del parameters["keep_caption"]
         if verb == "video":
             for name in ("image", "audio"):
                 if parameters[name] is not None:

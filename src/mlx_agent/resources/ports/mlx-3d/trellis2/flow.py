@@ -8,6 +8,21 @@ import numpy as np
 
 FREQUENCY_SIZE = 256
 SIGMA_MIN = 1e-5
+DTYPES = {"float32": mx.float32, "float16": mx.float16, "bfloat16": mx.bfloat16}
+
+
+def compute_dtype(config):
+    """The dtype a flow's checkpoint config names for its transformer blocks; float32 when it names none."""
+    name = config.get("dtype", "float32")
+    if name not in DTYPES:
+        raise ValueError("TRELLIS.2 flow dtype must be one of " + ", ".join(DTYPES) + ".")
+    return DTYPES[name]
+
+
+def block_values(values, dtype):
+    """Floating ``blocks.*`` tensors in ``dtype``, as the reference converts its blocks; packed weights stay packed."""
+    return {name: value.astype(dtype) if name.startswith("blocks.") and mx.issubdtype(value.dtype, mx.floating)
+            else value for name, value in values.items()}
 
 
 def timestep_embedding(t, dim=FREQUENCY_SIZE, max_period=10000):
@@ -33,18 +48,20 @@ def grid_positions(resolution):
 
 
 def _rotate(x, cos, sin):
-    pairs = x.reshape(*x.shape[:-1], -1, 2)
+    # Rotations, head norms and layer norms run in float32 and return the block dtype, as in the reference.
+    pairs = x.astype(mx.float32).reshape(*x.shape[:-1], -1, 2)
     even, odd = pairs[..., 0], pairs[..., 1]
-    return mx.stack([even * cos - odd * sin, even * sin + odd * cos], axis=-1).reshape(x.shape)
+    return mx.stack([even * cos - odd * sin, even * sin + odd * cos], axis=-1).reshape(x.shape).astype(x.dtype)
 
 
 def _head_norm(x, gamma):
-    norm = mx.sqrt(mx.sum(x * x, axis=-1, keepdims=True))
-    return x / mx.maximum(norm, 1e-12) * gamma[:, None, :] * math.sqrt(x.shape[-1])
+    y = x.astype(mx.float32)
+    norm = mx.sqrt(mx.sum(y * y, axis=-1, keepdims=True))
+    return (y / mx.maximum(norm, 1e-12) * gamma[:, None, :].astype(mx.float32) * math.sqrt(x.shape[-1])).astype(x.dtype)
 
 
 def _layer_norm(x, eps=1e-6):
-    return mx.fast.layer_norm(x, None, None, eps)
+    return mx.fast.layer_norm(x.astype(mx.float32), None, None, eps).astype(x.dtype)
 
 
 def _block(w, name, x, mod, context, cos, sin, heads, proj=None):
@@ -80,15 +97,20 @@ def _block(w, name, x, mod, context, cos, sin, heads, proj=None):
 
 def velocity(w, config, x, t, context, rope, proj=None):
     """Predicted flow velocity for tokens ``x`` (B, N, in) at timesteps ``t`` (B,) given image tokens ``context``
-    and, for projection-conditioned models, image features ``proj`` (B, N, P) aligned with the tokens."""
+    and, for projection-conditioned models, image features ``proj`` (B, N, P) aligned with the tokens.
+    TRELLIS.2 blocks run in the configured dtype; input, timestep and output layers stay float32."""
+    # The Pixal3D loader keeps float32 block weights and quantization scales.
+    dtype = mx.float32 if proj is not None else compute_dtype(config)
     cos, sin = rope
-    h = w.linear("input_layer", x)
+    h = w.linear("input_layer", x).astype(dtype)
     mod = w.linear("t_embedder.mlp.0", timestep_embedding(t))
     mod = w.linear("t_embedder.mlp.2", nn.silu(mod))
-    mod = w.linear("adaLN_modulation.1", nn.silu(mod))
+    mod = w.linear("adaLN_modulation.1", nn.silu(mod)).astype(dtype)
+    context = context.astype(dtype)
+    proj = None if proj is None else proj.astype(dtype)
     for index in range(config["num_blocks"]):
         h = _block(w, "blocks.{0}".format(index), h, mod, context, cos, sin, config["num_heads"], proj)
-    return w.linear("out_layer", _layer_norm(h, 1e-5))
+    return w.linear("out_layer", _layer_norm(h.astype(mx.float32), 1e-5))
 
 
 def schedule(steps, rescale_t):

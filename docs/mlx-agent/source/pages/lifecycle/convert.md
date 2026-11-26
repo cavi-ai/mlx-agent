@@ -81,9 +81,10 @@ python3 scripts/mlx-agent convert mesh --path /path/to/models/TRELLIS.2-MLX-32bi
 `convert mesh` takes `--resolution` 512, 1024 (default) or 1536, and its steps
 (12) and guidance (7.5) default to the checkpoint's sampler settings. At 512 one
 shape flow runs. At 1024 and 1536 the 512 latent is decoded to its voxels, which
-seed a second flow at the higher level; when they exceed 49152 tokens the level
-drops by 128, down to 1024, and the result's `resolution` reports the level
-used. The image is cropped to the pixels with alpha above 0.8; an opaque image
+seed a second flow at the higher level; when they exceed the converted config's
+`mesh.max_tokens` (default 49152) the level drops by 128, down to
+`mesh.cascade_floor` (default 1024), and the result's `resolution` reports the
+level used. The image is cropped to the pixels with alpha above 0.8; an opaque image
 keeps its full frame and background removal is not performed.
 
 `--view` adds another image of the same object and can be repeated. Sampler
@@ -151,7 +152,7 @@ cropped to a square 1.1 times the object's larger side. MoGe-2 estimates the
 horizontal field of view, reported in radians as `camera_angle_x`, which places
 the camera for every stage. The sparse structure and the 512 shape flow run
 first; their voxels seed the high-resolution flow, which drops by 128 down to
-1024 while the voxels exceed 49152 tokens. The output is an untextured GLB mesh;
+`mesh.cascade_floor` while the voxels exceed `mesh.max_tokens`, as for TRELLIS.2. The output is an untextured GLB mesh;
 `stage_seconds` reports `camera`, `sparse_structure`, `shape_latent_512`,
 `shape_latent_high`, `decode`, `mesh`, `decimation` and `export`.
 

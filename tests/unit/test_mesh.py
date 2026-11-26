@@ -203,6 +203,16 @@ class MeshPlanningTests(unittest.TestCase):
                 self.plan()
             self.assertEqual(caught.exception.code, 'model_unreadable')
 
+    def test_a_model_with_unreadable_cascade_settings_is_refused(self):
+        for key, value in (('max_tokens', 0), ('max_tokens', '49152'), ('cascade_floor', 8), ('cascade_floor', True)):
+            self.use_trellis2(**{key: value})
+            with self.subTest(key=key, value=value), self.assertRaises(MeshError) as caught:
+                self.plan()
+            self.assertEqual(caught.exception.code, 'model_unreadable')
+            self.assertIn('mesh ' + key, str(caught.exception))
+        self.use_trellis2(max_tokens=30000, cascade_floor=1152)
+        self.assertIn('--resolution', self.plan()['argv'])
+
     def test_scan_taxonomy_distinguishes_mesh_from_chat(self):
         result = classify('TripoSG', model_type='triposg', manifests=self.manifests,
                           registries=load_registries(self.manifests, self.root/'backends'), local=True)

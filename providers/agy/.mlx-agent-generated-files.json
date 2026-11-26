@@ -300,6 +300,7 @@
     "src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/audio8_asr_infinite.py",
     "src/mlx_agent/resources/ports/mlx-audio/audio8_asr_infinite/config.py",
     "src/mlx_agent/resources/ports/mlx-audio/mel_band_roformer/__init__.py",
+    "src/mlx_agent/resources/ports/mlx-audio/sam_audio/__init__.py",
     "src/mlx_agent/resources/ports/mlx-embeddings/kev/__init__.py",
     "src/mlx_agent/resources/ports/mlx-embeddings/kev/convert.py",
     "src/mlx_agent/resources/ports/mlx-embeddings/kev/kev.py",

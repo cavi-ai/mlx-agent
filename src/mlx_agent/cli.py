@@ -2193,12 +2193,14 @@ def _add_convert_arguments(parser):
     transcribe.add_argument("--json", action="store_true")
     separate = actions.add_parser(
         "separate",
-        help="split one audio mix into a vocal stem and the rest with a source-separation model",
+        help="split one audio mix into a stem and the rest with a source-separation model",
     )
     separate.add_argument("--path", required=True, help="source-separation model directory")
     separate.add_argument("--audio", required=True, help="audio mix (WAV, FLAC, MP3)")
-    separate.add_argument("--out", required=True, help="new absolute .wav path for the vocal stem")
-    separate.add_argument("--rest", default=None, help="new absolute .wav path for the mix minus the vocal stem")
+    separate.add_argument("--out", required=True, help="new absolute .wav path for the stem")
+    separate.add_argument("--rest", default=None, help="new absolute .wav path for the mix minus the stem")
+    separate.add_argument("--prompt", default=None,
+                          help="the sound to separate, such as drums (text-prompted models such as SAM-Audio)")
     separate.add_argument("--timeout", type=int, default=1800, help="seconds before the backend run is stopped")
     separate.add_argument("--json", action="store_true")
     decide = actions.add_parser(
@@ -2380,7 +2382,8 @@ def _run_convert(arguments):
         if arguments.convert_command == "separate":
             if not 1 <= arguments.timeout <= 7200:
                 raise ValueError("--timeout must be 1..7200 seconds")
-            plan = plan_separate(arguments.path, arguments.audio, arguments.out, rest=arguments.rest)
+            plan = plan_separate(arguments.path, arguments.audio, arguments.out, rest=arguments.rest,
+                                 prompt=arguments.prompt)
             from .compute import guarded_start
             result = guarded_start("separate", run_separate, plan, timeout=arguments.timeout)
             return _emit_serve_result(

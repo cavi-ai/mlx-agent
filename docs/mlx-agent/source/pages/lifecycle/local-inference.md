@@ -53,6 +53,23 @@ that stem, both as new absolute 44.1 kHz stereo `.wav` paths. Long mixes run in
 the checkpoint's `chunk_size` windows with `num_overlap` overlap. The default
 timeout is 1,800 seconds; `--timeout` accepts 1 to 7,200.
 
+## Stem separation
+
+```bash
+python3 scripts/mlx-agent convert separate --path /absolute/local/sam-audio-base --audio ./song.wav --prompt drums --out /absolute/output/drums.wav --rest /absolute/output/no-drums.wav --json
+```
+
+SAM-Audio checkpoints (`model_type: sam_audio`, such as `mlx-community/sam-audio-base`)
+separate the sound `--prompt` names, one line of up to 500 characters such as
+`drums`, `bass guitar`, or `backing vocals`. The T5 text encoder the checkpoint's
+`config.json` names (`text_encoder.name`, `t5-base` for the published checkpoints)
+is read from a folder of that name beside the checkpoint, such as
+`/absolute/local/t5-base` from `google-t5/t5-base`. `--out` receives the stem and
+the optional `--rest` receives the model's residual, both as new absolute 48 kHz
+mono `.wav` paths the length of the mix. Mixes longer than 10 seconds run in
+10-second windows with 3 seconds of crossfaded overlap. Vocal checkpoints refuse
+`--prompt`; SAM-Audio checkpoints require it.
+
 ## Music
 
 ```bash

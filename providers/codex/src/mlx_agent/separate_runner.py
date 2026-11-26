@@ -1,4 +1,4 @@
-"""Run inside an audio backend's environment: split one mix into a vocal stem and the rest, print JSON."""
+"""Run inside an audio backend's environment: split one mix into a stem and the rest, print JSON."""
 
 import argparse
 import importlib
@@ -17,12 +17,14 @@ def main(argv=None):
     for name in ("module", "model", "audio", "out"):
         parser.add_argument("--" + name, required=True)
     parser.add_argument("--rest", default=None)
+    parser.add_argument("--prompt", default=None)
     arguments = parser.parse_args(argv)
     port = importlib.import_module(arguments.module)
     started = time.monotonic()
     model = load_model(port.load, arguments.model)
     loaded = time.monotonic()
-    result = port.generate(model, arguments.audio, arguments.out, arguments.rest)
+    prompt = {} if arguments.prompt is None else {"prompt": arguments.prompt}
+    result = port.generate(model, arguments.audio, arguments.out, arguments.rest, **prompt)
     result["load_seconds"] = round(loaded - started, 3)
     result["seconds"] = round(time.monotonic() - started, 3)
     print(json.dumps(result), flush=True)

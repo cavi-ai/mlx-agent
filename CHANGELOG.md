@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.17.0
+
+- Add an `image_segmentation` task that runs a local SAM 2 checkpoint on a box with optional labeled points and writes a PNG mask. Task admission keeps a 512 MB controller margin.
+- `convert separate` splits a mix into a vocal stem and the rest with Mel-Band-RoFormer checkpoints, and `--prompt <text>` separates the named sound with SAM-Audio checkpoints.
+- `convert transcribe --words` returns word start and end times, and Whisper decoding resumes after an early end while a second or more of the clip remains.
+- `convert generate --image` conditions a Qwen-Image 2.1 render on up to 10 reference stills. Reinstall an existing `mflux` backend to get the update.
+- Keyed load-on-request Splash endpoints can bind a named project SSD cache with disk and write caps, and refuse an unsafe cache directory before the worker starts.
+- Load-on-request endpoints report prompt and decode stage timing in inference telemetry.
 - The `mlx-3d` backend installs MLX 0.32.5. Reinstall an existing `mlx-3d` backend to get the update.
 - TRELLIS.2 runs its flow transformer blocks in the dtype the checkpoint config names (bfloat16 in the published models) instead of float32.
 - TRELLIS.2 frees the MLX buffer cache before its CPU mesh stages, so 1024 generation completes on a 128 GB Mac.

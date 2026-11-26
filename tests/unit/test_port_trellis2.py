@@ -203,6 +203,45 @@ class Trellis2NativeTests(unittest.TestCase):
         self.assertEqual(blocks.dtype, mx.float32)
         self.assertLess(mx.max(mx.abs(blocks - reference)).item() / mx.max(mx.abs(reference)).item(), 0.05)
 
+    def test_decoder_blocks_run_in_float16_when_the_config_sets_use_fp16_within_float32_tolerance(self):
+        import mlx.core as mx
+        import numpy as np
+        pipeline, sparse = port('pipeline'), port('sparse')
+        shapes = {'from_latent.weight': (16, 4), 'from_latent.bias': (16,),
+                  'blocks.0.0.conv.weight': (16, 3, 3, 3, 16), 'blocks.0.0.conv.bias': (16,),
+                  'blocks.0.0.norm.weight': (16,), 'blocks.0.0.norm.bias': (16,),
+                  'blocks.0.0.mlp.0.weight': (64, 16), 'blocks.0.0.mlp.0.bias': (64,),
+                  'blocks.0.0.mlp.2.weight': (16, 64), 'blocks.0.0.mlp.2.bias': (16,),
+                  'blocks.0.1.norm1.weight': (16,), 'blocks.0.1.norm1.bias': (16,),
+                  'blocks.0.1.conv1.weight': (64, 3, 3, 3, 16), 'blocks.0.1.conv1.bias': (64,),
+                  'blocks.0.1.conv2.weight': (8, 3, 3, 3, 8), 'blocks.0.1.conv2.bias': (8,),
+                  'output_layer.weight': (6, 8), 'output_layer.bias': (6,)}
+        mx.random.seed(0)
+        values = {name: 0.2 * mx.random.normal(shape) for name, shape in shapes.items()}
+        names = pipeline.COMPONENTS + pipeline.TEXTURE_COMPONENTS
+        components = {name: {} for name in names}
+        trunk = {'model_channels': [16, 8], 'num_blocks': [1, 0]}
+        components['tex_decoder'] = dict(trunk, use_fp16=True)
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'config.json').write_text(json.dumps({'model_type': 'trellis2', 'components': components}))
+            for name in names:
+                mx.save_safetensors(str(root / (name + '.safetensors')),
+                                    values if name == 'tex_decoder' else {'value': mx.array([1.0])})
+            model = pipeline.prepare(pipeline.load(root), 512)
+        loaded = model.weights['tex_decoder']
+        self.assertEqual(loaded['blocks.0.0.conv.kernel'].dtype, mx.float16)
+        self.assertEqual(loaded['blocks.0.0.mlp.0.weight'].dtype, mx.float16)
+        self.assertEqual(loaded['blocks.0.0.norm.weight'].dtype, mx.float32)
+        self.assertEqual(loaded['from_latent.weight'].dtype, mx.float32)
+        self.assertEqual(loaded['output_layer.weight'].dtype, mx.float32)
+        coords = np.argwhere(np.ones((2, 2, 2), dtype=bool)).astype(np.int32)
+        latent, guide = mx.random.normal((len(coords), 4)), [np.ones((len(coords), 8), dtype=bool)]
+        _, half = sparse.decode_attributes(loaded, components['tex_decoder'], latent, coords, guide)
+        _, full = sparse.decode_attributes(pipeline.Weights(values), trunk, latent, coords, guide)
+        self.assertEqual(half.dtype, np.float32)
+        self.assertLess(np.abs(half - full).max() / np.abs(full - 0.5).max(), 0.05)
+
     def setUp(self):
         import mlx.core as mx
         previous = mx.default_device()

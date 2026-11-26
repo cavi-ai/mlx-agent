@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- TRELLIS.2 shape and texture decoders run their blocks in float16 when the decoder config sets `use_fp16` (every published decoder) instead of float32; norms and the input and output layers stay float32.
+
 ## 0.17.0
 
 - Add an `image_segmentation` task that runs a local SAM 2 checkpoint on a box with optional labeled points and writes a PNG mask. Task admission keeps a 512 MB controller margin.

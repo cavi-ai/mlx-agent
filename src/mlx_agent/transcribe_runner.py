@@ -68,7 +68,7 @@ def main(argv=None):
             return 2
         kwargs["word_timestamps"] = True
     output = model.generate(arguments.audio, **kwargs)
-    text = str(getattr(output, "text", output if isinstance(output, str) else "")).strip()
+    text = str(getattr(output, "text", output if isinstance(output, str) else ""))
     segments = list(getattr(output, "segments", None) or [])
     audio_seconds = int(samples.shape[0]) / 16000
     # Whisper can end a clip's text early on sung audio and skip the rest; decode again from the last segment.
@@ -78,9 +78,10 @@ def main(argv=None):
         if not later or float(later[-1]["end"]) <= heard_until:
             break
         segments += later
-        text = " ".join([text, *(str(segment["text"]).strip() for segment in later)]).strip()
+        # Whisper's decoded segments carry their own spacing.
+        text += "".join(str(segment["text"]) for segment in later)
     result = {
-        "text": text,
+        "text": text.strip(),
         "seconds": round(time.time() - started, 3),
         "audio_seconds": round(audio_seconds, 3),
     }

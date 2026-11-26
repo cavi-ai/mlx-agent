@@ -191,23 +191,25 @@ def sung(text, start, end):
 class FakeSungWhisper:
     """Ends its text after a sung ad-lib, as Whisper does on music, unless decoding starts past it."""
 
-    def __init__(self):
+    def __init__(self, texts=(" Yeah.", " Wake the laptop,", " lights down low")):
+        self.texts = texts
         self.clips = []
 
     def generate(self, audio, language=None, word_timestamps=False, clip_timestamps="0"):
         self.clips.append(clip_timestamps)
         start = float(clip_timestamps) if isinstance(clip_timestamps, str) else clip_timestamps[0]
+        first, second, third = self.texts
         if start < 2.36:
-            segments = [sung(" Yeah.", 0.0, 2.36)]
+            segments = [sung(first, 0.0, 2.36)]
         elif start < 9.8:
-            segments = [sung(" Wake the laptop,", 5.0, 7.3), sung(" lights down low", 7.6, 9.8)]
+            segments = [sung(second, 5.0, 7.3), sung(third, 7.6, 9.8)]
         else:
             segments = []
         return types.SimpleNamespace(text="".join(segment["text"] for segment in segments), segments=segments)
 
 
 class TranscribeRunnerTests(unittest.TestCase):
-    def transcribe(self, model, *extra, expected=0, samples=45000):
+    def transcribe(self, model, *extra, expected=0, samples=45000, language="en"):
         utils = types.ModuleType("mlx_audio.stt.utils")
         utils.load_model = lambda path: model
         utils.load_audio = lambda path: types.SimpleNamespace(shape=(samples,))
@@ -215,7 +217,7 @@ class TranscribeRunnerTests(unittest.TestCase):
                    "mlx_audio.stt.utils": utils}
         buffer = io.StringIO()
         with mock.patch.dict(sys.modules, modules), redirect_stdout(buffer):
-            code = transcribe_runner.main(["--model", "/m", "--audio", "/clip.wav", "--language", "en", *extra])
+            code = transcribe_runner.main(["--model", "/m", "--audio", "/clip.wav", "--language", language, *extra])
         self.assertEqual(code, expected)
         return json.loads(buffer.getvalue())
 
@@ -234,6 +236,11 @@ class TranscribeRunnerTests(unittest.TestCase):
         self.assertEqual(result["text"], "Yeah. Wake the laptop, lights down low")
         self.assertEqual([(word["word"], word["end"]) for word in result["words"]],
                          [("Yeah.", 2.36), ("Wake the laptop,", 7.3), ("lights down low", 9.8)])
+
+    def test_resumed_text_preserves_japanese_segment_spacing(self):
+        model = FakeSungWhisper(("こんにちは", "、世界", "！"))
+        result = self.transcribe(model, samples=20 * 16000, language="ja")
+        self.assertEqual(result["text"], "こんにちは、世界！")
 
     def test_a_model_without_word_times_refuses_words(self):
         self.assertEqual(self.transcribe(FakeParakeet(), "--words", expected=2),

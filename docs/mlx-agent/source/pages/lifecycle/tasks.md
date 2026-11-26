@@ -301,6 +301,22 @@ These requests produce `task-run/3` records. Primary-image-only
 mesh and text-only video requests continue to produce `task-run/2` records.
 Consumers that open conditioned jobs must support `task-run/3`.
 
+## Segment an image
+
+Use `task-request/2` with kind `image_segmentation`, a local SAM 2 checkpoint
+(`model_type` `sam2` or `sam2_video`, one unsharded `model.safetensors`), an absolute
+`image_path`, a `box` of four integer pixel coordinates `[x0, y0, x1, y1]` and
+a `mask_threshold`. Optional `points` (`[x, y]` pairs) and `labels` (`1` to
+include, `0` to exclude) refine the selection; the two lists must have the
+same length. Coordinates apply to the image after its EXIF orientation, and
+the box and every point must lie inside it.
+
+The task needs the installed `sam2` backend. The engine publishes an owned
+`output.png` artifact with the `segment/1` result: a single-channel mask at the
+image size, 255 inside the selection and 0 outside. The result also reports the
+input image digest, the image dimensions, the threshold and the model's IoU
+score.
+
 ## Task storage
 
 `mlx-agent task storage-budget --bytes N` enables a submission high-water mark

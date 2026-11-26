@@ -31,7 +31,9 @@
         "seed": {"type": "integer", "minimum": 0, "maximum": 4294967295, "default": 42},
         "bpm": {"type": "integer", "minimum": 30, "maximum": 300},
         "time_signature": {"enum": [2, 3, 4, 6]},
-        "reference": {"type": "string", "pattern": "^/[^\\u0000-\\u001f]*$"}
+        "reference": {"type": "string", "pattern": "^/[^\\u0000-\\u001f]*$"},
+        "key": {"type": "string", "minLength": 7, "maxLength": 8},
+        "keep_caption": {"type": "boolean"}
       }
     },
     "legacyRequest": {

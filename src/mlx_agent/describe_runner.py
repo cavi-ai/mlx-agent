@@ -49,7 +49,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", required=True)
     parser.add_argument("--prompt", required=True)
-    source = parser.add_mutually_exclusive_group(required=True)
+    source = parser.add_mutually_exclusive_group()
     source.add_argument("--image")
     source.add_argument("--video")
     parser.add_argument("--max-tokens", type=int, required=True)
@@ -68,15 +68,16 @@ def main(argv=None):
     config = model.config
     model_type = str(getattr(config, "model_type", None) or "")
 
-    kind = "image" if arguments.image else "video"
+    kind = "image" if arguments.image else "video" if arguments.video else "text"
     if model_type.lower() not in MODEL_CONFIG:
-        error = "not_vision_model" if kind == "image" else "video_unsupported"
+        error = "video_unsupported" if kind == "video" else "not_vision_model"
         return _refuse(error, model_type, "mlx_vlm has no chat format for images or frames of this model type")
 
+    # A prompt with no media is answered from the text alone.
     images, videos, template = [], None, {}
     if kind == "image":
         images = [arguments.image]
-    else:
+    elif kind == "video":
         from mlx_vlm.generate.video import processor_handles_video, resolve_video_inputs
         from mlx_vlm.utils import VideoSampling
 

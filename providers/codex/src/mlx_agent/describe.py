@@ -1,4 +1,4 @@
-"""Answer one question about an image or a video with a converted vision-language model through its backend (read-only)."""
+"""Answer one prompt, about an image, a video or neither, with a converted vision-language model through its backend (read-only)."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from .inference_runner import InferenceError, RunnerContract, invoke
 DESCRIBE_SCHEMA = "describe/1"
 DESCRIBE_RUNNER = Path(__file__).resolve().with_name("describe_runner.py")
 DEFAULT_TIMEOUT_SECONDS = 900
-MAX_PROMPT_CHARS = 4000
+MAX_PROMPT_CHARS = 16000
 MAX_TOKENS_RANGE = range(1, 4097)
 MAX_TEMPERATURE = 2.0
 MIN_FPS, MAX_FPS = 0.1, 8.0
@@ -73,8 +73,8 @@ def plan_describe(model_path, prompt, image=None, video=None, max_tokens=256, te
         ord(character) < 32 and character not in "\n\t" for character in prompt
     ):
         raise _invalid("The prompt must be 1..{0} characters of plain text.".format(MAX_PROMPT_CHARS), "Pass --prompt with a question about the media.")
-    if (image is None) == (video is None):
-        raise _invalid("Pass exactly one of --image or --video.", "Pass --image FILE for a picture or --video FILE for a clip.")
+    if image is not None and video is not None:
+        raise _invalid("Pass at most one of --image or --video.", "Pass --image FILE for a picture, --video FILE for a clip, or neither for a text prompt.")
     if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens not in MAX_TOKENS_RANGE:
         raise _invalid("--max-tokens must be 1..4096.", "Pass --max-tokens 256, for example.")
     if not _number(temperature) or not 0 <= temperature <= MAX_TEMPERATURE:
@@ -85,8 +85,11 @@ def plan_describe(model_path, prompt, image=None, video=None, max_tokens=256, te
         raise _invalid("--fps must be {0}..{1}.".format(MIN_FPS, MAX_FPS), "Pass --fps 1.0, for example.")
     if max_pixels is not None and (not isinstance(max_pixels, int) or isinstance(max_pixels, bool) or not 1 <= max_pixels <= MAX_PIXELS_LIMIT):
         raise _invalid("--max-pixels must be 1..{0}.".format(MAX_PIXELS_LIMIT), "Pass --max-pixels 1000000, for example.")
-    kind = "image" if image is not None else "video"
-    media = _media(kind, image if image is not None else video, IMAGE_SUFFIXES if image is not None else VIDEO_SUFFIXES)
+    if max_pixels is not None and image is None and video is None:
+        raise _invalid("--max-pixels applies to --image or --video only.", "Drop --max-pixels for a text prompt.")
+    kind = "image" if image is not None else "video" if video is not None else "text"
+    media = None if kind == "text" else _media(kind, image if image is not None else video,
+                                               IMAGE_SUFFIXES if image is not None else VIDEO_SUFFIXES)
     model_type = config.get("model_type")
     manifests = load_manifests() if manifests is None else manifests
     registries = load_registries(manifests, root) if registries is None else registries
@@ -108,7 +111,8 @@ def plan_describe(model_path, prompt, image=None, video=None, max_tokens=256, te
     used_fps = (DEFAULT_FPS if fps is None else float(fps)) if kind == "video" else None
     argv = [
         str(backend_python(manifest, root)), str(DESCRIBE_RUNNER), "--model", str(model), "--prompt=" + prompt,
-        "--{0}".format(kind), str(media), "--max-tokens", str(max_tokens), "--temperature", repr(float(temperature)),
+        *(() if media is None else ("--{0}".format(kind), str(media))),
+        "--max-tokens", str(max_tokens), "--temperature", repr(float(temperature)),
     ]
     if used_fps is not None:
         argv += ["--fps", repr(used_fps)]
@@ -116,7 +120,7 @@ def plan_describe(model_path, prompt, image=None, video=None, max_tokens=256, te
         argv += ["--max-pixels", str(max_pixels)]
     return {
         "backend": manifest["id"], "model": str(model), "model_type": model_type,
-        "input": {"kind": kind, "path": str(media)}, "argv": argv,
+        "input": {"kind": kind} if media is None else {"kind": kind, "path": str(media)}, "argv": argv,
     }
 
 

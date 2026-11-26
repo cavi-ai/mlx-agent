@@ -17,7 +17,7 @@ POLL_SECONDS = 0.5
 VERBS = {
     "speak": ("speak", ("text", "voice", "speed", "lang_code")),
     "music": ("music_generation", ("caption", "lyrics", "duration", "steps", "seed", "bpm", "time_signature",
-                                   "reference")),
+                                   "reference", "key", "keep_caption")),
     "generate": ("image_generation", ("prompt", "width", "height", "steps", "seed")),
     "video": ("video_generation", ("prompt", "width", "height", "frames", "steps", "seed", "fps", "denoiser_cache",
                                    "cache_memory_mib", "image", "audio", "audio_start")),
@@ -58,6 +58,8 @@ def request(verb, arguments):
     else:
         kind, names = VERBS[verb]
         parameters = {name: getattr(arguments, name) for name in names}
+        if verb == "music" and not parameters["keep_caption"]:
+            del parameters["keep_caption"]
         if verb == "video":
             for name in ("image", "audio"):
                 if parameters[name] is not None:

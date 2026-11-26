@@ -2240,6 +2240,18 @@ def _add_convert_arguments(parser):
     music.add_argument("--key", help='musical key for ACE-Step models, such as "F# minor"')
     music.add_argument("--keep-caption", action="store_true",
                        help="send the caption to ACE-Step as written instead of the planner's rewrite")
+    music.add_argument("--task", choices=("text2music", "cover", "repaint", "complete"), default="text2music",
+                       help="ACE-Step models: cover keeps the source's melody, rhythm, chords and structure under the "
+                            "caption and lyrics; repaint regenerates the repaint window and keeps the rest; complete "
+                            "adds an accompaniment to a single track, such as a vocal stem (base checkpoints)")
+    music.add_argument("--source", help="absolute audio file a cover, repaint or complete starts from; the take keeps "
+                                        "its length")
+    music.add_argument("--track", action="append",
+                       help="a track complete adds, such as drums, bass, guitar, keyboard or strings; repeatable; "
+                            "leave it out for a full accompaniment")
+    music.add_argument("--cover-strength", type=float, help="how much of the source a cover keeps, 0..1 (default 1)")
+    music.add_argument("--repaint-start", type=float, help="seconds into the source where the repaint starts")
+    music.add_argument("--repaint-end", type=float, help="seconds into the source where the repaint ends")
     music.add_argument("--timeout", type=int, default=3600)
     music.add_argument("--json", action="store_true")
     compose = actions.add_parser(
@@ -2416,8 +2428,16 @@ def _run_convert(arguments):
             plan = plan_music(arguments.path, arguments.caption, arguments.lyrics, arguments.out,
                               duration=arguments.duration, steps=arguments.steps, seed=arguments.seed,
                               bpm=arguments.bpm, time_signature=arguments.time_signature, reference=arguments.reference,
-                              key=arguments.key, keep_caption=arguments.keep_caption)
-            result = served_or_local("music", run_music, plan, arguments.out)
+                              key=arguments.key, keep_caption=arguments.keep_caption, task=arguments.task,
+                              source=arguments.source, cover_strength=arguments.cover_strength,
+                              repaint_start=arguments.repaint_start, repaint_end=arguments.repaint_end,
+                              tracks=arguments.track)
+            if arguments.task != "text2music":
+                # Served endpoints take text2music jobs only, so a cover, repaint or complete runs in its own process.
+                from .compute import guarded_start
+                result = guarded_start("music", run_music, plan, timeout=arguments.timeout)
+            else:
+                result = served_or_local("music", run_music, plan, arguments.out)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
         if arguments.convert_command == "compose":
             if not 1 <= arguments.timeout <= 3600:

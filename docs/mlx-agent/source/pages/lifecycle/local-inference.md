@@ -112,6 +112,27 @@ the result's `planned` object holds the caption the DiT read and the tempo, key,
 length, meter and language the planner chose. ACE-Step loads from a temporary
 folder of links to the checkpoint files, so the model folder is never written.
 
+`--task cover`, `--task repaint` and `--task complete` start from `--source`,
+an absolute audio file, and the take keeps its length; `--duration` does not
+apply and the planner does not run. A cover keeps the source's melody, rhythm,
+chords and structure under the caption and lyrics; `--cover-strength` (0 to 1,
+default 1) sets how much of the source it keeps. A repaint regenerates
+`--repaint-start` to `--repaint-end` seconds and keeps the rest of the source.
+A complete adds an accompaniment in the caption's style to a single track,
+such as a vocal stem; each `--track` (`woodwinds`, `brass`, `fx`, `synth`,
+`strings`, `percussion`, `keyboard`, `guitar`, `bass`, `drums`,
+`backing_vocals`, `vocals`) names a part to add, and without `--track` it adds
+a full accompaniment. Complete runs on base checkpoints only
+(`acestep-v15-base`, `acestep-v15-xl-base`). Source tasks run in their own
+process, never on a served endpoint, and the result reports `task`, `source`
+and the cover strength, repaint window or tracks.
+
+```bash
+python3 scripts/mlx-agent convert music --path /absolute/ACE-Step-1.5/checkpoints/acestep-v15-turbo --caption "lo-fi jazz hip hop, Rhodes piano" --task cover --source /absolute/take/instrumental.wav --cover-strength 0.5 --out /absolute/output/cover.wav --steps 8 --json
+python3 scripts/mlx-agent convert music --path /absolute/ACE-Step-1.5/checkpoints/acestep-v15-turbo --caption "trap, deep 808" --lyrics $'[verse]\nRun it local, run it fast' --task repaint --source /absolute/take/take.wav --repaint-start 10 --repaint-end 18 --out /absolute/output/repaint.wav --steps 8 --json
+python3 scripts/mlx-agent convert music --path /absolute/ACE-Step-1.5/checkpoints/acestep-v15-xl-base --caption "boom bap, dusty drums, upright bass, Rhodes" --lyrics $'[verse]\nRun it local, run it fast' --task complete --source /absolute/take/vocals.wav --track drums --track bass --track keyboard --out /absolute/output/complete.wav --steps 50 --json
+```
+
 `convert compose` runs the planner on its own: it rewrites a caption into a
 detailed one, structures the lyrics, and chooses tempo, key, length, meter and
 language. `--bpm`, `--duration`, `--key`, `--time-signature` and `--language`

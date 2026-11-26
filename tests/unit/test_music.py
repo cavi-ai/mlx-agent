@@ -313,6 +313,239 @@ class AceStepMusicTests(unittest.TestCase):
                 result = json.loads(output.getvalue())["planned"]
                 self.assertEqual((result["caption"], result.get("language")), (expected, "en"))
 
+    def test_cover_and_repaint_condition_ace_step_on_the_source_without_the_planner(self):
+        from mlx_agent import acestep_runner
+
+        source = self.root / "take.wav"
+        source.write_bytes(b"RIFF")
+        seen = {}
+        source_frames = 96000
+        generated_frames = 245760
+
+        class Handler:
+            sample_rate = 48000
+
+            def process_src_audio(self, path):
+                seen.setdefault("decoded", []).append(path)
+                return SimpleNamespace(shape=(2, source_frames))
+
+            def initialize_service(self, **kwargs):
+                seen["loads"] = seen.get("loads", 0) + 1
+                return "ready", True
+
+            def generate_instruction(self, task_type, complete_track_classes=None):
+                return "instruction for " + task_type
+
+        def generate_music(*, dit_handler, llm_handler, params, save_dir, **kwargs):
+            seen.update(planner=llm_handler, params=params)
+            dit_handler.process_src_audio(params.src_audio)
+            seen["frames"] = generated_frames
+            path = Path(save_dir) / "music.wav"
+            path.touch()
+            return SimpleNamespace(success=True, audios=[{"path": str(path)}], extra_outputs={})
+
+        def truncate(frames):
+            seen["frames"] = frames
+
+        wav = mock.MagicMock()
+        wav.__enter__.return_value.truncate.side_effect = truncate
+        mx = SimpleNamespace(reset_peak_memory=lambda: None, get_peak_memory=lambda: 0)
+        modules = {
+            "mlx": SimpleNamespace(core=mx), "mlx.core": mx,
+            "soundfile": SimpleNamespace(info=lambda path: SimpleNamespace(frames=seen["frames"], samplerate=48000),
+                                         SoundFile=lambda *args: wav),
+            "acestep.model_downloader": SimpleNamespace(_CHECKPOINT_TO_VARIANT={self.model.name: "turbo"}),
+            "acestep.handler": SimpleNamespace(AceStepHandler=Handler),
+            "acestep.inference": SimpleNamespace(GenerationParams=SimpleNamespace, GenerationConfig=SimpleNamespace,
+                                                 generate_music=generate_music),
+            "acestep.llm_inference": SimpleNamespace(LLMHandler=object),
+        }
+
+        def run(plan, status=0):
+            output = io.StringIO()
+            with mock.patch.dict(sys.modules, modules), mock.patch.dict(acestep_runner.os.environ), \
+                    mock.patch.object(acestep_runner, "socket", SimpleNamespace(socket=SimpleNamespace())), \
+                    redirect_stdout(output):
+                self.assertEqual(acestep_runner.main(plan["argv"][2:]), status)
+            if status == 0:
+                self.out.unlink()
+            return json.loads(output.getvalue())
+
+        cover = self.plan(steps=8, lyrics="[verse]\nNew words", task="cover", source=str(source), cover_strength=0.4)
+        self.assertNotIn("--planner", cover["argv"])
+        self.assertNotIn("--duration", cover["argv"])
+        self.assertNotIn("planned", run(cover))
+        params = seen["params"]
+        self.assertIsNone(seen["planner"])
+        self.assertEqual((params.task_type, params.src_audio, params.audio_cover_strength, params.instruction,
+                          params.lyrics, params.thinking),
+                         ("cover", str(source), 0.4, "instruction for cover", "[verse]\nNew words", False))
+
+        self.assertTrue(getattr(params, "enable_normalization", True))
+
+        repaint = self.plan(steps=8, task="repaint", source=str(source), repaint_start=0.45, repaint_end=1.25)
+        seen["decoded"].clear()
+        self.assertEqual(run(repaint)["audio_seconds"], 2.0)
+        self.assertEqual(seen["decoded"], [str(source)])
+        wav.__enter__.return_value.truncate.assert_called_once_with(source_frames)
+        params = seen["params"]
+        self.assertEqual((params.task_type, params.src_audio, params.repainting_start, params.repainting_end,
+                          params.instruction), ("repaint", str(source), 0.45, 1.25, "instruction for repaint"))
+        self.assertFalse(params.enable_normalization)
+
+        outpainting = self.plan(steps=8, task="repaint", source=str(source), repaint_start=1.5, repaint_end=2.01)
+        loads = seen["loads"]
+        refused = run(outpainting, status=2)
+        self.assertEqual(refused["error"], "invalid_arguments")
+        self.assertIn("2 s source", refused["detail"])
+        self.assertEqual(seen["loads"], loads)
+        self.assertFalse(self.out.exists())
+
+        def runner(argv, **kwargs):
+            record = refused if argv == outpainting["argv"] else {"path": str(self.out), "audio_seconds": 2.0}
+            if "path" in record:
+                self.out.write_bytes(b"audio")
+            return subprocess.CompletedProcess(argv, 2 if "error" in record else 0, json.dumps(record), "")
+        with self.assertRaises(MusicError) as error:
+            run_music(outpainting, manifests=self.manifests, root=self.root, runner=runner)
+        self.assertEqual(error.exception.code, "invalid_arguments")
+        self.assertIn("2 s source", str(error.exception))
+        result = run_music(repaint, manifests=self.manifests, root=self.root, runner=runner)
+        self.assertEqual((result["task"], result["source"], result["repaint_start"], result["repaint_end"],
+                          result["duration"], result.get("planner")), ("repaint", str(source), 0.45, 1.25, None, None))
+        self.out.unlink()
+        self.assertNotIn("task", run_music(self.plan(steps=8), manifests=self.manifests, root=self.root,
+                                           runner=runner))
+
+    def test_cover_and_repaint_settings_are_refused_where_they_do_not_apply(self):
+        source = self.root / "take.wav"
+        source.write_bytes(b"RIFF")
+        refused = {
+            "unknown task": {"task": "extract", "source": str(source)},
+            "source without a task": {"source": str(source)},
+            "cover without a source": {"task": "cover"},
+            "relative source": {"task": "cover", "source": "take.wav"},
+            "missing source": {"task": "cover", "source": str(self.root / "gone.wav")},
+            "source that is not audio": {"task": "cover", "source": str(self.model / "config.json")},
+            "cover strength above 1": {"task": "cover", "source": str(source), "cover_strength": 1.5},
+            "cover strength on repaint": {"task": "repaint", "source": str(source), "repaint_start": 0,
+                                          "repaint_end": 2, "cover_strength": 0.5},
+            "repaint without a window": {"task": "repaint", "source": str(source)},
+            "repaint window ending first": {"task": "repaint", "source": str(source), "repaint_start": 5,
+                                            "repaint_end": 5},
+            "repaint window on cover": {"task": "cover", "source": str(source), "repaint_start": 0, "repaint_end": 2},
+        }
+        for name, settings in refused.items():
+            with self.subTest(name), self.assertRaises(MusicError) as caught:
+                self.plan(steps=8, **settings)
+            self.assertEqual(caught.exception.code, "invalid_arguments")
+
+    def base_checkpoint(self, name="acestep-v15-xl-base"):
+        model = self.model.parent / name
+        model.mkdir()
+        (model / "config.json").write_text(json.dumps({"model_type": "acestep"}))
+        for file in ("model.safetensors", "silence_latent.pt"):
+            (model / file).write_bytes(b"weights")
+        return model
+
+    def test_complete_adds_the_named_tracks_to_a_source_on_base_checkpoints(self):
+        from mlx_agent import acestep_runner
+
+        source = self.root / "vocals.wav"
+        source.write_bytes(b"RIFF")
+        base = self.base_checkpoint()
+        seen = {}
+
+        class Handler:
+            def initialize_service(self, **kwargs):
+                return "ready", True
+
+            def generate_instruction(self, task_type, complete_track_classes=None):
+                return "{0} with {1}".format(task_type, complete_track_classes)
+
+        def generate_music(*, llm_handler, params, save_dir, **kwargs):
+            seen.update(planner=llm_handler, params=params)
+            path = Path(save_dir) / "music.wav"
+            path.touch()
+            return SimpleNamespace(success=True, audios=[{"path": str(path)}], extra_outputs={})
+
+        mx = SimpleNamespace(reset_peak_memory=lambda: None, get_peak_memory=lambda: 0)
+        modules = {
+            "mlx": SimpleNamespace(core=mx), "mlx.core": mx,
+            "soundfile": SimpleNamespace(info=lambda path: SimpleNamespace(frames=96000, samplerate=48000)),
+            "acestep.model_downloader": SimpleNamespace(_CHECKPOINT_TO_VARIANT={base.name: "xl_base"}),
+            "acestep.handler": SimpleNamespace(AceStepHandler=Handler),
+            "acestep.inference": SimpleNamespace(GenerationParams=SimpleNamespace, GenerationConfig=SimpleNamespace,
+                                                 generate_music=generate_music),
+            "acestep.llm_inference": SimpleNamespace(LLMHandler=object),
+        }
+        plan = self.plan(model_path=str(base), steps=50, lyrics="[verse]\nKept words", task="complete",
+                         source=str(source), tracks=["drums", "bass"])
+        self.assertNotIn("--planner", plan["argv"])
+        self.assertNotIn("--duration", plan["argv"])
+        output = io.StringIO()
+        with mock.patch.dict(sys.modules, modules), mock.patch.dict(acestep_runner.os.environ), \
+                mock.patch.object(acestep_runner, "socket", SimpleNamespace(socket=SimpleNamespace())), \
+                redirect_stdout(output):
+            self.assertEqual(acestep_runner.main(plan["argv"][2:]), 0)
+        self.out.unlink()
+        params = seen["params"]
+        self.assertIsNone(seen["planner"])
+        self.assertEqual((params.task_type, params.src_audio, params.instruction, params.lyrics),
+                         ("complete", str(source), "complete with ['drums', 'bass']", "[verse]\nKept words"))
+
+        def runner(argv, **kwargs):
+            self.out.write_bytes(b"audio")
+            return subprocess.CompletedProcess(argv, 0, json.dumps({"path": str(self.out), "audio_seconds": 2}), "")
+        result = run_music(plan, manifests=self.manifests, root=self.root, runner=runner)
+        self.assertEqual((result["task"], result["tracks"], result["duration"], result["shift"]),
+                         ("complete", ["drums", "bass"], None, 1.0))
+        self.out.unlink()
+
+        with mock.patch("mlx_agent.music.plan_music", return_value={}) as planned, \
+                mock.patch("mlx_agent.music.run_music", return_value={"path": str(self.out)}), \
+                mock.patch("mlx_agent.served.endpoint", return_value=object()) as served, redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main(["convert", "music", "--path", str(base), "--caption", "neo soul band", "--out",
+                                       str(self.out), "--task", "complete", "--source", str(source),
+                                       "--track", "drums", "--track", "bass", "--json"]), 0)
+        self.assertEqual((planned.call_args.kwargs["task"], planned.call_args.kwargs["tracks"]),
+                         ("complete", ["drums", "bass"]))
+        served.assert_not_called()
+
+        sft = self.base_checkpoint("acestep-v15-base-sft-fix-inst")
+        refused = {
+            "a turbo checkpoint": {"task": "complete", "source": str(source)},
+            "a base checkpoint tuned as SFT": {"model_path": str(sft), "task": "complete", "source": str(source)},
+            "an unknown track": {"model_path": str(base), "task": "complete", "source": str(source),
+                                 "tracks": ["kazoo"]},
+            "a track named twice": {"model_path": str(base), "task": "complete", "source": str(source),
+                                    "tracks": ["drums", "drums"]},
+            "an empty track list": {"model_path": str(base), "task": "complete", "source": str(source), "tracks": []},
+            "a cover strength": {"model_path": str(base), "task": "complete", "source": str(source),
+                                 "cover_strength": 0.5},
+            "tracks on a cover": {"task": "cover", "source": str(source), "tracks": ["drums"]},
+            "tracks without a task": {"tracks": ["drums"]},
+        }
+        for name, settings in refused.items():
+            with self.subTest(name), self.assertRaises(MusicError) as caught:
+                self.plan(steps=8, **settings)
+            self.assertEqual(caught.exception.code, "invalid_arguments")
+
+    def test_cli_runs_a_cover_in_its_own_process_with_its_settings(self):
+        source = self.root / "take.wav"
+        source.write_bytes(b"RIFF")
+        output = io.StringIO()
+        with mock.patch("mlx_agent.music.plan_music", return_value={}) as plan, \
+                mock.patch("mlx_agent.music.run_music", return_value={"path": str(self.out)}) as run, \
+                mock.patch("mlx_agent.served.endpoint", return_value=object()) as served, redirect_stdout(output):
+            self.assertEqual(cli.main(["convert", "music", "--path", str(self.model), "--caption", "trap", "--out",
+                                       str(self.out), "--task", "cover", "--source", str(source),
+                                       "--cover-strength", "0.3", "--json"]), 0)
+        self.assertEqual({name: plan.call_args.kwargs[name] for name in ("task", "source", "cover_strength")},
+                         {"task": "cover", "source": str(source), "cover_strength": 0.3})
+        run.assert_called_once()
+        served.assert_not_called()
+
     def test_compose_runs_the_planner_beside_the_checkpoint_bound_to_the_given_values(self):
         from mlx_agent.compose import plan_compose, run_compose
         def compose(**kwargs):

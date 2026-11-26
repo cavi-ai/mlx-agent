@@ -2235,8 +2235,24 @@ def _add_convert_arguments(parser):
     music.add_argument("--bpm", type=int, help="tempo for ACE-Step models (30..300)")
     music.add_argument("--time-signature", type=int, help="beats per bar for ACE-Step models: 2, 3, 4 or 6")
     music.add_argument("--reference", help="absolute audio file whose style ACE-Step models follow")
+    music.add_argument("--key", help='musical key for ACE-Step models, such as "F# minor"')
+    music.add_argument("--keep-caption", action="store_true",
+                       help="send the caption to ACE-Step as written instead of the planner's rewrite")
     music.add_argument("--timeout", type=int, default=3600)
     music.add_argument("--json", action="store_true")
+    compose = actions.add_parser(
+        "compose", help="plan a song with the ACE-Step planner beside a music model: caption, lyrics, tempo and key (read-only)")
+    compose.add_argument("--path", required=True, help="ACE-Step checkpoint directory with the planner beside it")
+    compose.add_argument("--caption", required=True, help="style, instruments, mood and vocals (1..2000 characters)")
+    compose.add_argument("--lyrics", required=True, help="lyrics under [section] tags, or [instrumental]")
+    compose.add_argument("--bpm", type=int, help="tempo the plan keeps (30..300)")
+    compose.add_argument("--duration", type=float, help="seconds the plan keeps (up to 360)")
+    compose.add_argument("--key", help='key the plan keeps, such as "F# minor"')
+    compose.add_argument("--time-signature", type=int, help="beats per bar the plan keeps: 2, 3, 4 or 6")
+    compose.add_argument("--language", help="vocal language code the plan keeps, such as en")
+    compose.add_argument("--temperature", type=float, default=0.85, help="planner sampling temperature (0..2)")
+    compose.add_argument("--timeout", type=int, default=900, help="seconds before the backend run is stopped")
+    compose.add_argument("--json", action="store_true")
     speak = actions.add_parser(
         "speak",
         help="synthesize one text with a converted text-to-speech model to a new WAV (read-only verification canary)",
@@ -2251,10 +2267,10 @@ def _add_convert_arguments(parser):
     speak.add_argument("--json", action="store_true")
     describe = actions.add_parser(
         "describe",
-        help="answer one question about an image or a video with a converted vision-language model (read-only verification canary)",
+        help="answer one prompt, about an image, a video or neither, with a converted vision-language model (read-only)",
     )
     describe.add_argument("--path", required=True, help="converted vision-language model directory")
-    describe.add_argument("--prompt", required=True, help="question about the media (1..4000 characters)")
+    describe.add_argument("--prompt", required=True, help="question about the media, or a text prompt (1..16000 characters)")
     describe.add_argument("--image", default=None, help="image file (png, jpg, jpeg, webp)")
     describe.add_argument("--video", default=None, help="video file (mp4, mov, m4v)")
     describe.add_argument("--max-tokens", type=int, default=256, help="answer length limit (1..4096)")
@@ -2321,6 +2337,7 @@ def _run_convert(arguments):
     from .gguf import GGUFError
     from .inference_runner import InferenceError
     from .music import plan_music, run_music
+    from .compose import plan_compose, run_compose
     from .separate import plan_separate, run_separate
     from .serve import default_model_present
     from .speak import plan_speak, run_speak
@@ -2395,9 +2412,20 @@ def _run_convert(arguments):
                 raise ValueError("--timeout must be 1..14400 seconds")
             plan = plan_music(arguments.path, arguments.caption, arguments.lyrics, arguments.out,
                               duration=arguments.duration, steps=arguments.steps, seed=arguments.seed,
-                              bpm=arguments.bpm, time_signature=arguments.time_signature, reference=arguments.reference)
+                              bpm=arguments.bpm, time_signature=arguments.time_signature, reference=arguments.reference,
+                              key=arguments.key, keep_caption=arguments.keep_caption)
             result = served_or_local("music", run_music, plan, arguments.out)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["path"])
+        if arguments.convert_command == "compose":
+            if not 1 <= arguments.timeout <= 3600:
+                raise ValueError("--timeout must be 1..3600 seconds")
+            plan = plan_compose(arguments.path, arguments.caption, arguments.lyrics, bpm=arguments.bpm,
+                                duration=arguments.duration, key=arguments.key,
+                                time_signature=arguments.time_signature, language=arguments.language,
+                                temperature=arguments.temperature)
+            from .compute import guarded_start
+            result = guarded_start("compose", run_compose, plan, timeout=arguments.timeout)
+            return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["caption"])
         if arguments.convert_command == "speak":
             if not 1 <= arguments.timeout <= 7200:
                 raise ValueError("--timeout must be 1..7200 seconds")
@@ -2411,7 +2439,12 @@ def _run_convert(arguments):
             plan = plan_describe(arguments.path, arguments.prompt, image=arguments.image, video=arguments.video,
                                  max_tokens=arguments.max_tokens, temperature=arguments.temperature,
                                  fps=arguments.fps, max_pixels=arguments.max_pixels)
-            result = served_or_local("describe", run_describe, plan, None)
+            if plan["input"]["kind"] == "text":
+                # Served endpoints take image and video tasks; a text prompt runs locally.
+                from .compute import guarded_start
+                result = guarded_start("describe", run_describe, plan, timeout=arguments.timeout)
+            else:
+                result = served_or_local("describe", run_describe, plan, None)
             return _emit_serve_result(ResultEnvelope.ok(operation, result), arguments.json, human=result["text"])
         if arguments.convert_command == "mesh":
             if not 1 <= arguments.timeout <= 14400:

@@ -228,6 +228,60 @@ class AceStepMusicTests(unittest.TestCase):
         self.assertEqual((result["schema"], result["backend"], result["bpm"], result["planner"], result["audio_seconds"]),
                          ("music/1", "ace-step", 120, "acestep-5Hz-lm-1.7B", 120))
 
+    def test_key_and_kept_caption_reach_the_runner_and_the_take_reports_what_the_planner_used(self):
+        plan = self.plan(steps=8, key="f# Minor", keep_caption=True)
+        self.assertEqual(plan["argv"][plan["argv"].index("--key") + 1], "F# minor")
+        self.assertEqual(plan["argv"][-1], "--keep-caption")
+        planned = {"caption": "minimal tech house", "bpm": 124, "key": "F# minor", "time_signature": 4}
+        def runner(argv, **kwargs):
+            self.out.write_bytes(b"audio")
+            return subprocess.CompletedProcess(argv, 0, json.dumps({"path": str(self.out), "audio_seconds": 15,
+                                                                    "planned": planned}), "")
+        result = run_music(plan, manifests=self.manifests, root=self.root, runner=runner)
+        self.assertEqual((result["key"], result["keep_caption"], result["planned"]), ("F# minor", True, planned))
+        self.out.unlink()
+        self.assertFalse({"--key", "--keep-caption"} & set(self.plan(steps=8)["argv"]))
+        for key in ("H minor", "F# dorian", "minor", "F#minor", "F## minor"):
+            with self.subTest(key=key), self.assertRaises(MusicError) as caught:
+                self.plan(steps=8, key=key)
+            self.assertEqual(caught.exception.code, "invalid_arguments")
+
+    def test_the_planner_report_names_the_caption_the_dit_was_given(self):
+        from mlx_agent import acestep_runner
+        metadata = {"caption": "rewritten by the planner", "bpm": 124, "keyscale": "F# minor", "timesignature": "4",
+                    "language": "en", "duration": "N/A"}
+        self.assertEqual(acestep_runner.planned(metadata, "as written", True),
+                         {"bpm": 124, "key": "F# minor", "time_signature": 4, "language": "en", "caption": "as written"})
+        self.assertEqual(acestep_runner.planned(metadata, "as written", False)["caption"], "rewritten by the planner")
+
+    def test_compose_runs_the_planner_beside_the_checkpoint_bound_to_the_given_values(self):
+        from mlx_agent.compose import plan_compose, run_compose
+        def compose(**kwargs):
+            return plan_compose(str(self.model), "boom bap", "[verse]\nRun it local", manifests=self.manifests,
+                                registries=self.registries, root=self.root, **kwargs)
+        plan = compose(bpm=96, duration=30, key="f# minor", language="en")
+        self.assertEqual(Path(plan["argv"][1]).name, "acestep_compose_runner.py")
+        self.assertEqual(plan["argv"][plan["argv"].index("--planner") + 1], str(self.model.parent / "acestep-5Hz-lm-1.7B"))
+        self.assertEqual([item for item in plan["argv"] if item.startswith(("--bpm=", "--duration=", "--key=", "--language="))],
+                         ["--bpm=96", "--duration=30", "--key=F# minor", "--language=en"])
+        self.assertFalse(any(item.startswith(("--bpm", "--key")) for item in compose()["argv"]))
+        answer = {"caption": "A dusty boom bap beat over warm bass", "lyrics": "[Verse]\nRun it local", "bpm": 96,
+                  "key": "F# minor", "time_signature": 4, "language": "en"}
+        def runner(argv, **kwargs):
+            self.assertEqual(kwargs["env"]["HF_HUB_OFFLINE"], "1")
+            return subprocess.CompletedProcess(argv, 0, json.dumps(answer), "")
+        result = run_compose(plan, manifests=self.manifests, root=self.root, runner=runner)
+        self.assertEqual((result["schema"], result["caption"], result["key"], result["bound"]),
+                         ("compose/1", answer["caption"], "F# minor",
+                          {"bpm": 96, "duration": 30, "key": "F# minor", "language": "en"}))
+        for kwargs in ({"key": "F# dorian"}, {"bpm": 20}, {"language": "e n"}, {"temperature": 3}):
+            with self.subTest(kwargs=kwargs), self.assertRaises(MusicError):
+                compose(**kwargs)
+        (self.model.parent / "acestep-5Hz-lm-1.7B" / "config.json").unlink()
+        with self.assertRaises(MusicError) as caught:
+            compose()
+        self.assertIn("planner", str(caught.exception))
+
     def test_ace_step_limits_and_incomplete_checkpoints_are_refused(self):
         with self.assertRaises(MusicError) as caught:
             self.plan(steps=21)

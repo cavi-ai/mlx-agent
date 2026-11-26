@@ -53,6 +53,29 @@ def adapt_quantizer(checkpoint):
     path.write_text(source.replace(original, replacement), encoding="utf-8")
 
 
+# ACE-Step planner metadata names and the names a result reports them under.
+PLANNED = {"bpm": "bpm", "keyscale": "key", "duration": "duration", "timesignature": "time_signature",
+           "language": "language", "vocal_language": "language"}
+
+
+def planned(metadata, caption, keep_caption):
+    """The tempo, key, length, meter and language the planner chose, and the caption the DiT was given."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    found = {}
+    for source, name in PLANNED.items():
+        if name not in found and metadata.get(source) not in (None, "", "N/A"):
+            found[name] = metadata[source]
+    # The planner writes numbers as text at times, and a meter as "4" or "4/4".
+    for name, kind in (("bpm", int), ("duration", float), ("time_signature", int)):
+        if name in found:
+            try:
+                found[name] = kind(float(str(found[name]).split("/")[0]))
+            except ValueError:
+                del found[name]
+    found["caption"] = caption if keep_caption else str(metadata.get("caption") or caption)
+    return found
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("model", "caption", "lyrics", "out"):
@@ -65,6 +88,8 @@ def main(argv=None):
     parser.add_argument("--bpm", type=int)
     parser.add_argument("--time-signature", type=int)
     parser.add_argument("--reference")
+    parser.add_argument("--key")
+    parser.add_argument("--keep-caption", action="store_true")
     parser.add_argument("--planner")
     args = parser.parse_args(argv)
     model, out = Path(args.model), Path(args.out)
@@ -116,11 +141,12 @@ def main(argv=None):
         mx.reset_peak_memory()
         params = GenerationParams(
             task_type="text2music", caption=args.caption, lyrics="[Instrumental]" if instrumental else args.lyrics,
-            instrumental=instrumental, bpm=args.bpm,
+            instrumental=instrumental, bpm=args.bpm, keyscale=args.key or "",
             timesignature=str(args.time_signature) if args.time_signature else "",
             duration=args.duration, inference_steps=args.steps, guidance_scale=args.guidance, shift=args.shift,
             seed=args.seed, thinking=planner is not None, use_cot_metas=planner is not None,
-            use_cot_caption=planner is not None, use_cot_language=planner is not None,
+            # A kept caption reaches the DiT as written; the planner still chooses what the take leaves open.
+            use_cot_caption=planner is not None and not args.keep_caption, use_cot_language=planner is not None,
             reference_audio=args.reference)
         config = GenerationConfig(batch_size=1, use_random_seed=False, seeds=[args.seed], audio_format="wav")
         started = time.perf_counter()
@@ -134,9 +160,12 @@ def main(argv=None):
         # A hard link claims the new output name or fails, so an existing file is never replaced.
         os.link(written, out)
     audio_seconds = info.frames / info.samplerate
-    print(json.dumps({"path": str(out), "sample_rate": info.samplerate, "audio_seconds": audio_seconds,
-                      "seconds": seconds, "load_seconds": load_seconds, "real_time_factor": seconds / audio_seconds,
-                      "peak_memory_gb": mx.get_peak_memory() / 1e9}), flush=True)
+    report = {"path": str(out), "sample_rate": info.samplerate, "audio_seconds": audio_seconds,
+              "seconds": seconds, "load_seconds": load_seconds, "real_time_factor": seconds / audio_seconds,
+              "peak_memory_gb": mx.get_peak_memory() / 1e9}
+    if planner is not None:
+        report["planned"] = planned((result.extra_outputs or {}).get("lm_metadata"), args.caption, args.keep_caption)
+    print(json.dumps(report), flush=True)
     return 0
 
 

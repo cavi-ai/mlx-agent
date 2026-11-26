@@ -20,13 +20,28 @@ ACESTEP_PLANNER = "acestep-5Hz-lm-1.7B"
 ACESTEP_TURBO_STEPS = 20
 TIME_SIGNATURES = (2, 3, 4, 6)
 REFERENCE_FORMATS = (".wav", ".flac", ".mp3", ".m4a", ".aif", ".aiff", ".ogg")
+# ACE-Step's planner decodes a key as a note, an optional accidental and a mode, such as "F# minor".
+KEY_NOTES = "ABCDEFG"
+KEY_ACCIDENTALS = ("", "#", "b", "♯", "♭")
+KEY_MODES = ("major", "minor")
 
 
 class MusicError(InferenceError):
     """Classified music-generation failure safe to surface in a result envelope."""
 
 
-def validate_parameters(caption, lyrics, duration=15.0, steps=30, seed=42, bpm=None, time_signature=None, reference=None):
+def normalize_key(key):
+    """The ACE-Step spelling of a musical key, such as "F# minor"; MusicError for anything else."""
+    parts = key.split() if isinstance(key, str) else []
+    if (len(parts) != 2 or parts[0][0].upper() not in KEY_NOTES or parts[0][1:] not in KEY_ACCIDENTALS
+            or parts[1].lower() not in KEY_MODES):
+        raise MusicError("invalid_arguments", "The key must be a note A-G, an optional #, b, ♯ or ♭, and major or minor.",
+                         'Use --key "F# minor" or --key "C major".')
+    return "{0}{1} {2}".format(parts[0][0].upper(), parts[0][1:], parts[1].lower())
+
+
+def validate_parameters(caption, lyrics, duration=15.0, steps=30, seed=42, bpm=None, time_signature=None, reference=None,
+                        key=None, keep_caption=False):
     """Validate generation settings without accessing weights or a backend."""
     for name, text, limit in (("caption", caption, 2000), ("lyrics", lyrics, 10000)):
         if not isinstance(text, str) or not text.strip() or len(text) > limit or any(ord(c) < 32 and c not in "\n\t" for c in text):
@@ -44,7 +59,12 @@ def validate_parameters(caption, lyrics, duration=15.0, steps=30, seed=42, bpm=N
         if path is None or not path.is_absolute() or not path.is_file() or path.suffix.lower() not in REFERENCE_FORMATS:
             raise MusicError("invalid_arguments", "The reference must be an existing absolute audio file.",
                              "Pass --reference as a {0} file.".format(", ".join(REFERENCE_FORMATS)))
-    settings = {"bpm": bpm, "time_signature": time_signature, "reference": reference}
+    if key is not None:
+        key = normalize_key(key)
+    if type(keep_caption) is not bool:
+        raise MusicError("invalid_arguments", "keep_caption must be true or false.", "Pass --keep-caption or leave it out.")
+    settings = {"bpm": bpm, "time_signature": time_signature, "reference": reference, "key": key,
+                "keep_caption": keep_caption or None}
     return dict({"caption": caption, "lyrics": lyrics, "duration": duration, "steps": steps, "seed": seed},
                 **{key: value for key, value in settings.items() if value is not None})
 
@@ -64,7 +84,7 @@ def _acestep_planner(model):
 
 
 def plan_music(model_path, caption, lyrics, out, duration=15.0, steps=30, seed=42, bpm=None, time_signature=None,
-               reference=None, manifests=None, registries=None, root=None):
+               reference=None, key=None, keep_caption=False, manifests=None, registries=None, root=None):
     model = Path(model_path).expanduser()
     try:
         config = json.loads((model / "config.json").read_text(encoding="utf-8"))
@@ -72,7 +92,8 @@ def plan_music(model_path, caption, lyrics, out, duration=15.0, steps=30, seed=4
             raise ValueError("An absolute local model directory is required")
     except (OSError, ValueError) as error:
         raise MusicError("model_unreadable", str(error), "Pass an existing converted music model directory.") from error
-    validate_parameters(caption, lyrics, duration, steps, seed, bpm, time_signature, reference)
+    key = validate_parameters(caption, lyrics, duration, steps, seed, bpm, time_signature, reference, key,
+                              keep_caption).get("key")
     target = Path(out).expanduser()
     if not target.is_absolute() or target.suffix.lower() != ".wav" or target.exists() or target.is_symlink() or not target.parent.is_dir():
         raise MusicError("invalid_arguments", "Output must be a new absolute WAV path.", "Choose a new .wav file in an existing directory.")
@@ -88,9 +109,9 @@ def plan_music(model_path, caption, lyrics, out, duration=15.0, steps=30, seed=4
             raise MusicError("model_unreadable", str(error), "Restore the checkpoint's tokenizer files before generating music.") from error
     manifest = manifests[sorted(hits, key=lambda hit: hit["backend"])[0]["backend"]]
     acestep = manifest["id"] == "ace-step"
-    if not acestep and (bpm, time_signature, reference) != (None, None, None):
-        raise MusicError("invalid_arguments", "BPM, time signature and reference apply to ACE-Step models only.",
-                         "Drop --bpm, --time-signature and --reference for this model.")
+    if not acestep and ((bpm, time_signature, reference, key) != (None, None, None, None) or keep_caption):
+        raise MusicError("invalid_arguments", "BPM, time signature, reference, key and keep-caption apply to ACE-Step models only.",
+                         "Drop --bpm, --time-signature, --reference, --key and --keep-caption for this model.")
     turbo = acestep and config.get("is_turbo") is True
     limit = ACESTEP_TURBO_STEPS if turbo else STEP_LIMITS.get(manifest["id"], MAX_STEPS)
     if steps > limit:
@@ -107,12 +128,15 @@ def plan_music(model_path, caption, lyrics, out, duration=15.0, steps=30, seed=4
                      "--duration", str(duration), "--steps", str(steps), "--seed", str(seed)]}
     if acestep:
         # Turbo checkpoints are distilled for shift 3 and ignore guidance; the others use ACE-Step's defaults.
-        plan.update(bpm=bpm, time_signature=time_signature, reference=reference, planner=planner,
-                    shift=3.0 if turbo else 1.0, guidance=7.0)
+        plan.update(bpm=bpm, time_signature=time_signature, reference=reference, key=key, keep_caption=keep_caption,
+                    planner=planner, shift=3.0 if turbo else 1.0, guidance=7.0)
         plan["argv"] += ["--shift", str(plan["shift"]), "--guidance", str(plan["guidance"])]
-        for flag, value in (("--bpm", bpm), ("--time-signature", time_signature), ("--reference", reference), ("--planner", planner)):
+        for flag, value in (("--bpm", bpm), ("--time-signature", time_signature), ("--reference", reference),
+                            ("--key", key), ("--planner", planner)):
             if value is not None:
                 plan["argv"] += [flag, str(value)]
+        if keep_caption:
+            plan["argv"].append("--keep-caption")
     return plan
 
 
@@ -139,7 +163,10 @@ CONTRACT = RunnerContract(
 def run_music(plan, manifests=None, root=None, timeout=DEFAULT_TIMEOUT_SECONDS, runner=subprocess.run):
     result = invoke(plan, CONTRACT, manifests, root, timeout, runner)
     keys = ("path", "sample_rate", "audio_seconds", "seconds", "load_seconds", "real_time_factor", "peak_memory_gb")
-    settings = {key: plan[key] for key in ("bpm", "time_signature", "reference", "planner", "shift", "guidance") if key in plan}
+    settings = {key: plan[key] for key in ("bpm", "time_signature", "reference", "key", "keep_caption", "planner", "shift",
+                                           "guidance") if key in plan}
+    # What the ACE-Step planner conditioned the take on: its caption, tempo, key, length, meter and language.
+    planned = {"planned": result["planned"]} if isinstance(result.get("planned"), dict) else {}
     return dict({"schema": "music/1", "backend": plan["backend"], "model": plan["model"],
                  "duration": plan["duration"], "steps": plan["steps"], "seed": plan["seed"]},
-                **settings, **{key: result.get(key) for key in keys})
+                **settings, **{key: result.get(key) for key in keys}, **planned)

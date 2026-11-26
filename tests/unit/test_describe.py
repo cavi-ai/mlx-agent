@@ -88,14 +88,19 @@ class DescribeTests(unittest.TestCase):
         argv = self.plan(self.model(), image=None, video=self.media("clip.MOV"), fps=2.5)["argv"]
         self.assertEqual(argv[argv.index("--fps") + 1], "2.5")
 
-    def test_plan_requires_exactly_one_of_image_or_video(self):
+    def test_plan_without_media_answers_the_text_prompt_and_refuses_both_media(self):
         model = self.model()
-        for kwargs in ({"image": None}, {"image": self.image, "video": self.video}):
+        plan = plan_describe(model, "Rewrite this verse", manifests=self.manifests, registries=self.registries,
+                             root=self.root / "backends")
+        self.assertEqual(plan["input"], {"kind": "text"})
+        self.assertIn("--prompt=Rewrite this verse", plan["argv"])
+        self.assertFalse({"--image", "--video", "--fps", "--max-pixels"} & set(plan["argv"]))
+        self.assertIn("--prompt=" + "x" * 16000, self.plan(model, image=None, prompt="x" * 16000)["argv"])
+        for kwargs in ({"image": self.image, "video": self.video}, {"max_pixels": 1000}):
             with self.subTest(kwargs=kwargs):
                 with self.assertRaises(DescribeError) as caught:
                     plan_describe(model, "q", manifests=self.manifests, registries=self.registries, root=self.root / "backends", **kwargs)
                 self.assertEqual(caught.exception.code, "invalid_arguments")
-                self.assertIn("exactly one", str(caught.exception))
 
     def test_plan_refusals(self):
         model = self.model()
@@ -109,7 +114,7 @@ class DescribeTests(unittest.TestCase):
             (lambda: self.plan(self.root / "missing"), "model_unreadable"),
             (lambda: self.plan(broken), "model_unreadable"),
             (lambda: self.plan(model, prompt=""), "invalid_arguments"),
-            (lambda: self.plan(model, prompt="x" * 4001), "invalid_arguments"),
+            (lambda: self.plan(model, prompt="x" * 16001), "invalid_arguments"),
             (lambda: self.plan(model, prompt="bell\x07"), "invalid_arguments"),
             (lambda: self.plan(model, prompt=None), "invalid_arguments"),
             (lambda: self.plan(model, image=str(self.root / "gone.png")), "invalid_arguments"),
@@ -237,7 +242,8 @@ class DescribeTests(unittest.TestCase):
         code, payload = invoke("--image", self.image, "--video", self.video)
         self.assertEqual((code, payload["status"], payload["error"]["code"]), (2, "error", "invalid_arguments"))
         code, payload = invoke()
-        self.assertEqual((code, payload["error"]["code"]), (2, "invalid_arguments"))
+        self.assertEqual((code, payload["data"]["input"]), (0, {"kind": "text"}))
+        self.assertFalse({"--image", "--video"} & set(captured[-1][0]))
         code, payload = invoke("--image", self.image, "--timeout", "0")
         self.assertEqual((code, payload["error"]["code"]), (2, "convert_failed"))
 

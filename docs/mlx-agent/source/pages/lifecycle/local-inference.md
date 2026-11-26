@@ -86,10 +86,23 @@ typical) at shift 3; the others take up to 64 steps at guidance 7.
 python3 scripts/mlx-agent convert music --path /absolute/ACE-Step-1.5/checkpoints/acestep-v15-turbo --caption "minimal tech house, four-on-the-floor kick" --out /absolute/output/music.wav --duration 120 --steps 8 --seed 7 --bpm 120 --time-signature 4 --json
 ```
 
-`--bpm` (30 to 300), `--time-signature` (2, 3, 4 or 6 beats per bar) and
-`--reference` (an absolute audio file whose style the take follows) apply to
-ACE-Step checkpoints only. ACE-Step loads from a temporary folder of links to the
-checkpoint files, so the model folder is never written.
+`--bpm` (30 to 300), `--time-signature` (2, 3, 4 or 6 beats per bar),
+`--key` (a note A-G, an optional `#`, `b`, `♯` or `♭`, and `major` or `minor`,
+such as `"F# minor"`), `--reference` (an absolute audio file whose style the take
+follows) and `--keep-caption` apply to ACE-Step checkpoints only. The planner
+rewrites the caption before the DiT reads it unless `--keep-caption` is given;
+the result's `planned` object holds the caption the DiT read and the tempo, key,
+length, meter and language the planner chose. ACE-Step loads from a temporary
+folder of links to the checkpoint files, so the model folder is never written.
+
+`convert compose` runs the planner on its own: it rewrites a caption into a
+detailed one, structures the lyrics, and chooses tempo, key, length, meter and
+language. `--bpm`, `--duration`, `--key`, `--time-signature` and `--language`
+bind those values. Nothing is rendered.
+
+```bash
+python3 scripts/mlx-agent convert compose --path /absolute/ACE-Step-1.5/checkpoints/acestep-v15-turbo --caption "boom bap, warm bass" --lyrics $'[verse]\nRun it local, run it fast' --bpm 96 --duration 30 --json
+```
 
 ## Vision and classification
 
@@ -100,7 +113,8 @@ python3 scripts/mlx-agent convert decide --path /absolute/local/classification-m
 ```
 
 Describe supports image or video input, bounded answer length, and media sampling
-controls. Decide reads a JSON request with `state` and `questions` fields for a
+controls. Without `--image` or `--video` it answers the prompt (up to 16000
+characters) from the text alone and always runs locally. Decide reads a JSON request with `state` and `questions` fields for a
 compatible classification model. A text-generation model directory is not
 interchangeable with these task-specific models.
 

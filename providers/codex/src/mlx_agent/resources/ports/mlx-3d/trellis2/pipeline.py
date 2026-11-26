@@ -128,6 +128,9 @@ def prepare(model, resolution):
     for name in missing:
         started = time.monotonic()
         values = mx.load(str(weights.path / (name + '.safetensors')))
+        component = config['components'].get(name, {})
+        if 'dtype' in component:
+            values = flow.block_values(values, flow.compute_dtype(component))
         prepared = Weights(_kernels(values) if name in DECODERS else values, **config.get('quantization', {}))
         mx.eval(*prepared.values.values())
         pending[name] = prepared

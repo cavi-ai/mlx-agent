@@ -162,6 +162,47 @@ class Trellis2NativeTests(unittest.TestCase):
                 self.assertEqual(set(model.weights), set(names))
                 self.assertTrue(all(count == 1 for count in model.component_statistics()['loads'].values()))
 
+    def test_flow_blocks_run_in_the_checkpoint_dtype_within_float32_tolerance(self):
+        import mlx.core as mx
+        pipeline, flow = port('pipeline'), port('flow')
+        channels, context_channels, hidden, heads = 64, 48, 128, 2
+        linear = {'input_layer': (channels, 8), 't_embedder.mlp.0': (channels, flow.FREQUENCY_SIZE),
+                  't_embedder.mlp.2': (channels, channels), 'adaLN_modulation.1': (6 * channels, channels),
+                  'out_layer': (8, channels), 'blocks.0.self_attn.to_qkv': (3 * channels, channels),
+                  'blocks.0.self_attn.to_out': (channels, channels), 'blocks.0.cross_attn.to_q': (channels, channels),
+                  'blocks.0.cross_attn.to_kv': (2 * channels, context_channels),
+                  'blocks.0.cross_attn.to_out': (channels, channels), 'blocks.0.mlp.mlp.0': (hidden, channels),
+                  'blocks.0.mlp.mlp.2': (channels, hidden)}
+        shapes = {name + suffix: shape if suffix == '.weight' else shape[:1]
+                  for name, shape in linear.items() for suffix in ('.weight', '.bias')}
+        shapes.update({'blocks.0.modulation': (6 * channels,), 'blocks.0.norm2.weight': (channels,),
+                       'blocks.0.norm2.bias': (channels,)})
+        for name in ('self_attn', 'cross_attn'):
+            for norm in ('q_rms_norm', 'k_rms_norm'):
+                shapes['blocks.0.{0}.{1}.gamma'.format(name, norm)] = (heads, channels // heads)
+        mx.random.seed(0)
+        values = {name: 0.2 * mx.random.normal(shape) for name, shape in shapes.items()}
+        names = pipeline.COMPONENTS + pipeline.TEXTURE_COMPONENTS
+        components = {name: {} for name in names}
+        components['ss_flow'] = {'num_blocks': 1, 'num_heads': heads, 'dtype': 'bfloat16'}
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'config.json').write_text(json.dumps({'model_type': 'trellis2', 'components': components}))
+            for name in names:
+                mx.save_safetensors(str(root / (name + '.safetensors')),
+                                    values if name == 'ss_flow' else {'value': mx.array([1.0])})
+            model = pipeline.prepare(pipeline.load(root), 512)
+        loaded = model.weights['ss_flow']
+        self.assertEqual(loaded['blocks.0.self_attn.to_qkv.weight'].dtype, mx.bfloat16)
+        self.assertEqual(loaded['input_layer.weight'].dtype, mx.float32)
+        x, context = mx.random.normal((1, 16, 8)), mx.random.normal((1, 4, context_channels))
+        rope = flow.rope_tables([[i, i, i] for i in range(16)], channels // heads)
+        blocks = flow.velocity(loaded, components['ss_flow'], x, mx.array([500.0]), context, rope)
+        reference = flow.velocity(pipeline.Weights(values), {'num_blocks': 1, 'num_heads': heads}, x,
+                                  mx.array([500.0]), context, rope)
+        self.assertEqual(blocks.dtype, mx.float32)
+        self.assertLess(mx.max(mx.abs(blocks - reference)).item() / mx.max(mx.abs(reference)).item(), 0.05)
+
     def setUp(self):
         import mlx.core as mx
         previous = mx.default_device()

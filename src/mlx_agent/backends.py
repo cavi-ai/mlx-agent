@@ -590,8 +590,8 @@ def with_ports(registry, manifest):
 
 def _port_digest(directory):
     digest = hashlib.sha256()
-    for path in sorted(Path(directory).rglob("*.py")):
-        if "__pycache__" in path.parts:
+    for path in sorted(Path(directory).rglob("*")):
+        if path.suffix not in {".py", ".json"} or "__pycache__" in path.parts or not path.is_file():
             continue
         digest.update(path.relative_to(directory).as_posix().encode("utf-8") + b"\0")
         digest.update(path.read_bytes() + b"\0")

@@ -175,14 +175,14 @@ def cascade_coords(coords, low, high, max_tokens=MAX_TOKENS, floor=CASCADE_FLOOR
         high -= 128
 
 
-def surface(voxels, vertices, crossed, split, resolution):
+def surface(voxels, vertices, crossed, split, resolution, *, mesh=None):
     """Closed glTF-axis mesh from decoded dual-grid voxels, with the seconds of its ``mesh`` and ``closed_surface``
     stages. These CPU stages share unified memory with MLX, so the buffer cache the GPU stages filled is freed first."""
     mx.clear_cache()
     started = time.perf_counter()
     vertices, faces = dual_grid.to_mesh(voxels, vertices, crossed, split, resolution)
     meshed = time.perf_counter()
-    vertices, faces = closed.closed_surface(vertices, faces, resolution)
+    vertices, faces = closed.closed_surface(vertices, faces, resolution, mesh=mesh)
     return gltf_axes(vertices), faces, {"mesh": meshed - started, "closed_surface": time.perf_counter() - meshed}
 
 
@@ -292,7 +292,7 @@ def generate(model, image, out, steps=12, seed=42, resolution=1024, guidance=7.5
                                                  texture_latent, coords, subdivisions)
         previous, cursor = cursor, time.perf_counter()
         stages["texture_decode"] = cursor - previous
-    vertices, faces, seconds = surface(voxels, vertices, crossed, split, level_resolution)
+    vertices, faces, seconds = surface(voxels, vertices, crossed, split, level_resolution, mesh=config.get("mesh"))
     stages.update(seconds)
     cursor = time.perf_counter()
     vertices, faces = closed.without_fins(*decimate(vertices, faces, max_faces, aggression=3))

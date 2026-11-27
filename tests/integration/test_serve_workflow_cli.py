@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 import socket
+import stat
+import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import time
@@ -16,7 +18,7 @@ from unittest.mock import patch
 from mlx_agent import task_serving, workflow_activation, workflow_sets
 from mlx_agent.backends import load_manifests
 from mlx_agent.cli import main
-from mlx_agent.serve import _preview_hash, stop_serve
+from mlx_agent.serve import _preview_hash, load_recipes, plan_start, receipts_root, start_serve, stop_serve
 from mlx_agent.serve_profiles import save_profile
 from mlx_agent.task_identity import capture_identity
 
@@ -174,3 +176,180 @@ task_serve.main()
                           'job_ids': {'classifier': first['id'], 'media': second['id'], 'cancelled': job['id']},
                           'results': results, 'cancelled_state': cancelled['state']}, sort_keys=True))
         self.assertEqual(workflow_activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
+
+
+class ServePolicyResetIntegrationTests(unittest.TestCase):
+    """Unmocked CLI serve policy and status checks against live jit_serve.py."""
+
+    def setUp(self):
+        self.temp = TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        os.chmod(self.root, 0o700)
+        self.source = Path(__file__).resolve().parents[2] / 'src'
+        self.model = self.root / 'fixture-model'
+        self.model.mkdir()
+        (self.model / 'config.json').write_text('{"model_type": "llama"}')
+        (self.model / 'model.safetensors').write_bytes(b'fixture')
+        self.ports = []
+        self.processes = []
+        self.addCleanup(self._cleanup_servers)
+
+    def _cleanup_servers(self):
+        for port in self.ports:
+            try:
+                stop_serve(port, str(self.root))
+            except Exception:
+                pass
+        for process in self.processes:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+
+    def _start_live_jit(self, runtime='mlx_lm'):
+        port = free_port()
+        self.ports.append(port)
+        recipes = load_recipes()
+        recipes['mlx_lm'] = dict(
+            recipes['mlx_lm'],
+            executable=sys.executable,
+            argv=[sys.executable, '-c', 'import time; time.sleep(60)', '--model', '{repo}', '--port', '{port}'],
+        )
+        plan = plan_start(None, 'mlx_lm', recipes, path=str(self.model), port=port, jit=True, receipts_dir=str(self.root))
+        env = dict(os.environ, PYTHONPATH=str(self.source), HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1')
+
+        def spawn_isolated(argv, log_path):
+            config_path = Path(argv[argv.index('--config') + 1])
+            config = json.loads(config_path.read_text())
+            config.update(
+                compute_state_dir=str(self.root / 'compute'),
+                memory_state_dir=str(self.root / 'memory'),
+            )
+            if runtime != 'mlx_lm':
+                config['runtime'] = runtime
+            config_path.write_text(json.dumps(config))
+            os.chmod(config_path, 0o600)
+            with open(log_path, 'ab', buffering=0) as handle:
+                process = subprocess.Popen(
+                    argv,
+                    stdin=subprocess.DEVNULL,
+                    stdout=handle,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                    env=env,
+                )
+            self.processes.append(process)
+            return process.pid
+
+        outcome = start_serve(
+            plan,
+            receipts_dir=str(self.root),
+            confirm=True,
+            preview_hash=plan['preview_hash'],
+            spawn=spawn_isolated,
+        )
+        self.assertTrue(outcome['receipt']['jit'])
+        return port, outcome['receipt']['pid']
+
+    def _run_cli(self, *args):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = main(list(args))
+        raw = output.getvalue()
+        self.assertNotIn('control_token', raw)
+        return code, json.loads(raw)
+
+    def _status_entry(self, port):
+        code, payload = self._run_cli('serve', 'status', '--receipts-dir', str(self.root), '--json')
+        self.assertEqual(code, 0, payload)
+        matches = [item for item in payload['data']['servers'] if item['port'] == port]
+        self.assertEqual(len(matches), 1, payload)
+        return matches[0]
+
+    def _config_policy(self, port):
+        path = receipts_root(str(self.root)) / '{}.jit-config.json'.format(port)
+        self.assertFalse(path.is_symlink())
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        return json.loads(path.read_text())['memory_policy']
+
+    def test_live_cli_serve_policy_resets_omitted_wait_and_release_defaults(self):
+        port, pid = self._start_live_jit(runtime='mlx_lm')
+        base_cmd = ['serve', 'policy', '--port', str(port), '--expected-pid', str(pid),
+                    '--receipts-dir', str(self.root), '--json']
+
+        code, res = self._run_cli(*base_cmd, '--release-after-request', '--execution-wait', '30')
+        self.assertEqual(code, 0, res)
+        expected_release = {
+            'idle_timeout_seconds': 0,
+            'keep_loaded': False,
+            'minimum_headroom_gb': None,
+            'execution_wait_seconds': 30,
+            'release_after_request': True,
+        }
+        self.assertEqual(res['data']['memory_policy'], expected_release)
+        self.assertEqual(self._status_entry(port)['memory_policy'], expected_release)
+        self.assertEqual(self._config_policy(port), expected_release)
+
+        # Direct transition to keep_loaded omits stale release_after_request and execution_wait_seconds.
+        code, res = self._run_cli(*base_cmd, '--keep-loaded')
+        self.assertEqual(code, 0, res)
+        expected_keep = {'idle_timeout_seconds': 0, 'keep_loaded': True, 'minimum_headroom_gb': None}
+        self.assertEqual(res['data']['memory_policy'], expected_keep)
+        self.assertEqual(self._status_entry(port)['memory_policy'], expected_keep)
+        self.assertEqual(self._config_policy(port), expected_keep)
+
+        # Re-enable both, then transition to unload-after-idle without passing wait/release flags.
+        code, res = self._run_cli(*base_cmd, '--release-after-request', '--execution-wait', '15')
+        self.assertEqual(code, 0, res)
+        code, res = self._run_cli(*base_cmd, '--idle-timeout', '120')
+        self.assertEqual(code, 0, res)
+        expected_idle = {'idle_timeout_seconds': 120, 'keep_loaded': False, 'minimum_headroom_gb': None}
+        self.assertEqual(res['data']['memory_policy'], expected_idle)
+        self.assertEqual(self._status_entry(port)['memory_policy'], expected_idle)
+        self.assertEqual(self._config_policy(port), expected_idle)
+
+    def test_live_cli_serve_policy_preserves_budget_until_explicitly_cleared(self):
+        port, pid = self._start_live_jit(runtime='tasks')
+        base_cmd = ['serve', 'policy', '--port', str(port), '--expected-pid', str(pid),
+                    '--receipts-dir', str(self.root), '--json']
+
+        code, res = self._run_cli(
+            *base_cmd, '--memory-budget-gb', '8', '--min-headroom-gb', '2',
+            '--release-after-request', '--execution-wait', '25',
+        )
+        self.assertEqual(code, 0, res)
+        expected_initial = {
+            'idle_timeout_seconds': 0,
+            'keep_loaded': False,
+            'minimum_headroom_gb': 2.0,
+            'model_memory_budget_gb': 8.0,
+            'execution_wait_seconds': 25,
+            'release_after_request': True,
+        }
+        self.assertEqual(self._status_entry(port)['memory_policy'], expected_initial)
+        self.assertEqual(self._config_policy(port), expected_initial)
+
+        # Replacing with keep_loaded clears wait/release defaults while keeping model_memory_budget_gb.
+        code, res = self._run_cli(*base_cmd, '--keep-loaded', '--min-headroom-gb', '2')
+        self.assertEqual(code, 0, res)
+        expected_kept_budget = {
+            'idle_timeout_seconds': 0,
+            'keep_loaded': True,
+            'minimum_headroom_gb': 2.0,
+            'model_memory_budget_gb': 8.0,
+        }
+        self.assertEqual(res['data']['memory_policy'], expected_kept_budget)
+        self.assertEqual(self._status_entry(port)['memory_policy'], expected_kept_budget)
+        self.assertEqual(self._config_policy(port), expected_kept_budget)
+
+        # Explicit --clear-memory-budget removes model_memory_budget_gb cleanly.
+        code, res = self._run_cli(*base_cmd, '--idle-timeout', '90', '--clear-memory-budget')
+        self.assertEqual(code, 0, res)
+        expected_cleared = {'idle_timeout_seconds': 90, 'keep_loaded': False, 'minimum_headroom_gb': None}
+        self.assertEqual(res['data']['memory_policy'], expected_cleared)
+        self.assertEqual(self._status_entry(port)['memory_policy'], expected_cleared)
+        self.assertEqual(self._config_policy(port), expected_cleared)

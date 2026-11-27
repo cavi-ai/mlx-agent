@@ -77,13 +77,11 @@ class MemoryPolicyTests(unittest.TestCase):
         self.assertEqual(outcome["size"], 1234)
         self.assertEqual(outcome["reserve_bytes"] + outcome["workspace_bytes"] + outcome["growth_bytes"], 1234)
 
-    def test_validate_omits_default_execution_wait_and_release_after_request(self):
-        base = validate(None)
-        self.assertEqual(validate({"execution_wait_seconds": 0}), base)
-        self.assertEqual(validate({"release_after_request": False}), base)
+    def test_validate_preserves_explicit_execution_wait_and_release_defaults(self):
         self.assertEqual(
             validate({"execution_wait_seconds": 0, "release_after_request": False, "keep_loaded": True}),
-            {"idle_timeout_seconds": 0, "keep_loaded": True, "minimum_headroom_gb": None},
+            {"idle_timeout_seconds": 0, "keep_loaded": True, "minimum_headroom_gb": None,
+             "execution_wait_seconds": 0, "release_after_request": False},
         )
         for seconds in (1, 30, 3600):
             with self.subTest(seconds=seconds):
@@ -107,20 +105,9 @@ class MemoryPolicyTests(unittest.TestCase):
         self.assertIs(for_start(_args(execution_wait_seconds=10), "tasks")["release_after_request"], True)
 
     def test_configure_serve_memory_resets_omitted_wait_and_release_without_clearing_budget(self):
-        existing = validate({
-            "minimum_headroom_gb": 2,
-            "model_memory_budget_gb": 8,
-            "execution_wait_seconds": 30,
-            "release_after_request": True,
-        })
         with patch("mlx_agent.serve._configure_owned_jit", return_value={}) as send:
             configure_serve_memory(19080, {"keep_loaded": True, "minimum_headroom_gb": 2})
             payload = send.call_args.args[4]
         self.assertEqual(payload["execution_wait_seconds"], 0)
         self.assertIs(payload["release_after_request"], False)
         self.assertNotIn("model_memory_budget_gb", payload)
-        merged = validate(dict(existing, **payload))
-        self.assertEqual(
-            merged,
-            {"idle_timeout_seconds": 0, "keep_loaded": True, "minimum_headroom_gb": 2, "model_memory_budget_gb": 8},
-        )

@@ -295,6 +295,11 @@ class ModelWorker:
                 raise GatewayError(400, error.code, str(error)) from error
             except (ValueError, TypeError) as error:
                 raise GatewayError(400, "invalid_policy", str(error)) from error
+            # Only live updates omit reset values. Launch plans retain explicit defaults for stable hashes.
+            if policy.get("execution_wait_seconds") == 0:
+                del policy["execution_wait_seconds"]
+            if policy.get("release_after_request") is False:
+                del policy["release_after_request"]
             config = dict(self.config, memory_policy=policy)
             budget_changed = policy.get("model_memory_budget_gb") != self.memory_policy.get("model_memory_budget_gb")
             if budget_changed and self.config.get("runtime") == "strata":

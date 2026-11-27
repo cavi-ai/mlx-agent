@@ -51,16 +51,14 @@ def validate(policy=None):
     cache = from_memory(result)
     if cache["cache_reclaim"] == "pressure" and result["minimum_headroom_gb"] is None:
         raise ValueError("Pressure cache reclaim requires a headroom reserve.")
-    wait = result.pop("execution_wait_seconds", 0)
+    wait = result.get("execution_wait_seconds", 0)
     if type(wait) is not int or not 0 <= wait <= 3600:
         raise ValueError("Execution wait must be an integer between 0 and 3600 seconds.")
-    if wait > 0:
-        result["execution_wait_seconds"] = wait
     release = result.pop("release_after_request", False)
     if type(release) is not bool or (release and result["keep_loaded"]):
         raise ValueError("Release after each request cannot be combined with keep loaded.")
-    if release:
-        result["release_after_request"] = True
+    if "release_after_request" in policy:
+        result["release_after_request"] = release
     context = result.pop("context_tokens", None)
     pressure = result.pop("unload_under_pressure", False)
     budget = result.pop("model_memory_budget_gb", None)

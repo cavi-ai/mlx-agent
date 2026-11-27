@@ -1080,8 +1080,15 @@ def configure_serve_memory(port, policy, receipts_dir=None, expected_pid=None, e
     if clear_budget:
         policy["model_memory_budget_gb"] = None
     # The gateway merges changes; replacements must also clear omitted options.
-    return _configure_owned_jit(port, receipts_dir, expected_pid, "policy",
-                                dict({"context_tokens": None, "unload_under_pressure": False}, **policy), expected_start=expected_start)
+    return _configure_owned_jit(
+        port, receipts_dir, expected_pid, "policy",
+        dict(
+            {"context_tokens": None, "unload_under_pressure": False,
+             "execution_wait_seconds": 0, "release_after_request": False},
+            **policy,
+        ),
+        expected_start=expected_start,
+    )
 
 
 def _configure_owned_jit(port, receipts_dir, expected_pid, action, policy=None, expected_start=None):

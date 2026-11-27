@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import select
+import signal
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -123,13 +124,18 @@ class MCPStdioTests(unittest.TestCase):
         self.assertEqual(payload["exit_code"], 0, payload)
         self.assertEqual(json.loads(payload["stdout"])["operation"], "task.capabilities")
 
-    def exercise_slow_tool(self, directory, timeout):
+    def exercise_slow_tool(self, directory, timeout, *, signal_tool_thread=False):
         code = """
-import os, sys
+import os, signal, sys
 from mlx_agent import mcp_server as server
+signal_tool_thread = sys.argv[3] == '1'
+if signal_tool_thread:
+    signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
 worker = 'import os,sys,time; from pathlib import Path; Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(30)'
 execute_cli = server._execute_cli
 def execute(argv, cancelled):
+    if signal_tool_thread:
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTERM})
     if os.path.exists(sys.argv[1]):
         return execute_cli(argv, cancelled)
     return server._run_process([sys.executable, '-c', worker, sys.argv[1]],
@@ -138,7 +144,7 @@ server._execute_cli = execute
 raise SystemExit(server.main())
 """
         marker = Path(directory) / "worker.pid"
-        process = subprocess.Popen([sys.executable, "-c", code, str(marker), str(timeout)],
+        process = subprocess.Popen([sys.executable, "-c", code, str(marker), str(timeout), str(int(signal_tool_thread))],
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    bufsize=0, env=dict(os.environ, PYTHONPATH=str(ROOT / "src")))
         self.addCleanup(process.stderr.close)
@@ -237,10 +243,19 @@ print('final diagnostic', file=sys.stderr)
 
     def test_server_shutdown_reaps_the_active_tool(self):
         with TemporaryDirectory() as directory:
-            process, pid = self.exercise_slow_tool(directory, 15)
+            process, pid = self.exercise_slow_tool(directory, 15, signal_tool_thread=True)
             process.stdin.close()
+            # Give the main thread time to enter its EOF wait before signaling the tool thread.
+            time.sleep(.2)
             process.terminate()
-            self.assertEqual(process.wait(timeout=3), 143, process.stderr.read())
+            try:
+                exit_code = process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                # Interrupt the main thread as a fallback so a regression still reaps the tool.
+                process.send_signal(signal.SIGINT)
+                process.wait(timeout=3)
+                raise
+            self.assertEqual(exit_code, 143, process.stderr.read())
             with self.assertRaises(ProcessLookupError):
                 os.kill(pid, 0)
 

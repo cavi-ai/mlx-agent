@@ -426,7 +426,10 @@ def _run_session(send, execute):
             if response is not None:
                 send(response)
         with ready:
-            ready.wait_for(lambda: not pending)
+            # A SIGTERM delivered to the tool thread cannot interrupt this wait.
+            # Wake periodically so the main thread can run the Python signal handler.
+            while pending:
+                ready.wait(timeout=0.1)
     except BaseException:
         with ready:
             if active is not None:

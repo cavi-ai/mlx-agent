@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import stat
 import sys
 from tempfile import TemporaryDirectory
 import time
@@ -16,7 +17,7 @@ from unittest.mock import patch
 from mlx_agent import task_serving, workflow_activation, workflow_sets
 from mlx_agent.backends import load_manifests
 from mlx_agent.cli import main
-from mlx_agent.serve import _preview_hash, stop_serve
+from mlx_agent.serve import _preview_hash, load_recipes, plan_start, receipts_root, start_serve, stop_serve
 from mlx_agent.serve_profiles import save_profile
 from mlx_agent.task_identity import capture_identity
 
@@ -25,6 +26,11 @@ def free_port():
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         return sock.getsockname()[1]
+
+
+def resolve_fixture_task_model(path):
+    identity = capture_identity(Path(path), load_manifests()['mlx-embeddings'], Path(sys.executable))
+    return ['classification'], sys.executable, identity
 
 
 class WorkflowRoleIntegrationTests(unittest.TestCase):
@@ -91,14 +97,11 @@ task_serve.main()
             return plan
         def runtime(repo, path, requested, recipes):
             return requested, sys.executable
-        def resolve_model(path, *args, **kwargs):
-            identity = capture_identity(Path(path), load_manifests()['mlx-embeddings'], Path(sys.executable))
-            return ['classification'], sys.executable, identity
         for context in (patch('mlx_agent.workflow_sets._member_plan', side_effect=member_plan),
                         patch('mlx_agent.workflow_sets.resolve_serve_runtime', side_effect=runtime),
-                        patch('mlx_agent.task_serving.resolve_model', side_effect=resolve_model),
+                        patch('mlx_agent.task_serving.resolve_model', side_effect=resolve_fixture_task_model),
                         patch('mlx_agent.service_registry.register_receipts'),
-                        patch.dict(os.environ, {'PYTHONPATH': str(self.source)})):
+                        patch.dict(os.environ, {'PYTHONPATH': str(self.source), 'XDG_STATE_HOME': str(self.root / 'state')})):
             context.start()
             self.addCleanup(context.stop)
         self.addCleanup(self.cleanup_services)
@@ -125,6 +128,17 @@ task_serve.main()
                 return value
             time.sleep(.05)
         self.fail('Synthetic task did not settle.')
+
+    def test_retained_task_workflow_keeps_its_pre_upgrade_plan_hash(self):
+        save_profile('retained', {'min_headroom_gb': 2, 'idle_timeout': 0,
+                                  'keep_loaded': True, 'unload_under_pressure': False,
+                                  'execution_wait_seconds': 0, 'release_after_request': False}, self.root)
+        member = dict(self.definition['members']['classifier'], profile='retained')
+        plan = workflow_sets._member_plan(member, self.root)
+        legacy_policy = {'minimum_headroom_gb': 2, 'idle_timeout_seconds': 0, 'keep_loaded': True,
+                         'execution_wait_seconds': 0, 'release_after_request': False}
+        self.assertEqual(plan['memory_policy'], legacy_policy)
+        self.assertEqual(plan['preview_hash'], _preview_hash(dict(plan, memory_policy=legacy_policy)))
 
     def test_resolved_roles_route_typed_jobs_to_their_own_gateway(self):
         preview = workflow_sets.preview_workflow(self.definition, receipts_dir=self.root)
@@ -174,3 +188,144 @@ task_serve.main()
                           'job_ids': {'classifier': first['id'], 'media': second['id'], 'cancelled': job['id']},
                           'results': results, 'cancelled_state': cancelled['state']}, sort_keys=True))
         self.assertEqual(workflow_activation.stop_workflow('studio', receipts_dir=self.root)['state'], 'stopped')
+
+
+class ServePolicyResetIntegrationTests(unittest.TestCase):
+    """CLI policy updates against the live text and task gateways with unloaded models."""
+
+    def setUp(self):
+        self.temp = TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        os.chmod(self.root, 0o700)
+        state_env = patch.dict(os.environ, {'XDG_STATE_HOME': str(self.root / 'state')})
+        state_env.start()
+        self.addCleanup(state_env.stop)
+        self.model = self.root / 'fixture-model'
+        self.model.mkdir()
+        (self.model / 'config.json').write_text('{"model_type": "llama"}')
+        (self.model / 'model.safetensors').write_bytes(b'fixture')
+
+    def _start_live_gateway(self, runtime):
+        port = free_port()
+        recipes = load_recipes()
+        recipes['mlx_lm'] = dict(
+            recipes['mlx_lm'],
+            executable=sys.executable,
+            argv=[sys.executable, '-c', 'import time; time.sleep(60)', '--model', '{repo}', '--port', '{port}'],
+        )
+        # Substitute local backend discovery for the synthetic model; use the real task plan and gateway.
+        with patch.object(task_serving, 'resolve_model', side_effect=resolve_fixture_task_model):
+            plan = plan_start(None, runtime, recipes, path=str(self.model), port=port, jit=True, receipts_dir=self.root)
+
+        outcome = start_serve(
+            plan,
+            receipts_dir=str(self.root),
+            confirm=True,
+            preview_hash=plan['preview_hash'],
+        )
+        receipt = outcome['receipt']
+        self.addCleanup(stop_serve, port, self.root, expected_pid=receipt['pid'])
+        self.assertTrue(receipt['jit'])
+        self.assertEqual(receipt['runtime'], runtime)
+        return port, receipt['pid']
+
+    def _run_cli(self, *args):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = main(list(args))
+        raw = output.getvalue()
+        self.assertNotIn('control_token', raw)
+        return code, json.loads(raw)
+
+    def _status_entry(self, port):
+        code, payload = self._run_cli('serve', 'status', '--receipts-dir', str(self.root), '--json')
+        self.assertEqual(code, 0, payload)
+        matches = [item for item in payload['data']['servers'] if item['port'] == port]
+        self.assertEqual(len(matches), 1, payload)
+        return matches[0]
+
+    def _config_policy(self, port):
+        path = receipts_root(str(self.root)) / '{}.jit-config.json'.format(port)
+        self.assertFalse(path.is_symlink())
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        return json.loads(path.read_text())['memory_policy']
+
+    def test_live_cli_serve_policy_resets_omitted_wait_and_release_defaults(self):
+        port, pid = self._start_live_gateway('mlx_lm')
+        base_cmd = ['serve', 'policy', '--port', str(port), '--expected-pid', str(pid),
+                    '--receipts-dir', str(self.root), '--json']
+
+        code, res = self._run_cli(*base_cmd, '--release-after-request', '--execution-wait', '30')
+        self.assertEqual(code, 0, res)
+        expected_release = {
+            'idle_timeout_seconds': 0,
+            'keep_loaded': False,
+            'minimum_headroom_gb': None,
+            'execution_wait_seconds': 30,
+            'release_after_request': True,
+        }
+        self.assertEqual(res['data']['memory_policy'], expected_release)
+        self.assertEqual(self._status_entry(port)['memory_policy'], expected_release)
+        self.assertEqual(self._config_policy(port), expected_release)
+
+        # Direct transition to keep_loaded omits stale release_after_request and execution_wait_seconds.
+        code, res = self._run_cli(*base_cmd, '--keep-loaded')
+        self.assertEqual(code, 0, res)
+        expected_keep = {'idle_timeout_seconds': 0, 'keep_loaded': True, 'minimum_headroom_gb': None}
+        self.assertEqual(res['data']['memory_policy'], expected_keep)
+        self.assertEqual(self._status_entry(port)['memory_policy'], expected_keep)
+        self.assertEqual(self._config_policy(port), expected_keep)
+
+        # Re-enable both, then transition to unload-after-idle without passing wait/release flags.
+        code, res = self._run_cli(*base_cmd, '--release-after-request', '--execution-wait', '15')
+        self.assertEqual(code, 0, res)
+        code, res = self._run_cli(*base_cmd, '--idle-timeout', '120')
+        self.assertEqual(code, 0, res)
+        expected_idle = {'idle_timeout_seconds': 120, 'keep_loaded': False, 'minimum_headroom_gb': None}
+        self.assertEqual(res['data']['memory_policy'], expected_idle)
+        self.assertEqual(self._status_entry(port)['memory_policy'], expected_idle)
+        self.assertEqual(self._config_policy(port), expected_idle)
+
+    def test_live_cli_serve_policy_preserves_budget_until_explicitly_cleared(self):
+        port, pid = self._start_live_gateway('tasks')
+        self.assertTrue(self._status_entry(port)['allocator_cache']['supported'])
+        base_cmd = ['serve', 'policy', '--port', str(port), '--expected-pid', str(pid),
+                    '--receipts-dir', str(self.root), '--json']
+
+        code, res = self._run_cli(
+            *base_cmd, '--memory-budget-gb', '8', '--min-headroom-gb', '2',
+            '--release-after-request', '--execution-wait', '25',
+        )
+        self.assertEqual(code, 0, res)
+        expected_initial = {
+            'idle_timeout_seconds': 0,
+            'keep_loaded': False,
+            'minimum_headroom_gb': 2.0,
+            'model_memory_budget_gb': 8.0,
+            'execution_wait_seconds': 25,
+            'release_after_request': True,
+        }
+        self.assertEqual(self._status_entry(port)['memory_policy'], expected_initial)
+        self.assertEqual(self._config_policy(port), expected_initial)
+
+        # Replacing with keep_loaded clears wait/release defaults while keeping model_memory_budget_gb.
+        code, res = self._run_cli(*base_cmd, '--keep-loaded', '--min-headroom-gb', '2')
+        self.assertEqual(code, 0, res)
+        expected_kept_budget = {
+            'idle_timeout_seconds': 0,
+            'keep_loaded': True,
+            'minimum_headroom_gb': 2.0,
+            'model_memory_budget_gb': 8.0,
+        }
+        self.assertEqual(res['data']['memory_policy'], expected_kept_budget)
+        self.assertEqual(self._status_entry(port)['memory_policy'], expected_kept_budget)
+        self.assertEqual(self._config_policy(port), expected_kept_budget)
+
+        # Explicit --clear-memory-budget removes model_memory_budget_gb cleanly.
+        code, res = self._run_cli(*base_cmd, '--idle-timeout', '90', '--clear-memory-budget')
+        self.assertEqual(code, 0, res)
+        expected_cleared = {'idle_timeout_seconds': 90, 'keep_loaded': False, 'minimum_headroom_gb': None}
+        self.assertEqual(res['data']['memory_policy'], expected_cleared)
+        self.assertEqual(self._status_entry(port)['memory_policy'], expected_cleared)
+        self.assertEqual(self._config_policy(port), expected_cleared)

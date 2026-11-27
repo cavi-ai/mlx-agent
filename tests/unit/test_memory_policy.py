@@ -1,10 +1,12 @@
 """Memory policy has one translation and one set of runtime gates."""
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from mlx_agent.jit_serve import validate_memory_policy
 from mlx_agent.memory_policy import (PolicyRejected, cli_supplied, enforce_configure, enforce_launch, for_start,
                                      from_cli, policy_from_profile, reservation, validate)
+from mlx_agent.serve import configure_serve_memory
 
 
 def _args(**overrides):
@@ -74,3 +76,38 @@ class MemoryPolicyTests(unittest.TestCase):
                                         "strata_memory_growth_bytes": 50})
         self.assertEqual(outcome["size"], 1234)
         self.assertEqual(outcome["reserve_bytes"] + outcome["workspace_bytes"] + outcome["growth_bytes"], 1234)
+
+    def test_validate_preserves_explicit_execution_wait_and_release_defaults(self):
+        self.assertEqual(
+            validate({"execution_wait_seconds": 0, "release_after_request": False, "keep_loaded": True}),
+            {"idle_timeout_seconds": 0, "keep_loaded": True, "minimum_headroom_gb": None,
+             "execution_wait_seconds": 0, "release_after_request": False},
+        )
+        for seconds in (1, 30, 3600):
+            with self.subTest(seconds=seconds):
+                self.assertEqual(validate({"execution_wait_seconds": seconds})["execution_wait_seconds"], seconds)
+        enabled = validate({"execution_wait_seconds": 45, "release_after_request": True})
+        self.assertEqual(enabled["execution_wait_seconds"], 45)
+        self.assertIs(enabled["release_after_request"], True)
+
+    def test_validate_rejects_invalid_execution_wait_and_release_after_request(self):
+        for bad_wait in (None, True, False, 1.5, -1, 3601, "30"):
+            with self.subTest(bad_wait=bad_wait), self.assertRaises(ValueError):
+                validate({"execution_wait_seconds": bad_wait})
+        for bad_release in (None, 0, 1, "true", "false"):
+            with self.subTest(bad_release=bad_release), self.assertRaises(ValueError):
+                validate({"release_after_request": bad_release})
+        with self.assertRaises(ValueError):
+            validate({"keep_loaded": True, "release_after_request": True})
+        # for_start keeps raw from_cli values and task default residency.
+        self.assertEqual(for_start(_args(execution_wait_seconds=0), "mlx_lm")["execution_wait_seconds"], 0)
+        self.assertIs(for_start(_args(release_after_request=False), "tasks")["release_after_request"], False)
+        self.assertIs(for_start(_args(execution_wait_seconds=10), "tasks")["release_after_request"], True)
+
+    def test_configure_serve_memory_resets_omitted_wait_and_release_without_clearing_budget(self):
+        with patch("mlx_agent.serve._configure_owned_jit", return_value={}) as send:
+            configure_serve_memory(19080, {"keep_loaded": True, "minimum_headroom_gb": 2})
+            payload = send.call_args.args[4]
+        self.assertEqual(payload["execution_wait_seconds"], 0)
+        self.assertIs(payload["release_after_request"], False)
+        self.assertNotIn("model_memory_budget_gb", payload)
